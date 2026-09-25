@@ -31,14 +31,14 @@ struct DocumentWindow: View {
             Sidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 300)
         } detail: {
-            VStack(spacing: 0) {
-                ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
-                             highlighted: model.highlighted, fitRevision: model.fitRevision,
-                             cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
-                             showGrid: showGrid, showConstraints: showConstraints)
-                Divider()
-                StatusBar(model: model)
-            }
+            ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
+                         highlighted: model.highlighted, fitRevision: model.fitRevision,
+                         cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
+                         showGrid: showGrid, showConstraints: showConstraints)
+                // An overlay takes no part in the column's layout. As a sibling in a VStack, the
+                // status bar's text made the detail column resize itself while the split view was
+                // laying it out, a loop AppKit ends by crashing the app.
+                .overlay(alignment: .bottom) { StatusBar(model: model) }
             .inspector(isPresented: $model.showInspector) {
                 InspectorView(model: model)
                     .inspectorColumnWidth(min: 240, ideal: 280)
@@ -100,33 +100,41 @@ struct StatusBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if let session = model.sketchSession {
-                Text(session.statusText)
-                    .foregroundStyle(session.message != nil || session.solve?.status == .failed ? Color.red : Color.secondary)
-                    .lineLimit(1)
-            } else if let h = model.dragHandle, model.hovered == nil || model.hovered?.kind == .handle {
-                Text(model.previewInvalid ? "That size doesn't fit the neighbouring faces — let go to keep the previous size"
-                                          : "Drag the orange arrow to change the \(h.kind == .fillet ? "radius" : h.kind == .chamfer ? "chamfer size" : "distance"), or type it in the inspector")
-                    .foregroundStyle(model.previewInvalid ? Color.red : Color.secondary)
-                    .lineLimit(1)
-            } else if let hovered = model.hovered, let name = model.name(of: hovered) {
-                Label(name, systemImage: hovered.isEdge ? "line.diagonal" : "square")
-                    .lineLimit(1).truncationMode(.middle)
-            } else {
-                Text("Click faces or edges to select · ⇧-click to add · drag to orbit").foregroundStyle(.secondary)
-                    .lineLimit(1)
+            message
+                .lineLimit(1)
+                .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
+            Group {
+                if !model.selection.isEmpty { Text("\(model.selection.count) selected") }
+                if model.isRegenerating {
+                    ProgressView().controlSize(.small)
+                } else if let r = model.result {
+                    Text(String(format: "rebuilt in %.0f ms", r.duration * 1000)).foregroundStyle(.secondary)
+                }
             }
-            Spacer()
-            if !model.selection.isEmpty { Text("\(model.selection.count) selected") }
-            if model.isRegenerating {
-                ProgressView().controlSize(.small)
-            } else if let r = model.result {
-                Text(String(format: "rebuilt in %.0f ms", r.duration * 1000)).foregroundStyle(.secondary)
-            }
+            .lineLimit(1)
+            .fixedSize()
         }
         .font(.callout)
         .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .frame(height: 26)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    @ViewBuilder private var message: some View {
+        if let session = model.sketchSession {
+            Text(session.statusText)
+                .foregroundStyle(session.message != nil || session.solve?.status == .failed ? Color.red : Color.secondary)
+        } else if let h = model.dragHandle, model.hovered == nil || model.hovered?.kind == .handle {
+            Text(model.previewInvalid ? "That size doesn't fit the neighbouring faces — let go to keep the previous size"
+                                      : "Drag the orange arrow to change the \(h.kind == .fillet ? "radius" : h.kind == .chamfer ? "chamfer size" : "distance"), or type it in the inspector")
+                .foregroundStyle(model.previewInvalid ? Color.red : Color.secondary)
+        } else if let hovered = model.hovered, let name = model.name(of: hovered) {
+            Label(name, systemImage: hovered.isEdge ? "line.diagonal" : "square")
+                .truncationMode(.middle)
+        } else {
+            Text("Click faces or edges to select · ⇧-click to add · drag to orbit").foregroundStyle(.secondary)
+        }
     }
 }
 
