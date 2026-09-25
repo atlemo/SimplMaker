@@ -13,6 +13,9 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: [
         .executable(name: "SimplCAD", targets: ["SimplCAD"]),
+        // Used by the Xcode app project (project.yml).
+        .library(name: "CADCore", targets: ["CADCore"]),
+        .library(name: "CADKernel", targets: ["CADKernel"]),
     ],
     targets: [
         // C API over OpenCASCADE (C++ inside, plain C header outside).

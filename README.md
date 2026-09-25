@@ -11,6 +11,17 @@ Status: **early development.** You can sketch on a plane or a face (lines, recta
 - Xcode 26 or later (Swift 6.2+)
 - CMake and Ninja, to build OpenCASCADE once: `brew install cmake ninja`
 
+## Getting started on a Mac
+
+```sh
+brew install cmake ninja xcodegen
+git clone https://github.com/atlemo/SimplCAD.git && cd SimplCAD
+git checkout claude/parametric-cad-tool-plan-k6i4ry   # until it's merged
+scripts/make-xcodeproj.sh   # builds OpenCASCADE the first time (~10–20 min), generates and opens SimplCAD.xcodeproj
+```
+
+In Xcode, choose the **SimplCADApp** scheme and press ⌘R. The Xcode project is generated from `project.yml`, so change that file (not the project) and rerun `scripts/make-xcodeproj.sh` when you add targets or settings. New Swift files under `Sources/SimplCAD` are picked up automatically when you regenerate. Run the tests with `swift test`, or open `Package.swift` in Xcode and use its test schemes.
+
 ## Build and run
 
 ```sh
