@@ -59,7 +59,8 @@ struct SketchOverlay {
     var inactive: [SegmentInstance] = []   // other visible sketches: thin, not pickable
     var preview: [SegmentInstance] = []
     var points: [SegmentInstance] = []     // zero-length segments drawn as squares
-    var handle: [SegmentInstance] = []     // extrude handle: shaft + tip (zero-length)
+    var handle: [SegmentInstance] = []     // drag handle: shaft + tip (zero-length)
+    var handleInvalid = false               // the previewed size can't be built
     var fullyConstrained = false
 }
 
@@ -82,7 +83,7 @@ struct ViewportPalette: Equatable {
     var axes: (x: SIMD4<Float>, y: SIMD4<Float>, z: SIMD4<Float>)
     var face, faceHover, faceSelected: SIMD4<Float>
     var edge, hover, selection: SIMD4<Float>
-    var sketch, sketchConstrained, construction, preview, point, inactiveSketch, handle: SIMD4<Float>
+    var sketch, sketchConstrained, construction, preview, point, inactiveSketch, handle, invalid: SIMD4<Float>
     var region: SIMD4<Float>
     /// Line width multiplier (thicker with Increase Contrast).
     var lineScale: Float
@@ -101,7 +102,7 @@ struct ViewportPalette: Equatable {
                 edge: SIMD4(0.04, 0.04, 0.05, 1), hover: SIMD4(0.45, 0.72, 1, 1), selection: SIMD4(0.2, 0.55, 1, 1),
                 sketch: SIMD4(0.45, 0.68, 1, 1), sketchConstrained: SIMD4(0.93, 0.93, 0.95, 1),
                 construction: SIMD4(1, 0.62, 0.25, 1), preview: SIMD4(0.65, 0.65, 0.7, 1), point: SIMD4(0.85, 0.87, 0.92, 1),
-                inactiveSketch: SIMD4(0.5, 0.6, 0.85, 1), handle: SIMD4(1, 0.58, 0.1, 1),
+                inactiveSketch: SIMD4(0.5, 0.6, 0.85, 1), handle: SIMD4(1, 0.58, 0.1, 1), invalid: SIMD4(1, 0.3, 0.3, 1),
                 region: SIMD4(0.35, 0.6, 1, 0.18), lineScale: 1)
         } else {
             p = ViewportPalette(
@@ -111,7 +112,7 @@ struct ViewportPalette: Equatable {
                 edge: SIMD4(0.12, 0.13, 0.16, 1), hover: SIMD4(0.1, 0.55, 1, 1), selection: SIMD4(0, 0.4, 1, 1),
                 sketch: SIMD4(0.1, 0.3, 0.85, 1), sketchConstrained: SIMD4(0.08, 0.08, 0.1, 1),
                 construction: SIMD4(0.9, 0.55, 0.15, 1), preview: SIMD4(0.45, 0.45, 0.5, 1), point: SIMD4(0.15, 0.2, 0.35, 1),
-                inactiveSketch: SIMD4(0.35, 0.45, 0.7, 1), handle: SIMD4(0.95, 0.5, 0.05, 1),
+                inactiveSketch: SIMD4(0.35, 0.45, 0.7, 1), handle: SIMD4(0.95, 0.5, 0.05, 1), invalid: SIMD4(0.9, 0.12, 0.12, 1),
                 region: SIMD4(0.25, 0.5, 0.95, 0.16), lineScale: 1)
         }
         if increaseContrast {
@@ -178,6 +179,7 @@ final class Renderer {
         var preview: MTLBuffer?, previewCount = 0
         var points: MTLBuffer?, pointCount = 0
         var handle: MTLBuffer?, handleCount = 0
+        var handleInvalid = false
         var fullyConstrained = false
     }
     private var overlay = GPUOverlay()
@@ -258,6 +260,7 @@ final class Renderer {
         g.preview = makeBuffer(o.preview); g.previewCount = o.preview.count
         g.points = makeBuffer(o.points); g.pointCount = o.points.count
         g.handle = makeBuffer(o.handle); g.handleCount = o.handle.count
+        g.handleInvalid = o.handleInvalid
         g.fullyConstrained = o.fullyConstrained
         overlay = g
     }
@@ -411,11 +414,12 @@ final class Renderer {
                             thickness: 7 * scale, depthBias: 0.0012, pickable: 1))
         // The extrude handle is drawn on top of everything so it can always be grabbed.
         enc.setDepthStencilState(onTopDepthState)
+        let handleColor = overlay.handleInvalid ? p.invalid : p.handle
         segments(overlay.handle, overlay.handleCount,
-                 DrawParams(color: p.handle, hoverColor: hover, selectColor: select,
+                 DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: select,
                             thickness: 3 * scale, depthBias: 0, pickable: 1))
         if let handle = overlay.handle, overlay.handleCount > 1 {
-            var tip = DrawParams(color: p.handle, hoverColor: hover, selectColor: select,
+            var tip = DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: select,
                                  thickness: 11 * scale, depthBias: 0, pickable: 1)
             enc.setVertexBuffer(handle, offset: MemoryLayout<SegmentInstance>.stride * (overlay.handleCount - 1), index: 0)
             enc.setVertexBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)

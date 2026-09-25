@@ -164,6 +164,36 @@ int main(void) {
   print_names(j);
   CHECK(fabs(sk_body_volume(j) - 2000) < 1e-6, "joined volume\n");
 
+  printf("== fillet/chamfer drag handle\n");
+  {  // Outside corner of the joined 40x10x5 box: top front edge at y=0, z=5 -> handle points into the material.
+    double h[6];
+    const char *top_front = "J1.end|J1.side.A0";
+    CHECK(sk_body_edge_handle(j, top_front, h), "edge handle\n");
+    CHECK(NEAR(h[1], 0, 1e-9) && NEAR(h[2], 5, 1e-9), "handle at edge midpoint (%g %g %g)\n", h[0], h[1], h[2]);
+    CHECK(NEAR(h[4], sqrt(0.5), 1e-9) && NEAR(h[5], -sqrt(0.5), 1e-9), "convex: into material (%g %g %g)\n", h[3], h[4], h[5]);
+  }
+  {  // Inside corner: an L-shaped extrusion; the inner vertical edge's handle points into the air.
+    SKHandle ls = sk_sketch_new(XY);
+    sk_sketch_add_line(ls, "a", 0, 0, 20, 0);
+    sk_sketch_add_line(ls, "b", 20, 0, 20, 10);
+    sk_sketch_add_line(ls, "c", 20, 10, 10, 10);
+    sk_sketch_add_line(ls, "d", 10, 10, 10, 20);
+    sk_sketch_add_line(ls, "e", 10, 20, 0, 20);
+    sk_sketch_add_line(ls, "f", 0, 20, 0, 0);
+    CHECK(sk_sketch_build_regions(ls) == 1, "L region\n");
+    SKHandle lp = sk_sketch_region_profile(ls, 0);
+    SKHandle lb = sk_extrude(&lp, 1, 0, 0, 1, 5, 0, "L");
+    double h[6];
+    CHECK(sk_body_edge_handle(lb, "L.side.c|L.side.d", h), "inner edge handle\n");
+    CHECK(NEAR(h[0], 10, 1e-9) && NEAR(h[1], 10, 1e-9), "inner edge position\n");
+    CHECK(h[3] > 0.5 && h[4] > 0.5, "concave: into the air (%g %g %g)\n", h[3], h[4], h[5]);
+    const char *inner[] = {"L.side.c|L.side.d"};
+    SKHandle rounded = sk_fillet(lb, inner, 1, 3, "F");
+    CHECK(rounded && sk_body_volume(rounded) > sk_body_volume(lb), "inner fillet adds material\n");
+    SKHandle tmp[] = {ls, lp, lb, rounded};
+    for (int i = 0; i < 4; i++) sk_release(tmp[i]);
+  }
+
   printf("== symmetric extrude + errors\n");
   SKHandle sym = sk_extrude(profs, 1, 0, 0, 1, 3, 3, "S1");
   double bb[6];

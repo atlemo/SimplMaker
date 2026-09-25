@@ -104,4 +104,24 @@ import Testing
         let expected = (40 * 10 + 10 * 20 - Double.pi * 4) * 8
         #expect(abs(body.volume - expected) < 1e-6 * expected)
     }
+
+    @Test func filletHandleSitsOnTheEdgeBeforeRounding() throws {
+        let r = Regenerator.regenerate(.demo())
+        let input = try #require(r.edgeFeatureInputs["corners"]?["plate"])
+        #expect(!input.hasFace("corners.fillet.plate.side.L0|plate.side.L1"))  // the body before the fillet
+        let h = try input.edgeHandle("plate.side.L0|plate.side.L1")
+        // Vertical corner edge at (60, 0), halfway up the 10 mm plate; rounding grows into the material.
+        #expect(abs(h.origin.x - 60) < 1e-6 && abs(h.origin.y) < 1e-6 && abs(h.origin.z - 5) < 1e-6)
+        #expect(abs(h.direction.x + 0.5.squareRoot()) < 1e-6 && abs(h.direction.y - 0.5.squareRoot()) < 1e-6)
+
+        // A size that can't be built still leaves the input, so the handle stays usable.
+        var doc = CADDocument.demo()
+        if case .fillet(var f) = doc.features[4].kind {
+            f.size = "100 mm"
+            doc.features[4].kind = .fillet(f)
+        }
+        let bad = Regenerator.regenerate(doc)
+        #expect(bad.errors["corners"] != nil)
+        #expect(bad.edgeFeatureInputs["corners"]?["plate"] != nil)
+    }
 }

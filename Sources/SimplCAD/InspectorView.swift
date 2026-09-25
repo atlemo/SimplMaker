@@ -149,13 +149,27 @@ struct ExtrudeInspector: View {
         }
     }
 
+    func preview(_ change: @escaping (inout ExtrudeFeature) -> Void) {
+        model.preview(id) { f in
+            if case .extrude(var e) = f.kind { change(&e); f.kind = .extrude(e) }
+        }
+    }
+
     var body: some View {
         Section("Extrude") {
             switch extrude.extent {
             case .distance(let d):
-                LabeledContent("Distance") { ExpressionField(text: d) { v in update("Edit Distance") { $0.extent = .distance(v) } } }
+                LabeledContent("Distance") {
+                    ExpressionField(text: d, preview: { v in preview { $0.extent = .distance(v) } }) { v in
+                        update("Edit Distance") { $0.extent = .distance(v) }
+                    }
+                }
             case .symmetric(let d):
-                LabeledContent("Total") { ExpressionField(text: d) { v in update("Edit Distance") { $0.extent = .symmetric(v) } } }
+                LabeledContent("Total") {
+                    ExpressionField(text: d, preview: { v in preview { $0.extent = .symmetric(v) } }) { v in
+                        update("Edit Distance") { $0.extent = .symmetric(v) }
+                    }
+                }
             case .twoSides(let d, let b):
                 LabeledContent("Side 1") { ExpressionField(text: d) { v in update("Edit Distance") { $0.extent = .twoSides(v, back: b) } } }
                 LabeledContent("Side 2") { ExpressionField(text: b) { v in update("Edit Distance") { $0.extent = .twoSides(d, back: v) } } }
@@ -190,7 +204,22 @@ struct EdgeInspector: View {
     var body: some View {
         Section(fillet ? "Fillet" : "Chamfer") {
             LabeledContent(fillet ? "Radius" : "Distance") {
-                ExpressionField(text: edges.size) { v in update(fillet ? "Edit Radius" : "Edit Distance") { $0.size = v } }
+                ExpressionField(text: edges.size, preview: { v in
+                    model.preview(id) { f in
+                        switch f.kind {
+                        case .fillet(var e): e.size = v; f.kind = .fillet(e)
+                        case .chamfer(var e): e.size = v; f.kind = .chamfer(e)
+                        default: break
+                        }
+                    }
+                }) { v in update(fillet ? "Edit Radius" : "Edit Distance") { $0.size = v } }
+            }
+            if model.previewInvalid, model.dragHandle?.featureID == id {
+                Label("Too large for the neighbouring faces", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            } else {
+                Text("Or drag the orange arrow in the viewport.").font(.caption).foregroundStyle(.secondary)
             }
         }
         Section("Edges (\(edges.edges.count))") {

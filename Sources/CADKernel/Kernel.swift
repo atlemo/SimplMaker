@@ -146,6 +146,13 @@ public final class KBody: @unchecked Sendable {
         return Frame(f)
     }
 
+    /// Where a fillet/chamfer drag handle goes on an edge: its midpoint and the growth direction.
+    public func edgeHandle(_ edge: String) throws -> (origin: SIMD3<Double>, direction: SIMD3<Double>) {
+        var o = [Double](repeating: 0, count: 6)
+        guard sk_body_edge_handle(handle, edge, &o) else { throw KernelError.last("edge handle") }
+        return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]))
+    }
+
     public var volume: Double { sk_body_volume(handle) }
     public var isValid: Bool { sk_body_is_valid(handle) }
     public var bounds: (min: SIMD3<Double>, max: SIMD3<Double>)? {

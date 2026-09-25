@@ -21,6 +21,11 @@ struct DocumentWindow: View {
     @AppStorage(Preferences.showGrid) private var showGrid = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
 
+    private var unlinkTitle: String {
+        guard let p = model.unlinkPrompt else { return "" }
+        return "Replace \(p.expression) with \(formatDimension(p.value, kind: .length))?"
+    }
+
     var body: some View {
         NavigationSplitView {
             Sidebar(model: model)
@@ -73,6 +78,14 @@ struct DocumentWindow: View {
         .onAppear { model.undoManager = undoManager; model.fileURL = fileURL }
         .onChange(of: undoManager) { model.undoManager = undoManager }
         .onChange(of: fileURL) { model.fileURL = fileURL }
+        .confirmationDialog(unlinkTitle, isPresented: Binding(get: { model.unlinkPrompt != nil },
+                                                             set: { if !$0 { model.resolveUnlink(useValue: false) } }),
+                            presenting: model.unlinkPrompt) { p in
+            Button("Use \(formatDimension(p.value, kind: .length))") { model.resolveUnlink(useValue: true) }
+            Button("Keep \(p.expression)", role: .cancel) { model.resolveUnlink(useValue: false) }
+        } message: { p in
+            Text("This size comes from the expression “\(p.expression)”. Using the dragged value replaces it with a fixed number, so it will no longer follow your parameters.")
+        }
         .alert(model.alert?.title ?? "", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } }),
                presenting: model.alert) { _ in
             Button("OK") { model.alert = nil }
@@ -90,6 +103,11 @@ struct StatusBar: View {
             if let session = model.sketchSession {
                 Text(session.statusText)
                     .foregroundStyle(session.message != nil || session.solve?.status == .failed ? Color.red : Color.secondary)
+                    .lineLimit(1)
+            } else if let h = model.dragHandle, model.hovered == nil || model.hovered?.kind == .handle {
+                Text(model.previewInvalid ? "That size doesn't fit the neighbouring faces — let go to keep the previous size"
+                                          : "Drag the orange arrow to change the \(h.kind == .fillet ? "radius" : h.kind == .chamfer ? "chamfer size" : "distance"), or type it in the inspector")
+                    .foregroundStyle(model.previewInvalid ? Color.red : Color.secondary)
                     .lineLimit(1)
             } else if let hovered = model.hovered, let name = model.name(of: hovered) {
                 Label(name, systemImage: hovered.isEdge ? "line.diagonal" : "square")
@@ -201,19 +219,35 @@ struct ParameterRow: View {
 /// A text field that commits on Return / focus loss and follows external changes (undo).
 struct ExpressionField: View {
     let text: String
+    /// Called shortly after typing pauses, to preview the uncommitted value (no undo step).
+    var preview: ((String) -> Void)? = nil
     let commit: (String) -> Void
     @State private var draft = ""
+    @State private var edited = false
     @FocusState private var focused: Bool
+
+    init(text: String, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
+        self.text = text
+        self.preview = preview
+        self.commit = commit
+    }
 
     var body: some View {
         TextField("expression", text: $draft)
             .textFieldStyle(.roundedBorder)
             .font(.body.monospaced())
             .focused($focused)
-            .onSubmit { commit(draft) }
+            .onSubmit { edited = false; commit(draft) }
             .onAppear { draft = text }
-            .onChange(of: text) { draft = text }
-            .onChange(of: focused) { if !focused, draft != text { commit(draft) } }
+            .onChange(of: text) { draft = text; edited = false }
+            .onChange(of: focused) { if !focused, draft != text { edited = false; commit(draft) } }
+            .onChange(of: draft) { if focused { edited = true } }
+            .task(id: draft) {
+                guard edited, let preview else { return }
+                try? await Task.sleep(for: .milliseconds(350))
+                guard !Task.isCancelled, edited else { return }
+                preview(draft)
+            }
     }
 }
 
