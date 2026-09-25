@@ -29,14 +29,14 @@ public struct ParameterValues: Sendable {
 
     /// Evaluates a field expression (e.g. an extrude distance) against these parameters.
     public func value(of text: String, kind: UnitKind) throws -> Double {
-        try Expression.value(of: text, kind: kind, lookup: lookup)
+        try Expressions.value(of: text, kind: kind, lookup: lookup)
     }
 }
 
 public enum ParameterEvaluator {
     public static func isValidName(_ name: String) -> Bool {
         guard let first = name.first, first.isLetter || first == "_" else { return false }
-        return name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" } && !Expression.isReserved(name)
+        return name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" } && !Expressions.isReserved(name)
     }
 
     public static func evaluate(_ params: [Parameter]) -> ParameterValues {
@@ -57,7 +57,7 @@ public enum ParameterEvaluator {
             visiting.insert(name)
             defer { visiting.remove(name) }
             do {
-                let v = try Expression.value(of: p.expression, kind: p.unit, lookup: eval)
+                let v = try Expressions.value(of: p.expression, kind: p.unit, lookup: eval)
                 let q = Quantity(v, length: p.unit == .length ? 1 : 0, angle: p.unit == .angle ? 1 : 0)
                 out.values[name] = q
                 return q

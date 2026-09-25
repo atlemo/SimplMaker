@@ -5,18 +5,58 @@ import Metal
 import MetalKit
 import simd
 
-/// What the pick buffer encodes: 0 = nothing, otherwise body/face or body/edge.
+/// What the pick buffer encodes (0 = nothing):
+///   body face  (body+1) << 20 | face           (bodies < 1023)
+///   body edge  0x8000_0000 | (body+1) << 20 | edge
+///   sketch     0x4000_0000 point, 0x5000_0000 curve, 0x6000_0000 profile region | index
 struct PickID: Hashable, Sendable {
+    enum Kind: Sendable { case none, face, edge, sketchPoint, sketchCurve, region }
     static let edgeFlag: UInt32 = 0x8000_0000
+    static let sketchFlag: UInt32 = 0x4000_0000
     var raw: UInt32
 
     init(raw: UInt32) { self.raw = raw }
     init(body: Int, face: Int) { raw = UInt32(body + 1) << 20 | UInt32(face) }
     init(body: Int, edge: Int) { raw = PickID.edgeFlag | UInt32(body + 1) << 20 | UInt32(edge) }
+    init(sketchPoint i: Int) { raw = 0x4000_0000 | UInt32(i) }
+    init(sketchCurve i: Int) { raw = 0x5000_0000 | UInt32(i) }
+    init(region i: Int) { raw = 0x6000_0000 | UInt32(i) }
 
-    var isEdge: Bool { raw & PickID.edgeFlag != 0 }
-    var body: Int { Int((raw & ~PickID.edgeFlag) >> 20) - 1 }
-    var element: Int { Int(raw & 0xFFFFF) }
+    var kind: Kind {
+        if raw == 0 { return .none }
+        if raw & PickID.edgeFlag != 0 { return .edge }
+        if raw & PickID.sketchFlag != 0 {
+            switch (raw >> 28) & 0x3 {
+            case 0: return .sketchPoint
+            case 1: return .sketchCurve
+            default: return .region
+            }
+        }
+        return .face
+    }
+    var isEdge: Bool { kind == .edge }
+    var isFace: Bool { kind == .face }
+    /// Body index (faces and edges only).
+    var body: Int { Int((raw & 0x3FF0_0000) >> 20) - 1 }
+    /// Face/edge index within the body, or the sketch point/curve/region index.
+    var element: Int {
+        switch kind {
+        case .face, .edge: return Int(raw & 0xFFFFF)
+        default: return Int(raw & 0x0FFF_FFFF)
+        }
+    }
+}
+
+/// Sketch geometry to draw on top of the bodies.
+struct SketchOverlay {
+    var regionVertices: [FaceVertex] = []
+    var regionIndices: [UInt32] = []
+    var curves: [SegmentInstance] = []
+    var construction: [SegmentInstance] = []
+    var inactive: [SegmentInstance] = []   // other visible sketches: thin, not pickable
+    var preview: [SegmentInstance] = []
+    var points: [SegmentInstance] = []     // zero-length segments drawn as squares
+    var fullyConstrained = false
 }
 
 struct Uniforms {
@@ -55,6 +95,7 @@ final class Renderer {
     private let queue: MTLCommandQueue
     private let facePipeline: MTLRenderPipelineState
     private let segmentPipeline: MTLRenderPipelineState
+    private let regionPipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
 
     private struct GPUBody {
@@ -68,6 +109,19 @@ final class Renderer {
     private var grid: MTLBuffer?
     private var gridCount = 0
     private var axes: [(MTLBuffer, SIMD4<Float>)] = []
+
+    private struct GPUOverlay {
+        var regions: MTLBuffer?
+        var regionIndices: MTLBuffer?
+        var regionIndexCount = 0
+        var curves: MTLBuffer?, curveCount = 0
+        var construction: MTLBuffer?, constructionCount = 0
+        var inactive: MTLBuffer?, inactiveCount = 0
+        var preview: MTLBuffer?, previewCount = 0
+        var points: MTLBuffer?, pointCount = 0
+        var fullyConstrained = false
+    }
+    private var overlay = GPUOverlay()
 
     private var idTexture: MTLTexture?
     private let pickBuffer: MTLBuffer
@@ -90,17 +144,25 @@ final class Renderer {
         self.pickBuffer = pickBuffer
         do {
             let library = try device.makeLibrary(source: Shaders.source, options: nil)
-            func pipeline(_ vertex: String, _ fragment: String) throws -> MTLRenderPipelineState {
+            func pipeline(_ vertex: String, _ fragment: String, blend: Bool = false) throws -> MTLRenderPipelineState {
                 let d = MTLRenderPipelineDescriptor()
                 d.vertexFunction = library.makeFunction(name: vertex)
                 d.fragmentFunction = library.makeFunction(name: fragment)
                 d.colorAttachments[0].pixelFormat = Renderer.colorFormat
+                if blend {  // colour only; the integer ID attachment can't blend
+                    d.colorAttachments[0].isBlendingEnabled = true
+                    d.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+                    d.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+                    d.colorAttachments[0].sourceAlphaBlendFactor = .one
+                    d.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+                }
                 d.colorAttachments[1].pixelFormat = .r32Uint
                 d.depthAttachmentPixelFormat = Renderer.depthFormat
                 return try device.makeRenderPipelineState(descriptor: d)
             }
             facePipeline = try pipeline("faceVertex", "faceFragment")
             segmentPipeline = try pipeline("segmentVertex", "segmentFragment")
+            regionPipeline = try pipeline("regionVertex", "regionFragment", blend: true)
         } catch {
             print("SimplCAD: Metal setup failed: \(error)")
             return nil
@@ -117,6 +179,20 @@ final class Renderer {
 
     func setScene(_ meshes: [BodyMesh]) {
         bodies = meshes.map { upload($0) }
+    }
+
+    func setOverlay(_ o: SketchOverlay) {
+        var g = GPUOverlay()
+        g.regions = makeBuffer(o.regionVertices)
+        g.regionIndices = makeBuffer(o.regionIndices)
+        g.regionIndexCount = o.regionIndices.count
+        g.curves = makeBuffer(o.curves); g.curveCount = o.curves.count
+        g.construction = makeBuffer(o.construction); g.constructionCount = o.construction.count
+        g.inactive = makeBuffer(o.inactive); g.inactiveCount = o.inactive.count
+        g.preview = makeBuffer(o.preview); g.previewCount = o.preview.count
+        g.points = makeBuffer(o.points); g.pointCount = o.points.count
+        g.fullyConstrained = o.fullyConstrained
+        overlay = g
     }
 
     private func upload(_ m: BodyMesh) -> GPUBody {
@@ -215,6 +291,13 @@ final class Renderer {
                                       indexBuffer: indices, indexBufferOffset: 0)
         }
 
+        if let regions = overlay.regions, let indices = overlay.regionIndices {
+            enc.setRenderPipelineState(regionPipeline)
+            enc.setVertexBuffer(regions, offset: 0, index: 0)
+            enc.drawIndexedPrimitives(type: .triangle, indexCount: overlay.regionIndexCount, indexType: .uint32,
+                                      indexBuffer: indices, indexBufferOffset: 0)
+        }
+
         enc.setRenderPipelineState(segmentPipeline)
         func segments(_ buffer: MTLBuffer?, _ count: Int, _ params: DrawParams) {
             guard let buffer, count > 0 else { return }
@@ -237,6 +320,24 @@ final class Renderer {
                                 selectColor: SIMD4(0.0, 0.35, 1, 1), thickness: 1.6 * scale,
                                 depthBias: 0.0004, pickable: 1))
         }
+        // Sketch overlay, drawn last with increasing depth bias so it sits on top of faces it lies on.
+        let hover = SIMD4<Float>(0.1, 0.55, 1, 1), select = SIMD4<Float>(0.95, 0.45, 0.05, 1)
+        segments(overlay.inactive, overlay.inactiveCount,
+                 DrawParams(color: SIMD4(0.35, 0.45, 0.7, 1), hoverColor: hover, selectColor: select,
+                            thickness: 1.2 * scale, depthBias: 0.0006, pickable: 0))
+        let curveColor: SIMD4<Float> = overlay.fullyConstrained ? SIMD4(0.08, 0.08, 0.1, 1) : SIMD4(0.1, 0.3, 0.85, 1)
+        segments(overlay.curves, overlay.curveCount,
+                 DrawParams(color: curveColor, hoverColor: hover, selectColor: select,
+                            thickness: 2 * scale, depthBias: 0.0008, pickable: 1))
+        segments(overlay.construction, overlay.constructionCount,
+                 DrawParams(color: SIMD4(0.9, 0.55, 0.15, 1), hoverColor: hover, selectColor: select,
+                            thickness: 1.4 * scale, depthBias: 0.0008, pickable: 1))
+        segments(overlay.preview, overlay.previewCount,
+                 DrawParams(color: SIMD4(0.45, 0.45, 0.5, 1), hoverColor: hover, selectColor: select,
+                            thickness: 1.5 * scale, depthBias: 0.0009, pickable: 0))
+        segments(overlay.points, overlay.pointCount,
+                 DrawParams(color: SIMD4(0.15, 0.2, 0.35, 1), hoverColor: hover, selectColor: select,
+                            thickness: 7 * scale, depthBias: 0.0012, pickable: 1))
         enc.endEncoding()
 
         if let pick = pickRequest, let idTexture,

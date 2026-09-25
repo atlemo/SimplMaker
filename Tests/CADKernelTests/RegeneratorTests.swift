@@ -73,4 +73,35 @@ import Testing
         try KBody.exportSTL([body], to: dir.appendingPathComponent("demo.stl"))
         #expect(FileManager.default.fileExists(atPath: dir.appendingPathComponent("demo.step").path))
     }
+
+    @Test func sketchDrawnWithToolsExtrudes() throws {
+        // An L-shaped outline drawn as a line chain from the origin and closed back onto it, plus a hole.
+        var s = Sketch()
+        let corners: [SIMD2<Double>] = [SIMD2(40, 0), SIMD2(40, 10), SIMD2(10, 10), SIMD2(10, 30), SIMD2(0, 30)]
+        var prev = s.addLine(from: SketchSnap(.zero, point: "origin"), to: SketchSnap(corners[0]))
+        for c in corners.dropFirst() { prev = s.addLine(from: SketchSnap(.zero), to: SketchSnap(c), startPoint: prev.end) }
+        s.addLine(from: SketchSnap(.zero), to: SketchSnap(.zero, point: "origin"), startPoint: prev.end)
+        s.addCircle(center: SketchSnap(SIMD2(5, 20)), through: SketchSnap(SIMD2(7, 20)))
+        #expect(s.constraints.count == 6)  // every segment got horizontal/vertical inferred
+
+        var doc = CADDocument(parameters: [Parameter("h", "8 mm")])
+        let sketch = Feature(name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s)))
+        doc.features = [sketch]
+        var r = Regenerator.regenerate(doc)
+        let result = try #require(r.sketches[sketch.id])
+        #expect(result.regions.count == 2)  // L minus the hole, and the hole
+        #expect(result.regionMeshes.allSatisfy { !$0.indices.isEmpty })
+        let outer = try #require(result.regions.max { $0.area < $1.area })
+
+        let profile = ProfileRef(curves: outer.tags.split(separator: ",").map(String.init),
+                                 hintU: outer.sample.x, hintV: outer.sample.y)
+        let extrude = Feature(name: "Extrude1", .extrude(ExtrudeFeature(sketch: sketch.id, profiles: [profile],
+                                                                         extent: .distance("h"))))
+        doc.features.append(extrude)
+        r = Regenerator.regenerate(doc)
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let body = try #require(r.body(extrude.id))
+        let expected = (40 * 10 + 10 * 20 - Double.pi * 4) * 8
+        #expect(abs(body.volume - expected) < 1e-6 * expected)
+    }
 }

@@ -22,6 +22,7 @@
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepCheck_Analyzer.hxx>
@@ -31,6 +32,7 @@
 #include <BRepLib_ToolTriangulatedShape.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepTools.hxx>
 #include <BRepTools_History.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
@@ -327,6 +329,48 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
   return store(std::move(out));
 }
 
+/// Appends the triangulation of a meshed face (positions, normals, indices, face ids).
+void appendFace(const TopoDS_Face &f, uint32_t faceIndex, std::vector<float> &pos, std::vector<float> &nrm,
+                std::vector<uint32_t> &idx, std::vector<uint32_t> &triFace) {
+  TopLoc_Location loc;
+  Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(f, loc);
+  if (tri.IsNull()) return;
+  if (!tri->HasNormals()) BRepLib_ToolTriangulatedShape::ComputeNormals(f, tri);
+  const gp_Trsf tr = loc.Transformation();
+  const bool reversed = f.Orientation() == TopAbs_REVERSED;
+  const uint32_t base = (uint32_t)(pos.size() / 3);
+  for (int n = 1; n <= tri->NbNodes(); ++n) {
+    gp_Pnt p = tri->Node(n).Transformed(tr);
+    gp_Dir d = tri->Normal(n).Transformed(tr);
+    if (reversed) d.Reverse();
+    pos.insert(pos.end(), {(float)p.X(), (float)p.Y(), (float)p.Z()});
+    nrm.insert(nrm.end(), {(float)d.X(), (float)d.Y(), (float)d.Z()});
+  }
+  for (int t = 1; t <= tri->NbTriangles(); ++t) {
+    int a, c, d;
+    tri->Triangle(t).Get(a, c, d);
+    if (reversed) std::swap(c, d);
+    idx.insert(idx.end(), {base + a - 1, base + c - 1, base + d - 1});
+    triFace.push_back(faceIndex);
+  }
+}
+
+SKMesh *packMesh(const std::vector<float> &pos, const std::vector<float> &nrm, const std::vector<uint32_t> &idx,
+                 const std::vector<uint32_t> &triFace, const std::vector<float> &seg,
+                 const std::vector<uint32_t> &segEdge) {
+  auto *m = static_cast<SKMesh *>(std::calloc(1, sizeof(SKMesh)));
+  m->vertexCount = (uint32_t)(pos.size() / 3);
+  m->positions = copyOut(pos);
+  m->normals = copyOut(nrm);
+  m->triangleCount = (uint32_t)triFace.size();
+  m->indices = copyOut(idx);
+  m->triangleFace = copyOut(triFace);
+  m->segmentCount = (uint32_t)segEdge.size();
+  m->segments = copyOut(seg);
+  m->segmentEdge = copyOut(segEdge);
+  return m;
+}
+
 }  // namespace
 
 // ======================================================================= API ==
@@ -478,6 +522,7 @@ int sk_sketch_build_regions(SKHandle sketch) {
         }
       }
     }
+    BRepTools::Clean(f);  // don't leave the coarse sampling mesh on a face that gets extruded
     gp_Vec d(s->frame.Location(), sample);
     r.u = d.Dot(gp_Vec(s->frame.XDirection()));
     r.v = d.Dot(gp_Vec(s->frame.YDirection()));
@@ -765,30 +810,8 @@ SKMesh *sk_body_tessellate(SKHandle body, double linearDeflection, double angula
 
   std::vector<float> pos, nrm, seg;
   std::vector<uint32_t> idx, triFace, segEdge;
-  for (int i = 1; i <= b->faces.Extent(); ++i) {
-    const TopoDS_Face &f = TopoDS::Face(b->faces(i));
-    TopLoc_Location loc;
-    Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(f, loc);
-    if (tri.IsNull()) continue;
-    if (!tri->HasNormals()) BRepLib_ToolTriangulatedShape::ComputeNormals(f, tri);
-    const gp_Trsf tr = loc.Transformation();
-    const bool reversed = f.Orientation() == TopAbs_REVERSED;
-    const uint32_t base = (uint32_t)(pos.size() / 3);
-    for (int n = 1; n <= tri->NbNodes(); ++n) {
-      gp_Pnt p = tri->Node(n).Transformed(tr);
-      gp_Dir d = tri->Normal(n).Transformed(tr);
-      if (reversed) d.Reverse();
-      pos.insert(pos.end(), {(float)p.X(), (float)p.Y(), (float)p.Z()});
-      nrm.insert(nrm.end(), {(float)d.X(), (float)d.Y(), (float)d.Z()});
-    }
-    for (int t = 1; t <= tri->NbTriangles(); ++t) {
-      int a, c, d;
-      tri->Triangle(t).Get(a, c, d);
-      if (reversed) std::swap(c, d);
-      idx.insert(idx.end(), {base + a - 1, base + c - 1, base + d - 1});
-      triFace.push_back((uint32_t)(i - 1));
-    }
-  }
+  for (int i = 1; i <= b->faces.Extent(); ++i)
+    appendFace(TopoDS::Face(b->faces(i)), (uint32_t)(i - 1), pos, nrm, idx, triFace);
   for (int j = 1; j <= b->edges.Extent(); ++j) {
     if (b->edgeHidden[j - 1]) continue;
     BRepAdaptor_Curve c(TopoDS::Edge(b->edges(j)));
@@ -800,17 +823,21 @@ SKMesh *sk_body_tessellate(SKHandle body, double linearDeflection, double angula
     }
   }
 
-  auto *m = static_cast<SKMesh *>(std::calloc(1, sizeof(SKMesh)));
-  m->vertexCount = (uint32_t)(pos.size() / 3);
-  m->positions = copyOut(pos);
-  m->normals = copyOut(nrm);
-  m->triangleCount = (uint32_t)triFace.size();
-  m->indices = copyOut(idx);
-  m->triangleFace = copyOut(triFace);
-  m->segmentCount = (uint32_t)segEdge.size();
-  m->segments = copyOut(seg);
-  m->segmentEdge = copyOut(segEdge);
-  return m;
+  return packMesh(pos, nrm, idx, triFace, seg, segEdge);
+  SK_CATCH(nullptr)
+}
+
+SKMesh *sk_sketch_region_tessellate(SKHandle sketch, int i, double linearDeflection) {
+  SK_TRY
+  std::shared_ptr<Object> keep;
+  auto r = region(sketch, i, keep);
+  if (!r) return nullptr;
+  TopoDS_Face f = TopoDS::Face(BRepBuilderAPI_Copy(r->face).Shape());  // mesh a copy, keep the profile clean
+  BRepMesh_IncrementalMesh mesher(f, linearDeflection, false, 0.35, false);
+  std::vector<float> pos, nrm, seg;
+  std::vector<uint32_t> idx, triFace, segEdge;
+  appendFace(f, 0, pos, nrm, idx, triFace);
+  return packMesh(pos, nrm, idx, triFace, seg, segEdge);
   SK_CATCH(nullptr)
 }
 

@@ -22,7 +22,7 @@ static int failures = 0;
       printf("  [kernel error: %s]\n", sk_last_error());              \
     }                                                                 \
   } while (0)
-#define NEAR(a, b, tol) (fabs((a) - (b)) <= (tol) * fmax(1.0, fabs(b)))
+#define NEAR(a, b, tol) (fabs((double)(a) - (double)(b)) <= (tol) * fmax(1.0, fabs((double)(b))))
 
 static const SKFrame XY = {0, 0, 0, 0, 0, 1, 1, 0, 0};
 
@@ -51,6 +51,16 @@ static Result build(Params p) {
   CHECK(ri >= 0, "plate region not found\n");
   CHECK(NEAR(sk_sketch_region_area(s1, ri), p.w * p.d - M_PI * p.hole * p.hole / 4, 1e-9), "region area\n");
   SKHandle prof = sk_sketch_region_profile(s1, ri);
+  SKMesh *rm = sk_sketch_region_tessellate(s1, ri, 0.1);
+  CHECK(rm && rm->triangleCount > 10 && rm->segmentCount == 0, "region tessellation\n");
+  double area = 0;  // triangulated area should match the region area closely
+  for (uint32_t t = 0; rm && t < rm->triangleCount; t++) {
+    const float *a = rm->positions + 3 * rm->indices[3 * t], *b = rm->positions + 3 * rm->indices[3 * t + 1],
+                *c = rm->positions + 3 * rm->indices[3 * t + 2];
+    area += 0.5 * fabs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+  }
+  CHECK(fabs(area - sk_sketch_region_area(s1, ri)) < 0.01 * area, "region mesh area %f\n", area);
+  sk_mesh_free(rm);
 
   // Extrude E1
   SKHandle e1 = sk_extrude(&prof, 1, 0, 0, 1, p.h, 0, "E1");

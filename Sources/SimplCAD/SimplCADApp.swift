@@ -32,6 +32,19 @@ struct SimplCADApp: App {
                 Button("Export STEP…") { model.export(stl: false) }.keyboardShortcut("e")
                 Button("Export STL…") { model.export(stl: true) }
             }
+            CommandMenu("Sketch") {
+                Button("New Sketch on XY") { model.beginSketch(on: .xy) }
+                Button("New Sketch on XZ") { model.beginSketch(on: .xz) }
+                Button("New Sketch on YZ") { model.beginSketch(on: .yz) }
+                Button("New Sketch on Selected Face") { if let p = model.selectedFacePlane { model.beginSketch(on: p) } }
+                    .disabled(model.selectedFacePlane == nil)
+                Divider()
+                Button("Finish Sketch") { model.finishSketch() }
+                    .disabled(model.sketchSession == nil)
+                Button("Extrude Selected Profiles") { model.extrudeSelectedProfiles() }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .disabled(model.selectedRegions.isEmpty)
+            }
             CommandMenu("Model") {
                 Button("Fillet Selected Edges") { model.addEdgeFeature(fillet: true) }.keyboardShortcut("f", modifiers: [.command, .option])
                 Button("Chamfer Selected Edges") { model.addEdgeFeature(fillet: false) }

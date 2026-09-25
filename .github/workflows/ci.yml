@@ -11,9 +11,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Cache OpenCASCADE
+      - name: Restore OpenCASCADE
         id: occt
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ThirdParty/occt
           key: occt-${{ runner.os }}-${{ hashFiles('scripts/build-occt.sh') }}
@@ -22,6 +22,12 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y ninja-build
           scripts/build-occt.sh
+      - name: Save OpenCASCADE
+        if: steps.occt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ThirdParty/occt
+          key: occt-${{ runner.os }}-${{ hashFiles('scripts/build-occt.sh') }}
       - name: Kernel tests
         run: scripts/test-kernel.sh
 
@@ -33,9 +39,9 @@ jobs:
         run: |
           swift --version
           xcodebuild -version
-      - name: Cache OpenCASCADE
+      - name: Restore OpenCASCADE
         id: occt
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ThirdParty/occt
           key: occt-${{ runner.os }}-${{ hashFiles('scripts/build-occt.sh') }}
@@ -44,6 +50,12 @@ jobs:
         run: |
           brew list ninja >/dev/null 2>&1 || brew install ninja
           scripts/build-occt.sh
+      - name: Save OpenCASCADE
+        if: steps.occt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ThirdParty/occt
+          key: occt-${{ runner.os }}-${{ hashFiles('scripts/build-occt.sh') }}
       - name: Kernel tests (C)
         run: scripts/test-kernel.sh
       - name: Build

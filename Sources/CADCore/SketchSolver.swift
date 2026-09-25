@@ -18,13 +18,23 @@ public struct SolveResult: Sendable, Equatable {
     public var iterations: Int
 }
 
+/// A weak pull used while dragging: satisfied as well as the real constraints allow.
+public enum SoftTarget: Sendable, Equatable {
+    case point(EntityID, SIMD2<Double>)
+    case radius(EntityID, Double)
+}
+
 public enum SketchSolver {
     public static let tolerance = 1e-9
 
     /// Solves `sketch` in place. `dimensionValues` maps dimension id -> value in base units (mm / rad).
-    public static func solve(_ sketch: inout Sketch, dimensionValues: [EntityID: Double]) -> SolveResult {
+    /// `soft` targets are weighted down so constraints win; with soft targets the result is a
+    /// least-squares compromise (re-solve without them to satisfy the constraints exactly).
+    public static func solve(_ sketch: inout Sketch, dimensionValues: [EntityID: Double],
+                             soft: [SoftTarget] = [], softWeight: Double = 0.05) -> SolveResult {
         var system = System(sketch)
         system.addConstraints(sketch, dimensionValues: dimensionValues)
+        system.addSoft(soft, weight: softWeight)
         var x = system.initial
 
         var f = system.residuals(x)
@@ -51,9 +61,12 @@ public enum SketchSolver {
                 if let step = choleskySolve(M, g.map { -$0 }, n) {
                     let xn = zip(x, step).map { $0 + $1 }
                     let fn = system.residuals(xn)
-                    if sumSquares(fn) < err {
+                    let errNew = sumSquares(fn)
+                    if errNew < err {
                         x = xn; f = fn
                         lambda = max(lambda * 0.3, 1e-12)
+                        // Converged to a least-squares minimum that isn't zero (soft targets, conflicts).
+                        if err - errNew <= 1e-14 * max(err, 1e-30) + 1e-30 { break solving }
                         break
                     }
                 }
@@ -113,6 +126,19 @@ public enum SketchSolver {
         }
 
         mutating func add(_ t: @escaping ([Double]) -> Double) { terms.append(t) }
+
+        mutating func addSoft(_ targets: [SoftTarget], weight w: Double) {
+            let me = self
+            for t in targets {
+                switch t {
+                case .point(let id, let target):
+                    add { w * (me.p(id, $0).x - target.x) }
+                    add { w * (me.p(id, $0).y - target.y) }
+                case .radius(let id, let r):
+                    add { w * (me.radius(id, $0) - r) }
+                }
+            }
+        }
 
         mutating func addConstraints(_ s: Sketch, dimensionValues: [EntityID: Double]) {
             let me = self  // closures capture an immutable snapshot of the slot tables
