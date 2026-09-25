@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # The kernel is plain C++ over OpenCASCADE, so it is also tested on Linux (fast, cheap runners).
+  kernel-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache OpenCASCADE
+        id: occt
+        uses: actions/cache@v4
+        with:
+          path: ThirdParty/occt
+          key: occt-${{ runner.os }}-${{ hashFiles('scripts/build-occt.sh') }}
+      - name: Build OpenCASCADE
+        if: steps.occt.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build
+          scripts/build-occt.sh
+      - name: Kernel tests
+        run: scripts/test-kernel.sh
+
+  macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+      - name: Cache OpenCASCADE
+        id: occt
+        uses: actions/cache@v4
+        with:
+          path: ThirdParty/occt
+          key: occt-${{ runner.os }}-${{ hashFiles('scripts/build-occt.sh') }}
+      - name: Build OpenCASCADE
+        if: steps.occt.outputs.cache-hit != 'true'
+        run: |
+          brew list ninja >/dev/null 2>&1 || brew install ninja
+          scripts/build-occt.sh
+      - name: Kernel tests (C)
+        run: scripts/test-kernel.sh
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+      - name: Bundle app
+        run: |
+          scripts/bundle-app.sh
+          ditto -c -k --keepParent dist/SimplCAD.app dist/SimplCAD.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SimplCAD-macOS
+          path: dist/SimplCAD.zip
