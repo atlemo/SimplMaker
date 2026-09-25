@@ -70,7 +70,7 @@ extension Sketch {
         }
     }
 
-    static func references(_ k: SketchConstraint.Kind) -> [EntityID] {
+    public static func references(_ k: SketchConstraint.Kind) -> [EntityID] {
         switch k {
         case .coincident(let a, let b), .parallel(let a, let b), .perpendicular(let a, let b),
              .equal(let a, let b), .tangent(let a, let b): return [a, b]
@@ -81,10 +81,10 @@ extension Sketch {
         }
     }
 
-    static func references(_ k: SketchDimension.Kind) -> [EntityID] {
+    public static func references(_ k: SketchDimension.Kind) -> [EntityID] {
         switch k {
         case .distance(let a, let b), .horizontalDistance(let a, let b), .verticalDistance(let a, let b),
-             .angle(let a, let b): return [a, b]
+             .angle(let a, let b), .radialOffset(let a, let b): return [a, b]
         case .pointLineDistance(let p, let l): return [p, l]
         case .length(let a), .radius(let a), .diameter(let a): return [a]
         }
@@ -220,6 +220,9 @@ extension Sketch {
             return curve(c).flatMap { radius(of: $0) }
         case .diameter(let c):
             return curve(c).flatMap { radius(of: $0) }.map { $0 * 2 }
+        case .radialOffset(let a, let b):
+            guard let ca = curve(a), let cb = curve(b), let ra = radius(of: ca), let rb = radius(of: cb) else { return nil }
+            return abs(rb - ra)
         case .angle(let l1, let l2):
             guard case let (a1, b1)? = lineEnds(l1), case let (a2, b2)? = lineEnds(l2) else { return nil }
             let u = b1 - a1, w = b2 - a2

@@ -70,10 +70,13 @@ import Testing
         var s = Sketch()
         let a = s.addPoint(0, 0), b = s.addPoint(10, 0)
         let l = s.addLine(a, b)
-        #expect(s.applyConstraints([.horizontal(l)], values: [:]))
-        #expect(s.applyDimension(.length(l), expression: "10 mm", value: 10, values: [:]))
+        let r1 = s.applyConstraints([.horizontal(l)], values: [:])
+        #expect(r1)
+        let r2 = s.applyDimension(.length(l), expression: "10 mm", value: 10, values: [:])
+        #expect(r2)
         let before = s
-        #expect(!s.applyConstraints([.vertical(l)], values: s.dimensionValues(ParameterValues())))
+        let r3 = s.applyConstraints([.vertical(l)], values: s.dimensionValues(ParameterValues()))
+        #expect(!r3)
         #expect(s == before)
     }
 
@@ -83,14 +86,17 @@ import Testing
         let l = s.addLine(a, b)
         s.constrain(.horizontal(l))
         s.constrain(.coincident(a, "origin"))
-        #expect(s.drag(b, to: SIMD2(20, 5), values: [:]))
+        let r4 = s.drag(b, to: SIMD2(20, 5), values: [:])
+        #expect(r4)
         #expect(abs(s.position(b)!.y) < 1e-6)            // stays horizontal…
         #expect(abs(s.position(b)!.x - 20) < 0.1)        // …but follows the cursor along x
         _ = s.drag(a, to: SIMD2(5, 5), values: [:])
         #expect(vlen(s.position(a)!) < 1e-6)              // pinned to the origin, doesn't move
-        #expect(!s.drag("origin", to: SIMD2(1, 1), values: [:]))
+        let r5 = s.drag("origin", to: SIMD2(1, 1), values: [:])
+        #expect(!r5)
         let circle = s.addCircle(center: s.addPoint(30, 30), radius: 2)
-        #expect(s.drag(circle, to: SIMD2(30, 38), values: [:]))
+        let r6 = s.drag(circle, to: SIMD2(30, 38), values: [:])
+        #expect(r6)
         #expect(abs(s.radius(of: s.curve(circle)!)! - 8) < 1e-6)
         #expect(s.constraints.count == 2 && s.dimensions.isEmpty)  // temporary drag constraints removed
     }

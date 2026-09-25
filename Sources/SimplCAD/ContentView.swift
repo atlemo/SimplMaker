@@ -4,10 +4,22 @@ import CADCore
 import CADKernel
 import SwiftUI
 
+/// One document window.
 struct ContentView: View {
+    let file: CADFile
+    let fileURL: URL?
+
+    var body: some View {
+        DocumentWindow(model: file.model, fileURL: fileURL)
+    }
+}
+
+struct DocumentWindow: View {
     @Bindable var model: DocumentModel
+    let fileURL: URL?
     @Environment(\.undoManager) private var undoManager
-    @State private var showInspector = true
+    @AppStorage(Preferences.showGrid) private var showGrid = true
+    @AppStorage(Preferences.showConstraints) private var showConstraints = true
 
     var body: some View {
         NavigationSplitView {
@@ -17,17 +29,12 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
                              highlighted: model.highlighted, fitRevision: model.fitRevision,
-                             cameraRevision: model.cameraRequest?.revision ?? 0)
-                    .overlay(alignment: .top) {
-                        if let session = model.sketchSession, let id = session.editingDimension {
-                            DimensionEditor(model: model, session: session, dimensionID: id)
-                                .padding(.top, 10)
-                        }
-                    }
+                             cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
+                             showGrid: showGrid, showConstraints: showConstraints)
                 Divider()
                 StatusBar(model: model)
             }
-            .inspector(isPresented: $showInspector) {
+            .inspector(isPresented: $model.showInspector) {
                 InspectorView(model: model)
                     .inspectorColumnWidth(min: 240, ideal: 280)
             }
@@ -57,17 +64,20 @@ struct ContentView: View {
                         .disabled(model.selectedEdgeCount == 0)
                     Button { model.fitView() } label: { Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right") }
                         .help("Fit the model in view")
-                    Button { showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
+                    Button { model.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
+                        .help("Show or hide the inspector (⌥⌘I)")
                 }
             }
         }
-        .navigationTitle(model.fileURL?.lastPathComponent ?? "SimplCAD")
-        .onAppear { model.undoManager = undoManager }
+        .focusedSceneValue(\.documentModel, model)
+        .onAppear { model.undoManager = undoManager; model.fileURL = fileURL }
         .onChange(of: undoManager) { model.undoManager = undoManager }
-        .alert("SimplCAD", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } })) {
+        .onChange(of: fileURL) { model.fileURL = fileURL }
+        .alert(model.alert?.title ?? "", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } }),
+               presenting: model.alert) { _ in
             Button("OK") { model.alert = nil }
-        } message: {
-            Text(model.alert ?? "")
+        } message: { info in
+            Text(info.message)
         }
     }
 }
@@ -233,6 +243,13 @@ struct SketchToolbar: ToolbarContent {
                 }
             } label: { Label("Constrain", systemImage: "link") }
                 .help("Constrain the selected sketch entities")
+            Button { session.beginOffset() } label: { Label("Offset", systemImage: "square.on.square.intersection.dashed") }
+                .help("Offset the selected curves by a distance")
+                .disabled(!session.canOffset)
+                .popover(isPresented: Binding(get: { session.offsetRequested }, set: { session.offsetRequested = $0 }),
+                         arrowEdge: .bottom) {
+                    OffsetPopover(model: model, session: session)
+                }
             Button { model.sketchCommand { $0.toggleConstruction() } } label: {
                 Label("Construction", systemImage: "pencil.slash")
             }
@@ -245,28 +262,34 @@ struct SketchToolbar: ToolbarContent {
     }
 }
 
-/// Inline editor for the dimension just created or clicked.
+/// Editor for the dimension just created or clicked, shown in a popover on its label.
 struct DimensionEditor: View {
     let model: DocumentModel
     let session: SketchSession
     let dimensionID: EntityID
+    var onDone: () -> Void = {}
     @State private var draft = ""
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "ruler")
-            TextField("value or expression", text: $draft)
-                .textFieldStyle(.roundedBorder)
-                .font(.body.monospaced())
-                .frame(width: 200)
-                .focused($focused)
-                .onSubmit(commit)
-                .onExitCommand { session.editingDimension = nil }
-            Button("OK", action: commit).keyboardShortcut(.defaultAction)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                TextField("Value or expression", text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.body.monospaced())
+                    .frame(width: 180)
+                    .focused($focused)
+                    .onSubmit(commit)
+                    .onExitCommand(perform: onDone)
+                Button("Set", action: commit).keyboardShortcut(.defaultAction)
+            }
+            if let message = session.message {
+                Text(message).font(.caption).foregroundStyle(.red)
+            } else {
+                Text("For example 25 mm, 1 in, 30 deg or width / 2").font(.caption).foregroundStyle(.secondary)
+            }
         }
-        .padding(8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .padding(10)
         .onAppear(perform: load)
         .onChange(of: dimensionID) { load() }
     }
@@ -279,5 +302,39 @@ struct DimensionEditor: View {
     private func commit() {
         let id = dimensionID, text = draft
         model.sketchCommand { $0.setDimension(id, expression: text) }
+        if session.editingDimension == nil { onDone() }
+    }
+}
+
+/// Asks for the offset distance. Positive goes outward (or to the left of an open chain).
+struct OffsetPopover: View {
+    let model: DocumentModel
+    let session: SketchSession
+    @State private var draft = "2 mm"
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Offset Distance").font(.headline)
+            HStack {
+                TextField("Distance", text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.body.monospaced())
+                    .frame(width: 160)
+                    .focused($focused)
+                    .onSubmit(commit)
+                Button("Offset", action: commit).keyboardShortcut(.defaultAction)
+            }
+            Text("Positive goes outward; use a negative value to go inward.")
+                .font(.caption).foregroundStyle(.secondary)
+            if let message = session.message { Text(message).font(.caption).foregroundStyle(.red) }
+        }
+        .padding(12)
+        .onAppear { focused = true }
+    }
+
+    private func commit() {
+        let text = draft
+        model.sketchCommand { $0.offsetSelection(expression: text) }
     }
 }

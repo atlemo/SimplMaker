@@ -225,6 +225,9 @@ public enum SketchSolver {
             case .length(let l): add { vlen(me.dir(l, $0)) - v }
             case .radius(let c): add { me.radius(c, $0) - v }
             case .diameter(let c): add { 2 * me.radius(c, $0) - v }
+            case .radialOffset(let a, let b):
+                let sign: Double = me.radius(b, x0) >= me.radius(a, x0) ? 1 : -1  // keep the current side
+                add { (me.radius(b, $0) - me.radius(a, $0)) - sign * v }
             case .angle(let a, let b):
                 // sin(θ - v) where θ is the ccw angle from a to b; zero at θ = v.
                 add {

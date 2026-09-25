@@ -8,7 +8,7 @@ import Observation
 
 enum SketchTool: String, CaseIterable, Identifiable {
     case select = "Select", line = "Line", rectangle = "Rectangle", circle = "Circle", arc = "Arc"
-    case point = "Point", dimension = "Dimension"
+    case point = "Point", fillet = "Fillet", trim = "Trim", extend = "Extend", dimension = "Dimension"
 
     var id: String { rawValue }
     var symbol: String {
@@ -19,6 +19,9 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .circle: return "circle"
         case .arc: return "circle.bottomhalf.filled"
         case .point: return "smallcircle.filled.circle"
+        case .fillet: return "arrow.turn.up.right"
+        case .trim: return "scissors"
+        case .extend: return "arrow.right.to.line"
         case .dimension: return "ruler"
         }
     }
@@ -31,6 +34,9 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .circle: return "c"
         case .arc: return "a"
         case .point: return "p"
+        case .fillet: return "f"
+        case .trim: return "t"
+        case .extend: return "e"
         case .dimension: return "d"
         }
     }
@@ -42,6 +48,9 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .circle: return "Click the center, then a point on the circle"
         case .arc: return "Click the center, the start, then the end (counter-clockwise)"
         case .point: return "Click to place a point"
+        case .fillet: return "Click a corner where two lines meet to round it"
+        case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
+        case .extend: return "Click near the end of a line or arc to extend it to the next curve"
         case .dimension: return "Click a line, circle, or two entities · click empty space to place a line length"
         }
     }
@@ -70,6 +79,8 @@ final class SketchSession {
     }
     var selection: [EntityID] = []
     private(set) var hover: EntityID?
+    /// Set by the Offset command to ask the toolbar to show the offset distance popover.
+    var offsetRequested = false
     private(set) var cursor: SIMD2<Double>?
     private(set) var clicks: [SketchSnap] = []
     private var chainPoint: EntityID?
@@ -112,6 +123,13 @@ final class SketchSession {
         chainPoint = nil
         dimensionPicks = []
         message = nil
+    }
+
+    var hoverEntity: EntityID? { hover }
+    var hoverIsDraggable: Bool {
+        guard let hover else { return false }
+        if let p = sketch.point(hover) { return !p.fixed }
+        return sketch.curve(hover) != nil
     }
 
     // MARK: picking
@@ -176,6 +194,20 @@ final class SketchSession {
             return (true, nil)
         case .dimension:
             return (true, dimensionClick())
+        case .trim, .extend:
+            guard let h = hover, sketch.curve(h) != nil, let uv = m.uv else {
+                message = "Click on a curve"
+                return (true, nil)
+            }
+            let changed = tool == .trim ? sketch.trim(h, at: uv) : sketch.extend(h, near: uv)
+            guard changed else {
+                message = tool == .extend ? "There's nothing for that end to reach" : "Nothing to trim there"
+                return (true, nil)
+            }
+            selection = selection.filter { sketch.kind(of: $0) != nil }
+            return (true, finish(tool.rawValue))
+        case .fillet:
+            return (true, filletClick())
         default:
             guard let uv = m.uv else { return (true, nil) }
             return (true, toolClick(snap(uv)))
@@ -232,10 +264,64 @@ final class SketchSession {
             guard s.point == nil else { return nil }
             _ = sketch.resolve(s)
             return finish("Point")
-        case .select, .dimension:
+        case .select, .dimension, .fillet, .trim, .extend:
             clicks = []
             return nil
         }
+    }
+
+    private func filletClick() -> String? {
+        guard let h = hover, sketch.point(h) != nil else {
+            message = "Click the corner point where two lines meet"
+            return nil
+        }
+        // Try 2 mm, and fall back to a radius that fits short lines.
+        for radius in [2.0, 1.0, 0.5, 0.2] {
+            var trial = sketch
+            if let dim = trial.filletCorner(h, radius: radius, expression: formatDimension(radius, kind: .length)) {
+                var solved = trial
+                var v = values
+                v[dim] = radius
+                guard SketchSolver.solve(&solved, dimensionValues: v).status == .solved else { continue }
+                sketch = trial
+                editingDimension = dim
+                return finish("Fillet")
+            }
+        }
+        message = "That corner can't be rounded (it needs exactly two lines meeting at a point)"
+        return nil
+    }
+
+    // MARK: offset
+
+    var canOffset: Bool { selection.contains { sketch.curve($0) != nil } }
+
+    func beginOffset() { if canOffset { offsetRequested = true } }
+
+    /// Offsets the selected curves; positive distances go outward (or to the left of open chains).
+    func offsetSelection(expression: String) -> String? {
+        offsetRequested = false
+        let distance: Double
+        do { distance = try parameters.value(of: expression, kind: .length) } catch {
+            message = "\(error)"
+            return nil
+        }
+        guard abs(distance) > 1e-9 else { message = "The offset distance can't be zero"; return nil }
+        var trial = sketch
+        // Dimensions take the magnitude; the side comes from the sign.
+        let magnitude = expression.trimmingCharacters(in: .whitespaces).hasPrefix("-")
+            ? String(expression.trimmingCharacters(in: .whitespaces).dropFirst()) : expression
+        let created = trial.offset(selection, distance: distance, expression: magnitude)
+        guard !created.isEmpty else { message = "Nothing to offset in the selection"; return nil }
+        var v = trial.dimensionValues(parameters)
+        v.merge(values) { a, _ in a }
+        guard SketchSolver.solve(&trial, dimensionValues: v).status == .solved else {
+            message = "The offset couldn't be solved"
+            return nil
+        }
+        sketch = trial
+        selection = created
+        return finish("Offset")
     }
 
     private func dimensionClick() -> String? {
@@ -279,6 +365,15 @@ final class SketchSession {
     }
 
     // MARK: commands
+
+    func select(_ id: EntityID, additive: Bool) {
+        if tool != .select { setTool(.select) }
+        if additive {
+            if let i = selection.firstIndex(of: id) { selection.remove(at: i) } else { selection.append(id) }
+        } else {
+            selection = selection == [id] ? [] : [id]
+        }
+    }
 
     /// Esc: cancel the current tool step, then the tool, then the selection.
     func escape() {
