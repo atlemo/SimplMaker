@@ -76,6 +76,10 @@ int sk_body_find_face(SKHandle body, const char *name);  // -1 if not found
 int sk_body_find_edge(SKHandle body, const char *name);  // -1 if not found
 /// Frame of a planar face (normal points out of the material). False if missing / not planar.
 bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out);
+/// Drag handle for a fillet/chamfer on an edge: out[0..2] = edge midpoint, out[3..5] = unit
+/// direction the rounding grows in (into the material for outside corners, into the air for
+/// inside corners). False if the edge doesn't join two faces at an angle.
+bool sk_body_edge_handle(SKHandle body, const char *edgeName, double out[6]);
 double sk_body_volume(SKHandle body);
 bool sk_body_bounds(SKHandle body, double out[6]);  // xmin ymin zmin xmax ymax zmax
 bool sk_body_is_valid(SKHandle body);

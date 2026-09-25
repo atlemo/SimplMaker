@@ -134,7 +134,7 @@ final class DocumentModel {
 
     // MARK: regeneration
 
-    func regenerate(fit: Bool = false, preview: CADDocument? = nil) {
+    func regenerate(fit: Bool = false, preview: CADDocument? = nil, previewFeature: FeatureID? = nil) {
         generation += 1
         let gen = generation
         var doc = preview ?? document
@@ -148,12 +148,20 @@ final class DocumentModel {
             for (i, b) in r.bodies.enumerated() {
                 if let mesh = try? b.body.tessellate() { meshes.append(BodyMesh(index: i, id: b.id, name: b.name, mesh: mesh)) }
             }
-            await self.apply(r, meshes, generation: gen, fit: fit)
+            await self.apply(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature)
         }
     }
 
-    private func apply(_ r: RegenResult, _ meshes: [BodyMesh], generation gen: Int, fit: Bool) {
+    private func apply(_ r: RegenResult, _ meshes: [BodyMesh], generation gen: Int, fit: Bool, previewFeature: FeatureID?) {
         guard gen == generation else { return }  // a newer edit is already regenerating
+        if let previewFeature, r.errors[previewFeature] != nil {
+            // Keep showing the last good model; the handle turns red instead.
+            previewInvalid = true
+            isRegenerating = false
+            overlayRevision += 1
+            return
+        }
+        previewInvalid = false
         result = r
         self.meshes = meshes
         selection = selection.filter { $0.body < meshes.count }
@@ -341,12 +349,13 @@ final class DocumentModel {
             if case .extrude(let e) = f.kind { return e.sketch }
             return nil
         })
-        if let h = extrudeHandle {
-            let a = h.base, b = h.base + h.direction * h.distance
+        if let h = dragHandle {
+            let a = h.base, b = h.base + h.direction * h.value
             let fa = SIMD3<Float>(Float(a.x), Float(a.y), Float(a.z)), fb = SIMD3<Float>(Float(b.x), Float(b.y), Float(b.z))
             let id = PickID.handle.raw
             o.handle = [SegmentInstance(ax: fa.x, ay: fa.y, az: fa.z, bx: fb.x, by: fb.y, bz: fb.z, id: id),
                         SegmentInstance(ax: fb.x, ay: fb.y, az: fb.z, bx: fb.x, by: fb.y, bz: fb.z, id: id)]
+            o.handleInvalid = previewInvalid
         }
         for f in document.activeFeatures where !f.suppressed {
             guard case .sketch = f.kind, let r = result?.sketches[f.id] else { continue }
@@ -362,11 +371,11 @@ final class DocumentModel {
 
     func dimensionLabels() -> [DimensionLabel] {
         if let session = sketchSession { return SketchOverlayBuilder.labels(session) }
-        if let h = extrudeHandle {
-            let tip = h.base + h.direction * h.distance
-            let text = formatDimension(h.symmetric ? h.distance * 2 : h.distance, kind: .length)
-            return [DimensionLabel(id: "extrude-handle", world: SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)),
-                                   text: text, editing: handlePreviewDistance != nil)]
+        if let h = dragHandle {
+            let tip = h.base + h.direction * h.value
+            return [DimensionLabel(id: "drag-handle", world: SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)),
+                                   text: previewInvalid ? "\(h.label) — too large" : h.label,
+                                   editing: handlePreviewValue != nil)]
         }
         return []
     }
@@ -399,74 +408,167 @@ final class DocumentModel {
         selectedFeature = feature.id
     }
 
-    // MARK: extrude handle
+    // MARK: drag handles (extrude distance, fillet radius, chamfer distance)
 
-    /// Drag handle for the selected extrude: from a point inside its first profile, along its direction.
-    struct ExtrudeHandle {
+    /// An orange arrow on the selected feature; dragging it sets the feature's size with a live preview.
+    struct DragHandle {
+        enum Kind: Equatable { case extrude(symmetric: Bool), fillet, chamfer }
         var featureID: FeatureID
+        var kind: Kind
         var base: SIMD3<Double>
         var direction: SIMD3<Double>
-        var distance: Double
-        var symmetric: Bool
+        /// Handle length, in mm (half the total for symmetric extrudes).
+        var value: Double
+        /// The expression currently stored in the feature.
+        var expression: String
+
+        /// The value written to the feature for a handle length.
+        func featureValue(_ length: Double) -> Double {
+            if case .extrude(true) = kind { return length * 2 }
+            return length
+        }
+        var label: String {
+            let v = formatDimension(featureValue(value), kind: .length)
+            return kind == .fillet ? "R \(v)" : v
+        }
     }
 
-    @ObservationIgnored private var handleDragStart: (document: CADDocument, distance: Double)?
-    private(set) var handlePreviewDistance: Double?
+    /// A parameter-driven value was dragged: ask before replacing the expression with a number.
+    struct UnlinkPrompt: Identifiable {
+        let id = UUID()
+        var featureID: FeatureID
+        var kind: DragHandle.Kind
+        var expression: String
+        var value: Double
+    }
 
-    var extrudeHandle: ExtrudeHandle? {
+    @ObservationIgnored private var handleDragStart: CADDocument?
+    private(set) var handlePreviewValue: Double?
+    /// The latest preview failed (e.g. a fillet too big for its faces); the last good model stays visible.
+    private(set) var previewInvalid = false
+    var unlinkPrompt: UnlinkPrompt?
+
+    var dragHandle: DragHandle? {
         guard sketchSession == nil, let id = selectedFeature, let f = document.features.first(where: { $0.id == id }),
-              case .extrude(let e) = f.kind, !f.suppressed, let sr = result?.sketches[e.sketch],
-              let ref = e.profiles.first else { return nil }
-        let hint = SIMD2(ref.hintU, ref.hintV)
-        guard let region = sr.regions.filter({ $0.tags == ref.tagString })
-            .min(by: { simd_length($0.sample - hint) < simd_length($1.sample - hint) }) else { return nil }
+              !f.suppressed, let result else { return nil }
         let params = parameterValues
-        let distance: Double, symmetric: Bool
-        switch e.extent {
-        case .distance(let d): distance = (try? params.value(of: d, kind: .length)) ?? 0; symmetric = false
-        case .symmetric(let d): distance = ((try? params.value(of: d, kind: .length)) ?? 0) / 2; symmetric = true
-        case .twoSides(let d, _): distance = (try? params.value(of: d, kind: .length)) ?? 0; symmetric = false
+        func length(_ text: String) -> Double { (try? params.value(of: text, kind: .length)) ?? 0 }
+        switch f.kind {
+        case .extrude(let e):
+            guard let sr = result.sketches[e.sketch], let ref = e.profiles.first else { return nil }
+            let hint = SIMD2(ref.hintU, ref.hintV)
+            guard let region = sr.regions.filter({ $0.tags == ref.tagString })
+                .min(by: { simd_length($0.sample - hint) < simd_length($1.sample - hint) }) else { return nil }
+            let value: Double, symmetric: Bool, expression: String
+            switch e.extent {
+            case .distance(let d): value = length(d); symmetric = false; expression = d
+            case .symmetric(let d): value = length(d) / 2; symmetric = true; expression = d
+            case .twoSides(let d, _): value = length(d); symmetric = false; expression = d
+            }
+            let n = sr.frame.normal * (e.flipped ? -1 : 1)
+            return DragHandle(featureID: id, kind: .extrude(symmetric: symmetric),
+                              base: sr.frame.point(region.sample.x, region.sample.y), direction: n,
+                              value: handlePreviewValue ?? value, expression: expression)
+        case .fillet(let ef), .chamfer(let ef):
+            guard let ref = ef.edges.first, let body = result.edgeFeatureInputs[id]?[ref.body],
+                  let h = try? body.edgeHandle(ref.edge) else { return nil }
+            let isFillet: Bool
+            if case .fillet = f.kind { isFillet = true } else { isFillet = false }
+            return DragHandle(featureID: id, kind: isFillet ? .fillet : .chamfer, base: h.origin, direction: h.direction,
+                              value: handlePreviewValue ?? length(ef.size), expression: ef.size)
+        case .sketch:
+            return nil
         }
-        let n = sr.frame.normal * (e.flipped ? -1 : 1)
-        return ExtrudeHandle(featureID: id, base: sr.frame.point(region.sample.x, region.sample.y), direction: n,
-                             distance: handlePreviewDistance ?? distance, symmetric: symmetric)
     }
 
     func beginHandleDrag() {
-        guard let h = extrudeHandle else { return }
-        handleDragStart = (document, h.distance)
+        guard dragHandle != nil else { return }
+        handleDragStart = document
     }
 
     /// Moves the handle to the point on its axis closest to the mouse ray, and previews the result.
     func dragHandle(rayOrigin o: SIMD3<Double>, direction d: SIMD3<Double>) {
-        guard let start = handleDragStart, let h = extrudeHandle else { return }
+        guard let start = handleDragStart, let h = dragHandle else { return }
         let a = h.direction, w = h.base - o
         let b = simd_dot(a, d)
         guard 1 - b * b > 1e-6 else { return }  // looking straight down the handle
         let s = (b * simd_dot(d, w) - simd_dot(a, w)) / (1 - b * b)
-        let distance = max(s, 0.01)
-        handlePreviewDistance = distance
-        var preview = start.document
-        Self.setDistance(distance, of: h.featureID, symmetric: h.symmetric, in: &preview)
-        regenerate(preview: preview)
+        let length = max(s, 0.01)
+        handlePreviewValue = length
+        var preview = start
+        Self.set(h.featureValue(length), of: h.featureID, in: &preview)
+        regenerate(preview: preview, previewFeature: h.featureID)
         overlayRevision += 1
     }
 
     func endHandleDrag() {
-        defer { handleDragStart = nil; handlePreviewDistance = nil }
-        guard let h = extrudeHandle, let distance = handlePreviewDistance, handleDragStart != nil else { return }
-        mutate("Change Distance") { Self.setDistance(distance, of: h.featureID, symmetric: h.symmetric, in: &$0) }
+        guard handleDragStart != nil else { return }
+        defer { handleDragStart = nil; handlePreviewValue = nil }
+        guard let h = dragHandle, let length = handlePreviewValue else { return }
+        if previewInvalid {
+            // Dropped where the feature can't be built: go back to what was there.
+            previewInvalid = false
+            regenerate()
+            return
+        }
+        let value = h.featureValue(length)
+        if Self.isParametric(h.expression) {
+            unlinkPrompt = UnlinkPrompt(featureID: h.featureID, kind: h.kind, expression: h.expression, value: value)
+            return  // the preview stays on screen until the user answers
+        }
+        commitHandle(h.featureID, h.kind, value)
     }
 
-    private static func setDistance(_ d: Double, of id: FeatureID, symmetric: Bool, in doc: inout CADDocument) {
-        guard let i = doc.index(of: id), case .extrude(var e) = doc.features[i].kind else { return }
-        let text = formatDimension(symmetric ? d * 2 : d, kind: .length)
-        switch e.extent {
-        case .distance: e.extent = .distance(text)
-        case .symmetric: e.extent = .symmetric(text)
-        case .twoSides(_, let back): e.extent = .twoSides(text, back: back)
+    /// Answer to the unlink prompt: use the dragged number, or keep the expression.
+    func resolveUnlink(useValue: Bool) {
+        guard let p = unlinkPrompt else { return }
+        unlinkPrompt = nil
+        if useValue { commitHandle(p.featureID, p.kind, p.value) } else { regenerate() }
+    }
+
+    private func commitHandle(_ id: FeatureID, _ kind: DragHandle.Kind, _ value: Double) {
+        let action: String
+        switch kind {
+        case .extrude: action = "Change Distance"
+        case .fillet: action = "Change Radius"
+        case .chamfer: action = "Change Chamfer"
         }
-        doc.features[i].kind = .extrude(e)
+        mutate(action) { Self.set(value, of: id, in: &$0) }
+    }
+
+    static func isParametric(_ expression: String) -> Bool {
+        ((try? Expressions.parse(expression))?.references.isEmpty == false)
+    }
+
+    /// Writes a size (mm) into an extrude's first distance or a fillet/chamfer's size.
+    private static func set(_ value: Double, of id: FeatureID, in doc: inout CADDocument) {
+        guard let i = doc.index(of: id) else { return }
+        let text = formatDimension(value, kind: .length)
+        switch doc.features[i].kind {
+        case .extrude(var e):
+            switch e.extent {
+            case .distance: e.extent = .distance(text)
+            case .symmetric: e.extent = .symmetric(text)
+            case .twoSides(_, let back): e.extent = .twoSides(text, back: back)
+            }
+            doc.features[i].kind = .extrude(e)
+        case .fillet(var ef):
+            ef.size = text
+            doc.features[i].kind = .fillet(ef)
+        case .chamfer(var ef):
+            ef.size = text
+            doc.features[i].kind = .chamfer(ef)
+        case .sketch:
+            break
+        }
+    }
+
+    /// Previews an uncommitted edit (e.g. while typing in the inspector) without an undo step.
+    func preview(_ id: FeatureID, _ change: (inout Feature) -> Void) {
+        var doc = document
+        guard let i = doc.index(of: id) else { return }
+        change(&doc.features[i])
+        regenerate(preview: doc, previewFeature: id)
     }
 
     // MARK: files

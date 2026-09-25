@@ -30,6 +30,9 @@ public struct RegenResult: Sendable {
     public var bodies: [BodyResult] = []
     /// Per-feature errors; a failed feature is skipped and later features keep going.
     public var errors: [FeatureID: String] = [:]
+    /// For fillets/chamfers: the bodies as they were just before the feature (keyed by body id),
+    /// so drag handles can sit on edges that the feature itself rounds away.
+    public var edgeFeatureInputs: [FeatureID: [FeatureID: KBody]] = [:]
     public var duration: TimeInterval = 0
 
     public func body(_ id: FeatureID) -> KBody? { bodies.first { $0.id == id }?.body }
@@ -137,7 +140,6 @@ public enum Regenerator {
     }
 
     static func edgeFeature(_ f: EdgeFeature, _ feature: Feature, fillet: Bool, _ r: inout RegenResult) throws {
-        let size = try r.parameters.value(of: f.size, kind: .length)
         // Group edges per body, keeping order.
         var order: [FeatureID] = []
         var byBody: [FeatureID: [String]] = [:]
@@ -145,6 +147,11 @@ public enum Regenerator {
             if byBody[e.body] == nil { order.append(e.body) }
             byBody[e.body, default: []].append(e.edge)
         }
+        // Record the inputs first, so the drag handle still shows when the size is invalid.
+        for bodyID in order {
+            if let b = r.body(bodyID) { r.edgeFeatureInputs[feature.id, default: [:]][bodyID] = b }
+        }
+        let size = try r.parameters.value(of: f.size, kind: .length)
         for bodyID in order {
             guard let i = r.bodies.firstIndex(where: { $0.id == bodyID }) else {
                 throw KernelError(message: "body is missing")

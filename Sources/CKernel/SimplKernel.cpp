@@ -26,6 +26,7 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
@@ -37,6 +38,8 @@
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
+#include <Geom2d_Curve.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <GCPnts_TangentialDeflection.hxx>
 #include <GProp_GProps.hxx>
 #include <GeomAbs_SurfaceType.hxx>
@@ -763,6 +766,76 @@ bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out) {
   const gp_Pnt &o = pos.Location();
   const gp_Dir &x = pos.XDirection();
   *out = SKFrame{o.X(), o.Y(), o.Z(), n.X(), n.Y(), n.Z(), x.X(), x.Y(), x.Z()};
+  return true;
+  SK_CATCH(false)
+}
+
+bool sk_body_edge_handle(SKHandle body, const char *edgeName, double out[6]) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->edgeIndex.find(edgeName);
+  if (it == b->edgeIndex.end()) {
+    setError(std::string("edge not found: ") + edgeName);
+    return false;
+  }
+  const TopoDS_Edge &e = TopoDS::Edge(b->edges(it->second + 1));
+  ShapeToShapes edgeFaces;
+  TopExp::MapShapesAndUniqueAncestors(b->shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+  if (!edgeFaces.Contains(e) || edgeFaces.FindFromKey(e).Extent() != 2) {
+    setError("the edge must join two faces");
+    return false;
+  }
+  BRepAdaptor_Curve curve(e);
+  const double t = 0.5 * (curve.FirstParameter() + curve.LastParameter());
+  const gp_Pnt mid = curve.Value(t);
+
+  // Outward normals of the two faces at the edge midpoint.
+  std::vector<gp_Vec> normals;
+  for (const TopoDS_Shape &fs : edgeFaces.FindFromKey(e)) {
+    const TopoDS_Face &f = TopoDS::Face(fs);
+    BRepAdaptor_Surface surf(f);
+    double f0, l0;
+    Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(e, f, f0, l0);
+    gp_Pnt2d uv;
+    if (!pc.IsNull()) {
+      uv = pc->Value(t);
+    } else {
+      GeomAPI_ProjectPointOnSurf proj(mid, BRep_Tool::Surface(f));
+      if (proj.NbPoints() == 0) continue;
+      double u, v;
+      proj.LowerDistanceParameters(u, v);
+      uv = gp_Pnt2d(u, v);
+    }
+    gp_Pnt p;
+    gp_Vec du, dv;
+    surf.D1(uv.X(), uv.Y(), p, du, dv);
+    gp_Vec n = du.Crossed(dv);
+    if (n.Magnitude() < 1e-12) continue;
+    n.Normalize();
+    if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
+    normals.push_back(n);
+  }
+  if (normals.size() != 2) {
+    setError("could not evaluate the faces at this edge");
+    return false;
+  }
+  gp_Vec sum = normals[0] + normals[1], diff = normals[0] - normals[1];
+  if (sum.Magnitude() < 1e-9 || diff.Magnitude() < 1e-9) {
+    setError("the faces at this edge are tangent or opposite");
+    return false;
+  }
+  // Seen along the edge, a point off the corner along (n1 - n2) is outside the material at an
+  // outside (convex) corner and inside it at an inside (concave) corner.
+  Bnd_Box box;
+  BRepBndLib::Add(b->shape, box);
+  const double eps = std::max(1e-4, 1e-4 * std::sqrt(box.SquareExtent()));
+  BRepClass3d_SolidClassifier probe(b->shape, mid.Translated(diff.Normalized() * eps), 1e-7);
+  const bool concave = probe.State() == TopAbs_IN;
+  gp_Vec dir = sum.Normalized() * (concave ? 1.0 : -1.0);
+  out[0] = mid.X(); out[1] = mid.Y(); out[2] = mid.Z();
+  out[3] = dir.X(); out[4] = dir.Y(); out[5] = dir.Z();
   return true;
   SK_CATCH(false)
 }
