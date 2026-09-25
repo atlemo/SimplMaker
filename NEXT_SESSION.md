@@ -15,18 +15,19 @@ _Last updated 2026-09-25. All work is on branch `claude/parametric-cad-tool-plan
 | Core (`Sources/CADCore`) | Expressions with units, parameters, sketch model, Levenberg–Marquardt solver with drag solving, trim/extend/offset/corner fillet, Codable document |
 | Regeneration (`Sources/CADKernel`) | Swift wrappers; the timeline regenerator (per-feature errors, fillet input bodies for handles) |
 | App (`Sources/SimplCAD`) | Document-based SwiftUI app. Metal viewport with ID-buffer picking, dark mode, sketch mode with tools and constraint glyphs, dimension popovers, drag handles (extrude, fillet, chamfer) with live preview, Settings, View menu, icon |
-| Build | `project.yml` (XcodeGen), `scripts/make-xcodeproj.sh`, `scripts/build-occt.sh`, `scripts/bundle-app.sh`, CI in `.github/workflows/ci.yml` |
+| Build | `SimplCAD.xcodeproj`, `scripts/build-occt.sh`, `scripts/bundle-app.sh`, CI in `.github/workflows/ci.yml` |
 
 See `README.md` for usage and `PLAN.md` for architecture and the milestone table.
 
 ## Start here next time (on the Mac)
 
 ```sh
-brew install cmake ninja xcodegen
+brew install cmake ninja
 mkdir -p ~/Developer && cd ~/Developer
 git clone https://github.com/atlemo/SimplCAD.git && cd SimplCAD
 git checkout claude/parametric-cad-tool-plan-k6i4ry
-scripts/make-xcodeproj.sh      # first run builds OpenCASCADE (~10–20 min), then opens Xcode
+scripts/build-occt.sh          # one time, ~10–20 min
+open SimplCAD.xcodeproj
 ```
 
 In Xcode, run the **SimplCADApp** scheme (⌘R), then File → New Demo Part (⌥⌘N).
@@ -43,7 +44,7 @@ In Xcode, run the **SimplCADApp** scheme (⌘R), then File → New Demo Part (�
 
    Fix what comes up before adding features.
 2. **Merge to `main`** through a pull request once the first test pass looks OK.
-3. **Liquid Glass icon (optional):** in Icon Composer, build `Packaging/AppIcon.icon` from `Packaging/AppIcon.png`, then wire it into `project.yml` (asset catalog icon name) so macOS 26 stops framing the icon.
+3. **Liquid Glass icon (optional):** in Icon Composer, build `Packaging/AppIcon.icon` from `Packaging/AppIcon.png`, then add it to the app target in Xcode so macOS 26 stops framing the icon.
 4. **Next modelling features.** Revolve and construction planes first; together they add the most capability.
    - revolve
    - construction planes (offset/angled) and axes
@@ -70,7 +71,7 @@ In Xcode, run the **SimplCADApp** scheme (⌘R), then File → New Demo Part (�
 
 ## Things to know
 
-- The Xcode project is generated from `project.yml`; don't edit the `.xcodeproj` by hand.
+- `SimplCAD.xcodeproj` is committed and edited in Xcode. `Sources/SimplCAD` is a synchronized folder, so new files there join the app target automatically.
 - The core, kernel and C++ code live in the Swift package. The Xcode app target links the package's `CADCore` and `CADKernel` libraries.
 - Dragging a handle on a value that comes from a parameter asks before replacing the expression with a number.
 - In CI, Swift Testing's `#expect` can't wrap a `mutating` call or an `inout` argument. Assign the result to a `let` first.

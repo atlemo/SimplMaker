@@ -13,7 +13,7 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: [
         .executable(name: "SimplCAD", targets: ["SimplCAD"]),
-        // Used by the Xcode app project (project.yml).
+        // Used by the Xcode app project (SimplCAD.xcodeproj).
         .library(name: "CADCore", targets: ["CADCore"]),
         .library(name: "CADKernel", targets: ["CADKernel"]),
     ],
