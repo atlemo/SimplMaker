@@ -6,6 +6,8 @@ import SwiftUI
 
 @main
 struct SimplCADApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         // Lets `swift run SimplCAD` show a normal, focusable app without an .app bundle.
         // (Use scripts/bundle-app.sh or Xcode for the full document experience.)
@@ -19,9 +21,36 @@ struct SimplCADApp: App {
         }
         .commands { SimplCADCommands() }
 
+        // The welcome window replaces the empty document macOS would otherwise open at launch
+        // (see AppDelegate). It is never restored; launch decides whether it appears.
+        Window("Welcome to SimplCAD", id: AppWindows.welcomeID) {
+            WelcomeView()
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(Preferences.showsWelcome ? .presented : .suppressed)
+
         Settings {
             SettingsView()
         }
+    }
+}
+
+/// Launch and Dock behaviour for a document app with a welcome window.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// No empty document at launch while the welcome window is on; the Window scene presents it.
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        !Preferences.showsWelcome
+    }
+
+    /// Clicking the Dock icon with no windows open brings the welcome window back, not an empty part.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        guard !hasVisibleWindows, Preferences.showsWelcome else { return true }
+        AppWindows.showWelcome()
+        return false
     }
 }
 
@@ -29,12 +58,17 @@ struct SimplCADApp: App {
 struct SimplCADCommands: Commands {
     @FocusedValue(\.documentModel) private var model
     @Environment(\.newDocument) private var newDocument
+    @Environment(\.openWindow) private var openWindow
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("New Demo Part") { newDocument { CADFile(document: .demo()) } }
                 .keyboardShortcut("n", modifiers: [.command, .option])
+        }
+        CommandGroup(before: .windowList) {
+            Button("Welcome to SimplCAD") { openWindow(id: AppWindows.welcomeID) }
+                .keyboardShortcut("1", modifiers: [.command, .shift])
         }
         CommandGroup(after: .importExport) {
             Button("Export STEP…") { model?.export(stl: false) }.disabled(model == nil)

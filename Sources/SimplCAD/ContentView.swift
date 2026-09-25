@@ -18,6 +18,8 @@ struct DocumentWindow: View {
     @Bindable var model: DocumentModel
     let fileURL: URL?
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
     @AppStorage(Preferences.showGrid) private var showGrid = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
 
@@ -73,7 +75,12 @@ struct DocumentWindow: View {
             }
         }
         .focusedSceneValue(\.documentModel, model)
-        .onAppear { model.undoManager = undoManager; model.fileURL = fileURL }
+        .onAppear {
+            model.undoManager = undoManager
+            model.fileURL = fileURL
+            AppWindows.openWindow = openWindow
+            dismissWindow(id: AppWindows.welcomeID)  // a part is open; the welcome window has done its job
+        }
         .onChange(of: undoManager) { model.undoManager = undoManager }
         .onChange(of: fileURL) { model.fileURL = fileURL }
         .confirmationDialog(unlinkTitle, isPresented: Binding(get: { model.unlinkPrompt != nil },

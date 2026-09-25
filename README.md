@@ -37,7 +37,7 @@ Launch the bundled app rather than using `swift run`. The bundle declares the `.
 
 ## Using it
 
-SimplCAD is a normal Mac document app, with New, Open Recent, autosave, versions and one window per part. **File → New Demo Part** (⌥⌘N) opens a sample: a plate with a hole, a pin hole cut from a sketch on its top face, two filleted corners and a chamfered edge.
+SimplCAD is a normal Mac document app, with New, Open Recent, autosave, versions and one window per part. It opens with a **welcome window** like Xcode's: create a new part, open the demo part, open a file, or pick one of the recent parts listed on the right (double-click or Return). Turn it off with the checkbox at the bottom or in Settings; **Window → Welcome to SimplCAD** (⇧⌘1) brings it back any time. **File → New Demo Part** (⌥⌘N) opens the sample part: a plate with a hole, a pin hole cut from a sketch on its top face, two filleted corners and a chamfered edge.
 
 - **Parameters** (left sidebar): edit any expression, e.g. set `width` to `90 mm`, or `thickness` to `1 in`, or `hole_d` to `depth / 3`. Press Return and the model rebuilds.
 - **Timeline** (left sidebar): select a feature to edit it in the inspector on the right. Right-click a feature to suppress or delete it. A red triangle means the feature failed; hover over it to see why. The features after it still rebuild.

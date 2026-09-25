@@ -7,6 +7,7 @@ enum Preferences {
     static let invertZoom = "invertZoom"
     static let showGrid = "showGrid"
     static let showConstraints = "showConstraints"
+    static let showWelcome = "showWelcome"
 
     /// What a two-finger trackpad scroll does in the viewport; ⇧ switches to the other one.
     enum TrackpadScroll: String, CaseIterable, Identifiable {
@@ -19,6 +20,8 @@ enum Preferences {
         TrackpadScroll(rawValue: UserDefaults.standard.string(forKey: trackpadScroll) ?? "") ?? .pan
     }
     static var invertsZoom: Bool { UserDefaults.standard.bool(forKey: invertZoom) }
+    /// Show the welcome window at launch instead of an empty document (on by default).
+    static var showsWelcome: Bool { UserDefaults.standard.object(forKey: showWelcome) as? Bool ?? true }
 }
 
 struct SettingsView: View {
@@ -26,9 +29,19 @@ struct SettingsView: View {
     @AppStorage(Preferences.invertZoom) private var invertZoom = false
     @AppStorage(Preferences.showGrid) private var showGrid = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
+    @AppStorage(Preferences.showWelcome) private var showWelcome = true
 
     var body: some View {
         TabView {
+            Tab("General", systemImage: "gearshape") {
+                Form {
+                    Toggle("Show the welcome window at launch", isOn: $showWelcome)
+                    Text("Off, SimplCAD opens an empty part at launch instead. The window is always available under Window → Welcome to SimplCAD.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .formStyle(.grouped)
+            }
             Tab("Navigation", systemImage: "hand.draw") {
                 Form {
                     Picker("Two-finger scroll", selection: $trackpadScroll) {
