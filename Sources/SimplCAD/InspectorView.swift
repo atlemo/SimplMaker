@@ -133,6 +133,7 @@ struct SketchInspector: View {
         case .radius(let c): return "Radius \(c)"
         case .diameter(let c): return "Ø \(c)"
         case .angle: return "Angle"
+        case .radialOffset: return "Offset"
         }
     }
 }

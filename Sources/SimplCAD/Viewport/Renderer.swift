@@ -9,8 +9,9 @@ import simd
 ///   body face  (body+1) << 20 | face           (bodies < 1023)
 ///   body edge  0x8000_0000 | (body+1) << 20 | edge
 ///   sketch     0x4000_0000 point, 0x5000_0000 curve, 0x6000_0000 profile region | index
+///   handle     0x7000_0000 (the extrude drag handle)
 struct PickID: Hashable, Sendable {
-    enum Kind: Sendable { case none, face, edge, sketchPoint, sketchCurve, region }
+    enum Kind: Sendable { case none, face, edge, sketchPoint, sketchCurve, region, handle }
     static let edgeFlag: UInt32 = 0x8000_0000
     static let sketchFlag: UInt32 = 0x4000_0000
     var raw: UInt32
@@ -21,6 +22,7 @@ struct PickID: Hashable, Sendable {
     init(sketchPoint i: Int) { raw = 0x4000_0000 | UInt32(i) }
     init(sketchCurve i: Int) { raw = 0x5000_0000 | UInt32(i) }
     init(region i: Int) { raw = 0x6000_0000 | UInt32(i) }
+    static let handle = PickID(raw: 0x7000_0000)
 
     var kind: Kind {
         if raw == 0 { return .none }
@@ -29,7 +31,8 @@ struct PickID: Hashable, Sendable {
             switch (raw >> 28) & 0x3 {
             case 0: return .sketchPoint
             case 1: return .sketchCurve
-            default: return .region
+            case 2: return .region
+            default: return .handle
             }
         }
         return .face
@@ -56,6 +59,7 @@ struct SketchOverlay {
     var inactive: [SegmentInstance] = []   // other visible sketches: thin, not pickable
     var preview: [SegmentInstance] = []
     var points: [SegmentInstance] = []     // zero-length segments drawn as squares
+    var handle: [SegmentInstance] = []     // extrude handle: shaft + tip (zero-length)
     var fullyConstrained = false
 }
 
@@ -65,6 +69,59 @@ struct Uniforms {
     var viewport: SIMD2<Float>
     var hovered: UInt32
     var selectedCount: UInt32
+    var faceColor: SIMD4<Float>
+    var faceHoverColor: SIMD4<Float>
+    var faceSelectedColor: SIMD4<Float>
+    var regionColor: SIMD4<Float>
+}
+
+/// Viewport colours for the current appearance (light/dark) and Increase Contrast.
+struct ViewportPalette: Equatable {
+    var background: SIMD4<Float>
+    var grid: SIMD4<Float>
+    var axes: (x: SIMD4<Float>, y: SIMD4<Float>, z: SIMD4<Float>)
+    var face, faceHover, faceSelected: SIMD4<Float>
+    var edge, hover, selection: SIMD4<Float>
+    var sketch, sketchConstrained, construction, preview, point, inactiveSketch, handle: SIMD4<Float>
+    var region: SIMD4<Float>
+    /// Line width multiplier (thicker with Increase Contrast).
+    var lineScale: Float
+
+    static func == (a: ViewportPalette, b: ViewportPalette) -> Bool {
+        a.background == b.background && a.face == b.face && a.lineScale == b.lineScale && a.sketch == b.sketch
+    }
+
+    static func make(dark: Bool, increaseContrast: Bool) -> ViewportPalette {
+        var p: ViewportPalette
+        if dark {
+            p = ViewportPalette(
+                background: SIMD4(0.12, 0.125, 0.14, 1), grid: SIMD4(0.24, 0.25, 0.28, 1),
+                axes: (SIMD4(0.9, 0.35, 0.35, 1), SIMD4(0.4, 0.8, 0.45, 1), SIMD4(0.4, 0.55, 1, 1)),
+                face: SIMD4(0.56, 0.59, 0.64, 1), faceHover: SIMD4(0.52, 0.66, 0.88, 1), faceSelected: SIMD4(0.25, 0.52, 1, 1),
+                edge: SIMD4(0.04, 0.04, 0.05, 1), hover: SIMD4(0.45, 0.72, 1, 1), selection: SIMD4(0.2, 0.55, 1, 1),
+                sketch: SIMD4(0.45, 0.68, 1, 1), sketchConstrained: SIMD4(0.93, 0.93, 0.95, 1),
+                construction: SIMD4(1, 0.62, 0.25, 1), preview: SIMD4(0.65, 0.65, 0.7, 1), point: SIMD4(0.85, 0.87, 0.92, 1),
+                inactiveSketch: SIMD4(0.5, 0.6, 0.85, 1), handle: SIMD4(1, 0.58, 0.1, 1),
+                region: SIMD4(0.35, 0.6, 1, 0.18), lineScale: 1)
+        } else {
+            p = ViewportPalette(
+                background: SIMD4(0.95, 0.96, 0.97, 1), grid: SIMD4(0.8, 0.82, 0.86, 1),
+                axes: (SIMD4(0.85, 0.25, 0.25, 1), SIMD4(0.25, 0.7, 0.3, 1), SIMD4(0.3, 0.45, 0.9, 1)),
+                face: SIMD4(0.64, 0.67, 0.72, 1), faceHover: SIMD4(0.55, 0.72, 0.95, 1), faceSelected: SIMD4(0.3, 0.56, 1, 1),
+                edge: SIMD4(0.12, 0.13, 0.16, 1), hover: SIMD4(0.1, 0.55, 1, 1), selection: SIMD4(0, 0.4, 1, 1),
+                sketch: SIMD4(0.1, 0.3, 0.85, 1), sketchConstrained: SIMD4(0.08, 0.08, 0.1, 1),
+                construction: SIMD4(0.9, 0.55, 0.15, 1), preview: SIMD4(0.45, 0.45, 0.5, 1), point: SIMD4(0.15, 0.2, 0.35, 1),
+                inactiveSketch: SIMD4(0.35, 0.45, 0.7, 1), handle: SIMD4(0.95, 0.5, 0.05, 1),
+                region: SIMD4(0.25, 0.5, 0.95, 0.16), lineScale: 1)
+        }
+        if increaseContrast {
+            p.lineScale = 1.6
+            p.grid = dark ? SIMD4(0.4, 0.42, 0.46, 1) : SIMD4(0.6, 0.62, 0.66, 1)
+            p.edge = dark ? SIMD4(0, 0, 0, 1) : SIMD4(0, 0, 0, 1)
+            p.region.w = 0.3
+        }
+        return p
+    }
 }
 
 struct FaceVertex {
@@ -97,6 +154,7 @@ final class Renderer {
     private let segmentPipeline: MTLRenderPipelineState
     private let regionPipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
+    private let onTopDepthState: MTLDepthStencilState
 
     private struct GPUBody {
         var faces: MTLBuffer?
@@ -119,6 +177,7 @@ final class Renderer {
         var inactive: MTLBuffer?, inactiveCount = 0
         var preview: MTLBuffer?, previewCount = 0
         var points: MTLBuffer?, pointCount = 0
+        var handle: MTLBuffer?, handleCount = 0
         var fullyConstrained = false
     }
     private var overlay = GPUOverlay()
@@ -127,6 +186,8 @@ final class Renderer {
     private let pickBuffer: MTLBuffer
 
     var camera = Camera()
+    var palette = ViewportPalette.make(dark: false, increaseContrast: false)
+    var showGrid = true
     var hovered: UInt32 = 0
     var selected: [UInt32] = []
     /// Pixel (in drawable coordinates, origin top-left) to read from the ID buffer on the next frame.
@@ -170,8 +231,13 @@ final class Renderer {
         let ds = MTLDepthStencilDescriptor()
         ds.depthCompareFunction = .lessEqual
         ds.isDepthWriteEnabled = true
-        guard let depthState = device.makeDepthStencilState(descriptor: ds) else { return nil }
+        let top = MTLDepthStencilDescriptor()
+        top.depthCompareFunction = .always
+        top.isDepthWriteEnabled = true
+        guard let depthState = device.makeDepthStencilState(descriptor: ds),
+              let onTop = device.makeDepthStencilState(descriptor: top) else { return nil }
         self.depthState = depthState
+        self.onTopDepthState = onTop
         buildGrid(size: 200, step: 10)
     }
 
@@ -191,6 +257,7 @@ final class Renderer {
         g.inactive = makeBuffer(o.inactive); g.inactiveCount = o.inactive.count
         g.preview = makeBuffer(o.preview); g.previewCount = o.preview.count
         g.points = makeBuffer(o.points); g.pointCount = o.points.count
+        g.handle = makeBuffer(o.handle); g.handleCount = o.handle.count
         g.fullyConstrained = o.fullyConstrained
         overlay = g
     }
@@ -271,10 +338,12 @@ final class Renderer {
         let aspect = Float(size.width / size.height)
         var uniforms = Uniforms(viewProj: camera.projectionMatrix(aspect: aspect) * camera.viewMatrix(),
                                 eye: SIMD4(camera.eye, 1), viewport: SIMD2(Float(size.width), Float(size.height)),
-                                hovered: hovered, selectedCount: UInt32(min(selected.count, 256)))
+                                hovered: hovered, selectedCount: UInt32(min(selected.count, 256)),
+                                faceColor: palette.face, faceHoverColor: palette.faceHover,
+                                faceSelectedColor: palette.faceSelected, regionColor: palette.region)
         var sel = Array(selected.prefix(256))
         if sel.isEmpty { sel = [0] }
-        let scale = Float(view.window?.backingScaleFactor ?? 2)
+        let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
 
         guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
         enc.setDepthStencilState(depthState)
@@ -307,37 +376,52 @@ final class Renderer {
             enc.setFragmentBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count)
         }
-        let gridColor = SIMD4<Float>(0.8, 0.82, 0.86, 1)
-        segments(grid, gridCount, DrawParams(color: gridColor, hoverColor: gridColor, selectColor: gridColor,
-                                             thickness: 1 * scale, depthBias: 0, pickable: 0))
-        for (buffer, color) in axes {
+        let p = palette
+        if showGrid {
+            segments(grid, gridCount, DrawParams(color: p.grid, hoverColor: p.grid, selectColor: p.grid,
+                                                 thickness: 1 * scale, depthBias: 0, pickable: 0))
+        }
+        for (i, (buffer, _)) in axes.enumerated() {
+            let color = i == 0 ? p.axes.x : i == 1 ? p.axes.y : p.axes.z
             segments(buffer, 1, DrawParams(color: color, hoverColor: color, selectColor: color,
                                            thickness: 1.5 * scale, depthBias: 0.0001, pickable: 0))
         }
         for b in bodies {
             segments(b.segments, b.segmentCount,
-                     DrawParams(color: SIMD4(0.12, 0.13, 0.16, 1), hoverColor: SIMD4(0.1, 0.5, 1, 1),
-                                selectColor: SIMD4(0.0, 0.35, 1, 1), thickness: 1.6 * scale,
+                     DrawParams(color: p.edge, hoverColor: p.hover, selectColor: p.selection, thickness: 1.6 * scale,
                                 depthBias: 0.0004, pickable: 1))
         }
         // Sketch overlay, drawn last with increasing depth bias so it sits on top of faces it lies on.
-        let hover = SIMD4<Float>(0.1, 0.55, 1, 1), select = SIMD4<Float>(0.95, 0.45, 0.05, 1)
+        let hover = p.hover, select = p.selection
         segments(overlay.inactive, overlay.inactiveCount,
-                 DrawParams(color: SIMD4(0.35, 0.45, 0.7, 1), hoverColor: hover, selectColor: select,
+                 DrawParams(color: p.inactiveSketch, hoverColor: hover, selectColor: select,
                             thickness: 1.2 * scale, depthBias: 0.0006, pickable: 0))
-        let curveColor: SIMD4<Float> = overlay.fullyConstrained ? SIMD4(0.08, 0.08, 0.1, 1) : SIMD4(0.1, 0.3, 0.85, 1)
+        let curveColor = overlay.fullyConstrained ? p.sketchConstrained : p.sketch
         segments(overlay.curves, overlay.curveCount,
                  DrawParams(color: curveColor, hoverColor: hover, selectColor: select,
                             thickness: 2 * scale, depthBias: 0.0008, pickable: 1))
         segments(overlay.construction, overlay.constructionCount,
-                 DrawParams(color: SIMD4(0.9, 0.55, 0.15, 1), hoverColor: hover, selectColor: select,
+                 DrawParams(color: p.construction, hoverColor: hover, selectColor: select,
                             thickness: 1.4 * scale, depthBias: 0.0008, pickable: 1))
         segments(overlay.preview, overlay.previewCount,
-                 DrawParams(color: SIMD4(0.45, 0.45, 0.5, 1), hoverColor: hover, selectColor: select,
+                 DrawParams(color: p.preview, hoverColor: hover, selectColor: select,
                             thickness: 1.5 * scale, depthBias: 0.0009, pickable: 0))
         segments(overlay.points, overlay.pointCount,
-                 DrawParams(color: SIMD4(0.15, 0.2, 0.35, 1), hoverColor: hover, selectColor: select,
+                 DrawParams(color: p.point, hoverColor: hover, selectColor: select,
                             thickness: 7 * scale, depthBias: 0.0012, pickable: 1))
+        // The extrude handle is drawn on top of everything so it can always be grabbed.
+        enc.setDepthStencilState(onTopDepthState)
+        segments(overlay.handle, overlay.handleCount,
+                 DrawParams(color: p.handle, hoverColor: hover, selectColor: select,
+                            thickness: 3 * scale, depthBias: 0, pickable: 1))
+        if let handle = overlay.handle, overlay.handleCount > 1 {
+            var tip = DrawParams(color: p.handle, hoverColor: hover, selectColor: select,
+                                 thickness: 11 * scale, depthBias: 0, pickable: 1)
+            enc.setVertexBuffer(handle, offset: MemoryLayout<SegmentInstance>.stride * (overlay.handleCount - 1), index: 0)
+            enc.setVertexBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
+            enc.setFragmentBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
+            enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: 1)
+        }
         enc.endEncoding()
 
         if let pick = pickRequest, let idTexture,

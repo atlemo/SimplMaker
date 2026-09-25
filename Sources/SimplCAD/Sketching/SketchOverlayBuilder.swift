@@ -13,8 +13,66 @@ struct DimensionLabel: Identifiable, Equatable {
     var editing: Bool
 }
 
+/// A constraint symbol drawn next to the geometry it constrains.
+struct ConstraintGlyph: Identifiable, Equatable {
+    var id: String            // constraint id + "#" + which entity it's drawn on
+    var constraint: EntityID
+    var world: SIMD3<Float>
+    var stack: Int            // position among glyphs on the same entity
+    var symbol: String
+    var help: String
+    var selected: Bool
+}
+
 @MainActor
 enum SketchOverlayBuilder {
+    static func symbol(_ k: SketchConstraint.Kind) -> (symbol: String, help: String)? {
+        switch k {
+        case .coincident: return nil  // shown by the shared point itself
+        case .horizontal: return ("H", "Horizontal")
+        case .vertical: return ("V", "Vertical")
+        case .parallel: return ("∥", "Parallel")
+        case .perpendicular: return ("⊥", "Perpendicular")
+        case .equal: return ("=", "Equal")
+        case .tangent: return ("T", "Tangent")
+        case .pointOnCurve: return ("⊙", "Point on curve")
+        case .midpoint: return ("M", "Midpoint")
+        case .fix: return ("⌖", "Fixed")
+        }
+    }
+
+    /// Glyphs for the sketch being edited, one per constrained curve (or point).
+    static func glyphs(_ session: SketchSession) -> [ConstraintGlyph] {
+        let s = session.sketch
+        var perEntity: [EntityID: Int] = [:]
+        var out: [ConstraintGlyph] = []
+        func anchor(_ id: EntityID) -> SIMD2<Double>? {
+            if let p = s.position(id) { return p }
+            guard let g = s.geometry(of: id) else { return nil }
+            switch g {
+            case .line: return g.point(0.5)
+            case .circle(let c, let r): return c + SIMD2(0, r)
+            case .arc: return g.point(0.5)
+            }
+        }
+        for c in s.constraints {
+            guard let info = symbol(c.kind) else { continue }
+            var on = Sketch.references(c.kind)
+            switch c.kind {
+            case .pointOnCurve(let p, _), .midpoint(let p, _): on = [p]  // draw at the point
+            default: break
+            }
+            for e in on {
+                guard let a = anchor(e) else { continue }
+                let n = perEntity[e, default: 0]
+                perEntity[e] = n + 1
+                out.append(ConstraintGlyph(id: "\(c.id)#\(e)", constraint: c.id, world: world(session.frame, a), stack: n,
+                                           symbol: info.symbol, help: info.help, selected: session.selection.contains(c.id)))
+            }
+        }
+        return out
+    }
+
     static func world(_ frame: Frame, _ p: SIMD2<Double>) -> SIMD3<Float> {
         let w = frame.point(p.x, p.y)
         return SIMD3(Float(w.x), Float(w.y), Float(w.z))
@@ -117,6 +175,10 @@ enum SketchOverlayBuilder {
                   let r = s.radius(of: curve) else { return nil }
             return center + r * SIMD2(0.7071, 0.7071)
         case .angle(let a, let b): return mid(lineMid(a), lineMid(b))
+        case .radialOffset(_, let b):
+            guard let curve = s.curve(b), let center = s.center(of: b).flatMap({ s.position($0) }),
+                  let r = s.radius(of: curve) else { return nil }
+            return center + r * SIMD2(-0.7071, 0.7071)
         }
     }
 }

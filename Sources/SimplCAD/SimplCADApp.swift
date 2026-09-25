@@ -6,52 +6,84 @@ import SwiftUI
 
 @main
 struct SimplCADApp: App {
-    @State private var model = DocumentModel()
-
     init() {
-        // Lets `swift run SimplCAD` show a normal, focusable app window without an .app bundle.
+        // Lets `swift run SimplCAD` show a normal, focusable app without an .app bundle.
+        // (Use scripts/bundle-app.sh or Xcode for the full document experience.)
         NSApplication.shared.setActivationPolicy(.regular)
     }
 
     var body: some Scene {
-        Window("SimplCAD", id: "main") {
-            ContentView(model: model)
+        DocumentGroup(newDocument: { CADFile() }) { configuration in
+            ContentView(file: configuration.document, fileURL: configuration.fileURL)
                 .frame(minWidth: 900, minHeight: 560)
-                .onAppear { NSApplication.shared.activate() }
         }
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("New") { model.newDocument(demo: false) }.keyboardShortcut("n")
-                Button("New Demo Part") { model.newDocument(demo: true) }.keyboardShortcut("n", modifiers: [.command, .shift])
-                Button("Open…") { model.open() }.keyboardShortcut("o")
+        .commands { SimplCADCommands() }
+
+        Settings {
+            SettingsView()
+        }
+    }
+}
+
+/// Menu commands. They act on the frontmost document window through a focused value.
+struct SimplCADCommands: Commands {
+    @FocusedValue(\.documentModel) private var model
+    @Environment(\.newDocument) private var newDocument
+    @AppStorage(Preferences.showConstraints) private var showConstraints = true
+
+    var body: some Commands {
+        CommandGroup(after: .newItem) {
+            Button("New Demo Part") { newDocument { CADFile(document: .demo()) } }
+                .keyboardShortcut("n", modifiers: [.command, .option])
+        }
+        CommandGroup(after: .importExport) {
+            Button("Export STEP…") { model?.export(stl: false) }.disabled(model == nil)
+            Button("Export STL…") { model?.export(stl: true) }.disabled(model == nil)
+        }
+        CommandGroup(before: .toolbar) {
+            Button("Fit All") { model?.fitView() }
+                .keyboardShortcut("0")
+            Menu("Standard Views") {
+                ForEach(StandardView.allCases) { v in
+                    Button(v.title) { model?.show(v) }.keyboardShortcut(v.shortcut)
+                }
             }
-            CommandGroup(replacing: .saveItem) {
-                Button("Save") { model.save() }.keyboardShortcut("s")
-                Button("Save As…") { model.save(as: true) }.keyboardShortcut("s", modifiers: [.command, .shift])
-                Divider()
-                Button("Export STEP…") { model.export(stl: false) }.keyboardShortcut("e")
-                Button("Export STL…") { model.export(stl: true) }
+            Toggle("Orthographic Projection", isOn: Binding(get: { model?.orthographic ?? false },
+                                                            set: { model?.orthographic = $0 }))
+                .keyboardShortcut("o", modifiers: [.command, .option])
+            Toggle("Show Constraints", isOn: $showConstraints)
+            Divider()
+            Button((model?.showInspector ?? true) ? "Hide Inspector" : "Show Inspector") { model?.showInspector.toggle() }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+            Divider()
+        }
+        CommandMenu("Sketch") {
+            Button("New Sketch on XY Plane") { model?.beginSketch(on: .xy) }
+            Button("New Sketch on XZ Plane") { model?.beginSketch(on: .xz) }
+            Button("New Sketch on YZ Plane") { model?.beginSketch(on: .yz) }
+            Button("New Sketch on Selected Face") { if let p = model?.selectedFacePlane { model?.beginSketch(on: p) } }
+                .disabled(model?.selectedFacePlane == nil)
+            Divider()
+            ForEach(SketchTool.allCases) { tool in
+                Button(tool.rawValue) { model?.setSketchTool(tool) }
+                    .disabled(model?.sketchSession == nil)
             }
-            CommandMenu("Sketch") {
-                Button("New Sketch on XY") { model.beginSketch(on: .xy) }
-                Button("New Sketch on XZ") { model.beginSketch(on: .xz) }
-                Button("New Sketch on YZ") { model.beginSketch(on: .yz) }
-                Button("New Sketch on Selected Face") { if let p = model.selectedFacePlane { model.beginSketch(on: p) } }
-                    .disabled(model.selectedFacePlane == nil)
-                Divider()
-                Button("Finish Sketch") { model.finishSketch() }
-                    .disabled(model.sketchSession == nil)
-                Button("Extrude Selected Profiles") { model.extrudeSelectedProfiles() }
-                    .keyboardShortcut("e", modifiers: [.command, .shift])
-                    .disabled(model.selectedRegions.isEmpty)
-            }
-            CommandMenu("Model") {
-                Button("Fillet Selected Edges") { model.addEdgeFeature(fillet: true) }.keyboardShortcut("f", modifiers: [.command, .option])
-                Button("Chamfer Selected Edges") { model.addEdgeFeature(fillet: false) }
-                Divider()
-                Button("Rebuild") { model.regenerate() }.keyboardShortcut("r")
-                Button("Fit View") { model.fitView() }.keyboardShortcut("0")
-            }
+            Button("Offset Selection…") { model?.sketchSession?.beginOffset() }
+                .disabled(!(model?.sketchSession?.canOffset ?? false))
+            Divider()
+            Button("Finish Sketch") { model?.finishSketch() }
+                .disabled(model?.sketchSession == nil)
+        }
+        CommandMenu("Model") {
+            Button("Extrude Selected Profiles") { model?.extrudeSelectedProfiles() }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(model?.selectedRegions.isEmpty ?? true)
+            Button("Fillet Selected Edges") { model?.addEdgeFeature(fillet: true) }
+                .disabled((model?.selectedEdgeCount ?? 0) == 0)
+            Button("Chamfer Selected Edges") { model?.addEdgeFeature(fillet: false) }
+                .disabled((model?.selectedEdgeCount ?? 0) == 0)
+            Divider()
+            Button("Rebuild") { model?.regenerate() }
         }
     }
 }

@@ -1,7 +1,7 @@
 // The 3D viewport: an MTKView subclass for input, wrapped for SwiftUI.
 //
 // Navigation (see README):
-//   trackpad: two-finger scroll = orbit, ⇧ + scroll = pan, pinch = zoom
+//   trackpad: two-finger scroll = pan (or orbit, see Settings), ⇧ swaps, pinch = zoom, rotate = spin
 //   mouse:    left-drag on empty space = orbit, right/middle-drag = pan, wheel = zoom
 //   click = select face/edge/profile (⇧/⌘ to add), Esc = clear selection
 // In sketch mode, clicks go to the active sketch tool; see SketchSession.
@@ -13,7 +13,7 @@ import CADKernel
 import MetalKit
 import SwiftUI
 
-final class ViewportMTKView: MTKView {
+final class ViewportMTKView: MTKView, NSPopoverDelegate {
     var renderer: Renderer?
     weak var model: DocumentModel?
 
@@ -21,9 +21,42 @@ final class ViewportMTKView: MTKView {
     private var lastPoint: NSPoint?
     private var dragged = false
     private var sketchDrag = false
+    private var handleDrag = false
     private var labels: [EntityID: DimensionLabelView] = [:]
+    private var glyphViews: [String: ConstraintGlyphView] = [:]
+    var showConstraints = true
+    private var popover: NSPopover?
+    private var popoverID: EntityID?
 
     override var acceptsFirstResponder: Bool { true }
+
+    // MARK: appearance
+
+    /// Picks viewport colours for light/dark mode and Increase Contrast.
+    func applyAppearance() {
+        guard let renderer else { return }
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        renderer.palette = .make(dark: dark, increaseContrast: NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast)
+        let b = renderer.palette.background
+        clearColor = MTLClearColor(red: Double(b.x), green: Double(b.y), blue: Double(b.z), alpha: 1)
+        needsDisplay = true
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyAppearance()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(displayOptionsChanged),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+        applyAppearance()
+    }
+
+    @objc private func displayOptionsChanged(_ note: Notification) { applyAppearance() }
     override var isFlipped: Bool { true }  // origin top-left, like the ID texture
 
     override func draw(_ dirtyRect: NSRect) {
@@ -34,9 +67,30 @@ final class ViewportMTKView: MTKView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect,
+                                                               .mouseEnteredAndExited, .cursorUpdate],
                                        owner: self))
     }
+
+    // MARK: pointer
+
+    /// Crosshair while drawing, hands over draggable geometry, arrow otherwise.
+    private var currentCursor: NSCursor {
+        guard let model else { return .arrow }
+        if sketchDrag, model.sketchSession?.tool == .select { return .closedHand }
+        if let session = model.sketchSession {
+            switch session.tool {
+            case .select: return session.hoverIsDraggable ? .openHand : .arrow
+            case .dimension, .trim, .extend, .fillet: return session.hoverEntity != nil ? .pointingHand : .arrow
+            default: return .crosshair
+            }
+        }
+        if model.hovered?.kind == .handle { return handleDrag ? .closedHand : .openHand }
+        return .arrow
+    }
+
+    override func cursorUpdate(with event: NSEvent) { currentCursor.set() }
+    private func updateCursor() { if window?.isKeyWindow == true { currentCursor.set() } }
 
     // MARK: picking and sketch-plane coordinates
 
@@ -53,6 +107,7 @@ final class ViewportMTKView: MTKView {
         renderer.hovered = raw
         model?.hover(raw == 0 ? nil : PickID(raw: raw))
         if model?.sketchSession != nil { sketchEvent(.moved, at: nil, additive: false) }
+        updateCursor()
         needsDisplay = true
     }
 
@@ -78,6 +133,7 @@ final class ViewportMTKView: MTKView {
         let handled = model.sketchMouse(SketchMouse(phase: phase, uv: point.flatMap { sketchUV($0) },
                                                     pick: hovered, additive: additive))
         refreshOverlay()
+        updateCursor()
         return handled
     }
 
@@ -101,6 +157,10 @@ final class ViewportMTKView: MTKView {
         if model?.sketchSession != nil {
             let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
             sketchDrag = sketchEvent(.down, at: p, additive: additive)
+        } else if let renderer, PickID(raw: renderer.hovered).kind == .handle {
+            handleDrag = true
+            model?.beginHandleDrag()
+            updateCursor()
         }
     }
 
@@ -111,11 +171,23 @@ final class ViewportMTKView: MTKView {
             sketchEvent(.dragged, at: p, additive: false)
             return
         }
+        if handleDrag, let renderer {
+            let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
+            model?.dragHandle(rayOrigin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                              direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)))
+            refreshOverlay()
+            return
+        }
         drag(event) { self.renderer?.camera.orbit(dx: $0, dy: $1) }
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { lastDrag = nil; sketchDrag = false }
+        defer { lastDrag = nil; sketchDrag = false; handleDrag = false; updateCursor() }
+        if handleDrag {
+            model?.endHandleDrag()
+            refreshOverlay()
+            return
+        }
         if sketchDrag {
             sketchEvent(.up, at: location(event), additive: false)
             return
@@ -149,14 +221,22 @@ final class ViewportMTKView: MTKView {
         guard let renderer else { return }
         if event.hasPreciseScrollingDeltas {  // trackpad
             let dx = Float(event.scrollingDeltaX), dy = Float(event.scrollingDeltaY)
-            if event.modifierFlags.contains(.shift) {
-                renderer.camera.pan(dx: dx, dy: dy, viewHeight: Float(bounds.height))
-            } else {
+            var orbit = Preferences.trackpadScrollMode == .orbit
+            if event.modifierFlags.contains(.shift) { orbit.toggle() }
+            if orbit {
                 renderer.camera.orbit(dx: -dx, dy: dy)
+            } else {
+                renderer.camera.pan(dx: dx, dy: dy, viewHeight: Float(bounds.height))
             }
         } else {
-            renderer.camera.zoom(pow(1.1, Float(-event.scrollingDeltaY)))
+            let delta = Float(event.scrollingDeltaY) * (Preferences.invertsZoom ? 1 : -1)
+            renderer.camera.zoom(pow(1.1, delta))
         }
+        needsDisplay = true
+    }
+
+    override func rotate(with event: NSEvent) {
+        renderer?.camera.orbit(dx: Float(event.rotation) * 4, dy: 0)
         needsDisplay = true
     }
 
@@ -198,6 +278,45 @@ final class ViewportMTKView: MTKView {
         needsDisplay = true
     }
 
+    // MARK: dimension editor popover
+
+    /// Shows the dimension editor as a popover on the label being edited, and closes it when done.
+    private func syncPopover() {
+        guard let model, let session = model.sketchSession, let id = session.editingDimension,
+              let label = labels[id], !label.isHidden else {
+            if popover != nil { closePopover() }
+            return
+        }
+        guard popoverID != id || popover?.isShown != true else { return }
+        popover?.close()
+        let p = NSPopover()
+        p.behavior = .transient
+        p.delegate = self
+        p.contentViewController = NSHostingController(rootView: DimensionEditor(
+            model: model, session: session, dimensionID: id,
+            onDone: { [weak self] in self?.closePopover() }))
+        p.show(relativeTo: label.bounds, of: label, preferredEdge: .maxY)
+        popover = p
+        popoverID = id
+    }
+
+    private func closePopover() {
+        let p = popover
+        popover = nil
+        popoverID = nil
+        p?.close()
+        model?.sketchSession?.editingDimension = nil
+        refreshOverlay()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        guard let closed = notification.object as? NSPopover, closed === popover else { return }
+        popover = nil
+        popoverID = nil
+        model?.sketchSession?.editingDimension = nil
+        needsDisplay = true
+    }
+
     // MARK: dimension labels
 
     private func updateLabels() {
@@ -229,6 +348,77 @@ final class ViewportMTKView: MTKView {
                 view.isHidden = true
             }
         }
+        updateGlyphs()
+        syncPopover()
+    }
+
+    private func updateGlyphs() {
+        guard let renderer, let model else { return }
+        let wanted = showConstraints ? (model.sketchSession.map { SketchOverlayBuilder.glyphs($0) } ?? []) : []
+        let ids = Set(wanted.map(\.id))
+        for (id, view) in glyphViews where !ids.contains(id) {
+            view.removeFromSuperview()
+            glyphViews[id] = nil
+        }
+        for g in wanted {
+            let view: ConstraintGlyphView
+            if let existing = glyphViews[g.id] {
+                view = existing
+            } else {
+                view = ConstraintGlyphView(frame: .zero)
+                let constraint = g.constraint
+                view.onClick = { [weak self] additive in
+                    self?.model?.selectSketchItem(constraint, additive: additive)
+                    self?.refreshOverlay()
+                }
+                addSubview(view)
+                glyphViews[g.id] = view
+            }
+            view.stringValue = g.symbol
+            view.toolTip = "\(g.help) constraint · click to select, ⌫ to delete"
+            view.isSelectedGlyph = g.selected
+            view.sizeToFit()
+            view.setFrameSize(NSSize(width: max(view.frame.width, 14), height: view.frame.height))
+            if let p = renderer.camera.project(g.world, viewSize: bounds.size) {
+                view.isHidden = false
+                view.setFrameOrigin(NSPoint(x: p.x + 8 + CGFloat(g.stack) * 17, y: p.y + 6))
+            } else {
+                view.isHidden = true
+            }
+        }
+    }
+}
+
+/// A small clickable constraint symbol.
+final class ConstraintGlyphView: NSTextField {
+    var onClick: ((_ additive: Bool) -> Void)?
+    var isSelectedGlyph = false {
+        didSet {
+            backgroundColor = isSelectedGlyph ? .selectedContentBackgroundColor : .controlBackgroundColor
+            textColor = isSelectedGlyph ? .alternateSelectedControlTextColor : .secondaryLabelColor
+        }
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        isEditable = false
+        isSelectable = false
+        isBordered = false
+        drawsBackground = true
+        alignment = .center
+        backgroundColor = .controlBackgroundColor
+        textColor = .secondaryLabelColor
+        font = .systemFont(ofSize: 10, weight: .semibold)
+        wantsLayer = true
+        layer?.cornerRadius = 3
+        layer?.borderWidth = 0.5
+        layer?.borderColor = NSColor.separatorColor.cgColor
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?(event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command))
     }
 }
 
@@ -237,8 +427,9 @@ final class DimensionLabelView: NSTextField {
     var onClick: (() -> Void)?
     var isEditingHighlight = false {
         didSet {
-            backgroundColor = isEditingHighlight ? NSColor.systemYellow.withAlphaComponent(0.85)
+            backgroundColor = isEditingHighlight ? NSColor.selectedContentBackgroundColor
                                                  : NSColor.textBackgroundColor.withAlphaComponent(0.85)
+            textColor = isEditingHighlight ? .alternateSelectedControlTextColor : .labelColor
         }
     }
 
@@ -269,6 +460,9 @@ struct ViewportView: NSViewRepresentable {
     let highlighted: [UInt32]
     let fitRevision: Int
     let cameraRevision: Int
+    let orthographic: Bool
+    let showGrid: Bool
+    let showConstraints: Bool
 
     final class Coordinator {
         var sceneRevision = -1
@@ -286,7 +480,7 @@ struct ViewportView: NSViewRepresentable {
         view.model = model
         view.colorPixelFormat = Renderer.colorFormat
         view.depthStencilPixelFormat = Renderer.depthFormat
-        view.clearColor = MTLClearColor(red: 0.95, green: 0.96, blue: 0.97, alpha: 1)
+        view.applyAppearance()
         view.isPaused = true
         view.enableSetNeedsDisplay = true
         renderer.onPick = { [weak view] raw in view?.pickResult(raw) }
@@ -305,9 +499,18 @@ struct ViewportView: NSViewRepresentable {
             c.fitRevision = fitRevision
             renderer.camera.fit(min: b.min, max: b.max)
         }
-        if c.cameraRevision != cameraRevision, let req = model.cameraRequest {
+        renderer.camera.orthographic = orthographic
+        renderer.showGrid = showGrid
+        view.showConstraints = showConstraints
+        if c.cameraRevision != cameraRevision, let cmd = model.cameraCommand {
             c.cameraRevision = cameraRevision
-            renderer.camera.look(along: req.normal, at: req.target)
+            switch cmd.command {
+            case .look(let target, let normal):
+                renderer.camera.look(along: normal, at: target)
+            case .standard(let v):
+                renderer.camera.setStandard(v)
+                if let b = model.sceneBounds { renderer.camera.fit(min: b.min, max: b.max) }
+            }
         }
         renderer.setOverlay(model.sketchOverlay())
         renderer.selected = highlighted

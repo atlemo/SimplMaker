@@ -74,6 +74,7 @@ public struct SketchDimension: Codable, Hashable, Sendable, Identifiable {
         case radius(EntityID)                         // circle/arc
         case diameter(EntityID)                       // circle/arc
         case angle(EntityID, EntityID)                // line, line: counter-clockwise from first to second
+        case radialOffset(from: EntityID, to: EntityID)  // circle/arc radii difference (concentric offsets)
     }
     public var id: EntityID
     public var kind: Kind

@@ -28,6 +28,7 @@
 		<dict>
 			<key>CFBundleTypeName</key><string>SimplCAD Document</string>
 			<key>CFBundleTypeRole</key><string>Editor</string>
+			<key>LSHandlerRank</key><string>Owner</string>
 			<key>LSItemContentTypes</key><array><string>org.simplcad.document</string></array>
 		</dict>
 	</array>

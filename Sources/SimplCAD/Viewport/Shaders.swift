@@ -12,6 +12,10 @@ enum Shaders {
         float2 viewport;       // drawable size in pixels
         uint hovered;
         uint selectedCount;
+        float4 faceColor;
+        float4 faceHoverColor;
+        float4 faceSelectedColor;
+        float4 regionColor;     // rgb + base alpha
     };
 
     struct FaceVertex { packed_float3 position; packed_float3 normal; uint id; };
@@ -70,9 +74,9 @@ enum Shaders {
         float3 key = normalize(v + float3(0.25, 0.15, 0.6));
         float diffuse = max(dot(n, key), 0.0);
         float spec = pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
-        float3 base = float3(0.64, 0.67, 0.72);
-        if (in.id == u.hovered) base = float3(0.55, 0.72, 0.95);
-        if (isSelected(in.id, sel, u.selectedCount)) base = float3(0.30, 0.56, 1.0);
+        float3 base = u.faceColor.rgb;
+        if (in.id == u.hovered) base = u.faceHoverColor.rgb;
+        if (isSelected(in.id, sel, u.selectedCount)) base = u.faceSelectedColor.rgb;
         FragOut o;
         o.color = float4(base * (0.32 + 0.68 * diffuse) + spec, 1.0);
         o.id = in.id;
@@ -91,11 +95,11 @@ enum Shaders {
     fragment FragOut regionFragment(FaceOut in [[stage_in]],
                                     constant Uniforms& u [[buffer(1)]],
                                     constant uint* sel [[buffer(2)]]) {
-        float alpha = 0.16;
-        if (in.id == u.hovered) alpha = 0.32;
-        if (isSelected(in.id, sel, u.selectedCount)) alpha = 0.5;
+        float alpha = u.regionColor.a;
+        if (in.id == u.hovered) alpha *= 2.0;
+        if (isSelected(in.id, sel, u.selectedCount)) alpha *= 3.0;
         FragOut o;
-        o.color = float4(0.25, 0.5, 0.95, alpha);
+        o.color = float4(u.regionColor.rgb, min(alpha, 0.7));
         o.id = in.id;
         return o;
     }

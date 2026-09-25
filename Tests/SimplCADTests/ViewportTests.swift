@@ -7,7 +7,7 @@ import Testing
     @Test func swiftLayoutsMatchShaderStructs() {
         #expect(MemoryLayout<FaceVertex>.stride == 28)       // packed_float3 ×2 + uint
         #expect(MemoryLayout<SegmentInstance>.stride == 28)  // packed_float3 ×2 + uint
-        #expect(MemoryLayout<Uniforms>.stride == 96)
+        #expect(MemoryLayout<Uniforms>.stride == 160)
         #expect(MemoryLayout<DrawParams>.stride == 64)
     }
 

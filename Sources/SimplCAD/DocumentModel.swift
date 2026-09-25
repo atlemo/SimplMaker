@@ -7,16 +7,19 @@ import Observation
 import simd
 import UniformTypeIdentifiers
 
+/// A problem to report in an alert: the title states what went wrong, the message what to do.
+struct AlertInfo: Identifiable {
+    let id = UUID()
+    var title: String
+    var message: String
+}
+
 /// A tessellated body for the viewport.
 struct BodyMesh: Sendable {
     var index: Int
     var id: FeatureID
     var name: String
     var mesh: Mesh
-}
-
-extension UTType {
-    static let simplCAD = UTType(exportedAs: "org.simplcad.document", conformingTo: .json)
 }
 
 @MainActor
@@ -45,15 +48,17 @@ final class DocumentModel {
     private(set) var sketchSession: SketchSession?
     /// Bumped whenever the sketch overlay needs rebuilding.
     private(set) var overlayRevision = 0
-    /// Camera request: look at a sketch plane.
-    private(set) var cameraRequest: (target: SIMD3<Float>, normal: SIMD3<Float>, revision: Int)?
+    /// Camera request for the viewport (look at a sketch plane, standard views), with a revision counter.
+    private(set) var cameraCommand: (command: CameraCommand, revision: Int)?
+    var showInspector = true
+    var orthographic = false
     var fileURL: URL?
-    var alert: String?
+    var alert: AlertInfo?
 
     @ObservationIgnored var undoManager: UndoManager?
     @ObservationIgnored private var generation = 0
 
-    init(document: CADDocument = .demo()) {
+    init(document: CADDocument = CADDocument()) {
         self.document = document
         regenerate(fit: true)
     }
@@ -129,10 +134,10 @@ final class DocumentModel {
 
     // MARK: regeneration
 
-    func regenerate(fit: Bool = false) {
+    func regenerate(fit: Bool = false, preview: CADDocument? = nil) {
         generation += 1
         let gen = generation
-        var doc = document
+        var doc = preview ?? document
         if let session = sketchSession, let i = doc.index(of: session.featureID) {
             doc.rollback = min(doc.rollback ?? Int.max, i + 1)  // show the model as it was at this sketch
         }
@@ -186,7 +191,7 @@ final class DocumentModel {
     func hover(_ pick: PickID?) { hovered = pick }
 
     func click(_ pick: PickID?, additive: Bool) {
-        guard let pick, pick.kind != .sketchPoint, pick.kind != .sketchCurve else {
+        guard let pick, pick.kind != .sketchPoint, pick.kind != .sketchCurve, pick.kind != .handle else {
             if !additive { selection = [] }
             return
         }
@@ -223,7 +228,7 @@ final class DocumentModel {
                 frame = try body.faceFrame(ref.face)
             }
         } catch {
-            alert = "Can't sketch there: \(error)"
+            alert = AlertInfo(title: "You can't sketch on that face", message: "\(error)")
             return
         }
         let feature = Feature(name: document.nextName("Sketch"), .sketch(SketchFeature(plane: plane, sketch: Sketch())))
@@ -242,7 +247,10 @@ final class DocumentModel {
             case .xy: frame = .xy
             case .xz: frame = .xz
             case .yz: frame = .yz
-            case .face: alert = "This sketch's face is missing; fix the features before it first."; return
+            case .face:
+                alert = AlertInfo(title: "This sketch's face is missing",
+                                  message: "Fix the features before this sketch first, then edit it again.")
+                return
             }
         }
         sketchSession = SketchSession(featureID: id, frame: frame, sketch: sf.sketch, parameters: parameterValues)
@@ -260,8 +268,13 @@ final class DocumentModel {
 
     private func lookAt(_ frame: Frame) {
         let o = frame.origin, n = frame.normal
-        cameraRequest = (SIMD3(Float(o.x), Float(o.y), Float(o.z)), SIMD3(Float(n.x), Float(n.y), Float(n.z)),
-                         (cameraRequest?.revision ?? 0) + 1)
+        send(.look(target: SIMD3(Float(o.x), Float(o.y), Float(o.z)), normal: SIMD3(Float(n.x), Float(n.y), Float(n.z))))
+    }
+
+    func show(_ view: StandardView) { send(.standard(view)) }
+
+    private func send(_ command: CameraCommand) {
+        cameraCommand = (command, (cameraCommand?.revision ?? 0) + 1)
     }
 
     /// Writes the session's sketch into the document (one undo step) and regenerates.
@@ -303,6 +316,13 @@ final class DocumentModel {
         commitSketch(command(session))
     }
 
+    /// Selects a sketch entity or constraint (e.g. from a constraint glyph).
+    func selectSketchItem(_ id: EntityID, additive: Bool) {
+        guard let session = sketchSession else { return }
+        session.select(id, additive: additive)
+        overlayRevision += 1
+    }
+
     func setSketchTool(_ tool: SketchTool) {
         sketchSession?.setTool(tool)
         overlayRevision += 1
@@ -321,6 +341,13 @@ final class DocumentModel {
             if case .extrude(let e) = f.kind { return e.sketch }
             return nil
         })
+        if let h = extrudeHandle {
+            let a = h.base, b = h.base + h.direction * h.distance
+            let fa = SIMD3<Float>(Float(a.x), Float(a.y), Float(a.z)), fb = SIMD3<Float>(Float(b.x), Float(b.y), Float(b.z))
+            let id = PickID.handle.raw
+            o.handle = [SegmentInstance(ax: fa.x, ay: fa.y, az: fa.z, bx: fb.x, by: fb.y, bz: fb.z, id: id),
+                        SegmentInstance(ax: fb.x, ay: fb.y, az: fb.z, bx: fb.x, by: fb.y, bz: fb.z, id: id)]
+        }
         for f in document.activeFeatures where !f.suppressed {
             guard case .sketch = f.kind, let r = result?.sketches[f.id] else { continue }
             if f.id == selectedFeature {
@@ -334,7 +361,14 @@ final class DocumentModel {
     }
 
     func dimensionLabels() -> [DimensionLabel] {
-        sketchSession.map { SketchOverlayBuilder.labels($0) } ?? []
+        if let session = sketchSession { return SketchOverlayBuilder.labels(session) }
+        if let h = extrudeHandle {
+            let tip = h.base + h.direction * h.distance
+            let text = formatDimension(h.symmetric ? h.distance * 2 : h.distance, kind: .length)
+            return [DimensionLabel(id: "extrude-handle", world: SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)),
+                                   text: text, editing: handlePreviewDistance != nil)]
+        }
+        return []
     }
 
     /// Pick IDs to highlight as selected.
@@ -365,55 +399,83 @@ final class DocumentModel {
         selectedFeature = feature.id
     }
 
+    // MARK: extrude handle
+
+    /// Drag handle for the selected extrude: from a point inside its first profile, along its direction.
+    struct ExtrudeHandle {
+        var featureID: FeatureID
+        var base: SIMD3<Double>
+        var direction: SIMD3<Double>
+        var distance: Double
+        var symmetric: Bool
+    }
+
+    @ObservationIgnored private var handleDragStart: (document: CADDocument, distance: Double)?
+    private(set) var handlePreviewDistance: Double?
+
+    var extrudeHandle: ExtrudeHandle? {
+        guard sketchSession == nil, let id = selectedFeature, let f = document.features.first(where: { $0.id == id }),
+              case .extrude(let e) = f.kind, !f.suppressed, let sr = result?.sketches[e.sketch],
+              let ref = e.profiles.first else { return nil }
+        let hint = SIMD2(ref.hintU, ref.hintV)
+        guard let region = sr.regions.filter({ $0.tags == ref.tagString })
+            .min(by: { simd_length($0.sample - hint) < simd_length($1.sample - hint) }) else { return nil }
+        let params = parameterValues
+        let distance: Double, symmetric: Bool
+        switch e.extent {
+        case .distance(let d): distance = (try? params.value(of: d, kind: .length)) ?? 0; symmetric = false
+        case .symmetric(let d): distance = ((try? params.value(of: d, kind: .length)) ?? 0) / 2; symmetric = true
+        case .twoSides(let d, _): distance = (try? params.value(of: d, kind: .length)) ?? 0; symmetric = false
+        }
+        let n = sr.frame.normal * (e.flipped ? -1 : 1)
+        return ExtrudeHandle(featureID: id, base: sr.frame.point(region.sample.x, region.sample.y), direction: n,
+                             distance: handlePreviewDistance ?? distance, symmetric: symmetric)
+    }
+
+    func beginHandleDrag() {
+        guard let h = extrudeHandle else { return }
+        handleDragStart = (document, h.distance)
+    }
+
+    /// Moves the handle to the point on its axis closest to the mouse ray, and previews the result.
+    func dragHandle(rayOrigin o: SIMD3<Double>, direction d: SIMD3<Double>) {
+        guard let start = handleDragStart, let h = extrudeHandle else { return }
+        let a = h.direction, w = h.base - o
+        let b = simd_dot(a, d)
+        guard 1 - b * b > 1e-6 else { return }  // looking straight down the handle
+        let s = (b * simd_dot(d, w) - simd_dot(a, w)) / (1 - b * b)
+        let distance = max(s, 0.01)
+        handlePreviewDistance = distance
+        var preview = start.document
+        Self.setDistance(distance, of: h.featureID, symmetric: h.symmetric, in: &preview)
+        regenerate(preview: preview)
+        overlayRevision += 1
+    }
+
+    func endHandleDrag() {
+        defer { handleDragStart = nil; handlePreviewDistance = nil }
+        guard let h = extrudeHandle, let distance = handlePreviewDistance, handleDragStart != nil else { return }
+        mutate("Change Distance") { Self.setDistance(distance, of: h.featureID, symmetric: h.symmetric, in: &$0) }
+    }
+
+    private static func setDistance(_ d: Double, of id: FeatureID, symmetric: Bool, in doc: inout CADDocument) {
+        guard let i = doc.index(of: id), case .extrude(var e) = doc.features[i].kind else { return }
+        let text = formatDimension(symmetric ? d * 2 : d, kind: .length)
+        switch e.extent {
+        case .distance: e.extent = .distance(text)
+        case .symmetric: e.extent = .symmetric(text)
+        case .twoSides(_, let back): e.extent = .twoSides(text, back: back)
+        }
+        doc.features[i].kind = .extrude(e)
+    }
+
     // MARK: files
 
-    func newDocument(demo: Bool) {
-        sketchSession = nil
-        document = demo ? .demo() : CADDocument()
-        fileURL = nil
-        undoManager?.removeAllActions()
-        selection = []
-        selectedFeature = nil
-        regenerate(fit: true)
-    }
-
-    func open() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.simplCAD, .json]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            document = try CADDocument.decode(try Data(contentsOf: url))
-            sketchSession = nil
-            fileURL = url
-            undoManager?.removeAllActions()
-            selection = []
-            selectedFeature = nil
-            regenerate(fit: true)
-        } catch {
-            alert = "Could not open \(url.lastPathComponent): \(error)"
-        }
-    }
-
-    func save(as saveAs: Bool = false) {
-        var url = fileURL
-        if url == nil || saveAs {
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [.simplCAD]
-            panel.nameFieldStringValue = "Untitled.simplcad"
-            guard panel.runModal() == .OK else { return }
-            url = panel.url
-        }
-        guard let url else { return }
-        do {
-            try document.encoded().write(to: url, options: .atomic)
-            fileURL = url
-        } catch {
-            alert = "Could not save: \(error)"
-        }
-    }
-
     func export(stl: Bool) {
-        guard let bodies = result?.bodies.map(\.body), !bodies.isEmpty else { alert = "Nothing to export."; return }
+        guard let bodies = result?.bodies.map(\.body), !bodies.isEmpty else {
+            alert = AlertInfo(title: "There's nothing to export", message: "Create a body first, for example by extruding a sketch.")
+            return
+        }
         let panel = NSSavePanel()
         let ext = stl ? "stl" : "step"
         if let type = UTType(filenameExtension: ext) { panel.allowedContentTypes = [type] }
@@ -422,7 +484,7 @@ final class DocumentModel {
         do {
             if stl { try KBody.exportSTL(bodies, to: url) } else { try KBody.exportSTEP(bodies, to: url) }
         } catch {
-            alert = "Export failed: \(error)"
+            alert = AlertInfo(title: "The export failed", message: "\(error)")
         }
     }
 }
