@@ -35,6 +35,7 @@ In Xcode, run the **SimplCADApp** scheme (⌘R), then File → New Demo Part (�
 ## Next steps (in order)
 
 1. **First hands-on test.** Try each area, and note anything that looks or feels wrong (screenshot plus one sentence):
+   - creating a sketch: the Sketch button shows the origin planes with a "Select a plane or planar face" prompt; click a plane or a flat face, Esc cancels
    - sketch: line, rectangle, circle and arc; dimensions; constraints; dragging; trim, extend, offset, corner fillet
    - extrude by picking a profile and dragging the arrow
    - fillet and chamfer: pick edges, then drag the handle, including dragging past the maximum

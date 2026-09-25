@@ -58,11 +58,16 @@ struct SimplCADCommands: Commands {
             Divider()
         }
         CommandMenu("Sketch") {
-            Button("New Sketch on XY Plane") { model?.beginSketch(on: .xy) }
-            Button("New Sketch on XZ Plane") { model?.beginSketch(on: .xz) }
-            Button("New Sketch on YZ Plane") { model?.beginSketch(on: .yz) }
-            Button("New Sketch on Selected Face") { if let p = model?.selectedFacePlane { model?.beginSketch(on: p) } }
-                .disabled(model?.selectedFacePlane == nil)
+            Button("New Sketch…") { model?.startSketch() }
+                .disabled(model == nil)
+            Menu("New Sketch On") {
+                Button("XY Plane") { model?.beginSketch(on: .xy) }
+                Button("XZ Plane") { model?.beginSketch(on: .xz) }
+                Button("YZ Plane") { model?.beginSketch(on: .yz) }
+                Button("Selected Face") { if let p = model?.selectedFacePlane { model?.beginSketch(on: p) } }
+                    .disabled(model?.selectedFacePlane == nil)
+            }
+            .disabled(model == nil)
             Divider()
             ForEach(SketchTool.allCases) { tool in
                 Button(tool.rawValue) { model?.setSketchTool(tool) }

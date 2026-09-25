@@ -49,15 +49,13 @@ struct DocumentWindow: View {
                 SketchToolbar(model: model, session: session)
             } else {
                 ToolbarItemGroup {
-                    Menu {
-                        Button("On XY Plane") { model.beginSketch(on: .xy) }
-                        Button("On XZ Plane") { model.beginSketch(on: .xz) }
-                        Button("On YZ Plane") { model.beginSketch(on: .yz) }
-                        Divider()
-                        Button("On Selected Face") { if let p = model.selectedFacePlane { model.beginSketch(on: p) } }
-                            .disabled(model.selectedFacePlane == nil)
-                    } label: { Label("Sketch", systemImage: "pencil.and.outline") }
-                        .help("Create a sketch on a plane or on the selected planar face")
+                    if model.isPickingSketchPlane {
+                        Button { model.cancelSketchPlanePick() } label: { Label("Cancel Sketch", systemImage: "xmark.circle") }
+                            .help("Stop choosing a sketch plane (Esc)")
+                    } else {
+                        Button { model.startSketch() } label: { Label("Sketch", systemImage: "pencil.and.outline") }
+                            .help("Create a sketch: then click an origin plane or a flat face in the viewport")
+                    }
                     Button { model.extrudeSelectedProfiles() } label: { Label("Extrude", systemImage: "square.stack.3d.up") }
                         .help("Extrude the selected profiles (select a sketch in the timeline, then click its regions)")
                         .disabled(model.selectedRegions.isEmpty)
@@ -125,6 +123,8 @@ struct StatusBar: View {
         if let session = model.sketchSession {
             Text(session.statusText)
                 .foregroundStyle(session.message != nil || session.solve?.status == .failed ? Color.red : Color.secondary)
+        } else if model.isPickingSketchPlane {
+            Text("Select a plane or planar face to sketch on · Esc to cancel")
         } else if let h = model.dragHandle, model.hovered == nil || model.hovered?.kind == .handle {
             Text(model.previewInvalid ? "That size doesn't fit the neighbouring faces — let go to keep the previous size"
                                       : "Drag the orange arrow to change the \(h.kind == .fillet ? "radius" : h.kind == .chamfer ? "chamfer size" : "distance"), or type it in the inspector")

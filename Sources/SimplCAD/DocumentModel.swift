@@ -46,6 +46,10 @@ final class DocumentModel {
     }
     /// The sketch being edited, if any.
     private(set) var sketchSession: SketchSession?
+    /// A new sketch is waiting for the user to click an origin plane or a flat face.
+    private(set) var isPickingSketchPlane = false
+    /// Side length of the origin plane squares shown while picking, in mm.
+    private(set) var sketchPlaneSize: Double = 25
     /// Bumped whenever the sketch overlay needs rebuilding.
     private(set) var overlayRevision = 0
     /// Camera request for the viewport (look at a sketch plane, standard views), with a revision counter.
@@ -199,7 +203,17 @@ final class DocumentModel {
     func hover(_ pick: PickID?) { hovered = pick }
 
     func click(_ pick: PickID?, additive: Bool) {
-        guard let pick, pick.kind != .sketchPoint, pick.kind != .sketchCurve, pick.kind != .handle else {
+        if isPickingSketchPlane {
+            // Only a plane or a face answers the question; anything else keeps asking.
+            guard let pick else { return }
+            if let plane = OriginPlane(pick: pick) {
+                beginSketch(on: plane.planeRef)
+            } else if let ref = faceRef(pick) {
+                beginSketch(on: .face(ref))
+            }
+            return
+        }
+        guard let pick, pick.kind != .sketchPoint, pick.kind != .sketchCurve, pick.kind != .handle, pick.kind != .plane else {
             if !additive { selection = [] }
             return
         }
@@ -216,13 +230,42 @@ final class DocumentModel {
 
     var parameterValues: ParameterValues { result?.parameters ?? ParameterEvaluator.evaluate(document.parameters) }
 
+    /// The picked face by persistent name, planar or not.
+    private func faceRef(_ pick: PickID) -> FaceRef? {
+        guard pick.isFace, pick.body >= 0, pick.body < meshes.count, let name = name(of: pick) else { return nil }
+        return FaceRef(body: meshes[pick.body].id, face: name)
+    }
+
     /// The single selected planar face, as a sketch plane.
     var selectedFacePlane: PlaneRef? {
-        guard selection.count == 1, let pick = selection.first, pick.isFace, pick.body < meshes.count,
-              let name = name(of: pick), let body = result?.body(meshes[pick.body].id),
-              (try? body.faceFrame(name)) != nil else { return nil }
-        return .face(FaceRef(body: meshes[pick.body].id, face: name))
+        guard selection.count == 1, let pick = selection.first, let ref = faceRef(pick),
+              let body = result?.body(ref.body), (try? body.faceFrame(ref.face)) != nil else { return nil }
+        return .face(ref)
     }
+
+    /// The Sketch button: sketches on the selected flat face right away, otherwise asks for a plane
+    /// by showing the origin planes in the viewport (see `click`).
+    func startSketch() {
+        if sketchSession != nil { finishSketch() }
+        if let plane = selectedFacePlane {
+            beginSketch(on: plane)
+            return
+        }
+        sketchPlaneSize = OriginPlane.displaySize(for: sceneBounds)
+        isPickingSketchPlane = true
+        selection = []
+        selectedFeature = nil
+        overlayRevision += 1
+    }
+
+    func cancelSketchPlanePick() {
+        guard isPickingSketchPlane else { return }
+        isPickingSketchPlane = false
+        overlayRevision += 1
+    }
+
+    /// Instruction shown next to the cursor while the app waits for a pick.
+    var cursorPrompt: String? { isPickingSketchPlane ? "Select a plane or planar face" : nil }
 
     func beginSketch(on plane: PlaneRef) {
         let frame: Frame
@@ -236,9 +279,11 @@ final class DocumentModel {
                 frame = try body.faceFrame(ref.face)
             }
         } catch {
-            alert = AlertInfo(title: "You can't sketch on that face", message: "\(error)")
+            alert = AlertInfo(title: "You can't sketch on that face",
+                              message: "Choose a flat face or one of the origin planes. (\(error))")
             return
         }
+        isPickingSketchPlane = false
         let feature = Feature(name: document.nextName("Sketch"), .sketch(SketchFeature(plane: plane, sketch: Sketch())))
         sketchSession = SketchSession(featureID: feature.id, frame: frame, sketch: Sketch(), parameters: parameterValues)
         selection = []
@@ -261,6 +306,7 @@ final class DocumentModel {
                 return
             }
         }
+        isPickingSketchPlane = false
         sketchSession = SketchSession(featureID: id, frame: frame, sketch: sf.sketch, parameters: parameterValues)
         selection = []
         selectedFeature = id
@@ -345,6 +391,7 @@ final class DocumentModel {
             if let r = result?.sketches[session.featureID] { SketchOverlayBuilder.regions(r, into: &o) }
             return o
         }
+        if isPickingSketchPlane { SketchOverlayBuilder.originPlanes(size: sketchPlaneSize, into: &o) }
         let consumed = Set(document.features.compactMap { f -> FeatureID? in
             if case .extrude(let e) = f.kind { return e.sketch }
             return nil
@@ -371,6 +418,7 @@ final class DocumentModel {
 
     func dimensionLabels() -> [DimensionLabel] {
         if let session = sketchSession { return SketchOverlayBuilder.labels(session) }
+        if isPickingSketchPlane { return SketchOverlayBuilder.originPlaneLabels(size: sketchPlaneSize) }
         if let h = dragHandle {
             let tip = h.base + h.direction * h.value
             return [DimensionLabel(id: "drag-handle", world: SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)),

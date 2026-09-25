@@ -24,6 +24,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate {
     private var handleDrag = false
     private var labels: [EntityID: DimensionLabelView] = [:]
     private var glyphViews: [String: ConstraintGlyphView] = [:]
+    private var prompt: CursorPromptView?
+    private var mouseInside = false
     var showConstraints = true
     private var popover: NSPopover?
     private var popoverID: EntityID?
@@ -83,6 +85,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate {
             case .select: return session.hoverIsDraggable ? .openHand : .arrow
             case .dimension, .trim, .extend, .fillet: return session.hoverEntity != nil ? .pointingHand : .arrow
             default: return .crosshair
+            }
+        }
+        if model.isPickingSketchPlane {
+            switch model.hovered?.kind {
+            case .plane, .face: return .pointingHand
+            default: return .arrow
             }
         }
         if model.hovered?.kind == .handle { return handleDrag ? .closedHand : .openHand }
@@ -146,7 +154,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate {
         if model?.sketchSession != nil { sketchEvent(.moved, at: p, additive: false) }
     }
 
-    override func mouseExited(with event: NSEvent) { pickResult(0) }
+    override func mouseEntered(with event: NSEvent) { mouseInside = true }
+    override func mouseExited(with event: NSEvent) {
+        mouseInside = false
+        pickResult(0)
+        needsDisplay = true  // hides the cursor prompt
+    }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
@@ -264,11 +277,22 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate {
                 return
             }
         } else if event.keyCode == 53 {
-            model.clearSelection()
+            if model.isPickingSketchPlane { model.cancelSketchPlanePick() } else { model.clearSelection() }
             refreshOverlay()
             return
         }
         super.keyDown(with: event)
+    }
+
+    /// A click on a viewport label: picks the plane it names, or opens the dimension it belongs to.
+    private func labelClicked(_ id: EntityID) {
+        guard let model else { return }
+        if model.isPickingSketchPlane, let plane = OriginPlane(labelID: id) {
+            model.click(plane.pickID, additive: false)
+            refreshOverlay()
+        } else {
+            model.sketchSession?.editingDimension = id
+        }
     }
 
     func refreshOverlay() {
@@ -334,7 +358,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate {
             } else {
                 view = DimensionLabelView(frame: .zero)
                 let id = l.id
-                view.onClick = { [weak model] in model?.sketchSession?.editingDimension = id }
+                view.onClick = { [weak self] in self?.labelClicked(id) }
                 addSubview(view)
                 labels[l.id] = view
             }
@@ -349,7 +373,34 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate {
             }
         }
         updateGlyphs()
+        updatePrompt()
         syncPopover()
+    }
+
+    /// Keeps the instruction ("Select a plane or planar face") just below and right of the cursor.
+    private func updatePrompt() {
+        guard let text = model?.cursorPrompt, mouseInside, let p = lastPoint else {
+            prompt?.isHidden = true
+            return
+        }
+        let view: CursorPromptView
+        if let prompt {
+            view = prompt
+        } else {
+            view = CursorPromptView(frame: .zero)
+            addSubview(view)
+            prompt = view
+        }
+        if view.stringValue != text {
+            view.stringValue = text
+            view.sizeToFit()
+            view.setFrameSize(NSSize(width: view.frame.width + 12, height: view.frame.height + 6))
+        }
+        let size = view.frame.size
+        let x = min(max(p.x + 18, 0), max(bounds.width - size.width, 0))
+        let y = min(max(p.y + 18, 0), max(bounds.height - size.height, 0))
+        view.setFrameOrigin(NSPoint(x: x, y: y))
+        view.isHidden = false
     }
 
     private func updateGlyphs() {
@@ -420,6 +471,29 @@ final class ConstraintGlyphView: NSTextField {
     override func mouseDown(with event: NSEvent) {
         onClick?(event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command))
     }
+}
+
+/// The instruction that follows the cursor while the app waits for a pick. Clicks pass through it.
+final class CursorPromptView: NSTextField {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        isEditable = false
+        isSelectable = false
+        isBordered = false
+        drawsBackground = true
+        alignment = .center
+        backgroundColor = .windowBackgroundColor
+        textColor = .labelColor
+        font = .systemFont(ofSize: 13)
+        wantsLayer = true
+        layer?.cornerRadius = 4
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.separatorColor.cgColor
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// A small clickable value label for a sketch dimension.
