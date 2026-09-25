@@ -4,3 +4,7 @@ __pycache__/
 xcuserdata/
 DerivedData/
 .build/
+.build-occt/
+ThirdParty/occt/
+.swiftpm/
+dist/
