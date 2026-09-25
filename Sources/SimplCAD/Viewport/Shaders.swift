@@ -46,16 +46,19 @@ enum Shaders {
         return false;
     }
 
-    vertex FaceOut faceVertex(uint vid [[vertex_id]],
-                              device const FaceVertex* verts [[buffer(0)]],
-                              constant Uniforms& u [[buffer(1)]]) {
-        FaceVertex v = verts[vid];
+    static FaceOut transformFace(FaceVertex v, constant Uniforms& u) {
         FaceOut o;
         o.world = float3(v.position);
         o.position = u.viewProj * float4(o.world, 1.0);
         o.normal = float3(v.normal);
         o.id = v.id;
         return o;
+    }
+
+    vertex FaceOut faceVertex(uint vid [[vertex_id]],
+                              device const FaceVertex* verts [[buffer(0)]],
+                              constant Uniforms& u [[buffer(1)]]) {
+        return transformFace(verts[vid], u);
     }
 
     fragment FragOut faceFragment(FaceOut in [[stage_in]],
@@ -72,6 +75,27 @@ enum Shaders {
         if (isSelected(in.id, sel, u.selectedCount)) base = float3(0.30, 0.56, 1.0);
         FragOut o;
         o.color = float4(base * (0.32 + 0.68 * diffuse) + spec, 1.0);
+        o.id = in.id;
+        return o;
+    }
+
+    // Sketch profiles: translucent fills on the sketch plane, pulled slightly toward the camera.
+    vertex FaceOut regionVertex(uint vid [[vertex_id]],
+                                device const FaceVertex* verts [[buffer(0)]],
+                                constant Uniforms& u [[buffer(1)]]) {
+        FaceOut o = transformFace(verts[vid], u);
+        o.position.z -= 0.0002 * o.position.w;
+        return o;
+    }
+
+    fragment FragOut regionFragment(FaceOut in [[stage_in]],
+                                    constant Uniforms& u [[buffer(1)]],
+                                    constant uint* sel [[buffer(2)]]) {
+        float alpha = 0.16;
+        if (in.id == u.hovered) alpha = 0.32;
+        if (isSelected(in.id, sel, u.selectedCount)) alpha = 0.5;
+        FragOut o;
+        o.color = float4(0.25, 0.5, 0.95, alpha);
         o.id = in.id;
         return o;
     }

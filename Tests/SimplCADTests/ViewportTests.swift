@@ -14,7 +14,7 @@ import Testing
     @Test func shadersCompile() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }  // no GPU on this machine
         let library = try device.makeLibrary(source: Shaders.source, options: nil)
-        for name in ["faceVertex", "faceFragment", "segmentVertex", "segmentFragment"] {
+        for name in ["faceVertex", "faceFragment", "regionVertex", "regionFragment", "segmentVertex", "segmentFragment"] {
             #expect(library.makeFunction(name: name) != nil, "\(name)")
         }
     }
@@ -29,5 +29,10 @@ import Testing
         #expect(!f.isEdge && f.body == 3 && f.element == 1234 && f.raw != 0)
         let e = PickID(body: 0, edge: 0)
         #expect(e.isEdge && e.body == 0 && e.element == 0)
+        #expect(PickID(body: 1021, face: 0xFFFFF).kind == .face)
+        #expect(PickID(sketchPoint: 7).kind == .sketchPoint && PickID(sketchPoint: 7).element == 7)
+        #expect(PickID(sketchCurve: 0).kind == .sketchCurve)
+        #expect(PickID(region: 3).kind == .region && PickID(region: 3).element == 3)
+        #expect(PickID(raw: 0).kind == .none)
     }
 }

@@ -81,6 +81,15 @@ public final class KSketch: @unchecked Sendable {
         }
     }
 
+    /// Triangulated region for display and picking.
+    public func regionMesh(_ region: Int, deflection: Double = 0.05) throws -> Mesh {
+        guard let m = sk_sketch_region_tessellate(handle, Int32(region), deflection) else {
+            throw KernelError.last("region tessellation")
+        }
+        defer { sk_mesh_free(m) }
+        return Mesh(m.pointee, faceNames: [], edgeNames: [])
+    }
+
     public func profile(_ region: Int) throws -> KProfile {
         let h = sk_sketch_region_profile(handle, Int32(region))
         guard h != 0 else { throw KernelError.last("profile") }
@@ -150,15 +159,7 @@ public final class KBody: @unchecked Sendable {
             throw KernelError.last("tessellation")
         }
         defer { sk_mesh_free(m) }
-        let s = m.pointee
-        func array<T>(_ p: UnsafeMutablePointer<T>?, _ n: Int) -> [T] { p.map { Array(UnsafeBufferPointer(start: $0, count: n)) } ?? [] }
-        return Mesh(positions: array(s.positions, Int(s.vertexCount) * 3),
-                    normals: array(s.normals, Int(s.vertexCount) * 3),
-                    indices: array(s.indices, Int(s.triangleCount) * 3),
-                    triangleFace: array(s.triangleFace, Int(s.triangleCount)),
-                    segments: array(s.segments, Int(s.segmentCount) * 6),
-                    segmentEdge: array(s.segmentEdge, Int(s.segmentCount)),
-                    faceNames: faceNames, edgeNames: edgeNames)
+        return Mesh(m.pointee, faceNames: faceNames, edgeNames: edgeNames)
     }
 
     public static func exportSTEP(_ bodies: [KBody], to url: URL) throws {
@@ -181,6 +182,29 @@ public struct Mesh: Sendable {
     public var segmentEdge: [UInt32]   // edge index per segment
     public var faceNames: [String]
     public var edgeNames: [String]
+
+    public static let empty = Mesh(positions: [], normals: [], indices: [], triangleFace: [], segments: [],
+                                   segmentEdge: [], faceNames: [], edgeNames: [])
+
+    public init(positions: [Float], normals: [Float], indices: [UInt32], triangleFace: [UInt32], segments: [Float],
+                segmentEdge: [UInt32], faceNames: [String], edgeNames: [String]) {
+        self.positions = positions; self.normals = normals; self.indices = indices; self.triangleFace = triangleFace
+        self.segments = segments; self.segmentEdge = segmentEdge; self.faceNames = faceNames; self.edgeNames = edgeNames
+    }
+
+    init(_ s: SKMesh, faceNames: [String], edgeNames: [String]) {
+        func array<T>(_ p: UnsafeMutablePointer<T>?, _ n: Int) -> [T] {
+            p.map { Array(UnsafeBufferPointer(start: $0, count: n)) } ?? []
+        }
+        positions = array(s.positions, Int(s.vertexCount) * 3)
+        normals = array(s.normals, Int(s.vertexCount) * 3)
+        indices = array(s.indices, Int(s.triangleCount) * 3)
+        triangleFace = array(s.triangleFace, Int(s.triangleCount))
+        segments = array(s.segments, Int(s.segmentCount) * 6)
+        segmentEdge = array(s.segmentEdge, Int(s.segmentCount))
+        self.faceNames = faceNames
+        self.edgeNames = edgeNames
+    }
 }
 
 /// Calls `body` with a C array of C strings that stays valid for the duration of the call.

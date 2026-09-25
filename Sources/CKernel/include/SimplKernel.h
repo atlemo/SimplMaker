@@ -97,6 +97,9 @@ typedef struct SKMesh {
 SKMesh *sk_body_tessellate(SKHandle body, double linearDeflection, double angularDeflection);
 void sk_mesh_free(SKMesh *mesh);
 
+/// Triangulates sketch region i for display (faces only; segments are empty).
+SKMesh *sk_sketch_region_tessellate(SKHandle sketch, int i, double linearDeflection);
+
 // ------------------------------------------------------------------ export ---
 bool sk_export_step(const SKHandle *bodies, int count, const char *path);
 bool sk_export_stl(const SKHandle *bodies, int count, const char *path, double linearDeflection);

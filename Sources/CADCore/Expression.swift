@@ -80,7 +80,7 @@ public indirect enum Expr: Equatable, Sendable {
     }
 }
 
-public enum Expression {
+public enum Expressions {
     static let constants: [String: Double] = ["pi": .pi, "e": M_E]
     static let functions: Set<String> = ["sin", "cos", "tan", "asin", "acos", "atan", "sqrt", "abs",
                                           "min", "max", "round", "floor", "ceil"]
@@ -191,7 +191,7 @@ public enum Expression {
                 return e
             case .ident(let name):
                 if eat("(") {
-                    guard Expression.functions.contains(name) else { throw ExpressionError("unknown function '\(name)'") }
+                    guard Expressions.functions.contains(name) else { throw ExpressionError("unknown function '\(name)'") }
                     var args: [Expr] = []
                     if !eat(")") {
                         repeat { args.append(try expression()) } while eat(",")
@@ -277,11 +277,14 @@ public enum Expression {
                 q.value = f == "round" ? q.value.rounded() : f == "floor" ? q.value.rounded(.down) : q.value.rounded(.up)
                 return q
             case "min", "max":
-                guard let first = args.first, args.allSatisfy({ $0.length == first.length && $0.angle == first.angle }) else {
+                // Like + and -, bare numbers take the unit of the dimensioned arguments.
+                guard !args.isEmpty else { throw ExpressionError("\(f) needs at least one argument") }
+                let unit = args.first { !$0.isDimensionless } ?? args[0]
+                guard args.allSatisfy({ $0.isDimensionless || ($0.length == unit.length && $0.angle == unit.angle) }) else {
                     throw ExpressionError("\(f) needs arguments with the same unit")
                 }
                 let v = f == "min" ? args.map(\.value).min()! : args.map(\.value).max()!
-                return Quantity(v, length: first.length, angle: first.angle)
+                return Quantity(v, length: unit.length, angle: unit.angle)
             default: throw ExpressionError("unknown function '\(f)'")
             }
         }

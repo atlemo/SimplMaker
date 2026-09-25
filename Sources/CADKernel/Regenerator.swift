@@ -11,6 +11,8 @@ public struct SketchResult: Sendable {
     public var solved: Sketch
     public var solve: SolveResult
     public var regions: [KSketch.Region]
+    /// Triangulated regions (same order as `regions`) for display and profile picking.
+    public var regionMeshes: [Mesh]
     let kernelSketch: KSketch
 }
 
@@ -97,7 +99,9 @@ public enum Regenerator {
             }
         }
         let regions = try ks.buildRegions()
-        return SketchResult(frame: frame, solved: solved, solve: solve, regions: regions, kernelSketch: ks)
+        let meshes = regions.map { (try? ks.regionMesh($0.index)) ?? Mesh.empty }
+        return SketchResult(frame: frame, solved: solved, solve: solve, regions: regions, regionMeshes: meshes,
+                            kernelSketch: ks)
     }
 
     static func extrude(_ f: ExtrudeFeature, _ feature: Feature, _ r: inout RegenResult) throws {

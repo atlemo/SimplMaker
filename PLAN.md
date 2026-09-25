@@ -167,14 +167,14 @@ Estimates assume one experienced developer working full time. Fillet and chamfer
 
 | # | Milestone | Deliverable | Status |
 |---|---|---|---|
-| M0 | Foundations | SwiftPM package, OCCT build script (static, minimal), C kernel API, Metal viewport, CI on macOS + Linux | **done in the first steps; needs its first run on a Mac** |
+| M0 | Foundations | SwiftPM package, OCCT build script (static, minimal), C kernel API, Metal viewport, CI on macOS + Linux | **done**, and CI builds and tests it on macOS 26. An Xcode project comes when development moves to a Mac |
 | M1 | Viewport | Camera, shading, edges, grid, ID-buffer picking, hover/selection highlight | **first version done**. Next: MSAA, zoom-to-cursor, view cube, ortho |
 | M1b | Fillet & chamfer | Kernel ops with persistent edge names, edge picking → Fillet/Chamfer features with expression sizes, error states | **first version done**. Next: live preview while editing, roll back to the feature while picking |
-| M2 | Sketch geometry | Create a sketch on a plane or face; draw line, rectangle, circle and arc with snapping; select and delete | next |
-| M3 | Constraint solver UX | Solver done for the core constraints. Next: constraint tools, drag-solve, DOF coloring, conflict detection, auto-constraints | solver core done |
+| M2 | Sketch geometry | Create a sketch on a plane or face; draw line, rectangle, circle, arc and point, snapping to points and curves; select, drag and delete; construction geometry | **first version done**. Next: trim/extend/offset, fillet corners in sketches, projecting body edges |
+| M3 | Constraint solver UX | Select-then-constrain tools, dimension tool with inline expressions, drag-solve (soft pull, then exact solve), horizontal/vertical inference, whole-sketch DOF and fully-constrained colouring, rejecting over-constraining edits | **first version done**. Next: constraint glyphs in the viewport, per-entity DOF colouring, naming the conflicting constraints |
 | M4 | Parameters | Expression parser with units, parameter table UI | **done** (dimensions as named parameters `d1`, `d2`… still to do) |
-| M5 | Extrude + timeline | Profile picking UI, extrude dialog, rollback marker, reorder | kernel + regenerator done, UI next |
-| M6 | Sketch on face | `FaceRef` persistent naming, propagation through booleans, re-pick flow | kernel + regenerator done, UI next |
+| M5 | Extrude + timeline | Profile picking in the viewport, extrude inspector, rolling back while editing a sketch | **first version done**. Next: live extrude preview with a drag handle, visible rollback marker, reordering |
+| M6 | Sketch on face | `FaceRef` persistent naming, propagation through booleans, re-pick flow | **done** (sketch on selected face). Next: re-pick flow when a face disappears |
 | M7 | Persistence | Save/load (versioned JSON), undo/redo, STEP/STL export | **first version done** |
 | | **MVP** | | ~3–4 months remaining |
 

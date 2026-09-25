@@ -54,8 +54,15 @@ struct SketchInspector: View {
         }
     }
 
+    var session: SketchSession? { model.sketchSession?.featureID == id ? model.sketchSession : nil }
+
     var body: some View {
         Section("Sketch") {
+            if session == nil {
+                Button("Edit Sketch") { model.editSketch(id) }
+            } else {
+                Button("Finish Sketch") { model.finishSketch() }
+            }
             LabeledContent("Plane", value: planeName)
             if let solve = model.result?.sketches[id]?.solve {
                 LabeledContent("Status", value: solve.status == .solved
@@ -64,6 +71,26 @@ struct SketchInspector: View {
             }
             LabeledContent("Curves", value: "\(sketch.sketch.curves.count)")
             LabeledContent("Constraints", value: "\(sketch.sketch.constraints.count)")
+        }
+        if let session {
+            Section("Constrain Selection (\(session.selection.count))") {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], alignment: .leading) {
+                    ForEach(ConstraintTool.allCases, id: \.self) { c in
+                        Button(c.rawValue) { model.sketchCommand { $0.apply(c) } }
+                            .disabled(!session.canApply(c))
+                    }
+                }
+            }
+            Section("Constraints") {
+                ForEach(session.sketch.constraints) { c in
+                    HStack {
+                        Text(describe(c.kind)).font(.caption)
+                        Spacer()
+                        Button { model.sketchCommand { $0.deleteConstraint(c.id) } } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(.borderless)
+                    }
+                }
+            }
         }
         Section("Dimensions") {
             ForEach(Array(sketch.sketch.dimensions.enumerated()), id: \.element.id) { i, d in
@@ -78,6 +105,21 @@ struct SketchInspector: View {
                     }
                 }
             }
+        }
+    }
+
+    func describe(_ k: SketchConstraint.Kind) -> String {
+        switch k {
+        case .coincident: return "Coincident"
+        case .horizontal: return "Horizontal"
+        case .vertical: return "Vertical"
+        case .parallel: return "Parallel"
+        case .perpendicular: return "Perpendicular"
+        case .equal: return "Equal"
+        case .tangent: return "Tangent"
+        case .pointOnCurve: return "Point on curve"
+        case .midpoint: return "Midpoint"
+        case .fix: return "Fixed"
         }
     }
 

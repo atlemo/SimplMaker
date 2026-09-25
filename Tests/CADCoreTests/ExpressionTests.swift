@@ -5,7 +5,7 @@ import Testing
 
 @Suite struct ExpressionTests {
     func eval(_ s: String, _ kind: UnitKind = .length, _ vars: [String: Quantity] = [:]) throws -> Double {
-        try Expression.value(of: s, kind: kind) { name in
+        try Expressions.value(of: s, kind: kind) { name in
             guard let q = vars[name] else { throw ExpressionError("unknown \(name)") }
             return q
         }

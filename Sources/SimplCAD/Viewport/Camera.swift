@@ -1,5 +1,6 @@
 // Orbit camera, Z up. Angles in radians, distances in mm.
 // SPDX-License-Identifier: GPL-3.0-or-later
+import CoreGraphics
 import Foundation
 import simd
 
@@ -46,6 +47,32 @@ struct Camera {
     }
 
     mutating func zoom(_ factor: Float) { distance = min(max(distance * factor, 0.5), 100_000) }
+
+    /// Ray through a point in view coordinates (points, origin top-left).
+    func ray(at p: CGPoint, viewSize: CGSize) -> (origin: SIMD3<Float>, direction: SIMD3<Float>) {
+        let w = Float(max(viewSize.width, 1)), h = Float(max(viewSize.height, 1))
+        let nx = 2 * Float(p.x) / w - 1, ny = 1 - 2 * Float(p.y) / h
+        let t = tan(fovY / 2)
+        let d = forward + nx * t * (w / h) * right + ny * t * up
+        return (eye, simd_normalize(d))
+    }
+
+    /// Projects a world point to view coordinates (points, origin top-left); nil if behind the camera.
+    func project(_ world: SIMD3<Float>, viewSize: CGSize) -> CGPoint? {
+        let aspect = Float(viewSize.width / max(viewSize.height, 1))
+        let c = projectionMatrix(aspect: aspect) * viewMatrix() * SIMD4(world, 1)
+        guard c.w > 1e-6 else { return nil }
+        return CGPoint(x: CGFloat((c.x / c.w + 1) / 2) * viewSize.width,
+                       y: CGFloat((1 - c.y / c.w) / 2) * viewSize.height)
+    }
+
+    /// Looks straight down `normal` onto `target` (e.g. a sketch plane), keeping the distance.
+    mutating func look(along normal: SIMD3<Float>, at target: SIMD3<Float>) {
+        self.target = target
+        let n = simd_normalize(normal)
+        pitch = min(max(asin(n.z), -1.55), 1.55)
+        if abs(n.x) + abs(n.y) > 1e-4 { yaw = atan2(n.y, n.x) } else { yaw = -.pi / 2 }
+    }
 
     mutating func fit(min lo: SIMD3<Float>, max hi: SIMD3<Float>) {
         target = (lo + hi) / 2
