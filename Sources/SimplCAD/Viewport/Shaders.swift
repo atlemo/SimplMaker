@@ -104,6 +104,16 @@ enum Shaders {
         return o;
     }
 
+    // Origin planes offered when choosing where to sketch: a translucent fill that brightens under the cursor.
+    fragment FragOut planeFragment(FaceOut in [[stage_in]],
+                                   constant Uniforms& u [[buffer(1)]],
+                                   constant DrawParams& p [[buffer(3)]]) {
+        FragOut o;
+        o.color = in.id == u.hovered ? p.hoverColor : p.color;
+        o.id = in.id;
+        return o;
+    }
+
     // Each segment instance is a screen-space quad (triangle strip of 4 vertices).
     vertex LineOut segmentVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                                  device const Segment* segs [[buffer(0)]],
