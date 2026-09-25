@@ -67,11 +67,9 @@ jobs:
         run: swift build
       - name: Test
         run: swift test
-      - name: Xcode project (XcodeGen + xcodebuild)
+      - name: Xcode project
         run: |
           set -o pipefail
-          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
-          scripts/make-xcodeproj.sh --no-open
           xcodebuild -project SimplCAD.xcodeproj -scheme SimplCADApp -configuration Debug \
             -destination 'platform=macOS' build | tail -n 30
           test -f "$(xcodebuild -project SimplCAD.xcodeproj -scheme SimplCADApp -showBuildSettings | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/SimplCAD.app/Contents/Resources/AppIcon.icns"

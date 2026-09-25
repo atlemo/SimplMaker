@@ -14,13 +14,14 @@ Status: **early development.** You can sketch on a plane or a face (lines, recta
 ## Getting started on a Mac
 
 ```sh
-brew install cmake ninja xcodegen
+brew install cmake ninja
 git clone https://github.com/atlemo/SimplCAD.git && cd SimplCAD
 git checkout claude/parametric-cad-tool-plan-k6i4ry   # until it's merged
-scripts/make-xcodeproj.sh   # builds OpenCASCADE the first time (~10–20 min), generates and opens SimplCAD.xcodeproj
+scripts/build-occt.sh   # one time, ~10–20 min
+open SimplCAD.xcodeproj
 ```
 
-In Xcode, choose the **SimplCADApp** scheme and press ⌘R. The Xcode project is generated from `project.yml`, so change that file (not the project) and rerun `scripts/make-xcodeproj.sh` when you add targets or settings. New Swift files under `Sources/SimplCAD` are picked up automatically when you regenerate. Run the tests with `swift test`, or open `Package.swift` in Xcode and use its test schemes.
+In Xcode, choose the **SimplCADApp** scheme and press ⌘R. Edit the project in Xcode as usual. `Sources/SimplCAD` is a synchronized folder, so new Swift files there are part of the app without adding them to the project. The app target links the `CADCore` and `CADKernel` libraries from the Swift package in the same folder. Run the tests with `swift test`, or open `Package.swift` in Xcode and use its test schemes.
 
 ## Build and run
 
