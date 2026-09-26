@@ -11,6 +11,11 @@ enum SketchTool: String, CaseIterable, Identifiable {
     case point = "Point", fillet = "Fillet", trim = "Trim", extend = "Extend", dimension = "Dimension"
 
     var id: String { rawValue }
+
+    /// Toolbar groups: drawing, changing curves, and dimensions (Select stands alone).
+    static let draw: [SketchTool] = [.line, .rectangle, .circle, .arc, .point]
+    static let modify: [SketchTool] = [.fillet, .trim, .extend]
+
     var symbol: String {
         switch self {
         case .select: return "cursorarrow"

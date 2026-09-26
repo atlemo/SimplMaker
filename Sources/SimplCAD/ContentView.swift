@@ -92,7 +92,7 @@ struct StatusBar: View {
     let model: DocumentModel
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DS.Spacing.space5) {
             message
                 .lineLimit(1)
                 .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
@@ -108,8 +108,8 @@ struct StatusBar: View {
             .fixedSize()
         }
         .font(.callout)
-        .padding(.horizontal, 10)
-        .frame(height: 26)
+        .padding(.horizontal, DS.Spacing.space5)
+        .frame(height: DS.ControlHeight.regular + 2)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
     }
@@ -238,7 +238,7 @@ struct BrowserRow<Icon: View>: View {
     @ViewBuilder let icon: () -> Icon
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: DS.Spacing.labelGap) {
             EyeButton(hidden: hidden, toggle: toggle)
             icon().frame(width: 18)
             Text(name)
@@ -255,7 +255,7 @@ struct FolderRow: View {
 
     var body: some View {
         let allHidden = !ids.isEmpty && ids.allSatisfy { model.isHidden($0) }
-        HStack(spacing: 6) {
+        HStack(spacing: DS.Spacing.labelGap) {
             EyeButton(hidden: allHidden) { model.setHidden(ids, !allHidden) }
                 .disabled(ids.isEmpty)
             Image(systemName: "folder").frame(width: 18)
@@ -357,7 +357,7 @@ struct ParameterRow: View {
             }
             ExpressionField(text: parameter.expression) { model.setParameter(parameter.name, expression: $0) }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, DS.Spacing.space2)
     }
 }
 
@@ -399,31 +399,18 @@ struct ExpressionField: View {
 
 // MARK: - Sketch mode
 
-/// Sketch mode's tools, in the middle of the toolbar.
+/// Sketch mode's tools, in the middle of the toolbar, in groups: Select · draw · change curves ·
+/// dimension and constrain · Finish.
 struct SketchToolbar: View {
     let model: DocumentModel
     let session: SketchSession
 
     var body: some View {
-        HStack(spacing: 10) {
-            Picker("Tool", selection: Binding(get: { session.tool }, set: { model.setSketchTool($0) })) {
-                ForEach(SketchTool.allCases) { tool in
-                    Label(tool.rawValue, systemImage: tool.symbol)
-                        .help("\(tool.rawValue) (\(String(tool.key).uppercased()))")
-                        .tag(tool)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelStyle(.iconOnly)
-            .fixedSize()
+        HStack(spacing: 14) {
+            tools([.select])
+            tools(SketchTool.draw)
             ControlGroup {
-                Menu {
-                    ForEach(ConstraintTool.allCases, id: \.self) { c in
-                        Button(c.rawValue) { model.sketchCommand { $0.apply(c) } }
-                            .disabled(!session.canApply(c))
-                    }
-                } label: { Label("Constrain", systemImage: "link") }
-                    .help("Constrain the selected sketch entities")
+                toolToggles(SketchTool.modify)
                 Button { session.beginOffset() } label: { Label("Offset", systemImage: "square.on.square.intersection.dashed") }
                     .help("Offset the selected curves by a distance")
                     .disabled(!session.canOffset)
@@ -431,29 +418,53 @@ struct SketchToolbar: View {
                              arrowEdge: .bottom) {
                         OffsetPopover(model: model, session: session)
                     }
+            }
+            ControlGroup {
+                toolToggles([.dimension])
+                Menu {
+                    ForEach(ConstraintTool.allCases, id: \.self) { c in
+                        Button(c.rawValue) { model.sketchCommand { $0.apply(c) } }
+                            .disabled(!session.canApply(c))
+                    }
+                } label: { Label("Constrain", systemImage: "link") }
+                    .help("Constrain the selected sketch entities")
                 Button { model.sketchCommand { $0.toggleConstruction() } } label: {
                     Label("Construction", systemImage: "pencil.slash")
                 }
                 .help("Toggle construction geometry for the selected curves")
                 .disabled(!session.canToggleConstruction)
             }
-            .labelStyle(.iconOnly)
-            .fixedSize()
             Button { model.finishSketch() } label: { Label("Finish Sketch", systemImage: "checkmark.circle.fill") }
                 .help("Finish the sketch (Return)")
                 .buttonStyle(.borderedProminent)
-                .fixedSize()
+                .labelStyle(.titleAndIcon)
+        }
+        .labelStyle(.iconOnly)
+        .toggleStyle(.button)
+        .fixedSize()
+    }
+
+    private func tools(_ list: [SketchTool]) -> some View {
+        ControlGroup { toolToggles(list) }
+    }
+
+    @ViewBuilder private func toolToggles(_ list: [SketchTool]) -> some View {
+        ForEach(list) { tool in
+            Toggle(isOn: Binding(get: { session.tool == tool }, set: { _ in model.setSketchTool(tool) })) {
+                Label(tool.rawValue, systemImage: tool.symbol)
+            }
+            .help("\(tool.rawValue) (\(String(tool.key).uppercased()))")
         }
     }
 }
 
-/// Design mode's tools, in the middle of the toolbar: Sketch, the features made from sketches,
-/// primitives, and edge modifiers. A tool that is waiting for picks is highlighted.
+/// Design mode's tools, in the middle of the toolbar, in groups: Sketch · shapes from sketches ·
+/// primitives · tools that change a body. A tool that is waiting for picks is highlighted.
 struct DesignToolbar: View {
     let model: DocumentModel
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 14) {
             if model.isPickingSketchPlane {
                 Button { model.cancelSketchPlanePick() } label: { Label("Cancel Sketch", systemImage: "xmark.circle") }
                     .help("Stop choosing a sketch plane (Esc)")
@@ -461,7 +472,7 @@ struct DesignToolbar: View {
                 Button { model.startSketch() } label: { Label("Sketch", systemImage: "pencil.and.outline") }
                     .help("Create a sketch: then click an origin plane or a flat face in the viewport")
             }
-            group(DesignTool.fromSketches)
+            group(DesignTool.shapes)
             group(DesignTool.primitives)
             group(DesignTool.modifiers)
         }
@@ -492,8 +503,8 @@ struct DimensionEditor: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: DS.Spacing.labelGap) {
+            HStack(spacing: DS.Spacing.controlGap) {
                 TextField("Value or expression", text: $draft)
                     .textFieldStyle(.roundedBorder)
                     .font(.body.monospaced())
@@ -509,7 +520,7 @@ struct DimensionEditor: View {
                 Text("For example 25 mm, 1 in, 30 deg or width / 2").font(.caption).foregroundStyle(.secondary)
             }
         }
-        .padding(10)
+        .padding(DS.Spacing.space5)
         .onAppear(perform: load)
         .onChange(of: dimensionID) { load() }
     }
@@ -534,7 +545,7 @@ struct OffsetPopover: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: DS.Spacing.labelGap) {
             Text("Offset Distance").font(.headline)
             HStack {
                 TextField("Distance", text: $draft)
@@ -549,7 +560,7 @@ struct OffsetPopover: View {
                 .font(.caption).foregroundStyle(.secondary)
             if let message = session.message { Text(message).font(.caption).foregroundStyle(.red) }
         }
-        .padding(12)
+        .padding(DS.Spacing.space6)
         .onAppear { focused = true }
     }
 

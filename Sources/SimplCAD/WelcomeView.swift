@@ -52,12 +52,12 @@ struct WelcomeView: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(spacing: 6) {
+            VStack(spacing: DS.Spacing.labelGap) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: 128, height: 128)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, DS.Spacing.space4)
                 Text("Welcome to SimplCAD")
                     .font(.system(size: 36, weight: .regular))
                 Text(Self.versionText)
@@ -65,8 +65,8 @@ struct WelcomeView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 36)
-            .padding(.bottom, 32)
+            .padding(.top, DS.Spacing.space9)
+            .padding(.bottom, DS.Spacing.space9)
 
             VStack(alignment: .leading, spacing: 18) {
                 WelcomeAction(title: "Create a new part", subtitle: "Start with an empty part and sketch on a plane.",
@@ -78,13 +78,13 @@ struct WelcomeView: View {
             }
             .padding(.horizontal, 52)
 
-            Spacer(minLength: 16)
+            Spacer(minLength: DS.Spacing.space6)
 
             Toggle("Show this window when SimplCAD launches", isOn: $showWelcome)
                 .toggleStyle(.checkbox)
                 .font(.callout)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 16)
+                .padding(.horizontal, DS.Spacing.windowMargin)
+                .padding(.bottom, DS.Spacing.space6)
         }
     }
 
@@ -162,9 +162,9 @@ private struct WelcomeAction: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(hovering ? Color.primary.opacity(0.06) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, DS.Spacing.space4)
+            .padding(.vertical, DS.Spacing.labelGap)
+            .background(hovering ? Color.primary.opacity(0.06) : Color.clear, in: RoundedRectangle(cornerRadius: DS.Radius.lg))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
