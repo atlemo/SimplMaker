@@ -549,8 +549,9 @@ struct SketchToolbar: View {
 
     private func tools(_ list: [SketchTool]) -> some View {
         ForEach(list) { tool in
-            ToolButton(title: tool.rawValue, icon: tool.symbol, active: session.tool == tool,
-                       help: "\(tool.rawValue) (\(String(tool.key).uppercased()))") { model.setSketchTool(tool) }
+            ToolButton(title: tool.shortTitle, icon: tool.symbol, active: session.tool == tool, help: tool.help) {
+                model.setSketchTool(tool)
+            }
         }
     }
 

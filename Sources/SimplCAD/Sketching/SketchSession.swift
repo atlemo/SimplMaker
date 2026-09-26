@@ -8,13 +8,24 @@ import Observation
 
 enum SketchTool: String, CaseIterable, Identifiable {
     case select = "Select", line = "Line", rectangle = "Rectangle", circle = "Circle", arc = "Arc"
-    case point = "Point", fillet = "Fillet", trim = "Trim", extend = "Extend", dimension = "Dimension"
+    case point = "Point", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
 
     var id: String { rawValue }
 
     /// Toolbar groups: drawing, changing curves, and dimensions (Select stands alone).
     static let draw: [SketchTool] = [.line, .rectangle, .circle, .arc, .point]
     static let modify: [SketchTool] = [.fillet, .trim, .extend]
+
+    /// The name under the icon in the toolbar (menus use the full `rawValue`).
+    var shortTitle: String { self == .fillet ? "Corner" : rawValue }
+
+    /// Tooltip: the name, its key, and what it does.
+    var help: String {
+        switch self {
+        case .fillet: return "Round Corner (F): round a sketch corner where two lines meet, with an arc and a radius. For rounding edges of a solid, use Fillet in Design mode."
+        default: return "\(rawValue) (\(String(key).uppercased())): \(hint)"
+        }
+    }
 
     /// A glyph name from the macOS Design System's icon set (see IconGlyphs.swift), not an SF Symbol.
     var symbol: String {
@@ -25,7 +36,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .circle: return "circle"
         case .arc: return "spline"
         case .point: return "dot"
-        case .fillet: return "radius"
+        case .fillet: return "corner-round"
         case .trim: return "scissors"
         case .extend: return "arrow-up-right"
         case .dimension: return "ruler"
@@ -54,7 +65,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .circle: return "Click the center, then a point on the circle"
         case .arc: return "Click the center, the start, then the end (counter-clockwise)"
         case .point: return "Click to place a point"
-        case .fillet: return "Click a corner where two lines meet to round it"
+        case .fillet: return "Click the corner point where two lines meet to round it with an arc"
         case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
         case .extend: return "Click near the end of a line or arc to extend it to the next curve"
         case .dimension: return "Click a line, circle, or two entities · click empty space to place a line length"
@@ -530,7 +541,7 @@ final class SketchSession {
                 guard SketchSolver.solve(&solved, dimensionValues: v).status == .solved else { continue }
                 sketch = trial
                 editingDimension = dim
-                return finish("Fillet")
+                return finish("Round Corner")
             }
         }
         message = "That corner can't be rounded (it needs exactly two lines meeting at a point)"
