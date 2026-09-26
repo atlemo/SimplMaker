@@ -3,6 +3,7 @@
 // "unsaved changes" prompt. The document is marked edited whenever the model registers undo.
 // SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
+import os
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -18,27 +19,33 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     /// The document as read from disk (or the template for a new document).
     private let initial: CADDocument
     @MainActor private var modelStorage: DocumentModel?
+    /// The model's latest document, readable from any thread. SwiftUI takes snapshots on a
+    /// background thread, where touching the main-actor model would crash.
+    private let latest: OSAllocatedUnfairLock<CADDocument>
 
     init(document: CADDocument = CADDocument()) {
         initial = document
+        latest = OSAllocatedUnfairLock(initialState: document)
     }
 
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
         initial = try CADDocument.decode(data)
+        latest = OSAllocatedUnfairLock(initialState: initial)
     }
 
     /// The live model for this document's window, created on first use.
     @MainActor var model: DocumentModel {
         if let m = modelStorage { return m }
         let m = DocumentModel(document: initial)
+        m.onDocumentChange = { [latest] doc in latest.withLock { $0 = doc } }
         modelStorage = m
         return m
     }
 
-    // SwiftUI calls snapshot on the main thread, then writes the snapshot in the background.
+    // SwiftUI calls snapshot on a background thread (autosave, Save), so it reads the locked copy.
     func snapshot(contentType: UTType) throws -> CADDocument {
-        MainActor.assumeIsolated { modelStorage?.document ?? initial }
+        latest.withLock { $0 }
     }
 
     func fileWrapper(snapshot: CADDocument, configuration: WriteConfiguration) throws -> FileWrapper {
