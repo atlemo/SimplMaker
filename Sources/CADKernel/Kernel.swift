@@ -90,6 +90,13 @@ public final class KSketch: @unchecked Sendable {
         return Mesh(m.pointee, faceNames: [], edgeNames: [])
     }
 
+    /// A path through the curves with these ids (they must connect end to end).
+    public func path(_ curves: [String]) throws -> KPath {
+        let h = withCStrings(curves) { sk_sketch_path(handle, $0, Int32(curves.count)) }
+        guard h != 0 else { throw KernelError.last("path") }
+        return KPath(handle: h)
+    }
+
     public func profile(_ region: Int) throws -> KProfile {
         let h = sk_sketch_region_profile(handle, Int32(region))
         guard h != 0 else { throw KernelError.last("profile") }
@@ -101,6 +108,26 @@ public final class KProfile: @unchecked Sendable {
     let handle: SKHandle
     init(handle: SKHandle) { self.handle = handle }
     deinit { sk_release(handle) }
+}
+
+public final class KPath: @unchecked Sendable {
+    let handle: SKHandle
+    init(handle: SKHandle) { self.handle = handle }
+    deinit { sk_release(handle) }
+}
+
+public enum KPrimitive: Sendable {
+    case box(width: Double, length: Double, height: Double)
+    case cylinder(diameter: Double, height: Double)
+    case sphere(diameter: Double)
+    case torus(diameter: Double, tube: Double)
+    case coil(diameter: Double, section: Double, pitch: Double, turns: Double)
+}
+
+public enum KHole: Sendable {
+    case simple
+    case counterbore(diameter: Double, depth: Double)
+    case countersink(diameter: Double, angle: Double)
 }
 
 public final class KBody: @unchecked Sendable {
@@ -117,6 +144,58 @@ public final class KBody: @unchecked Sendable {
                                back: Double = 0, featureID: String) throws -> KBody {
         let hs = profiles.map(\.handle)
         return try wrap(sk_extrude(hs, Int32(hs.count), d.x, d.y, d.z, distance, back, featureID), "extrude")
+    }
+
+    public static func revolve(_ profiles: [KProfile], axisOrigin o: SIMD3<Double>, axisDirection d: SIMD3<Double>,
+                               angle: Double, featureID: String) throws -> KBody {
+        let hs = profiles.map(\.handle)
+        return try wrap(sk_revolve(hs, Int32(hs.count), o.x, o.y, o.z, d.x, d.y, d.z, angle, featureID), "revolve")
+    }
+
+    public static func sweep(_ profiles: [KProfile], along path: KPath, featureID: String) throws -> KBody {
+        let hs = profiles.map(\.handle)
+        return try wrap(sk_sweep(hs, Int32(hs.count), path.handle, featureID), "sweep")
+    }
+
+    public static func pipe(along path: KPath, diameter: Double, wall: Double, featureID: String) throws -> KBody {
+        try wrap(sk_pipe(path.handle, diameter, wall, featureID), "pipe")
+    }
+
+    public static func loft(_ profiles: [KProfile], ruled: Bool, featureID: String) throws -> KBody {
+        let hs = profiles.map(\.handle)
+        return try wrap(sk_loft(hs, Int32(hs.count), ruled, featureID), "loft")
+    }
+
+    public func rib(along path: KPath, thickness: Double, featureID: String) throws -> KBody {
+        try KBody.wrap(sk_rib(handle, path.handle, thickness, featureID), "rib")
+    }
+
+    /// The solid to cut for a hole whose top centre is the frame origin, drilled against the normal.
+    public static func hole(at frame: Frame, _ kind: KHole, diameter: Double, depth: Double, tipAngle: Double,
+                            featureID: String) throws -> KBody {
+        let h: SKHandle
+        switch kind {
+        case .simple:
+            h = sk_hole(frame.c, SK_HOLE_SIMPLE, diameter, depth, tipAngle, 0, 0, 0, featureID)
+        case .counterbore(let d, let depth2):
+            h = sk_hole(frame.c, SK_HOLE_COUNTERBORE, diameter, depth, tipAngle, d, depth2, 0, featureID)
+        case .countersink(let d, let angle):
+            h = sk_hole(frame.c, SK_HOLE_COUNTERSINK, diameter, depth, tipAngle, d, 0, angle, featureID)
+        }
+        return try wrap(h, "hole")
+    }
+
+    /// A primitive standing on the frame's plane, centred at its origin.
+    public static func primitive(_ p: KPrimitive, on frame: Frame, featureID: String) throws -> KBody {
+        let h: SKHandle
+        switch p {
+        case .box(let w, let l, let height): h = sk_primitive(SK_BOX, frame.c, w, l, height, 0, featureID)
+        case .cylinder(let d, let height): h = sk_primitive(SK_CYLINDER, frame.c, d, 0, height, 0, featureID)
+        case .sphere(let d): h = sk_primitive(SK_SPHERE, frame.c, d, 0, 0, 0, featureID)
+        case .torus(let d, let tube): h = sk_primitive(SK_TORUS, frame.c, d, tube, 0, 0, featureID)
+        case .coil(let d, let section, let pitch, let turns): h = sk_primitive(SK_COIL, frame.c, d, section, pitch, turns, featureID)
+        }
+        return try wrap(h, "primitive")
     }
 
     public func boolean(_ tool: KBody, _ op: SKBooleanOp) throws -> KBody {

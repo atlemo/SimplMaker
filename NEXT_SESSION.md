@@ -11,10 +11,10 @@ _Last updated 2026-09-25. All work is on branch `claude/parametric-cad-tool-plan
 
 | Area | What's there |
 |---|---|
-| Kernel (`Sources/CKernel`) | C API over OpenCASCADE 8.0.1 (static): sketch regions, extrude, booleans, fillet, chamfer, persistent face/edge names, tessellation, STEP/STL export, edge drag-handle frames |
+| Kernel (`Sources/CKernel`) | C API over OpenCASCADE 8.0.1 (static): sketch regions, extrude, revolve, sweep, pipe, loft, rib, hole, primitives (box, cylinder, sphere, torus, coil), booleans, fillet, chamfer, persistent face/edge names, tessellation, STEP/STL export, edge drag-handle frames |
 | Core (`Sources/CADCore`) | Expressions with units, parameters, sketch model, Levenberg–Marquardt solver with drag solving, trim/extend/offset/corner fillet, Codable document |
 | Regeneration (`Sources/CADKernel`) | Swift wrappers; the timeline regenerator (per-feature errors, fillet input bodies for handles) |
-| App (`Sources/SimplCAD`) | Document-based SwiftUI app. Metal viewport with ID-buffer picking, dark mode, sketch mode with tools and constraint glyphs, dimension popovers, drag handles (extrude, fillet, chamfer) with live preview, Settings, View menu, icon |
+| App (`Sources/SimplCAD`) | Document-based SwiftUI app. Metal viewport with ID-buffer picking, dark mode, sketch mode with tools, typed values and constraint glyphs, dimension popovers. Browser tree (Bodies, Sketches) with visibility; right-click or double-click a sketch to edit it. Centred toolbar in Design and Sketch mode. Design tools: Extrude, Revolve, Sweep, Loft, Rib, Hole, Box, Cylinder, Sphere, Torus, Coil, Pipe, Fillet, Chamfer (`DesignTools.swift`); drag handles with a typed size field for the ones with a size. Settings, View menu, icon |
 | Build | `SimplCAD.xcodeproj`, `scripts/build-occt.sh`, `scripts/bundle-app.sh`, CI in `.github/workflows/ci.yml` |
 
 See `README.md` for usage and `PLAN.md` for architecture and the milestone table.

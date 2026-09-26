@@ -8,7 +8,8 @@ import simd
 /// What the pick buffer encodes (0 = nothing):
 ///   body face  (body+1) << 20 | face           (bodies < 1023)
 ///   body edge  0x8000_0000 | (body+1) << 20 | edge
-///   sketch     0x4000_0000 point, 0x5000_0000 curve, 0x6000_0000 profile region | index
+///   sketch     0x4000_0000 point, 0x5000_0000 curve, 0x6000_0000 profile region | slot << 16 | index
+///              (slot 0 = the sketch being edited, n = the n-th sketch in the document)
 ///   handle     0x7000_0000 (the extrude drag handle)
 ///   plane      0x7100_0000 | index (an origin plane offered when choosing where to sketch)
 struct PickID: Hashable, Sendable {
@@ -21,9 +22,9 @@ struct PickID: Hashable, Sendable {
     init(raw: UInt32) { self.raw = raw }
     init(body: Int, face: Int) { raw = UInt32(body + 1) << 20 | UInt32(face) }
     init(body: Int, edge: Int) { raw = PickID.edgeFlag | UInt32(body + 1) << 20 | UInt32(edge) }
-    init(sketchPoint i: Int) { raw = 0x4000_0000 | UInt32(i) }
-    init(sketchCurve i: Int) { raw = 0x5000_0000 | UInt32(i) }
-    init(region i: Int) { raw = 0x6000_0000 | UInt32(i) }
+    init(sketchPoint i: Int, slot: Int = 0) { raw = 0x4000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
+    init(sketchCurve i: Int, slot: Int = 0) { raw = 0x5000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
+    init(region i: Int, slot: Int = 0) { raw = 0x6000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
     init(plane i: Int) { raw = 0x7000_0000 | PickID.planeFlag | UInt32(i) }
     static let handle = PickID(raw: 0x7000_0000)
 
@@ -49,7 +50,15 @@ struct PickID: Hashable, Sendable {
         switch kind {
         case .face, .edge: return Int(raw & 0xFFFFF)
         case .plane: return Int(raw & 0xFF)
+        case .sketchPoint, .sketchCurve, .region: return Int(raw & 0xFFFF)
         default: return Int(raw & 0x0FFF_FFFF)
+        }
+    }
+    /// Which sketch a sketch point, curve or region belongs to (see the table above).
+    var sketchSlot: Int {
+        switch kind {
+        case .sketchPoint, .sketchCurve, .region: return Int((raw >> 16) & 0xFFF)
+        default: return 0
         }
     }
 }
@@ -64,7 +73,7 @@ struct SketchOverlay {
     var planeOutline: [SegmentInstance] = []
     var curves: [SegmentInstance] = []
     var construction: [SegmentInstance] = []
-    var inactive: [SegmentInstance] = []   // other visible sketches: thin, not pickable
+    var inactive: [SegmentInstance] = []   // finished sketches: thin, pickable as paths and axes
     var preview: [SegmentInstance] = []
     var points: [SegmentInstance] = []     // zero-length segments drawn as squares
     var handle: [SegmentInstance] = []     // drag handle: shaft + tip (zero-length)
@@ -453,7 +462,7 @@ final class Renderer {
                             thickness: 1.2 * scale, depthBias: 0.0005, pickable: 1))
         segments(overlay.inactive, overlay.inactiveCount,
                  DrawParams(color: p.inactiveSketch, hoverColor: hover, selectColor: select,
-                            thickness: 1.2 * scale, depthBias: 0.0006, pickable: 0))
+                            thickness: 1.6 * scale, depthBias: 0.0006, pickable: 1))
         let curveColor = overlay.fullyConstrained ? p.sketchConstrained : p.sketch
         segments(overlay.curves, overlay.curveCount,
                  DrawParams(color: curveColor, hoverColor: hover, selectColor: select,

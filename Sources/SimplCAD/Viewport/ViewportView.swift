@@ -101,6 +101,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             default: return .arrow
             }
         }
+        if let tool = model.pendingTool {
+            guard let h = model.hovered, tool.accepts(h.kind) else { return .arrow }
+            return .pointingHand
+        }
         if model.hovered?.kind == .handle { return handleDrag ? .closedHand : .openHand }
         return .arrow
     }
@@ -214,6 +218,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             return
         }
         guard !dragged, let renderer, let model, model.sketchSession == nil else { return }
+        let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
+        model.clickRay = (SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                          SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)))
         let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
         model.click(renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered), additive: additive)
         refreshOverlay()
@@ -296,11 +303,17 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 return
             }
         } else if event.keyCode == 53 {
-            if model.isPickingSketchPlane { model.cancelSketchPlanePick() } else { model.clearSelection() }
+            if model.isPickingSketchPlane { model.cancelSketchPlanePick() }
+            else if model.pendingTool != nil { model.cancelTool() }
+            else { model.clearSelection() }
             refreshOverlay()
             return
-        } else if plainKey, event.charactersIgnoringModifiers?.lowercased() == "e", !model.selectedRegions.isEmpty {
-            model.extrudeSelectedProfiles()
+        } else if plainKey, event.keyCode == 36 || event.keyCode == 76, model.pendingTool != nil {  // Return
+            model.confirmTool()
+            refreshOverlay()
+            return
+        } else if plainKey, event.charactersIgnoringModifiers?.lowercased() == "e" {
+            model.run(.extrude)
             refreshOverlay()
             return
         }
@@ -310,7 +323,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// A click on a viewport label: picks the plane it names, or opens the dimension it belongs to.
     private func labelClicked(_ id: EntityID) {
         guard let model else { return }
-        if model.isPickingSketchPlane, let plane = OriginPlane(labelID: id) {
+        if model.showsOriginPlanes, let plane = OriginPlane(labelID: id) {
+            model.clickRay = nil  // a label click places things at the plane's origin
             model.click(plane.pickID, additive: false)
             refreshOverlay()
         } else {
@@ -826,7 +840,7 @@ struct ViewportView: NSViewRepresentable {
         let c = context.coordinator
         if c.sceneRevision != sceneRevision {
             c.sceneRevision = sceneRevision
-            renderer.setScene(model.meshes)
+            renderer.setScene(model.visibleMeshes)
             renderer.hovered = 0
         }
         if c.fitRevision != fitRevision, let b = model.sceneBounds {

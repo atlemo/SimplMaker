@@ -51,6 +51,13 @@ public enum Regenerator {
                 case .extrude(let f): try extrude(f, feature, &r)
                 case .fillet(let f): try edgeFeature(f, feature, fillet: true, &r)
                 case .chamfer(let f): try edgeFeature(f, feature, fillet: false, &r)
+                case .revolve(let f): try revolve(f, feature, &r)
+                case .sweep(let f): try sweep(f, feature, &r)
+                case .loft(let f): try loft(f, feature, &r)
+                case .rib(let f): try rib(f, feature, &r)
+                case .hole(let f): try hole(f, feature, &r)
+                case .primitive(let f): try primitive(f, feature, &r)
+                case .pipe(let f): try pipe(f, feature, &r)
                 }
             } catch {
                 r.errors[feature.id] = "\(error)"
@@ -107,16 +114,69 @@ public enum Regenerator {
                             kernelSketch: ks)
     }
 
-    static func extrude(_ f: ExtrudeFeature, _ feature: Feature, _ r: inout RegenResult) throws {
-        guard let sk = r.sketches[f.sketch] else { throw KernelError(message: "its sketch failed or is missing") }
-        var profiles: [KProfile] = []
-        for ref in f.profiles {
-            let candidates = sk.regions.filter { $0.tags == ref.tagString }
-            guard let region = candidates.min(by: {
-                vlength($0.sample - SIMD2(ref.hintU, ref.hintV)) < vlength($1.sample - SIMD2(ref.hintU, ref.hintV))
-            }) else { throw KernelError(message: "profile bounded by \(ref.tagString) no longer exists") }
-            profiles.append(try sk.kernelSketch.profile(region.index))
+    static func sketchResult(_ id: FeatureID, _ r: RegenResult) throws -> SketchResult {
+        guard let sk = r.sketches[id] else { throw KernelError(message: "its sketch failed or is missing") }
+        return sk
+    }
+
+    /// The region a profile reference points at: same bounding curves, nearest to its hint.
+    public static func region(_ ref: ProfileRef, in sk: SketchResult) -> KSketch.Region? {
+        sk.regions.filter { $0.tags == ref.tagString }.min(by: {
+            vlength($0.sample - SIMD2(ref.hintU, ref.hintV)) < vlength($1.sample - SIMD2(ref.hintU, ref.hintV))
+        })
+    }
+
+    static func profiles(_ refs: [ProfileRef], in sk: SketchResult) throws -> [KProfile] {
+        try refs.map { ref in
+            guard let region = region(ref, in: sk) else {
+                throw KernelError(message: "profile bounded by \(ref.tagString) no longer exists")
+            }
+            return try sk.kernelSketch.profile(region.index)
         }
+    }
+
+    /// A path through sketch curves (construction curves included), from the solved sketch.
+    static func path(_ ref: CurveRef, _ r: RegenResult) throws -> (path: KPath, frame: Frame) {
+        let sk = try sketchResult(ref.sketch, r)
+        let ks = try KSketch(frame: sk.frame)
+        for id in ref.curves {
+            guard let c = sk.solved.curve(id) else { throw KernelError(message: "a path curve was deleted from its sketch") }
+            try add(c, of: sk.solved, to: ks)
+        }
+        return (try ks.path(ref.curves), sk.frame)
+    }
+
+    static func add(_ c: SketchCurve, of solved: Sketch, to ks: KSketch) throws {
+        switch c.geometry {
+        case .line(let a, let b):
+            guard let pa = solved.point(a), let pb = solved.point(b) else { return }
+            try ks.addLine(c.id, pa.position, pb.position)
+        case .circle(let center, let radius):
+            guard let pc = solved.point(center) else { return }
+            try ks.addCircle(c.id, center: pc.position, radius: radius)
+        case .arc(let center, let s, let e):
+            guard let pc = solved.point(center), let ps = solved.point(s), let pe = solved.point(e) else { return }
+            let a0 = atan2(ps.y - pc.y, ps.x - pc.x), a1 = atan2(pe.y - pc.y, pe.x - pc.x)
+            try ks.addArc(c.id, center: pc.position, radius: vlength(ps.position - pc.position), from: a0, to: a1)
+        }
+    }
+
+    /// Adds a feature's solid as a new body, or joins/cuts/intersects it with the target body.
+    static func combine(_ tool: KBody, _ operation: BodyOperation, target: FeatureID?, _ feature: Feature,
+                        _ r: inout RegenResult) throws {
+        if operation == .newBody {
+            r.bodies.append(BodyResult(id: feature.id, name: "Body\(r.bodies.count + 1)", body: tool))
+            return
+        }
+        guard let index = target.flatMap({ t in r.bodies.firstIndex { $0.id == t } }) ?? (r.bodies.isEmpty ? nil : r.bodies.count - 1)
+        else { throw KernelError(message: "no body to \(operation.rawValue.lowercased())") }
+        let op: SKBooleanOp = operation == .join ? SK_FUSE : operation == .cut ? SK_CUT : SK_COMMON
+        r.bodies[index].body = try r.bodies[index].body.boolean(tool, op)
+    }
+
+    static func extrude(_ f: ExtrudeFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let sk = try sketchResult(f.sketch, r)
+        let profiles = try profiles(f.profiles, in: sk)
 
         let p = r.parameters
         var distance: Double, back: Double
@@ -127,16 +187,128 @@ public enum Regenerator {
         }
         let dir = f.flipped ? -sk.frame.normal : sk.frame.normal
         let tool = try KBody.extrude(profiles, direction: dir, distance: distance, back: back, featureID: feature.id)
+        try combine(tool, f.operation, target: f.target, feature, &r)
+    }
 
-        if f.operation == .newBody {
-            let n = r.bodies.count + 1
-            r.bodies.append(BodyResult(id: feature.id, name: "Body\(n)", body: tool))
-            return
+    /// The revolve axis in world space.
+    public static func axis(_ a: AxisRef, sketch sk: SketchResult) throws -> (origin: SIMD3<Double>, direction: SIMD3<Double>) {
+        switch a {
+        case .x: return (.zero, SIMD3(1, 0, 0))
+        case .y: return (.zero, SIMD3(0, 1, 0))
+        case .z: return (.zero, SIMD3(0, 0, 1))
+        case .sketchX: return (sk.frame.origin, sk.frame.xAxis)
+        case .sketchY: return (sk.frame.origin, sk.frame.yAxis)
+        case .line(let id):
+            guard let (a, b) = sk.solved.lineEnds(id) else { throw KernelError(message: "the axis line was deleted") }
+            let pa = sk.frame.point(a.x, a.y), pb = sk.frame.point(b.x, b.y)
+            let d = pb - pa, len = (d * d).sum().squareRoot()
+            guard len > 1e-9 else { throw KernelError(message: "the axis line has no length") }
+            return (pa, d / len)
         }
-        guard let index = f.target.flatMap({ t in r.bodies.firstIndex { $0.id == t } }) ?? (r.bodies.isEmpty ? nil : r.bodies.count - 1)
-        else { throw KernelError(message: "no body to \(f.operation.rawValue.lowercased())") }
-        let op: SKBooleanOp = f.operation == .join ? SK_FUSE : f.operation == .cut ? SK_CUT : SK_COMMON
-        r.bodies[index].body = try r.bodies[index].body.boolean(tool, op)
+    }
+
+    static func revolve(_ f: RevolveFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let sk = try sketchResult(f.sketch, r)
+        let profiles = try profiles(f.profiles, in: sk)
+        let ax = try axis(f.axis, sketch: sk)
+        let angle = try r.parameters.value(of: f.angle, kind: .angle)
+        let tool = try KBody.revolve(profiles, axisOrigin: ax.origin, axisDirection: ax.direction, angle: angle,
+                                     featureID: feature.id)
+        try combine(tool, f.operation, target: f.target, feature, &r)
+    }
+
+    static func sweep(_ f: SweepFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let sk = try sketchResult(f.sketch, r)
+        let profiles = try profiles(f.profiles, in: sk)
+        let tool = try KBody.sweep(profiles, along: try path(f.path, r).path, featureID: feature.id)
+        try combine(tool, f.operation, target: f.target, feature, &r)
+    }
+
+    static func loft(_ f: LoftFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        guard f.sections.count >= 2 else { throw KernelError(message: "a loft needs at least two profiles") }
+        let profiles = try f.sections.map { s in try Self.profiles([s.profile], in: try sketchResult(s.sketch, r))[0] }
+        let tool = try KBody.loft(profiles, ruled: f.ruled, featureID: feature.id)
+        try combine(tool, f.operation, target: f.target, feature, &r)
+    }
+
+    static func targetIndex(_ target: FeatureID?, _ r: RegenResult) throws -> Int {
+        guard let i = target.flatMap({ t in r.bodies.firstIndex { $0.id == t } }) ?? (r.bodies.isEmpty ? nil : r.bodies.count - 1)
+        else { throw KernelError(message: "there is no body to add it to") }
+        return i
+    }
+
+    static func rib(_ f: RibFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let i = try targetIndex(f.target, r)
+        let thickness = try r.parameters.value(of: f.thickness, kind: .length)
+        r.bodies[i].body = try r.bodies[i].body.rib(along: try path(f.path, r).path, thickness: thickness, featureID: feature.id)
+    }
+
+    /// Where a hole's top centre is: (u, v) in its face's frame, drilling against the face normal.
+    public static func holeFrame(_ f: HoleFeature, _ r: RegenResult) throws -> Frame {
+        guard let body = r.body(f.face.body) else { throw KernelError(message: "the body with the hole's face is missing") }
+        let face = try body.faceFrame(f.face.face)
+        let u = try r.parameters.value(of: f.u, kind: .length), v = try r.parameters.value(of: f.v, kind: .length)
+        return Frame(origin: face.point(u, v), normal: face.normal, xAxis: face.xAxis)
+    }
+
+    static func hole(_ f: HoleFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        guard let i = r.bodies.firstIndex(where: { $0.id == f.face.body }) else {
+            throw KernelError(message: "the body with the hole's face is missing")
+        }
+        let p = r.parameters
+        let frame = try holeFrame(f, r)
+        let depth: Double
+        if let d = f.depth {
+            depth = try p.value(of: d, kind: .length)
+        } else if let b = r.bodies[i].body.bounds {  // through all: longer than the body is wide
+            let d = b.max - b.min
+            depth = (d * d).sum().squareRoot() * 2 + 1
+        } else {
+            throw KernelError(message: "the body is empty")
+        }
+        let kind: KHole
+        switch f.kind {
+        case .simple: kind = .simple
+        case .counterbore: kind = .counterbore(diameter: try p.value(of: f.headDiameter, kind: .length),
+                                               depth: try p.value(of: f.headDepth, kind: .length))
+        case .countersink: kind = .countersink(diameter: try p.value(of: f.headDiameter, kind: .length),
+                                               angle: try p.value(of: f.headAngle, kind: .angle))
+        }
+        let tip = f.depth == nil ? 0 : try p.value(of: f.tipAngle, kind: .angle)
+        let tool = try KBody.hole(at: frame, kind, diameter: try p.value(of: f.diameter, kind: .length), depth: depth,
+                                  tipAngle: tip, featureID: feature.id)
+        r.bodies[i].body = try r.bodies[i].body.boolean(tool, SK_CUT)
+    }
+
+    /// The frame a primitive stands on: its plane, moved to (u, v).
+    public static func primitiveFrame(_ f: PrimitiveFeature, _ r: RegenResult) throws -> Frame {
+        let plane = try resolvePlane(f.plane, r)
+        let u = try r.parameters.value(of: f.u, kind: .length), v = try r.parameters.value(of: f.v, kind: .length)
+        return Frame(origin: plane.point(u, v), normal: plane.normal, xAxis: plane.xAxis)
+    }
+
+    static func primitive(_ f: PrimitiveFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let p = r.parameters
+        func len(_ s: String) throws -> Double { try p.value(of: s, kind: .length) }
+        let shape: KPrimitive
+        switch f.kind {
+        case .box: shape = .box(width: try len(f.width), length: try len(f.length), height: try len(f.height))
+        case .cylinder: shape = .cylinder(diameter: try len(f.diameter), height: try len(f.height))
+        case .sphere: shape = .sphere(diameter: try len(f.diameter))
+        case .torus: shape = .torus(diameter: try len(f.diameter), tube: try len(f.tube))
+        case .coil: shape = .coil(diameter: try len(f.diameter), section: try len(f.tube), pitch: try len(f.pitch),
+                                  turns: try p.value(of: f.turns, kind: .none))
+        }
+        let tool = try KBody.primitive(shape, on: try primitiveFrame(f, r), featureID: feature.id)
+        try combine(tool, f.operation, target: f.target, feature, &r)
+    }
+
+    static func pipe(_ f: PipeFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let p = r.parameters
+        let wall = try f.wall.map { try p.value(of: $0, kind: .length) } ?? 0
+        let tool = try KBody.pipe(along: try path(f.path, r).path, diameter: try p.value(of: f.diameter, kind: .length),
+                                  wall: wall, featureID: feature.id)
+        try combine(tool, f.operation, target: f.target, feature, &r)
     }
 
     static func edgeFeature(_ f: EdgeFeature, _ feature: Feature, fillet: Bool, _ r: inout RegenResult) throws {
