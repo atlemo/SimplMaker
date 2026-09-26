@@ -222,6 +222,7 @@ extension DocumentModel {
         mutate("Cancel \(name)") { doc in
             doc.features.removeAll { $0.id == id }
             doc.hidden = before.hidden
+            doc.rollback = before.rollback
         }
         newFeature = nil
         selectedFeature = nil

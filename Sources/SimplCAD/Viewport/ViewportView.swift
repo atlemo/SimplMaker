@@ -71,8 +71,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     @objc private func displayOptionsChanged(_ note: Notification) { applyAppearance() }
     override var isFlipped: Bool { true }  // origin top-left, like the ID texture
 
-    /// Widths of the floating panels over the left and right of the view (0 when hidden).
-    var panelInsets: (left: CGFloat, right: CGFloat) = (0, 0)
+    /// How much of the view the floating panels cover: left, right, and at the bottom (timeline, status).
+    var panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
 
     /// Points our window covers at the top (the toolbar, which the view extends under).
     private var topInset: CGFloat {
@@ -85,9 +85,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     func updateCameraInsets() {
         guard let renderer, bounds.width > 1, bounds.height > 1 else { return }
         let w = bounds.width, h = bounds.height
-        let left = min(panelInsets.left, w * 0.45), right = min(panelInsets.right, w * 0.45), top = min(topInset, h * 0.4)
-        renderer.camera.centerShift = SIMD2(Float((left - right) / w), Float(-top / h))
-        renderer.camera.visibleFraction = SIMD2(Float((w - left - right) / w), Float((h - top) / h))
+        let left = min(panelInsets.left, w * 0.45), right = min(panelInsets.right, w * 0.45)
+        let top = min(topInset, h * 0.3), bottom = min(panelInsets.bottom, h * 0.3)
+        renderer.camera.centerShift = SIMD2(Float((left - right) / w), Float((bottom - top) / h))
+        renderer.camera.visibleFraction = SIMD2(Float((w - left - right) / w), Float((h - top - bottom) / h))
     }
 
     var viewAspect: Float { Float(bounds.width / max(bounds.height, 1)) }
@@ -927,7 +928,7 @@ struct ViewportView: NSViewRepresentable {
     let showGrid: Bool
     let showConstraints: Bool
     /// Widths covered by the floating panels, so the camera centres on what's left.
-    var panelInsets: (left: CGFloat, right: CGFloat) = (0, 0)
+    var panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
 
     final class Coordinator {
         var sceneRevision = -1

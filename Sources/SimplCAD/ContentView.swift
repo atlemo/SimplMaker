@@ -37,8 +37,10 @@ struct DocumentWindow: View {
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
                          showGrid: showGrid, showConstraints: showConstraints,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
-                                       model.showInspector ? Panel.inspectorWidth + Panel.margin : 0))
+                                       model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
+                                       Panel.bottomInset(timeline: model.showTimeline)))
                 .ignoresSafeArea()
+            VStack(spacing: Panel.inset) {
             HStack(alignment: .top, spacing: 0) {
                 if model.showSidebar {
                     Sidebar(model: model)
@@ -52,7 +54,13 @@ struct DocumentWindow: View {
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
+            if model.showTimeline {
+                TimelineBar(model: model)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            }
             .padding(Panel.inset)
+            .animation(.easeOut(duration: DS.Duration.base), value: model.showTimeline)
             .animation(.easeOut(duration: DS.Duration.base), value: model.showSidebar)
             .animation(.easeOut(duration: DS.Duration.base), value: model.showInspector)
         }
@@ -71,7 +79,7 @@ struct DocumentWindow: View {
             StatusBar(model: model)
                 .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
                 .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
-                .padding(.bottom, Panel.inset)
+                .padding(.bottom, model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .toolbar {
@@ -156,6 +164,11 @@ enum Panel {
     static let inset: CGFloat = DS.Spacing.space4
     /// A panel's width plus its gaps: how much of the viewport it covers.
     static let margin: CGFloat = 2 * DS.Spacing.space4
+
+    /// How much the timeline and status bar cover at the bottom of the viewport.
+    static func bottomInset(timeline: Bool) -> CGFloat {
+        (timeline ? TimelineBar.height + inset : 0) + DS.ControlHeight.large + 2 * inset
+    }
 }
 
 extension View {
@@ -253,12 +266,6 @@ struct Sidebar: View {
                     }
                 } label: {
                     FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model)
-                }
-            }
-            Section("Timeline") {
-                ForEach(model.document.features) { f in
-                    FeatureRow(feature: f, error: model.result?.errors[f.id])
-                        .tag(f.id)
                 }
             }
             Section {
@@ -379,46 +386,6 @@ struct SketchIcon: View {
                 }
             }
             .help(failed ? "This sketch has an error" : editing ? "Being edited" : locked ? "Fully constrained" : "Sketch")
-    }
-}
-
-struct FeatureRow: View {
-    let feature: Feature
-    let error: String?
-
-    var icon: String {
-        switch feature.kind {
-        case .sketch: return "pen-tool"
-        case .extrude: return DesignTool.extrude.symbol
-        case .fillet: return DesignTool.fillet.symbol
-        case .chamfer: return DesignTool.chamfer.symbol
-        case .revolve: return DesignTool.revolve.symbol
-        case .sweep: return DesignTool.sweep.symbol
-        case .loft: return DesignTool.loft.symbol
-        case .rib: return DesignTool.rib.symbol
-        case .hole: return DesignTool.hole.symbol
-        case .pipe: return DesignTool.pipe.symbol
-        case .primitive(let p):
-            switch p.kind {
-            case .box: return DesignTool.box.symbol
-            case .cylinder: return DesignTool.cylinder.symbol
-            case .sphere: return DesignTool.sphere.symbol
-            case .torus: return DesignTool.torus.symbol
-            case .coil: return DesignTool.coil.symbol
-            }
-        }
-    }
-
-    var body: some View {
-        HStack {
-            Icon(icon).frame(width: 18)
-            Text(feature.name).strikethrough(feature.suppressed)
-            Spacer()
-            if let error {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).help(error)
-            }
-        }
-        .foregroundStyle(feature.suppressed ? .secondary : .primary)
     }
 }
 

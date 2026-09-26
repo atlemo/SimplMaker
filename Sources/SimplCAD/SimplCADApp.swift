@@ -92,6 +92,8 @@ struct SimplCADCommands: Commands {
             Divider()
             Button((model?.showSidebar ?? true) ? "Hide Browser" : "Show Browser") { model?.showSidebar.toggle() }
                 .keyboardShortcut("s", modifiers: [.command, .control])
+            Button((model?.showTimeline ?? true) ? "Hide Timeline" : "Show Timeline") { model?.showTimeline.toggle() }
+                .keyboardShortcut("t", modifiers: [.command, .option])
             Button((model?.showInspector ?? true) ? "Hide Inspector" : "Show Inspector") { model?.showInspector.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
             Divider()
