@@ -174,6 +174,9 @@ final class Renderer {
     private let queue: MTLCommandQueue
     private let facePipeline: MTLRenderPipelineState
     private let segmentPipeline: MTLRenderPipelineState
+    /// Lines drawn only to be seen (grid, axes, previews, the snap marker): they write colour but
+    /// leave the ID buffer alone, so they never hide what's picked beneath them.
+    private let decorationPipeline: MTLRenderPipelineState
     private let regionPipeline: MTLRenderPipelineState
     private let planePipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
@@ -237,7 +240,8 @@ final class Renderer {
         self.pickBuffer = pickBuffer
         do {
             let library = try device.makeLibrary(source: Shaders.source, options: nil)
-            func pipeline(_ vertex: String, _ fragment: String, blend: Bool = false) throws -> MTLRenderPipelineState {
+            func pipeline(_ vertex: String, _ fragment: String, blend: Bool = false,
+                          writesID: Bool = true) throws -> MTLRenderPipelineState {
                 let d = MTLRenderPipelineDescriptor()
                 d.vertexFunction = library.makeFunction(name: vertex)
                 d.fragmentFunction = library.makeFunction(name: fragment)
@@ -250,11 +254,13 @@ final class Renderer {
                     d.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
                 }
                 d.colorAttachments[1].pixelFormat = .r32Uint
+                if !writesID { d.colorAttachments[1].writeMask = [] }
                 d.depthAttachmentPixelFormat = Renderer.depthFormat
                 return try device.makeRenderPipelineState(descriptor: d)
             }
             facePipeline = try pipeline("faceVertex", "faceFragment")
             segmentPipeline = try pipeline("segmentVertex", "segmentFragment")
+            decorationPipeline = try pipeline("segmentVertex", "segmentFragment", writesID: false)
             regionPipeline = try pipeline("regionVertex", "regionFragment", blend: true)
             planePipeline = try pipeline("regionVertex", "planeFragment", blend: true)
         } catch {
@@ -440,6 +446,7 @@ final class Renderer {
             guard let buffer, count > 0 else { return }
             var p = params
             p.depthBias *= biasScale
+            enc.setRenderPipelineState(p.pickable != 0 ? segmentPipeline : decorationPipeline)
             enc.setVertexBuffer(buffer, offset: 0, index: 0)
             enc.setVertexBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.setFragmentBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
