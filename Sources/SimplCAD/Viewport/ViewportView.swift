@@ -327,11 +327,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         } else if event.keyCode == 53 {
             if model.isPickingSketchPlane { model.cancelSketchPlanePick() }
             else if model.pendingTool != nil { model.cancelTool() }
+            else if model.selection.isEmpty, model.dragHandle != nil { model.finishFeatureEdit() }
             else { model.clearSelection() }
             refreshOverlay()
             return
-        } else if plainKey, event.keyCode == 36 || event.keyCode == 76, model.pendingTool != nil {  // Return
-            model.confirmTool()
+        } else if plainKey, event.keyCode == 36 || event.keyCode == 76, model.pendingTool != nil || model.dragHandle != nil {  // Return
+            if model.pendingTool != nil { model.confirmTool() } else { model.finishFeatureEdit() }
             refreshOverlay()
             return
         } else if plainKey, event.charactersIgnoringModifiers?.lowercased() == "e" {
@@ -613,6 +614,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 }
                 field.stringValue = model.handleFieldText ?? field.stringValue
                 window?.makeFirstResponder(self)
+                model.finishFeatureEdit()  // done: the handle and its field go away
             } else if cancel {
                 handlePreviewTask?.cancel()
                 model.cancelHandleEdit()

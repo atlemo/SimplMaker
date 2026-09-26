@@ -281,6 +281,13 @@ final class DocumentModel {
 
     func clearSelection() { selection = [] }
 
+    /// Return (or Esc) after sizing a feature: done with it, so its handle and size field go away.
+    func finishFeatureEdit() {
+        guard dragHandle != nil else { return }
+        selectedFeature = nil
+        selection = []
+    }
+
     /// What a plain click can select: faces, edges, and the profiles and curves of visible sketches.
     func accepts(_ pick: PickID) -> Bool {
         switch pick.kind {
