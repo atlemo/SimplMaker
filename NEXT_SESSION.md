@@ -45,7 +45,7 @@ In Xcode, run the **SimplCADApp** scheme (⌘R), then File → New Demo Part (�
 
    Fix what comes up before adding features.
 2. **Merge to `main`** through a pull request once the first test pass looks OK.
-3. **Liquid Glass icon (optional):** in Icon Composer, build `Packaging/AppIcon.icon` from `Packaging/AppIcon.png`, then add it to the app target in Xcode so macOS 26 stops framing the icon.
+3. **Liquid Glass icon:** done. `Packaging/AppIcon.icon` (Icon Composer) is the app icon; Xcode and `scripts/bundle-app.sh` compile it with actool (plus a flat `.icns` fallback).
 4. **Next modelling features.** Revolve and construction planes first; together they add the most capability.
    - revolve
    - construction planes (offset/angled) and axes

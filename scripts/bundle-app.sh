@@ -28,7 +28,18 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SimplCAD"
 cp "$ROOT/Packaging/Info.plist" "$APP/Contents/Info.plist"
-cp "$ROOT/Packaging/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+# The icon: compile the Icon Composer file (Liquid Glass layers + a flat .icns fallback) with actool;
+# without Xcode's actool, fall back to the prebuilt .icns.
+if xcrun --find actool >/dev/null 2>&1; then
+  PARTIAL="$(mktemp -t simplcad-icon).plist"
+  xcrun actool "$ROOT/Packaging/AppIcon.icon" --compile "$APP/Contents/Resources" --app-icon AppIcon \
+    --platform macosx --target-device mac --minimum-deployment-target 26.0 \
+    --output-partial-info-plist "$PARTIAL" --output-format human-readable-text --errors >/dev/null
+  /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$APP/Contents/Info.plist" 2>/dev/null || true
+  rm -f "$PARTIAL"
+else
+  cp "$ROOT/Packaging/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+fi
 codesign --force --sign - "$APP"
 echo "Built $APP"
 [ "$OPEN" = 1 ] && open "$APP"
