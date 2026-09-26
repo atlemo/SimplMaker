@@ -1230,6 +1230,52 @@ int sk_body_find_edge(SKHandle body, const char *name) {
   return it == b->edgeIndex.end() ? -1 : it->second;
 }
 
+SKHandle sk_body_face_profile(SKHandle body, const char *faceName) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  auto it = b->faceIndex.find(faceName);
+  if (it == b->faceIndex.end()) {
+    setError(std::string("face not found: ") + faceName);
+    return 0;
+  }
+  const TopoDS_Face &f = TopoDS::Face(b->faces(it->second + 1));
+  if (BRepAdaptor_Surface(f).GetType() != GeomAbs_Plane) {
+    setError(std::string("only flat faces can be extruded: ") + faceName);
+    return 0;
+  }
+  // A copy, so the profile doesn't share (and later mesh) the body's topology.
+  BRepBuilderAPI_Copy copy(f);
+  Profile p;
+  p.face = TopoDS::Face(copy.Shape());
+  for (TopExp_Explorer ex(f, TopAbs_EDGE); ex.More(); ex.Next()) {
+    int e = b->edges.FindIndex(ex.Current());
+    if (e > 0) p.edgeTags.push_back({copy.ModifiedShape(ex.Current()), b->edgeNames[e - 1]});
+  }
+  if (p.face.Orientation() == TopAbs_REVERSED) p.face.Reverse();
+  return store(std::move(p));
+  SK_CATCH(0)
+}
+
+bool sk_body_face_center(SKHandle body, const char *faceName, double out[3]) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->faceIndex.find(faceName);
+  if (it == b->faceIndex.end()) {
+    setError(std::string("face not found: ") + faceName);
+    return false;
+  }
+  GProp_GProps props;
+  BRepGProp::SurfaceProperties(b->faces(it->second + 1), props);
+  gp_Pnt c = props.CentreOfMass();
+  out[0] = c.X(); out[1] = c.Y(); out[2] = c.Z();
+  return true;
+  SK_CATCH(false)
+}
+
 bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out) {
   SK_TRY
   Body *b;

@@ -149,4 +149,45 @@ import Testing
         #expect(abs(try #require(res.body("r")).volume - (4000 - 20 * 4 * 10)) < 1e-6)
         #expect(abs(try #require(res.body("far")).volume - 125) < 1e-9)
     }
+
+    @Test func extrudingABodyFacePullsItOutAndPushesItIn() async throws {
+        var doc = CADDocument()
+        doc.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20", length: "10", height: "5")))]
+        let model = DocumentModel(document: doc)
+        try await settle(model)
+        let top = try #require(model.meshes.first?.mesh.faceNames.firstIndex(of: "b.top"))
+        model.run(.extrude)
+        #expect(model.pendingTool == .extrude && model.toolPrompt?.contains("flat face") == true)
+        model.click(PickID(body: 0, face: top), additive: false)
+        #expect(model.pendingTool == nil)
+        guard case .extrude(let e)? = model.document.features.last?.kind else { Issue.record("expected an extrude"); return }
+        #expect(e.face == FaceRef(body: "b", face: "b.top") && e.operation == .join && e.target == "b")
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        let body = try #require(model.result?.body("b"))
+        #expect(model.result?.bodies.count == 1)
+        #expect(abs(body.volume - 200 * 15) < 1e-6, "pulled 10 mm up")
+        #expect(body.isValid)
+        let h = try #require(model.dragHandle)
+        #expect(h.allowsNegative && abs(h.base.z - 5) < 1e-9 && abs(h.base.x) < 1e-9, "the arrow starts at the original face's centre")
+        #expect(model.commitHandle("-2"))
+        guard case .extrude(let e2)? = model.document.features.last?.kind else { return }
+        #expect(e2.operation == .cut)
+        try await settle(model)
+        #expect(abs((model.result?.body("b")?.volume ?? 0) - 200 * 3) < 1e-6, "pushed 2 mm in")
+    }
+
+    @Test func curvedFacesCannotBeExtruded() async throws {
+        var doc = CADDocument()
+        doc.features = [Feature(id: "c", name: "Cyl", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, height: "5", diameter: "10")))]
+        let model = DocumentModel(document: doc)
+        try await settle(model)
+        let side = try #require(model.meshes.first?.mesh.faceNames.firstIndex(of: "c.side"))
+        model.click(PickID(body: 0, face: side), additive: false)
+        model.run(.extrude)
+        #expect(model.alert?.title == "Only flat faces can be extruded")
+        #expect(model.document.features.count == 1)
+        model.cancelTool()
+        try await settle(model)
+    }
 }

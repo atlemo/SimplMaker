@@ -133,7 +133,7 @@ enum Shaders {
         float4 c = atB ? cb : ca;
         float2 offset = (nrm * side + d * (atB ? 1.0 : -1.0)) * p.thickness * 0.5;
         c.xy += offset / halfSize * c.w;
-        c.z -= p.depthBias * c.w;
+        c.z -= p.depthBias;  // constant in clip space: a fixed fraction of the view depth (see Camera.depthBiasScale)
         LineOut o;
         o.position = c;
         o.id = s.id;

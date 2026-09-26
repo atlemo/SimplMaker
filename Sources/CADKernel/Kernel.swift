@@ -219,6 +219,19 @@ public final class KBody: @unchecked Sendable {
     public func hasFace(_ name: String) -> Bool { sk_body_find_face(handle, name) >= 0 }
     public func hasEdge(_ name: String) -> Bool { sk_body_find_edge(handle, name) >= 0 }
 
+    /// A flat face as a profile, for extruding it.
+    public func faceProfile(_ name: String) throws -> KProfile {
+        let h = sk_body_face_profile(handle, name)
+        guard h != 0 else { throw KernelError.last("face profile") }
+        return KProfile(handle: h)
+    }
+
+    public func faceCenter(_ name: String) throws -> SIMD3<Double> {
+        var o = [Double](repeating: 0, count: 3)
+        guard sk_body_face_center(handle, name, &o) else { throw KernelError.last("face centre") }
+        return SIMD3(o[0], o[1], o[2])
+    }
+
     public func faceFrame(_ name: String) throws -> Frame {
         var f = SKFrame()
         guard sk_body_face_frame(handle, name, &f) else { throw KernelError.last("sketch plane") }

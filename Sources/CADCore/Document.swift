@@ -62,11 +62,19 @@ public struct ExtrudeFeature: Codable, Hashable, Sendable {
     public var operation: BodyOperation
     /// Body to join/cut/intersect. Nil = the most recently created body.
     public var target: FeatureID?
+    /// Extrude a flat face of a body instead of sketch profiles (press-pull); `sketch` is then empty.
+    public var face: FaceRef?
 
     public init(sketch: FeatureID, profiles: [ProfileRef], extent: ExtrudeExtent, flipped: Bool = false,
                 operation: BodyOperation = .newBody, target: FeatureID? = nil) {
         self.sketch = sketch; self.profiles = profiles; self.extent = extent
         self.flipped = flipped; self.operation = operation; self.target = target
+    }
+
+    /// Pulls a body's flat face out (join) or pushes it in (cut, with a negative distance).
+    public init(face: FaceRef, extent: ExtrudeExtent = .distance("10 mm")) {
+        self.init(sketch: "", profiles: [], extent: extent, operation: .join, target: face.body)
+        self.face = face
     }
 }
 
@@ -259,7 +267,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
     public var sketchesUsed: [FeatureID] {
         switch kind {
         case .sketch, .fillet, .chamfer, .hole, .primitive: return []
-        case .extrude(let e): return [e.sketch]
+        case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
         case .sweep(let s): return [s.sketch, s.path.sketch]
         case .loft(let l): return l.sections.map(\.sketch)

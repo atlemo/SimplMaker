@@ -43,7 +43,7 @@ import Testing
         doc.features = Array(doc.features.prefix(1))  // just the base sketch
         let model = try await loaded(doc)
         model.run(.extrude)
-        #expect(model.pendingTool == .extrude && model.cursorPrompt == "Select a profile to extrude")
+        #expect(model.pendingTool == .extrude && model.cursorPrompt == "Select a profile or a flat face to extrude")
         model.click(PickID(body: 0, face: 0), additive: false)  // not a profile: ignored
         #expect(model.pendingTool == .extrude)
 

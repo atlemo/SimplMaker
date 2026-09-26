@@ -622,10 +622,18 @@ final class DocumentModel {
         }
         switch f.kind {
         case .extrude(let e):
-            guard let sr = result.sketches[e.sketch], let ref = e.profiles.first,
-                  let region = Regenerator.region(ref, in: sr) else { return nil }
-            let n = sr.frame.normal * (e.flipped ? -1 : 1)
-            let base = sr.frame.point(region.sample.x, region.sample.y)
+            let base: SIMD3<Double>, n: SIMD3<Double>
+            if let face = e.face {
+                guard let body = result.featureInputs[id]?[face.body], let frame = try? body.faceFrame(face.face),
+                      let center = try? body.faceCenter(face.face) else { return nil }
+                base = center
+                n = frame.normal * (e.flipped ? -1 : 1)
+            } else {
+                guard let sr = result.sketches[e.sketch], let ref = e.profiles.first,
+                      let region = Regenerator.region(ref, in: sr) else { return nil }
+                n = sr.frame.normal * (e.flipped ? -1 : 1)
+                base = sr.frame.point(region.sample.x, region.sample.y)
+            }
             switch e.extent {
             case .distance(let d): return handle("Distance", base, n, d, negative: true)
             case .symmetric(let d): return handle("Distance", base, n, d, per: 0.5)

@@ -187,7 +187,11 @@ struct ExtrudeInspector: View {
             }
             Toggle("Flip direction", isOn: Binding(get: { extrude.flipped },
                                                    set: { v in update("Flip") { $0.flipped = v } }))
-            LabeledContent("Profiles", value: "\(extrude.profiles.count)")
+            if let face = extrude.face {
+                LabeledContent("Face", value: face.face)
+            } else {
+                LabeledContent("Profiles", value: "\(extrude.profiles.count)")
+            }
         }
     }
 }

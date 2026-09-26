@@ -434,9 +434,12 @@ final class Renderer {
         }
 
         enc.setRenderPipelineState(segmentPipeline)
+        // Depth bias per layer, as a fraction of the view depth (0.001 ≈ 0.2 mm at the default zoom).
+        let biasScale = camera.depthBiasScale * 2.5
         func segments(_ buffer: MTLBuffer?, _ count: Int, _ params: DrawParams) {
             guard let buffer, count > 0 else { return }
             var p = params
+            p.depthBias *= biasScale
             enc.setVertexBuffer(buffer, offset: 0, index: 0)
             enc.setVertexBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.setFragmentBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
