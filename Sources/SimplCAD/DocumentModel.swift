@@ -60,6 +60,8 @@ final class DocumentModel {
     var alert: AlertInfo?
 
     @ObservationIgnored var undoManager: UndoManager?
+    /// Called with every new document, so the file can snapshot it off the main thread.
+    @ObservationIgnored var onDocumentChange: (@Sendable (CADDocument) -> Void)?
     @ObservationIgnored private var generation = 0
 
     init(document: CADDocument = CADDocument()) {
@@ -79,6 +81,7 @@ final class DocumentModel {
     private func replace(with doc: CADDocument, actionName: String) {
         let old = document
         document = doc
+        onDocumentChange?(doc)
         syncSession()
         undoManager?.registerUndo(withTarget: self) { model in
             MainActor.assumeIsolated { model.replace(with: old, actionName: actionName) }
