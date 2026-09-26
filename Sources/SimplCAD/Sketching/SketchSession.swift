@@ -82,6 +82,25 @@ struct SketchMouse {
     var uv: SIMD2<Double>?   // cursor on the sketch plane
     var pick: PickID?        // what's under the cursor
     var additive = false
+    /// How close (in mm on the sketch plane) the cursor must come to snap to something: a few pixels.
+    var tolerance: Double?
+    /// Grid spacing at the current zoom, in mm; nil = don't snap to the grid.
+    var gridStep: Double?
+    /// False while ⌥ is held: place exactly where the cursor is.
+    var snapping = true
+}
+
+/// Model geometry the cursor can snap to while sketching: body edges and corners that lie in the
+/// sketch plane (e.g. the outline of the face being sketched on), in sketch (u, v).
+struct SketchReferences {
+    var segments: [(SIMD2<Double>, SIMD2<Double>)] = []
+    var points: [SIMD2<Double>] = []
+}
+
+/// What the cursor snapped to, shown as a marker and in the status bar.
+enum SnapKind: String {
+    case point = "Point", midpoint = "Midpoint", center = "Center", curve = "On curve"
+    case vertex = "Corner", edge = "Edge", grid = "Grid"
 }
 
 @MainActor
@@ -116,6 +135,14 @@ final class SketchSession {
     private var dragEntity: EntityID?
     private var dragOffset = SIMD2<Double>.zero
     private var dragMoved = false
+
+    /// Model edges and corners in the sketch plane, for snapping (kept up to date by the model).
+    @ObservationIgnored var references = SketchReferences()
+    @ObservationIgnored private var tolerance = 0.5
+    @ObservationIgnored private var gridStep: Double?
+    @ObservationIgnored private var snapping = true
+    /// The latest snap, for the marker and the status bar.
+    private(set) var lastSnap: (kind: SnapKind, position: SIMD2<Double>)?
 
     @ObservationIgnored var values: [EntityID: Double] = [:]
     @ObservationIgnored var parameters = ParameterValues()
@@ -176,12 +203,76 @@ final class SketchSession {
         return nil
     }
 
-    /// Snap for the cursor: onto the hovered point, or onto the hovered curve.
-    func snap(_ uv: SIMD2<Double>) -> SketchSnap {
-        guard let h = hover else { return SketchSnap(uv) }
-        if let p = sketch.point(h) { return SketchSnap(p.position, point: h) }
-        if sketch.curve(h) != nil { return SketchSnap(uv, curve: h) }
-        return SketchSnap(uv)
+    /// Snap for the cursor, in order of preference: a sketch point, a line's midpoint, a model corner,
+    /// a sketch curve, a model edge, the grid. Points and curves snap within a few pixels (not only
+    /// when exactly under the cursor) and become coincident / point-on-curve constraints.
+    func snap(_ uv: SIMD2<Double>, excluding: EntityID? = nil) -> SketchSnap {
+        let result = findSnap(uv, excluding: excluding)
+        lastSnap = result.kind.map { ($0, result.snap.position) }
+        return result.snap
+    }
+
+    private func findSnap(_ uv: SIMD2<Double>, excluding: EntityID?) -> (snap: SketchSnap, kind: SnapKind?) {
+        if let h = hover, h != excluding, let p = sketch.point(h) { return (SketchSnap(p.position, point: h), .point) }
+        guard snapping else {
+            if let h = hover, h != excluding, sketch.curve(h) != nil { return (SketchSnap(uv, curve: h), .curve) }
+            return (SketchSnap(uv), nil)
+        }
+        let tol = tolerance
+        func nearest<T>(_ items: [T], _ pos: (T) -> SIMD2<Double>?) -> T? {
+            var best: (T, Double)?
+            for item in items {
+                guard let p = pos(item) else { continue }
+                let d = simdLength(p - uv)
+                if d <= tol, d < (best?.1 ?? .infinity) { best = (item, d) }
+            }
+            return best?.0
+        }
+        let own = excluding.map { Set([$0] + (sketch.curve($0).map { sketch.pointIDs(of: $0) } ?? [])) } ?? []
+        if let p = nearest(sketch.points.filter { !own.contains($0.id) }, { $0.position }) {
+            return (SketchSnap(p.position, point: p.id), sketch.curves.contains { c in
+                if case .circle(let center, _) = c.geometry { return center == p.id }
+                if case .arc(let center, _, _) = c.geometry { return center == p.id }
+                return false
+            } ? .center : .point)
+        }
+        let lines = sketch.curves.compactMap { c -> SIMD2<Double>? in
+            guard !own.contains(c.id), case .line(let a, let b) = c.geometry, let pa = sketch.position(a),
+                  let pb = sketch.position(b) else { return nil }
+            return (pa + pb) / 2
+        }
+        if let m = nearest(lines, { $0 }) { return (SketchSnap(m), .midpoint) }
+        if let v = nearest(references.points, { $0 }) { return (SketchSnap(v), .vertex) }
+        let curves = sketch.curves.filter { !own.contains($0.id) }.map(\.id)
+        let onCurves = curves.compactMap { id in sketch.geometry(of: id).map { (id, Self.closest(uv, on: $0)) } }
+        if let hovered = hover, hovered != excluding, let g = sketch.geometry(of: hovered) {
+            return (SketchSnap(Self.closest(uv, on: g), curve: hovered), .curve)
+        }
+        if let c = nearest(onCurves, { $0.1 }) { return (SketchSnap(c.1, curve: c.0), .curve) }
+        let onEdges = references.segments.map { Self.closest(uv, on: .line($0.0, $0.1)) }
+        if let e = nearest(onEdges, { $0 }) { return (SketchSnap(e), .edge) }
+        if let step = gridStep, step > 0 {
+            return (SketchSnap(SIMD2((uv.x / step).rounded() * step, (uv.y / step).rounded() * step)), .grid)
+        }
+        return (SketchSnap(uv), nil)
+    }
+
+    /// The point of a curve (not its extension) closest to p.
+    static func closest(_ p: SIMD2<Double>, on g: CurveGeometry) -> SIMD2<Double> {
+        switch g {
+        case .line:
+            return g.point(min(max(g.parameter(of: p), 0), 1))
+        case .circle(let c, let r):
+            let d = p - c, len = simdLength(d)
+            return len > 1e-12 ? c + d * (r / len) : c + SIMD2(r, 0)
+        case .arc(_, _, _, let sweep):
+            let t = g.parameter(of: p)
+            if t <= 1 { return g.point(t) }
+            // Beyond the ends: the nearer end.
+            let a = g.point(0), b = g.point(1)
+            _ = sweep
+            return simdLength(p - a) < simdLength(p - b) ? a : b
+        }
     }
 
     // MARK: input
@@ -189,6 +280,10 @@ final class SketchSession {
     /// Returns (handled, commit action name). Unhandled drags orbit the camera.
     func handle(_ m: SketchMouse) -> (handled: Bool, commit: String?) {
         if m.phase == .moved || m.phase == .down { hover = entity(for: m.pick) }
+        if let t = m.tolerance { tolerance = t }
+        gridStep = m.gridStep
+        snapping = m.snapping
+        if let uv = m.uv, tool != .select || dragEntity != nil { _ = snap(uv, excluding: dragEntity) } else { lastSnap = nil }
         if let uv = m.uv { cursor = uv }
         switch m.phase {
         case .moved: return (false, nil)
@@ -241,7 +336,8 @@ final class SketchSession {
     }
 
     private func drag(_ m: SketchMouse) -> String? {
-        guard let id = dragEntity, let uv = m.uv else { return nil }
+        guard let id = dragEntity, var uv = m.uv else { return nil }
+        if sketch.point(id) != nil { uv = snap(uv, excluding: id).position }  // dragged points snap too (without constraints)
         if sketch.drag(id, to: uv, grabOffset: dragOffset, values: values) {
             dragMoved = true
             solve = SketchSolver.solve(&sketch, dimensionValues: values)
@@ -613,6 +709,7 @@ final class SketchSession {
     var statusText: String {
         if let message { return message }
         var s = tool.hint
+        if let snap = lastSnap { s = "Snap: \(snap.kind.rawValue)\(snap.kind == .grid ? " \(gridStep.map { formatDimension($0, kind: .length) } ?? "")" : "") · " + s }
         if !inputFields.isEmpty {
             s = "Type a value, Tab for the next one, Return to place it · " + s
         }

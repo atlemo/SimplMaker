@@ -168,6 +168,16 @@ public enum Regenerator {
             r.bodies.append(BodyResult(id: feature.id, name: "Body\(r.bodies.count + 1)", body: tool))
             return
         }
+        if operation == .cut, target == nil {
+            // No body chosen: cut every body the tool passes through.
+            guard !r.bodies.isEmpty else { throw KernelError(message: "no body to cut") }
+            guard let tb = tool.bounds else { return }
+            for i in r.bodies.indices {
+                guard let b = r.bodies[i].body.bounds, overlaps(b, tb) else { continue }
+                r.bodies[i].body = try r.bodies[i].body.boolean(tool, SK_CUT)
+            }
+            return
+        }
         guard let index = target.flatMap({ t in r.bodies.firstIndex { $0.id == t } }) ?? (r.bodies.isEmpty ? nil : r.bodies.count - 1)
         else { throw KernelError(message: "no body to \(operation.rawValue.lowercased())") }
         let op: SKBooleanOp = operation == .join ? SK_FUSE : operation == .cut ? SK_CUT : SK_COMMON
@@ -335,6 +345,12 @@ public enum Regenerator {
                 : b.chamfer(edges: edges, distance: size, featureID: feature.id)
         }
     }
+}
+
+func overlaps(_ a: (min: SIMD3<Double>, max: SIMD3<Double>), _ b: (min: SIMD3<Double>, max: SIMD3<Double>)) -> Bool {
+    let eps = 1e-6
+    return a.min.x <= b.max.x + eps && b.min.x <= a.max.x + eps && a.min.y <= b.max.y + eps && b.min.y <= a.max.y + eps
+        && a.min.z <= b.max.z + eps && b.min.z <= a.max.z + eps
 }
 
 @inline(__always) func vlength(_ v: SIMD2<Double>) -> Double { (v.x * v.x + v.y * v.y).squareRoot() }

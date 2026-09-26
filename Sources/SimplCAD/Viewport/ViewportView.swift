@@ -150,11 +150,33 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         guard let model, let renderer else { return false }
         let point = p ?? lastPoint
         let hovered = renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered)
+        // Snap within about 8 pixels; the grid step is a round number of mm, at least 12 pixels apart.
+        var tolerance: Double?, gridStep: Double?
+        if let point, let a = sketchUV(point), let b = sketchUV(NSPoint(x: point.x + 1, y: point.y)) {
+            let mmPerPixel = simdLength(b - a)
+            tolerance = 8 * mmPerPixel
+            if Preferences.snapsToGrid { gridStep = Self.niceStep(12 * mmPerPixel) }
+        }
         let handled = model.sketchMouse(SketchMouse(phase: phase, uv: point.flatMap { sketchUV($0) },
-                                                    pick: hovered, additive: additive))
+                                                    pick: hovered, additive: additive, tolerance: tolerance,
+                                                    gridStep: gridStep, snapping: !NSEvent.modifierFlags.contains(.option)))
         refreshOverlay()
         updateCursor()
         return handled
+    }
+
+    /// The smallest of 1, 2 or 5 × 10ⁿ mm that is at least `minimum`.
+    static func niceStep(_ minimum: Double) -> Double {
+        guard minimum > 0, minimum.isFinite else { return 1 }
+        let base = pow(10, floor(log10(minimum)))
+        for m in [1.0, 2, 5, 10] where base * m >= minimum { return base * m }
+        return base * 10
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        // ⌥ turns snapping off and on while drawing: update the preview right away.
+        if model?.sketchSession != nil { sketchEvent(.moved, at: nil, additive: false) }
+        super.flagsChanged(with: event)
     }
 
     // MARK: mouse

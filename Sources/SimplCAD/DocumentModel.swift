@@ -224,6 +224,7 @@ final class DocumentModel {
         if fit { fitRevision += 1 }
         isRegenerating = false
         if let session = sketchSession, let frame = r.sketches[session.featureID]?.frame { session.frame = frame }
+        updateSketchReferences()
     }
 
     var sceneBounds: (min: SIMD3<Float>, max: SIMD3<Float>)? {
@@ -354,6 +355,7 @@ final class DocumentModel {
         isPickingSketchPlane = false
         let feature = Feature(name: document.nextName("Sketch"), .sketch(SketchFeature(plane: plane, sketch: Sketch())))
         sketchSession = SketchSession(featureID: feature.id, frame: frame, sketch: Sketch(), parameters: parameterValues)
+        updateSketchReferences()
         selection = []
         selectedFeature = feature.id
         mutate("New Sketch") { doc in
@@ -384,6 +386,29 @@ final class DocumentModel {
         selectedFeature = id
         regenerate()
         lookAt(frame)
+    }
+
+    /// Body edges and corners that lie in the sketch plane, for the sketch to snap to.
+    func updateSketchReferences() {
+        guard let session = sketchSession else { return }
+        let f = session.frame
+        var refs = SketchReferences()
+        func local(_ s: [Float], _ i: Int) -> (uv: SIMD2<Double>, w: Double) {
+            let p = SIMD3(Double(s[i]), Double(s[i + 1]), Double(s[i + 2])) - f.origin
+            return (SIMD2(simd_dot(p, f.xAxis), simd_dot(p, f.yAxis)), simd_dot(p, f.normal))
+        }
+        for m in visibleMeshes {
+            let s = m.mesh.segments, edge = m.mesh.segmentEdge
+            for i in edge.indices {
+                let a = local(s, i * 6), b = local(s, i * 6 + 3)
+                guard abs(a.w) < 1e-3, abs(b.w) < 1e-3 else { continue }
+                refs.segments.append((a.uv, b.uv))
+                // An edge's ends: where its run of segments starts and stops.
+                if i == 0 || edge[i - 1] != edge[i] { refs.points.append(a.uv) }
+                if i == edge.count - 1 || edge[i + 1] != edge[i] { refs.points.append(b.uv) }
+            }
+        }
+        session.references = refs
     }
 
     func finishSketch() {
@@ -548,6 +573,8 @@ final class DocumentModel {
         var lengthPerUnit: Double = 1
         /// Largest value allowed (a full turn, for angles).
         var maxValue: Double?
+        /// The arrow can be dragged back through its base (an extrude going the other way).
+        var allowsNegative = false
 
         /// The value written to the feature for an arrow length.
         func featureValue(_ length: Double) -> Double {
@@ -564,6 +591,7 @@ final class DocumentModel {
         var unit: UnitKind
         var expression: String
         var value: Double
+        var startValue: Double?
     }
 
     @ObservationIgnored private var handleDragStart: CADDocument?
@@ -586,11 +614,11 @@ final class DocumentModel {
               let f = document.features.first(where: { $0.id == id }), !f.suppressed, let result else { return nil }
         let params = parameterValues
         func handle(_ label: String, _ base: SIMD3<Double>, _ direction: SIMD3<Double>, _ expression: String,
-                    unit: UnitKind = .length, per: Double = 1, max: Double? = nil) -> DragHandle {
+                    unit: UnitKind = .length, per: Double = 1, max: Double? = nil, negative: Bool = false) -> DragHandle {
             let v = (try? params.value(of: expression, kind: unit)) ?? 0
             return DragHandle(featureID: id, label: label, base: base, direction: direction,
                               value: handlePreviewValue ?? v * per, expression: expression, unit: unit,
-                              lengthPerUnit: per, maxValue: max)
+                              lengthPerUnit: per, maxValue: max, allowsNegative: negative)
         }
         switch f.kind {
         case .extrude(let e):
@@ -599,9 +627,9 @@ final class DocumentModel {
             let n = sr.frame.normal * (e.flipped ? -1 : 1)
             let base = sr.frame.point(region.sample.x, region.sample.y)
             switch e.extent {
-            case .distance(let d): return handle("Distance", base, n, d)
+            case .distance(let d): return handle("Distance", base, n, d, negative: true)
             case .symmetric(let d): return handle("Distance", base, n, d, per: 0.5)
-            case .twoSides(let d, _): return handle("Distance", base, n, d)
+            case .twoSides(let d, _): return handle("Distance", base, n, d, negative: true)
             }
         case .fillet(let ef), .chamfer(let ef):
             guard let ref = ef.edges.first, let body = result.edgeFeatureInputs[id]?[ref.body],
@@ -657,9 +685,13 @@ final class DocumentModel {
     }
 
     func beginHandleDrag() {
-        guard dragHandle != nil else { return }
+        guard let h = dragHandle else { return }
         handleDragStart = document
+        handleStartValue = h.featureValue(h.value)
     }
+
+    /// The size when the drag or typing began, to notice an extrude turning round (Join ⇄ Cut).
+    @ObservationIgnored private var handleStartValue: Double?
 
     /// Moves the handle to the point on its axis closest to the mouse ray, and previews the result.
     func dragHandle(rayOrigin o: SIMD3<Double>, direction d: SIMD3<Double>) {
@@ -668,11 +700,12 @@ final class DocumentModel {
         let b = simd_dot(a, d)
         guard 1 - b * b > 1e-6 else { return }  // looking straight down the handle
         let s = (b * simd_dot(d, w) - simd_dot(a, w)) / (1 - b * b)
-        var length = max(s, 0.01)
+        var length = h.allowsNegative ? (abs(s) < 0.01 ? (s < 0 ? -0.01 : 0.01) : s) : max(s, 0.01)
         if let m = h.maxValue { length = min(length, m * h.lengthPerUnit) }
         handlePreviewValue = length
         var preview = start
         Self.set(expression: formatDimension(h.featureValue(length), kind: h.unit), of: h.featureID, in: &preview)
+        Self.turnRound(h.featureID, from: handleStartValue, to: h.featureValue(length), in: &preview)
         regenerate(preview: preview, previewFeature: h.featureID)
         overlayRevision += 1
     }
@@ -689,21 +722,39 @@ final class DocumentModel {
         }
         let value = h.featureValue(length)
         if Self.isParametric(h.expression) {
-            unlinkPrompt = UnlinkPrompt(featureID: h.featureID, label: h.label, unit: h.unit, expression: h.expression, value: value)
+            unlinkPrompt = UnlinkPrompt(featureID: h.featureID, label: h.label, unit: h.unit, expression: h.expression,
+                                        value: value, startValue: handleStartValue)
             return  // the preview stays on screen until the user answers
         }
-        commitHandle(h.featureID, h.label, formatDimension(value, kind: h.unit))
+        commitHandle(h.featureID, h.label, formatDimension(value, kind: h.unit), from: handleStartValue, to: value)
     }
 
     /// Answer to the unlink prompt: use the dragged number, or keep the expression.
     func resolveUnlink(useValue: Bool) {
         guard let p = unlinkPrompt else { return }
         unlinkPrompt = nil
-        if useValue { commitHandle(p.featureID, p.label, formatDimension(p.value, kind: p.unit)) } else { regenerate() }
+        if useValue {
+            commitHandle(p.featureID, p.label, formatDimension(p.value, kind: p.unit), from: p.startValue, to: p.value)
+        } else {
+            regenerate()
+        }
     }
 
-    private func commitHandle(_ id: FeatureID, _ label: String, _ expression: String) {
-        mutate("Change \(label)") { Self.set(expression: expression, of: id, in: &$0) }
+    private func commitHandle(_ id: FeatureID, _ label: String, _ expression: String, from old: Double? = nil, to new: Double? = nil) {
+        mutate("Change \(label)") { doc in
+            Self.set(expression: expression, of: id, in: &doc)
+            if let new { Self.turnRound(id, from: old, to: new, in: &doc) }
+        }
+    }
+
+    /// An extrude dragged or typed through zero turns round: pulled back into the body it cuts,
+    /// pushed out again it joins. Other operations are left as the user chose them.
+    static func turnRound(_ id: FeatureID, from old: Double?, to new: Double, in doc: inout CADDocument) {
+        guard let old, let i = doc.index(of: id), case .extrude(var e) = doc.features[i].kind else { return }
+        if old >= 0, new < 0, e.operation == .join { e.operation = .cut }
+        else if old < 0, new >= 0, e.operation == .cut { e.operation = .join }
+        else { return }
+        doc.features[i].kind = .extrude(e)
     }
 
     // MARK: typing the handle's size
@@ -711,7 +762,7 @@ final class DocumentModel {
     /// Evaluates a typed size: positive, and a bare number read as millimetres (or degrees).
     private func handleSize(_ text: String, _ h: DragHandle) -> (expression: String, value: Double)? {
         let t = text.trimmingCharacters(in: .whitespaces)
-        guard let v = try? parameterValues.value(of: t, kind: h.unit), v > 1e-9 else { return nil }
+        guard let v = try? parameterValues.value(of: t, kind: h.unit), h.allowsNegative ? abs(v) > 1e-9 : v > 1e-9 else { return nil }
         if let m = h.maxValue, v > m + 1e-9 { return nil }
         let bare = Double(t).map { h.unit == .angle ? $0 * .pi / 180 : $0 }
         return (bare.map { formatDimension($0, kind: h.unit) } ?? t, v)
@@ -724,6 +775,7 @@ final class DocumentModel {
         handlePreviewValue = size.value * h.lengthPerUnit
         var preview = document
         Self.set(expression: size.expression, of: h.featureID, in: &preview)
+        Self.turnRound(h.featureID, from: h.featureValue((try? parameterValues.value(of: h.expression, kind: h.unit)) ?? 0), to: size.value, in: &preview)
         regenerate(preview: preview, previewFeature: h.featureID)
         overlayRevision += 1
         return true
@@ -734,7 +786,8 @@ final class DocumentModel {
     func commitHandle(_ text: String) -> Bool {
         guard let h = dragHandle, let size = handleSize(text, h) else { return false }
         handlePreviewValue = nil
-        if size.expression == h.expression { regenerate() } else { commitHandle(h.featureID, h.label, size.expression) }
+        let old = (try? parameterValues.value(of: h.expression, kind: h.unit)) ?? 0
+        if size.expression == h.expression { regenerate() } else { commitHandle(h.featureID, h.label, size.expression, from: old, to: size.value) }
         overlayRevision += 1
         return true
     }

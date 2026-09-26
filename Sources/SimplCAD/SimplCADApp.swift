@@ -60,6 +60,7 @@ struct SimplCADCommands: Commands {
     @Environment(\.newDocument) private var newDocument
     @Environment(\.openWindow) private var openWindow
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
+    @AppStorage(Preferences.snapToGrid) private var snapToGrid = true
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
@@ -86,6 +87,8 @@ struct SimplCADCommands: Commands {
                                                             set: { model?.orthographic = $0 }))
                 .keyboardShortcut("o", modifiers: [.command, .option])
             Toggle("Show Constraints", isOn: $showConstraints)
+            Toggle("Snap to Grid", isOn: $snapToGrid)
+                .keyboardShortcut("'", modifiers: [.command])
             Divider()
             Button((model?.showInspector ?? true) ? "Hide Inspector" : "Show Inspector") { model?.showInspector.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])

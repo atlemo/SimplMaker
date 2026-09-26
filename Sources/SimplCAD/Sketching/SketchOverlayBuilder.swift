@@ -124,6 +124,10 @@ enum SketchOverlayBuilder {
                                             id: PickID(sketchPoint: i).raw))
         }
         for line in session.previewPolylines() { o.preview += segments(line, frame: f, id: 0) }
+        if let snap = session.lastSnap {
+            let w = world(f, snap.position)
+            o.snap = [SegmentInstance(ax: w.x, ay: w.y, az: w.z, bx: w.x, by: w.y, bz: w.z, id: 0)]
+        }
         o.fullyConstrained = session.solve?.status == .solved && session.solve?.degreesOfFreedom == 0
     }
 

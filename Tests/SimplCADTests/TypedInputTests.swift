@@ -111,7 +111,7 @@ import Testing
         #expect(model.handleFieldText == h.expression)
 
         #expect(!model.commitHandle("abc"))
-        #expect(!model.commitHandle("-3"))
+        #expect(!model.commitHandle("0"), "zero is not a distance (negative ones are: they extrude the other way)")
         #expect(model.previewHandle("30"))
         model.cancelHandleEdit()
         #expect(model.commitHandle("30"))

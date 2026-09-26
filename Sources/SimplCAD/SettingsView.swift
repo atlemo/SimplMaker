@@ -8,6 +8,7 @@ enum Preferences {
     static let showGrid = "showGrid"
     static let showConstraints = "showConstraints"
     static let showWelcome = "showWelcome"
+    static let snapToGrid = "snapToGrid"
 
     /// What a two-finger trackpad scroll does in the viewport; ⇧ switches to the other one.
     enum TrackpadScroll: String, CaseIterable, Identifiable {
@@ -22,6 +23,8 @@ enum Preferences {
     static var invertsZoom: Bool { UserDefaults.standard.bool(forKey: invertZoom) }
     /// Show the welcome window at launch instead of an empty document (on by default).
     static var showsWelcome: Bool { UserDefaults.standard.object(forKey: showWelcome) as? Bool ?? true }
+    /// Sketch points snap to a grid that follows the zoom (on by default; ⌥ turns all snapping off).
+    static var snapsToGrid: Bool { UserDefaults.standard.object(forKey: snapToGrid) as? Bool ?? true }
 }
 
 struct SettingsView: View {

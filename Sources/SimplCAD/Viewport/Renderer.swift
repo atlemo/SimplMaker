@@ -77,6 +77,7 @@ struct SketchOverlay {
     var preview: [SegmentInstance] = []
     var points: [SegmentInstance] = []     // zero-length segments drawn as squares
     var handle: [SegmentInstance] = []     // drag handle: shaft + tip (zero-length)
+    var snap: [SegmentInstance] = []       // where the cursor snapped: a zero-length marker
     var handleInvalid = false               // the previewed size can't be built
     var fullyConstrained = false
 }
@@ -207,6 +208,7 @@ final class Renderer {
         var preview: MTLBuffer?, previewCount = 0
         var points: MTLBuffer?, pointCount = 0
         var handle: MTLBuffer?, handleCount = 0
+        var snap: MTLBuffer?, snapCount = 0
         var handleInvalid = false
         var fullyConstrained = false
     }
@@ -302,6 +304,7 @@ final class Renderer {
         g.preview = makeBuffer(o.preview); g.previewCount = o.preview.count
         g.points = makeBuffer(o.points); g.pointCount = o.points.count
         g.handle = makeBuffer(o.handle); g.handleCount = o.handle.count
+        g.snap = makeBuffer(o.snap); g.snapCount = o.snap.count
         g.handleInvalid = o.handleInvalid
         g.fullyConstrained = o.fullyConstrained
         overlay = g
@@ -476,6 +479,9 @@ final class Renderer {
         segments(overlay.points, overlay.pointCount,
                  DrawParams(color: p.point, hoverColor: hover, selectColor: select,
                             thickness: 7 * scale, depthBias: 0.0012, pickable: 1))
+        segments(overlay.snap, overlay.snapCount,
+                 DrawParams(color: p.handle, hoverColor: p.handle, selectColor: p.handle,
+                            thickness: 9 * scale, depthBias: 0.0014, pickable: 0))
         // The extrude handle is drawn on top of everything so it can always be grabbed.
         enc.setDepthStencilState(onTopDepthState)
         let handleColor = overlay.handleInvalid ? p.invalid : p.handle
