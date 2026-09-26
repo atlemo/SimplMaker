@@ -40,6 +40,7 @@ final class DocumentModel {
         set {
             guard newValue != selectedFeatureStorage else { return }
             selectedFeatureStorage = newValue
+            if newValue != newFeature { newFeature = nil }  // moved on: Cancel no longer removes it
             overlayRevision += 1
         }
     }
@@ -47,6 +48,9 @@ final class DocumentModel {
     private(set) var sketchSession: SketchSession?
     /// A new sketch is waiting for the user to click an origin plane or a flat face.
     private(set) var isPickingSketchPlane = false
+    /// The feature just created by a tool, while it is still being sized: Cancel takes it out again.
+    var newFeature: FeatureID?
+    @ObservationIgnored var documentBeforeNewFeature: CADDocument?
     /// A tool waiting for the user to pick what it needs (a profile, a path, a face...). See DesignTools.swift.
     var pendingTool: DesignTool?
     /// The pointer ray of the latest click in the viewport, for placing things where the user clicked.
@@ -169,6 +173,7 @@ final class DocumentModel {
     /// Adds a new feature as one undo step, hides the sketches it uses, and selects it so its
     /// drag handle and size field appear.
     func add(_ feature: Feature) {
+        documentBeforeNewFeature = document
         mutate("Add \(feature.typeName)") { doc in
             doc.features.append(feature)
             doc.hidden.formUnion(feature.sketchesUsed)
@@ -176,6 +181,7 @@ final class DocumentModel {
         selection = []
         pendingTool = nil
         selectedFeature = feature.id
+        newFeature = feature.id
         handleFocusRequest += 1
     }
 
@@ -285,6 +291,7 @@ final class DocumentModel {
 
     /// Return (or Esc) after sizing a feature: done with it, so its handle and size field go away.
     func finishFeatureEdit() {
+        newFeature = nil
         guard dragHandle != nil else { return }
         selectedFeature = nil
         selection = []

@@ -56,6 +56,16 @@ struct DocumentWindow: View {
             .animation(.easeOut(duration: DS.Duration.base), value: model.showSidebar)
             .animation(.easeOut(duration: DS.Duration.base), value: model.showInspector)
         }
+        // An empty part says how to begin, in the middle of the free space.
+        .overlay {
+            if model.document.features.isEmpty, model.sketchSession == nil, model.pendingTool == nil,
+               !model.isPickingSketchPlane {
+                StartCard(model: model)
+                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
+                    .transition(.opacity)
+            }
+        }
         // The status bar floats at the bottom, between the panels.
         .overlay(alignment: .bottom) {
             StatusBar(model: model)
@@ -107,6 +117,34 @@ struct DocumentWindow: View {
         } message: { info in
             Text(info.message)
         }
+    }
+}
+
+/// Shown on an empty part: the two ways to begin.
+struct StartCard: View {
+    let model: DocumentModel
+
+    var body: some View {
+        VStack(spacing: DS.Spacing.space5) {
+            Text("Start your part").font(.title2.weight(.semibold))
+            Text("Draw a sketch on a plane and extrude it, or place a shape and change it from there.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+            HStack(spacing: DS.Spacing.space4) {
+                Button { model.startSketch() } label: { Label("Sketch", systemImage: "pencil.and.outline") }
+                    .buttonStyle(.borderedProminent)
+                Button { model.run(.box) } label: { Label("Box", systemImage: "cube") }
+                Button { model.run(.cylinder) } label: { Label("Cylinder", systemImage: "cylinder") }
+            }
+            .controlSize(.large)
+            Text("Right-click in the view for more · File › New Demo Part for an example")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(DS.Spacing.space8)
+        .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.window))
     }
 }
 
@@ -242,8 +280,8 @@ struct Sidebar: View {
         .contextMenu(forSelectionType: FeatureID.self) { ids in
             menu(for: ids)
         } primaryAction: { ids in
-            // Double-click a sketch to edit it.
-            if ids.count == 1, let id = ids.first, isSketch(id) { model.editSketch(id) }
+            // Double-click to edit: a sketch opens in sketch mode, other features show their handle.
+            if ids.count == 1, let id = ids.first { model.editFeature(id) }
         }
     }
 

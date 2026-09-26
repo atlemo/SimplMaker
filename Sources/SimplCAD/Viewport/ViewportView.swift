@@ -33,6 +33,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var handleField: ValueField?
     private var seenHandleFocusRequest = 0
     private var handlePreviewTask: Task<Void, Never>?
+    /// Options for the selected feature (Join/Cut, Flip, OK, Cancel), below the size field.
+    private var featureHUD: NSHostingView<FeatureHUD>?
     /// Typed values for the sketch step in progress (a line's length and angle, ...), beside the cursor.
     private var sketchPanel: NSStackView?
     private var sketchFields: [SketchInput: ValueField] = [:]
@@ -218,8 +220,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) { return showContextMenu(event) }  // ⌃-click = right-click
         window?.makeFirstResponder(self)
         let p = location(event)
+        if event.clickCount == 2, model?.sketchSession == nil, let renderer {
+            model?.doubleClick(renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered))
+            refreshOverlay()
+            return
+        }
         lastDrag = p
         dragged = false
         sketchDrag = false
@@ -271,6 +279,22 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     override func rightMouseDown(with event: NSEvent) { lastDrag = location(event); dragged = false }
+    /// A right-click without dragging (dragging pans) opens the menu for what's under the cursor.
+    override func rightMouseUp(with event: NSEvent) {
+        defer { lastDrag = nil }
+        if !dragged { showContextMenu(event) }
+    }
+
+    private func showContextMenu(_ event: NSEvent) {
+        guard let model, let renderer else { return }
+        let p = location(event)
+        let pick = renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered)
+        let r = renderer.camera.ray(at: p, viewSize: bounds.size)
+        let ray = (SIMD3(Double(r.origin.x), Double(r.origin.y), Double(r.origin.z)),
+                   SIMD3(Double(r.direction.x), Double(r.direction.y), Double(r.direction.z)))
+        let menu = ContextMenuBuilder.menu(model.contextItems(for: pick, ray: ray)) { [weak self] in self?.refreshOverlay() }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
     override func rightMouseDragged(with event: NSEvent) { drag(event, pan) }
     override func otherMouseDown(with event: NSEvent) { lastDrag = location(event); dragged = false }
     override func otherMouseDragged(with event: NSEvent) { drag(event, pan) }
@@ -470,6 +494,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 if f.currentEditor() != nil { window?.makeFirstResponder(self) }
                 f.removeFromSuperview()
                 handleField = nil
+                featureHUD?.removeFromSuperview()
+                featureHUD = nil
             }
             return
         }
@@ -477,6 +503,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if let handleField {
             field = handleField
         } else {
+            let hud = NSHostingView(rootView: FeatureHUD(model: model))
+            addSubview(hud)
+            featureHUD = hud
             field = ValueField(frame: .zero)
             field.delegate = self
             field.toolTip = "Type a size or an expression, then press Return · Esc cancels"
@@ -495,6 +524,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let x = min(max(p.x + 26, 0), max(bounds.width - size.width, 0))
         let y = min(max(p.y - size.height / 2, 0), max(bounds.height - size.height, 0))
         field.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
+        if let hud = featureHUD {  // the options panel sits just below the field
+            let s = hud.fittingSize
+            hud.frame = NSRect(x: min(max(x, 0), max(bounds.width - s.width, 0)),
+                               y: min(y + size.height + 6, max(bounds.height - s.height, 0)), width: s.width, height: s.height)
+        }
         if model.handleFocusRequest != seenHandleFocusRequest {
             // A new feature: select its size so typing replaces it (outside drawing, to be safe).
             seenHandleFocusRequest = model.handleFocusRequest
@@ -820,6 +854,41 @@ final class DimensionLabelView: NSTextField {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func mouseDown(with event: NSEvent) { onClick?() }
+}
+
+/// Turns right-click menu entries into an NSMenu; each item runs its closure.
+@MainActor
+enum ContextMenuBuilder {
+    final class Target: NSObject {
+        let run: () -> Void
+        init(_ run: @escaping () -> Void) { self.run = run }
+        @objc func perform(_ sender: Any?) { run() }
+    }
+
+    static func menu(_ items: [ContextItem], after: @escaping () -> Void) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for item in items {
+            switch item {
+            case .separator:
+                if !(menu.items.last?.isSeparatorItem ?? true) { menu.addItem(.separator()) }
+            case .action(let title, let symbol, let enabled, let action):
+                let target = Target { action(); after() }
+                let mi = NSMenuItem(title: title, action: #selector(Target.perform(_:)), keyEquivalent: "")
+                mi.target = target
+                mi.representedObject = target  // NSMenuItem holds its target weakly
+                mi.isEnabled = enabled
+                if let symbol { mi.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
+                menu.addItem(mi)
+            case .submenu(let title, let children):
+                let mi = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                mi.submenu = Self.menu(children, after: after)
+                menu.addItem(mi)
+            }
+        }
+        if menu.items.last?.isSeparatorItem == true { menu.removeItem(at: menu.items.count - 1) }
+        return menu
+    }
 }
 
 /// A small editable number field in the viewport (a handle's size, a typed sketch value).
