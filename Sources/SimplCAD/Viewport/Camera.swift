@@ -61,6 +61,19 @@ struct Camera {
             SIMD4(-simd_dot(s, e), -simd_dot(u, e), simd_dot(f, e), 1)))
     }
 
+    /// Clip-space depth offset that moves a point toward the camera by 1× its view depth (perspective)
+    /// or by 1× the camera distance (orthographic). Edges and sketch lines are drawn a small multiple of
+    /// this in front, so they win over their own faces without showing through the body: a constant
+    /// offset in depth-buffer units grows with distance in perspective and let hidden edges poke out
+    /// near corners.
+    var depthBiasScale: Float {
+        if orthographic {
+            let near: Float = 1, far = orthoBack * 2 + 1000
+            return distance / (far - near)
+        }
+        return max(distance * 0.005, 0.01)  // the near plane: Δz = bias · z / near in perspective
+    }
+
     /// Right-handed perspective with Metal's [0, 1] depth range.
     func projectionMatrix(aspect: Float) -> simd_float4x4 {
         if orthographic {

@@ -76,7 +76,8 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// What a click can pick while this tool waits.
     func accepts(_ kind: PickID.Kind) -> Bool {
         switch self {
-        case .extrude, .loft: return kind == .region
+        case .extrude: return kind == .region || kind == .face
+        case .loft: return kind == .region
         case .revolve, .sweep: return kind == .region || kind == .sketchCurve
         case .rib, .pipe: return kind == .sketchCurve
         case .hole: return kind == .face
@@ -134,7 +135,7 @@ extension DocumentModel {
         guard let tool = pendingTool else { return nil }
         let profiles = selectedProfiles.count
         switch tool {
-        case .extrude: return "Select a profile to extrude"
+        case .extrude: return "Select a profile or a flat face to extrude"
         case .revolve:
             return profiles == 0 ? "Select a profile to revolve" : "Select a line as the axis · Return uses the sketch's vertical axis"
         case .sweep: return profiles == 0 ? "Select the profile to sweep" : "Select the path to sweep along"
@@ -162,6 +163,16 @@ extension DocumentModel {
         let noBodies = result?.bodies.isEmpty ?? true
         switch tool {
         case .extrude:
+            if profiles.isEmpty, selection.count == 1, let pick = selection.first, pick.isFace {
+                // A flat face of a body: pull it out (or, with a negative distance, push it in).
+                guard let ref = faceRef(pick), let body = result?.body(ref.body), (try? body.faceFrame(ref.face)) != nil else {
+                    selection = []
+                    alert = AlertInfo(title: "Only flat faces can be extruded", message: "Pick a flat face, or a profile in a sketch.")
+                    return false
+                }
+                add(Feature(name: document.nextName("Extrude"), .extrude(ExtrudeFeature(face: ref))))
+                return true
+            }
             guard let first = profiles.first else { return false }
             let refs = profiles.filter { $0.sketch == first.sketch }.map(\.ref)
             add(Feature(name: document.nextName("Extrude"), .extrude(ExtrudeFeature(

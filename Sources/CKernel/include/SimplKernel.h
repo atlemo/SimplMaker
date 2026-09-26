@@ -105,6 +105,11 @@ int sk_body_edge_count(SKHandle body);
 const char *sk_body_edge_name(SKHandle body, int i);  // i matches SKMesh.segmentEdge
 int sk_body_find_face(SKHandle body, const char *name);  // -1 if not found
 int sk_body_find_edge(SKHandle body, const char *name);  // -1 if not found
+/// A planar face of a body as a profile, e.g. to extrude it (press-pull). Its edges are tagged with
+/// the body's edge names, so the sides are named "<featureId>.side.<edgeName>".
+SKHandle sk_body_face_profile(SKHandle body, const char *faceName);
+/// Centre of mass of a face.
+bool sk_body_face_center(SKHandle body, const char *faceName, double out[3]);
 /// Frame of a planar face (normal points out of the material). False if missing / not planar.
 bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out);
 /// Drag handle for a fillet/chamfer on an edge: out[0..2] = edge midpoint, out[3..5] = unit

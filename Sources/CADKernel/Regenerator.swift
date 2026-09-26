@@ -33,6 +33,8 @@ public struct RegenResult: Sendable {
     /// For fillets/chamfers: the bodies as they were just before the feature (keyed by body id),
     /// so drag handles can sit on edges that the feature itself rounds away.
     public var edgeFeatureInputs: [FeatureID: [FeatureID: KBody]] = [:]
+    /// For face extrudes: the body as it was before, so the handle can sit on the original face.
+    public var featureInputs: [FeatureID: [FeatureID: KBody]] = [:]
     public var duration: TimeInterval = 0
 
     public func body(_ id: FeatureID) -> KBody? { bodies.first { $0.id == id }?.body }
@@ -185,8 +187,17 @@ public enum Regenerator {
     }
 
     static func extrude(_ f: ExtrudeFeature, _ feature: Feature, _ r: inout RegenResult) throws {
-        let sk = try sketchResult(f.sketch, r)
-        let profiles = try profiles(f.profiles, in: sk)
+        let profiles: [KProfile], normal: SIMD3<Double>
+        if let face = f.face {
+            guard let body = r.body(face.body) else { throw KernelError(message: "the body with that face is missing") }
+            r.featureInputs[feature.id] = [face.body: body]  // the face moves once extruded; its handle stays on the input
+            profiles = [try body.faceProfile(face.face)]
+            normal = try body.faceFrame(face.face).normal
+        } else {
+            let sk = try sketchResult(f.sketch, r)
+            profiles = try Self.profiles(f.profiles, in: sk)
+            normal = sk.frame.normal
+        }
 
         let p = r.parameters
         var distance: Double, back: Double
@@ -195,7 +206,7 @@ public enum Regenerator {
         case .symmetric(let d): distance = try p.value(of: d, kind: .length) / 2; back = distance
         case .twoSides(let d, let b): distance = try p.value(of: d, kind: .length); back = try p.value(of: b, kind: .length)
         }
-        let dir = f.flipped ? -sk.frame.normal : sk.frame.normal
+        let dir = f.flipped ? -normal : normal
         let tool = try KBody.extrude(profiles, direction: dir, distance: distance, back: back, featureID: feature.id)
         try combine(tool, f.operation, target: f.target, feature, &r)
     }
