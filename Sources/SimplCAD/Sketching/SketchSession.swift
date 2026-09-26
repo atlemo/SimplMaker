@@ -16,17 +16,18 @@ enum SketchTool: String, CaseIterable, Identifiable {
     static let draw: [SketchTool] = [.line, .rectangle, .circle, .arc, .point]
     static let modify: [SketchTool] = [.fillet, .trim, .extend]
 
+    /// A glyph name from the macOS Design System's icon set (see IconGlyphs.swift), not an SF Symbol.
     var symbol: String {
         switch self {
-        case .select: return "cursorarrow"
-        case .line: return "line.diagonal"
-        case .rectangle: return "rectangle"
+        case .select: return "mouse-pointer-2"
+        case .line: return "minus"
+        case .rectangle: return "square"
         case .circle: return "circle"
-        case .arc: return "circle.bottomhalf.filled"
-        case .point: return "smallcircle.filled.circle"
-        case .fillet: return "arrow.turn.up.right"
+        case .arc: return "spline"
+        case .point: return "dot"
+        case .fillet: return "radius"
         case .trim: return "scissors"
-        case .extend: return "arrow.right.to.line"
+        case .extend: return "arrow-up-right"
         case .dimension: return "ruler"
         }
     }

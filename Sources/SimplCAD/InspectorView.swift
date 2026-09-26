@@ -39,7 +39,6 @@ struct InspectorView: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(feature.name)
         } else {
             ContentUnavailableView("No Feature Selected", systemImage: "cursorarrow.click",
                                    description: Text("Select a feature in the timeline to edit it, or pick a tool in the toolbar to create one."))
