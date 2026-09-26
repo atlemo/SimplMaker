@@ -142,6 +142,20 @@ final class DocumentModel {
         if hidden { selection.removeAll { $0.isFace || $0.isEdge ? ids.contains(meshes[safe: $0.body]?.id ?? "") : false } }
     }
 
+    /// Bodies and sketches that own what's selected in the viewport: highlighted in the browser.
+    var browserHighlights: Set<FeatureID> {
+        var ids = Set<FeatureID>()
+        for pick in selection {
+            switch pick.kind {
+            case .face, .edge: if let id = meshes[safe: pick.body]?.id { ids.insert(id) }
+            case .region: if let p = profile(of: pick) { ids.insert(p.sketch) }
+            case .sketchCurve: if let c = curve(of: pick) { ids.insert(c.sketch) }
+            default: break
+            }
+        }
+        return ids
+    }
+
     /// Bodies the viewport draws.
     var visibleMeshes: [BodyMesh] { meshes.filter { !document.hidden.contains($0.id) } }
 

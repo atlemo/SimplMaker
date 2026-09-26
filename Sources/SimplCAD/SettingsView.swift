@@ -6,6 +6,7 @@ enum Preferences {
     static let trackpadScroll = "trackpadScroll"
     static let invertZoom = "invertZoom"
     static let showGrid = "showGrid"
+    static let showAxes = "showAxes"
     static let showConstraints = "showConstraints"
     static let showWelcome = "showWelcome"
     static let snapToGrid = "snapToGrid"
@@ -31,6 +32,7 @@ struct SettingsView: View {
     @AppStorage(Preferences.trackpadScroll) private var trackpadScroll = Preferences.TrackpadScroll.pan
     @AppStorage(Preferences.invertZoom) private var invertZoom = false
     @AppStorage(Preferences.showGrid) private var showGrid = true
+    @AppStorage(Preferences.showAxes) private var showAxes = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     @AppStorage(Preferences.showWelcome) private var showWelcome = true
 
@@ -60,6 +62,7 @@ struct SettingsView: View {
             Tab("Viewport", systemImage: "cube") {
                 Form {
                     Toggle("Show grid", isOn: $showGrid)
+                    Toggle("Show axes", isOn: $showAxes)
                     Toggle("Show sketch constraints", isOn: $showConstraints)
                 }
                 .formStyle(.grouped)

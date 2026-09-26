@@ -926,6 +926,7 @@ struct ViewportView: NSViewRepresentable {
     let cameraRevision: Int
     let orthographic: Bool
     let showGrid: Bool
+    var showAxes = true
     let showConstraints: Bool
     /// Widths covered by the floating panels, so the camera centres on what's left.
     var panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
@@ -969,6 +970,7 @@ struct ViewportView: NSViewRepresentable {
         }
         renderer.camera.orthographic = orthographic
         renderer.showGrid = showGrid
+        renderer.showAxes = showAxes
         view.showConstraints = showConstraints
         if c.cameraRevision != cameraRevision, let cmd = model.cameraCommand {
             c.cameraRevision = cameraRevision
