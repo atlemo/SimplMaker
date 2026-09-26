@@ -528,11 +528,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         removeSketchFields()
         let panel = NSStackView()
         panel.orientation = .horizontal
-        panel.spacing = 6
-        panel.edgeInsets = NSEdgeInsets(top: 4, left: 6, bottom: 4, right: 4)
+        panel.spacing = DS.Spacing.labelGap
+        panel.edgeInsets = NSEdgeInsets(top: DS.Spacing.space2, left: DS.Spacing.labelGap, bottom: DS.Spacing.space2, right: DS.Spacing.space2)
         panel.wantsLayer = true
         panel.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
-        panel.layer?.cornerRadius = 5
+        panel.layer?.cornerRadius = DS.Radius.sm
         panel.layer?.borderWidth = 0.5
         panel.layer?.borderColor = NSColor.separatorColor.cgColor
         for input in inputs {
@@ -736,7 +736,7 @@ final class ConstraintGlyphView: NSTextField {
         textColor = .secondaryLabelColor
         font = .systemFont(ofSize: 10, weight: .semibold)
         wantsLayer = true
-        layer?.cornerRadius = 3
+        layer?.cornerRadius = DS.Radius.xs
         layer?.borderWidth = 0.5
         layer?.borderColor = NSColor.separatorColor.cgColor
     }
@@ -761,7 +761,7 @@ final class CursorPromptView: NSTextField {
         textColor = .labelColor
         font = .systemFont(ofSize: 13)
         wantsLayer = true
-        layer?.cornerRadius = 4
+        layer?.cornerRadius = DS.Radius.checkbox
         layer?.borderWidth = 1
         layer?.borderColor = NSColor.separatorColor.cgColor
     }
@@ -792,7 +792,7 @@ final class DimensionLabelView: NSTextField {
         font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         textColor = .labelColor
         wantsLayer = true
-        layer?.cornerRadius = 3
+        layer?.cornerRadius = DS.Radius.xs
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }

@@ -16,10 +16,11 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    /// Toolbar groups: features from sketches, primitives, and edge modifiers.
-    static let fromSketches: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .hole]
-    static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil, .pipe]
-    static let modifiers: [DesignTool] = [.fillet, .chamfer]
+    /// Toolbar and menu groups: shapes built from sketches, ready-made primitives, and tools that
+    /// change an existing body.
+    static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
+    static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
+    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole]
 
     var symbol: String {
         switch self {

@@ -105,19 +105,20 @@ struct SimplCADCommands: Commands {
                     .disabled(model?.selectedFacePlane == nil)
             }
             .disabled(model == nil)
-            Divider()
-            ForEach(SketchTool.allCases) { tool in
-                Button(tool.rawValue) { model?.setSketchTool(tool) }
-                    .disabled(model?.sketchSession == nil)
+            // The drawing tools only appear while a sketch is being edited.
+            if model?.sketchSession != nil {
+                Divider()
+                ForEach(SketchTool.allCases) { tool in
+                    Button(tool.rawValue) { model?.setSketchTool(tool) }
+                }
+                Button("Offset Selection…") { model?.sketchSession?.beginOffset() }
+                    .disabled(!(model?.sketchSession?.canOffset ?? false))
+                Divider()
+                Button("Finish Sketch") { model?.finishSketch() }
             }
-            Button("Offset Selection…") { model?.sketchSession?.beginOffset() }
-                .disabled(!(model?.sketchSession?.canOffset ?? false))
-            Divider()
-            Button("Finish Sketch") { model?.finishSketch() }
-                .disabled(model?.sketchSession == nil)
         }
         CommandMenu("Create") {
-            ForEach(DesignTool.fromSketches) { tool in
+            ForEach(DesignTool.shapes) { tool in
                 Button(tool.rawValue) { model?.run(tool) }
                     .keyboardShortcut(tool == .extrude ? KeyboardShortcut("e", modifiers: [.command, .shift]) : nil)
             }
