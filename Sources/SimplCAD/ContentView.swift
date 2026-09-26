@@ -21,12 +21,13 @@ struct DocumentWindow: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     @AppStorage(Preferences.showGrid) private var showGrid = true
+    @AppStorage(Preferences.showAxes) private var showAxes = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     /// The window's width: below these, the toolbar tools drop their titles so the row still fits
     /// (otherwise macOS folds the whole row into the toolbar's overflow menu).
     @State private var windowWidth: CGFloat = 1200
-    static let titledDesignWidth: CGFloat = 1100
-    static let titledSketchWidth: CGFloat = 1200
+    static let titledDesignWidth: CGFloat = 1280
+    static let titledSketchWidth: CGFloat = 1360
 
     private var unlinkTitle: String {
         guard let p = model.unlinkPrompt else { return "" }
@@ -40,7 +41,7 @@ struct DocumentWindow: View {
             ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
                          highlighted: model.highlighted, fitRevision: model.fitRevision,
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
-                         showGrid: showGrid, showConstraints: showConstraints,
+                         showGrid: showGrid, showAxes: showAxes, showConstraints: showConstraints,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                        Panel.bottomInset(timeline: model.showTimeline)))
@@ -115,11 +116,15 @@ struct DocumentWindow: View {
         .onAppear {
             model.undoManager = undoManager
             model.fileURL = fileURL
+            if let fileURL { RecentParts.note(fileURL) }
             AppWindows.openWindow = openWindow
             dismissWindow(id: AppWindows.welcomeID)  // a part is open; the welcome window has done its job
         }
         .onChange(of: undoManager) { model.undoManager = undoManager }
-        .onChange(of: fileURL) { model.fileURL = fileURL }
+        .onChange(of: fileURL) {
+            model.fileURL = fileURL
+            if let fileURL { RecentParts.note(fileURL) }  // saved for the first time, or saved as
+        }
         .confirmationDialog(unlinkTitle, isPresented: Binding(get: { model.unlinkPrompt != nil },
                                                              set: { if !$0 { model.resolveUnlink(useValue: false) } }),
                             presenting: model.unlinkPrompt) { p in
@@ -259,6 +264,7 @@ struct Sidebar: View {
                             Image(systemName: "cylinder")
                         }
                         .tag(b.id)
+                        .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(b.id)))
                     }
                 } label: {
                     FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model)
@@ -272,6 +278,7 @@ struct Sidebar: View {
                                        failed: model.result?.errors[f.id] != nil)
                         }
                         .tag(f.id)
+                        .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(f.id)))
                     }
                 } label: {
                     FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model)
@@ -342,6 +349,19 @@ struct BrowserRow<Icon: View>: View {
             Text(name)
         }
         .foregroundStyle(hidden ? .secondary : .primary)
+    }
+}
+
+/// The browser row of a body or sketch that owns something selected in the viewport.
+struct BrowserHighlight: View {
+    let on: Bool
+
+    var body: some View {
+        if on {
+            RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous)
+                .fill(Color.accentColor.opacity(0.18))
+                .padding(.horizontal, DS.Spacing.space2)
+        }
     }
 }
 
@@ -471,17 +491,17 @@ struct ToolButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 1) {
-                Icon(icon, size: 16).frame(height: 18)
+            VStack(spacing: DS.Spacing.space1) {
+                Icon(icon, size: 18).frame(height: 20)
                 if showsTitle {
                     Text(title)
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .lineLimit(1)
                         .fixedSize()
                 }
             }
-            .frame(minWidth: showsTitle ? 38 : 28, minHeight: showsTitle ? 0 : 26)
-            .padding(.horizontal, DS.Spacing.space1)
+            .frame(minWidth: showsTitle ? 44 : 28, minHeight: showsTitle ? 0 : 28)
+            .padding(.horizontal, showsTitle ? DS.Spacing.space2 : DS.Spacing.space1)
             .padding(.vertical, DS.Spacing.space1)
             .foregroundStyle(active ? Color.accentColor : Color.primary)
             .background(active ? Color.accentColor.opacity(0.16) : hovering && isEnabled ? Color.primary.opacity(0.07) : .clear,
@@ -505,7 +525,10 @@ extension EnvironmentValues {
 
 /// Tool groups in the toolbar are separated by a thin line.
 struct ToolDivider: View {
-    var body: some View { Divider().frame(height: 28).padding(.horizontal, DS.Spacing.space2) }
+    @Environment(\.toolTitles) private var showsTitles
+    var body: some View {
+        Divider().frame(height: 30).padding(.horizontal, showsTitles ? DS.Spacing.space3 : DS.Spacing.space2)
+    }
 }
 
 /// Sketch mode's tools, in the middle of the toolbar, in groups: Select · draw · change curves ·
@@ -544,6 +567,7 @@ struct SketchToolbar: View {
             .help("Finish the sketch (Return)")
             .buttonStyle(.borderedProminent)
         }
+        .padding(.horizontal, DesignToolbar.edgePadding)
         .fixedSize()
     }
 
@@ -579,6 +603,8 @@ struct SketchToolbar: View {
 /// primitives · tools that change a body. A tool that is waiting for picks is highlighted.
 struct DesignToolbar: View {
     let model: DocumentModel
+    /// Space inside the ends of the toolbar's capsule.
+    static let edgePadding: CGFloat = 10
 
     var body: some View {
         HStack(spacing: DS.Spacing.space1) {
@@ -597,6 +623,7 @@ struct DesignToolbar: View {
             ToolDivider()
             group(DesignTool.modifiers)
         }
+        .padding(.horizontal, Self.edgePadding)  // room at the ends of the toolbar's capsule
         .fixedSize()
     }
 

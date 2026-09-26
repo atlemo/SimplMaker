@@ -61,6 +61,8 @@ struct SimplCADCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     @AppStorage(Preferences.snapToGrid) private var snapToGrid = true
+    @AppStorage(Preferences.showGrid) private var showGrid = true
+    @AppStorage(Preferences.showAxes) private var showAxes = true
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
@@ -86,6 +88,11 @@ struct SimplCADCommands: Commands {
             Toggle("Orthographic Projection", isOn: Binding(get: { model?.orthographic ?? false },
                                                             set: { model?.orthographic = $0 }))
                 .keyboardShortcut("o", modifiers: [.command, .option])
+            Divider()
+            Toggle("Show Grid", isOn: $showGrid)
+                .keyboardShortcut("g", modifiers: [.command, .option])
+            Toggle("Show Axes", isOn: $showAxes)
+                .keyboardShortcut("a", modifiers: [.command, .option])
             Toggle("Show Constraints", isOn: $showConstraints)
             Toggle("Snap to Grid", isOn: $snapToGrid)
                 .keyboardShortcut("'", modifiers: [.command])

@@ -223,6 +223,8 @@ final class Renderer {
     var camera = Camera()
     var palette = ViewportPalette.make(dark: false, increaseContrast: false)
     var showGrid = true
+    /// The red, green and blue X, Y and Z axes through the origin.
+    var showAxes = true
     var hovered: UInt32 = 0
     var selected: [UInt32] = []
     /// Pixel (in drawable coordinates, origin top-left) to read from the ID buffer on the next frame.
@@ -457,7 +459,7 @@ final class Renderer {
             segments(grid, gridCount, DrawParams(color: p.grid, hoverColor: p.grid, selectColor: p.grid,
                                                  thickness: 1 * scale, depthBias: 0, pickable: 0))
         }
-        for (i, (buffer, _)) in axes.enumerated() {
+        for (i, (buffer, _)) in axes.enumerated() where showAxes {
             let color = i == 0 ? p.axes.x : i == 1 ? p.axes.y : p.axes.z
             segments(buffer, 1, DrawParams(color: color, hoverColor: color, selectColor: color,
                                            thickness: 1.5 * scale, depthBias: 0.0001, pickable: 0))

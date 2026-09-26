@@ -38,7 +38,7 @@ struct WelcomeView: View {
                 .frame(maxHeight: .infinity)
                 .background(Color(nsColor: .underPageBackgroundColor))
         }
-        .frame(height: 460)
+        .frame(height: 520)
         .onAppear { AppWindows.openWindow = openWindow; reloadRecents() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in reloadRecents() }
         .alert("The part couldn't be opened", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
@@ -56,17 +56,17 @@ struct WelcomeView: View {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 128, height: 128)
-                    .padding(.bottom, DS.Spacing.space4)
+                    .frame(width: 112, height: 112)
+                    .padding(.bottom, DS.Spacing.space3)
                 Text("Welcome to SimplCAD")
-                    .font(.system(size: 36, weight: .regular))
+                    .font(.system(size: 32, weight: .regular))
                 Text(Self.versionText)
                     .font(.title3)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, DS.Spacing.space9)
-            .padding(.bottom, DS.Spacing.space9)
+            .padding(.bottom, DS.Spacing.space8)
 
             VStack(alignment: .leading, spacing: 18) {
                 WelcomeAction(title: "Create a new part", subtitle: "Start with an empty part and sketch on a plane.",
@@ -84,7 +84,7 @@ struct WelcomeView: View {
                 .toggleStyle(.checkbox)
                 .font(.callout)
                 .padding(.horizontal, DS.Spacing.windowMargin)
-                .padding(.bottom, DS.Spacing.space6)
+                .padding(.bottom, DS.Spacing.windowMargin)
         }
     }
 
@@ -113,6 +113,11 @@ struct WelcomeView: View {
                     .contextMenu {
                         Button("Open") { open(url) }
                         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                        Divider()
+                        Button("Remove from Recent Parts") {
+                            RecentParts.remove(url)
+                            reloadRecents()
+                        }
                     }
             }
             .listStyle(.sidebar)
@@ -126,7 +131,7 @@ struct WelcomeView: View {
     }
 
     private func reloadRecents() {
-        recents = NSDocumentController.shared.recentDocumentURLs
+        recents = RecentParts.urls
     }
 
     private func open(_ url: URL) {
@@ -196,4 +201,43 @@ private struct RecentRow: View {
     static func abbreviated(_ folder: URL) -> String {
         (folder.path as NSString).abbreviatingWithTildeInPath
     }
+}
+
+/// Recently opened and saved parts. macOS's own list (File › Open Recent) is told too, but the
+/// welcome window keeps its own as well, so it shows recent parts even when the system list is
+/// empty (recent items turned off, or a part that macOS never recorded).
+enum RecentParts {
+    static let key = "recentParts"
+    /// Parts removed from the list by the user; macOS's list can't drop single items, so these are
+    /// hidden from it until the part is opened again.
+    static let removedKey = "recentPartsRemoved"
+    static let limit = 12
+
+    /// Called when a part window shows a file (opened, or saved for the first time).
+    @MainActor static func note(_ url: URL) {
+        guard url.isFileURL else { return }
+        var paths = stored.filter { $0 != url.path }
+        paths.insert(url.path, at: 0)
+        UserDefaults.standard.set(Array(paths.prefix(limit)), forKey: key)
+        UserDefaults.standard.set(removed.filter { $0 != url.path }, forKey: removedKey)
+        NSDocumentController.shared.noteNewRecentDocumentURL(url)
+    }
+
+    static func remove(_ url: URL) {
+        UserDefaults.standard.set(stored.filter { $0 != url.path }, forKey: key)
+        UserDefaults.standard.set(Array((removed + [url.path]).suffix(100)), forKey: removedKey)
+    }
+
+    /// Our list first (most recent first), then any from macOS's list not already in it; files
+    /// that no longer exist are left out.
+    @MainActor static var urls: [URL] {
+        var seen = Set(removed)
+        let all = stored.map { URL(fileURLWithPath: $0) } + NSDocumentController.shared.recentDocumentURLs
+        return all.filter { url in
+            FileManager.default.fileExists(atPath: url.path) && seen.insert(url.standardizedFileURL.path).inserted
+        }
+    }
+
+    private static var stored: [String] { UserDefaults.standard.stringArray(forKey: key) ?? [] }
+    private static var removed: [String] { UserDefaults.standard.stringArray(forKey: removedKey) ?? [] }
 }
