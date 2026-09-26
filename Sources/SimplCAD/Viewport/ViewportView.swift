@@ -13,7 +13,7 @@ import CADKernel
 import MetalKit
 import SwiftUI
 
-final class ViewportMTKView: MTKView, NSPopoverDelegate {
+final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     var renderer: Renderer?
     weak var model: DocumentModel?
 
@@ -29,6 +29,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate {
     var showConstraints = true
     private var popover: NSPopover?
     private var popoverID: EntityID?
+    /// The drag handle's size, typed beside the arrow.
+    private var handleField: ValueField?
+    private var seenHandleFocusRequest = 0
+    private var handlePreviewTask: Task<Void, Never>?
+    /// Typed values for the sketch step in progress (a line's length and angle, ...), beside the cursor.
+    private var sketchPanel: NSStackView?
+    private var sketchFields: [SketchInput: ValueField] = [:]
+    private var sketchFieldOrder: [SketchInput] = []
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -267,8 +275,19 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate {
             switch event.keyCode {
             case 53: session.escape(); refreshOverlay(); return                                      // Esc
             case 51, 117: model.sketchCommand { $0.deleteSelection() }; refreshOverlay(); return     // ⌫ ⌦
-            case 36, 76: model.finishSketch(); return                                                 // Return
+            case 36, 76:                                                                              // Return
+                if session.typed.isEmpty { model.finishSketch() } else { model.sketchCommand { $0.commitTyped() }; refreshOverlay() }
+                return
+            case 48 where !session.inputFields.isEmpty:                                               // Tab
+                focusSketchField(session.inputFields[0], typing: nil)
+                return
             default: break
+            }
+            // Typing a number while drawing goes into the first field that has no value yet.
+            let fields = session.inputFields
+            if !fields.isEmpty, let chars = event.characters, chars.count == 1, "0123456789.-".contains(chars) {
+                focusSketchField(fields.first { session.typed[$0] == nil } ?? fields[0], typing: chars)
+                return
             }
             if let key = event.charactersIgnoringModifiers?.lowercased().first,
                let tool = SketchTool.allCases.first(where: { $0.key == key }) {
@@ -278,6 +297,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate {
             }
         } else if event.keyCode == 53 {
             if model.isPickingSketchPlane { model.cancelSketchPlanePick() } else { model.clearSelection() }
+            refreshOverlay()
+            return
+        } else if plainKey, event.charactersIgnoringModifiers?.lowercased() == "e", !model.selectedRegions.isEmpty {
+            model.extrudeSelectedProfiles()
             refreshOverlay()
             return
         }
@@ -375,6 +398,220 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate {
         updateGlyphs()
         updatePrompt()
         syncPopover()
+        syncHandleField()
+        syncSketchFields()
+    }
+
+    // MARK: typed values
+
+    /// Keeps the handle's size field just right of the arrow tip, showing the stored size.
+    private func syncHandleField() {
+        guard let renderer, let model, let h = model.dragHandle, let text = model.handleFieldText else {
+            if let f = handleField {
+                if f.currentEditor() != nil { window?.makeFirstResponder(self) }
+                f.removeFromSuperview()
+                handleField = nil
+            }
+            return
+        }
+        let field: ValueField
+        if let handleField {
+            field = handleField
+        } else {
+            field = ValueField(frame: .zero)
+            field.delegate = self
+            field.toolTip = "Type a size or an expression, then press Return · Esc cancels"
+            addSubview(field)
+            handleField = field
+        }
+        if field.currentEditor() == nil { field.stringValue = text }
+        field.textColor = model.previewInvalid ? .systemRed : .labelColor
+        let tip = h.base + h.direction * h.value
+        guard let p = renderer.camera.project(SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)), viewSize: bounds.size) else {
+            field.isHidden = true
+            return
+        }
+        field.isHidden = false
+        let size = NSSize(width: 110, height: 24)
+        let x = min(max(p.x + 26, 0), max(bounds.width - size.width, 0))
+        let y = min(max(p.y - size.height / 2, 0), max(bounds.height - size.height, 0))
+        field.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
+        if model.handleFocusRequest != seenHandleFocusRequest {
+            // A new feature: select its size so typing replaces it (outside drawing, to be safe).
+            seenHandleFocusRequest = model.handleFocusRequest
+            DispatchQueue.main.async { [weak self, weak field] in
+                guard let field, field.superview != nil else { return }
+                self?.window?.makeFirstResponder(field)
+                field.selectText(nil)
+            }
+        }
+    }
+
+    /// Previews a typed handle size once typing pauses.
+    private func scheduleHandlePreview(_ text: String) {
+        handlePreviewTask?.cancel()
+        handlePreviewTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self, let model = self.model else { return }
+            if !model.previewHandle(text) { self.handleField?.textColor = .systemRed }
+            self.refreshOverlay()
+        }
+    }
+
+    /// Shows the fields for the sketch step in progress next to where the next point will go.
+    private func syncSketchFields() {
+        guard let renderer, let model, let session = model.sketchSession, !session.inputFields.isEmpty,
+              let t = session.target()?.position else {
+            removeSketchFields()
+            return
+        }
+        let inputs = session.inputFields
+        if inputs != sketchFieldOrder { buildSketchFields(inputs) }
+        guard let panel = sketchPanel else { return }
+        for input in inputs {
+            guard let f = sketchFields[input] else { continue }
+            if f.currentEditor() == nil {
+                f.stringValue = session.typed[input] ?? session.liveValue(input).map { formatDimension($0, kind: input.unit) } ?? ""
+            }
+            f.textColor = session.typedIsInvalid(input) ? .systemRed : (session.typed[input] != nil ? .labelColor : .secondaryLabelColor)
+        }
+        let world = session.frame.point(t.x, t.y)
+        guard let p = renderer.camera.project(SIMD3(Float(world.x), Float(world.y), Float(world.z)), viewSize: bounds.size) else {
+            panel.isHidden = true
+            return
+        }
+        panel.isHidden = false
+        let size = panel.fittingSize
+        let x = min(max(p.x + 20, 0), max(bounds.width - size.width, 0))
+        let y = min(max(p.y + 20, 0), max(bounds.height - size.height, 0))
+        panel.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
+    }
+
+    private func buildSketchFields(_ inputs: [SketchInput]) {
+        removeSketchFields()
+        let panel = NSStackView()
+        panel.orientation = .horizontal
+        panel.spacing = 6
+        panel.edgeInsets = NSEdgeInsets(top: 4, left: 6, bottom: 4, right: 4)
+        panel.wantsLayer = true
+        panel.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
+        panel.layer?.cornerRadius = 5
+        panel.layer?.borderWidth = 0.5
+        panel.layer?.borderColor = NSColor.separatorColor.cgColor
+        for input in inputs {
+            let label = NSTextField(labelWithString: input.symbol)
+            label.font = .systemFont(ofSize: 12, weight: .semibold)
+            label.textColor = .secondaryLabelColor
+            label.toolTip = input.rawValue
+            let field = ValueField(frame: .zero)
+            field.input = input
+            field.delegate = self
+            field.toolTip = "\(input.rawValue): type a value or an expression · Tab for the next · Return to place it"
+            field.widthAnchor.constraint(equalToConstant: 92).isActive = true
+            panel.addArrangedSubview(label)
+            panel.addArrangedSubview(field)
+            sketchFields[input] = field
+        }
+        addSubview(panel)
+        sketchPanel = panel
+        sketchFieldOrder = inputs
+    }
+
+    private func removeSketchFields() {
+        guard let panel = sketchPanel else { return }
+        if sketchFields.values.contains(where: { $0.currentEditor() != nil }) { window?.makeFirstResponder(self) }
+        panel.removeFromSuperview()
+        sketchPanel = nil
+        sketchFields = [:]
+        sketchFieldOrder = []
+    }
+
+    /// Moves typing into a sketch field, starting it with `typing` or selecting what's there.
+    private func focusSketchField(_ input: SketchInput, typing text: String?) {
+        guard let session = model?.sketchSession else { return }
+        syncSketchFields()
+        guard let field = sketchFields[input] else { return }
+        if let text {
+            session.setTyped(input, text)
+            field.stringValue = text
+        }
+        window?.makeFirstResponder(field)
+        if let text {
+            field.currentEditor()?.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+            refreshOverlay()
+        } else {
+            field.selectText(nil)
+        }
+    }
+
+    func controlTextDidChange(_ note: Notification) {
+        guard let field = note.object as? ValueField else { return }
+        if field === handleField {
+            field.textColor = .labelColor
+            scheduleHandlePreview(field.stringValue)
+        } else if let input = field.input, let session = model?.sketchSession {
+            session.setTyped(input, field.stringValue)
+            refreshOverlay()
+        }
+    }
+
+    func controlTextDidEndEditing(_ note: Notification) {
+        // Clicking away from the handle's field keeps what was typed, if it's a usable size.
+        guard let field = note.object as? ValueField, field === handleField, let model else { return }
+        handlePreviewTask?.cancel()
+        if field.stringValue != model.handleFieldText, !model.commitHandle(field.stringValue) { model.cancelHandleEdit() }
+        refreshOverlay()
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard let field = control as? ValueField, let model else { return false }
+        let newline = selector == #selector(NSResponder.insertNewline(_:))
+        let cancel = selector == #selector(NSResponder.cancelOperation(_:))
+        if field === handleField {
+            if newline {
+                handlePreviewTask?.cancel()
+                guard model.commitHandle(field.stringValue) else {
+                    NSSound.beep()
+                    field.textColor = .systemRed
+                    return true
+                }
+                field.stringValue = model.handleFieldText ?? field.stringValue
+                window?.makeFirstResponder(self)
+            } else if cancel {
+                handlePreviewTask?.cancel()
+                model.cancelHandleEdit()
+                field.stringValue = model.handleFieldText ?? ""
+                window?.makeFirstResponder(self)
+            } else {
+                return false
+            }
+            refreshOverlay()
+            return true
+        }
+        guard let input = field.input, let session = model.sketchSession else { return false }
+        let tab = selector == #selector(NSResponder.insertTab(_:)), backtab = selector == #selector(NSResponder.insertBacktab(_:))
+        if newline {
+            session.setTyped(input, field.stringValue)
+            if session.typedIsInvalid(input) { NSSound.beep(); return true }
+            window?.makeFirstResponder(self)
+            model.sketchCommand { $0.commitTyped() }
+        } else if cancel {
+            session.clearTyped()
+            window?.makeFirstResponder(self)
+        } else if tab || backtab {
+            session.setTyped(input, field.stringValue)
+            let order = sketchFieldOrder
+            guard let i = order.firstIndex(of: input) else { return true }
+            let next = order[(i + (tab ? 1 : order.count - 1)) % order.count]
+            if let f = sketchFields[next] {
+                window?.makeFirstResponder(f)
+                f.selectText(nil)
+            }
+        } else {
+            return false
+        }
+        refreshOverlay()
+        return true
     }
 
     /// Keeps the instruction ("Select a plane or planar face") just below and right of the cursor.
@@ -523,6 +760,29 @@ final class DimensionLabelView: NSTextField {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func mouseDown(with event: NSEvent) { onClick?() }
+}
+
+/// A small editable number field in the viewport (a handle's size, a typed sketch value).
+final class ValueField: NSTextField {
+    /// The sketch value this field edits; nil for the drag handle's field.
+    var input: SketchInput?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        isEditable = true
+        isSelectable = true
+        isBordered = true
+        isBezeled = true
+        bezelStyle = .roundedBezel
+        alignment = .center
+        font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        usesSingleLineMode = true
+        cell?.isScrollable = true
+        cell?.wraps = false
+        focusRingType = .exterior
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
 }
 
 /// SwiftUI wrapper. The revision numbers are passed in so SwiftUI calls updateNSView exactly

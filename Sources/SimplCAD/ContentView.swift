@@ -59,7 +59,7 @@ struct DocumentWindow: View {
                             .help("Create a sketch: then click an origin plane or a flat face in the viewport")
                     }
                     Button { model.extrudeSelectedProfiles() } label: { Label("Extrude", systemImage: "square.stack.3d.up") }
-                        .help("Extrude the selected profiles (select a sketch in the timeline, then click its regions)")
+                        .help("Extrude the selected profiles (E): click a sketch's regions, then drag the arrow or type the distance")
                         .disabled(model.selectedRegions.isEmpty)
                     Button { model.addEdgeFeature(fillet: true) } label: { Label("Fillet", systemImage: "square.fill.on.square") }
                         .help("Fillet the selected edges")
@@ -134,8 +134,11 @@ struct StatusBar: View {
             Text("Select a plane or planar face to sketch on · Esc to cancel")
         } else if let h = model.dragHandle, model.hovered == nil || model.hovered?.kind == .handle {
             Text(model.previewInvalid ? "That size doesn't fit the neighbouring faces — let go to keep the previous size"
-                                      : "Drag the orange arrow to change the \(h.kind == .fillet ? "radius" : h.kind == .chamfer ? "chamfer size" : "distance"), or type it in the inspector")
+                                      : "Drag the orange arrow to change the \(h.kind == .fillet ? "radius" : h.kind == .chamfer ? "chamfer size" : "distance"), or type a size in the field next to it")
                 .foregroundStyle(model.previewInvalid ? Color.red : Color.secondary)
+        } else if !model.selectedRegions.isEmpty, model.hovered == nil {
+            Text("Press E or click Extrude to extrude the selected profile\(model.selectedRegions.count == 1 ? "" : "s")")
+                .foregroundStyle(.secondary)
         } else if let hovered = model.hovered, let name = model.name(of: hovered) {
             Label(name, systemImage: hovered.isEdge ? "line.diagonal" : "square")
                 .truncationMode(.middle)
