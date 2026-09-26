@@ -60,6 +60,37 @@ SKHandle sk_sketch_region_profile(SKHandle sketch, int i);
 /// "<featureId>.start|end|side.<tag>". Returns a body.
 SKHandle sk_extrude(const SKHandle *profiles, int count, double dx, double dy, double dz,
                     double distance, double distanceBack, const char *featureId);
+/// Revolves profiles about the axis through (ox, oy, oz) along (dx, dy, dz) by `angle` radians
+/// (2π or more = a full turn). Faces: "<featureId>.start|end|side.<tag>".
+SKHandle sk_revolve(const SKHandle *profiles, int count, double ox, double oy, double oz, double dx, double dy,
+                    double dz, double angle, const char *featureId);
+/// A path made of the sketch curves with these tags; they must connect end to end.
+SKHandle sk_sketch_path(SKHandle sketch, const char *const *tags, int count);
+/// Sweeps profiles along a path. Faces: "<featureId>.start|end|side.<tag>".
+SKHandle sk_sweep(const SKHandle *profiles, int count, SKHandle path, const char *featureId);
+/// Round pipe along a path; wall > 0 makes it hollow. Faces: "<featureId>.start|end|outer|inner".
+SKHandle sk_pipe(SKHandle path, double diameter, double wall, const char *featureId);
+/// Loft through the outer boundaries of profiles, in order. Faces: "<featureId>.start|end|side.<tag>".
+SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *featureId);
+/// Adds a rib to `body`: the open path (in its sketch plane) is thickened symmetrically across the
+/// plane and extended until it meets the body. New faces: "<featureId>.rib".
+SKHandle sk_rib(SKHandle body, SKHandle path, double thickness, const char *featureId);
+
+typedef enum SKHoleKind { SK_HOLE_SIMPLE = 0, SK_HOLE_COUNTERBORE = 1, SK_HOLE_COUNTERSINK = 2 } SKHoleKind;
+/// The solid to cut for a hole: its top centre at the frame origin, going against the frame normal.
+/// Counterbore: head diameter and depth. Countersink: head diameter and angle (radians).
+/// tipAngle > 0 adds a drill point. Faces: "<featureId>.hole.wall|tip|head|floor|top".
+SKHandle sk_hole(SKFrame at, SKHoleKind kind, double diameter, double depth, double tipAngle,
+                 double headDiameter, double headDepth, double headAngle, const char *featureId);
+
+typedef enum SKPrimitive { SK_BOX = 0, SK_CYLINDER = 1, SK_SPHERE = 2, SK_TORUS = 3, SK_COIL = 4 } SKPrimitive;
+/// A primitive standing on the frame's plane, centred at its origin (the normal is "up"):
+///   box: a = width (x), b = length (y), c = height     cylinder: a = diameter, c = height
+///   sphere: a = diameter (centre on the plane)          torus: a = diameter, b = tube diameter
+///   coil: a = diameter, b = section diameter, c = pitch, d = revolutions
+/// Faces: "<featureId>.top|bottom|left|right|front|back|side|start|end".
+SKHandle sk_primitive(SKPrimitive kind, SKFrame frame, double a, double b, double c, double d, const char *featureId);
+
 /// Boolean between two bodies; names from both operands are carried through.
 SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op);
 /// Constant-radius fillet on the named edges. New faces: "<featureId>.fillet.<edgeName>".

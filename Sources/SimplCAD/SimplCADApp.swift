@@ -113,16 +113,18 @@ struct SimplCADCommands: Commands {
             Button("Finish Sketch") { model?.finishSketch() }
                 .disabled(model?.sketchSession == nil)
         }
-        CommandMenu("Model") {
-            Button("Extrude Selected Profiles") { model?.extrudeSelectedProfiles() }
-                .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(model?.selectedRegions.isEmpty ?? true)
-            Button("Fillet Selected Edges") { model?.addEdgeFeature(fillet: true) }
-                .disabled((model?.selectedEdgeCount ?? 0) == 0)
-            Button("Chamfer Selected Edges") { model?.addEdgeFeature(fillet: false) }
-                .disabled((model?.selectedEdgeCount ?? 0) == 0)
+        CommandMenu("Create") {
+            ForEach(DesignTool.fromSketches) { tool in
+                Button(tool.rawValue) { model?.run(tool) }
+                    .keyboardShortcut(tool == .extrude ? KeyboardShortcut("e", modifiers: [.command, .shift]) : nil)
+            }
+            Divider()
+            ForEach(DesignTool.primitives) { tool in Button(tool.rawValue) { model?.run(tool) } }
             Divider()
             Button("Rebuild") { model?.regenerate() }
+        }
+        CommandMenu("Modify") {
+            ForEach(DesignTool.modifiers) { tool in Button(tool.rawValue) { model?.run(tool) } }
         }
     }
 }

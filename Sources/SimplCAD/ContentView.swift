@@ -47,31 +47,19 @@ struct DocumentWindow: View {
             }
         }
         .toolbar {
-            if let session = model.sketchSession {
-                SketchToolbar(model: model, session: session)
-            } else {
-                ToolbarItemGroup {
-                    if model.isPickingSketchPlane {
-                        Button { model.cancelSketchPlanePick() } label: { Label("Cancel Sketch", systemImage: "xmark.circle") }
-                            .help("Stop choosing a sketch plane (Esc)")
-                    } else {
-                        Button { model.startSketch() } label: { Label("Sketch", systemImage: "pencil.and.outline") }
-                            .help("Create a sketch: then click an origin plane or a flat face in the viewport")
-                    }
-                    Button { model.extrudeSelectedProfiles() } label: { Label("Extrude", systemImage: "square.stack.3d.up") }
-                        .help("Extrude the selected profiles (E): click a sketch's regions, then drag the arrow or type the distance")
-                        .disabled(model.selectedRegions.isEmpty)
-                    Button { model.addEdgeFeature(fillet: true) } label: { Label("Fillet", systemImage: "square.fill.on.square") }
-                        .help("Fillet the selected edges")
-                        .disabled(model.selectedEdgeCount == 0)
-                    Button { model.addEdgeFeature(fillet: false) } label: { Label("Chamfer", systemImage: "square.on.square.dashed") }
-                        .help("Chamfer the selected edges")
-                        .disabled(model.selectedEdgeCount == 0)
-                    Button { model.fitView() } label: { Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right") }
-                        .help("Fit the model in view")
-                    Button { model.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
-                        .help("Show or hide the inspector (⌥⌘I)")
+            // The tools sit in the middle of the toolbar, in Design and in Sketch mode.
+            ToolbarItem(placement: .principal) {
+                if let session = model.sketchSession {
+                    SketchToolbar(model: model, session: session)
+                } else {
+                    DesignToolbar(model: model)
                 }
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { model.fitView() } label: { Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right") }
+                    .help("Fit the model in view (⌘0)")
+                Button { model.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
+                    .help("Show or hide the inspector (⌥⌘I)")
             }
         }
         .focusedSceneValue(\.documentModel, model)
@@ -132,12 +120,14 @@ struct StatusBar: View {
                 .foregroundStyle(session.message != nil || session.solve?.status == .failed ? Color.red : Color.secondary)
         } else if model.isPickingSketchPlane {
             Text("Select a plane or planar face to sketch on · Esc to cancel")
+        } else if let tool = model.pendingTool, let prompt = model.toolPrompt {
+            Text("\(tool.rawValue): \(prompt) · Esc to cancel")
         } else if let h = model.dragHandle, model.hovered == nil || model.hovered?.kind == .handle {
-            Text(model.previewInvalid ? "That size doesn't fit the neighbouring faces — let go to keep the previous size"
-                                      : "Drag the orange arrow to change the \(h.kind == .fillet ? "radius" : h.kind == .chamfer ? "chamfer size" : "distance"), or type a size in the field next to it")
+            Text(model.previewInvalid ? "That size doesn't fit — let go to keep the previous size"
+                                      : "Drag the orange arrow to change the \(h.label.lowercased()), or type it in the field next to it")
                 .foregroundStyle(model.previewInvalid ? Color.red : Color.secondary)
-        } else if !model.selectedRegions.isEmpty, model.hovered == nil {
-            Text("Press E or click Extrude to extrude the selected profile\(model.selectedRegions.count == 1 ? "" : "s")")
+        } else if !model.selectedProfiles.isEmpty, model.hovered == nil {
+            Text("Press E to extrude the selected profile\(model.selectedProfiles.count == 1 ? "" : "s"), or pick another tool")
                 .foregroundStyle(.secondary)
         } else if let hovered = model.hovered, let name = model.name(of: hovered) {
             Label(name, systemImage: hovered.isEdge ? "line.diagonal" : "square")
@@ -152,20 +142,41 @@ struct StatusBar: View {
 
 struct Sidebar: View {
     @Bindable var model: DocumentModel
+    @State private var bodiesOpen = true
+    @State private var sketchesOpen = true
 
     var body: some View {
         List(selection: $model.selectedFeature) {
+            Section("Browser") {
+                DisclosureGroup(isExpanded: $bodiesOpen) {
+                    ForEach(model.bodies) { b in
+                        BrowserRow(name: b.name, hidden: model.isHidden(b.id),
+                                   toggle: { model.setHidden([b.id], !model.isHidden(b.id)) }) {
+                            Image(systemName: "cylinder")
+                        }
+                        .tag(b.id)
+                    }
+                } label: {
+                    FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model)
+                }
+                DisclosureGroup(isExpanded: $sketchesOpen) {
+                    ForEach(model.sketches) { f in
+                        BrowserRow(name: f.name, hidden: model.isHidden(f.id),
+                                   toggle: { model.setHidden([f.id], !model.isHidden(f.id)) }) {
+                            SketchIcon(editing: model.sketchSession?.featureID == f.id,
+                                       locked: model.result?.sketches[f.id]?.solve.degreesOfFreedom == 0,
+                                       failed: model.result?.errors[f.id] != nil)
+                        }
+                        .tag(f.id)
+                    }
+                } label: {
+                    FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model)
+                }
+            }
             Section("Timeline") {
                 ForEach(model.document.features) { f in
                     FeatureRow(feature: f, error: model.result?.errors[f.id])
                         .tag(f.id)
-                        .contextMenu {
-                            if case .sketch = f.kind { Button("Edit Sketch") { model.editSketch(f.id) } }
-                            Button(f.suppressed ? "Unsuppress" : "Suppress") {
-                                model.updateFeature(f.id, f.suppressed ? "Unsuppress" : "Suppress") { $0.suppressed.toggle() }
-                            }
-                            Button("Delete", role: .destructive) { model.deleteFeature(f.id) }
-                        }
                 }
             }
             Section {
@@ -184,6 +195,108 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .contextMenu(forSelectionType: FeatureID.self) { ids in
+            menu(for: ids)
+        } primaryAction: { ids in
+            // Double-click a sketch to edit it.
+            if ids.count == 1, let id = ids.first, isSketch(id) { model.editSketch(id) }
+        }
+    }
+
+    private func isSketch(_ id: FeatureID) -> Bool {
+        if case .sketch? = model.document.features.first(where: { $0.id == id })?.kind { return true }
+        return false
+    }
+
+    @ViewBuilder private func menu(for ids: Set<FeatureID>) -> some View {
+        if ids.count == 1, let id = ids.first, let f = model.document.features.first(where: { $0.id == id }) {
+            if isSketch(id) {
+                Button(model.sketchSession?.featureID == id ? "Finish Sketch" : "Edit Sketch") {
+                    if model.sketchSession?.featureID == id { model.finishSketch() } else { model.editSketch(id) }
+                }
+                Button(model.isHidden(id) ? "Show Sketch" : "Hide Sketch") { model.setHidden([id], !model.isHidden(id)) }
+            } else if model.bodies.contains(where: { $0.id == id }) {
+                Button(model.isHidden(id) ? "Show Body" : "Hide Body") { model.setHidden([id], !model.isHidden(id)) }
+            }
+            Divider()
+            Button(f.suppressed ? "Unsuppress" : "Suppress") {
+                model.updateFeature(id, f.suppressed ? "Unsuppress" : "Suppress") { $0.suppressed.toggle() }
+            }
+            Button("Delete \(f.name)", role: .destructive) { model.deleteFeature(id) }
+        } else if !ids.isEmpty {
+            Button("Hide") { model.setHidden(Array(ids), true) }
+            Button("Show") { model.setHidden(Array(ids), false) }
+        }
+    }
+}
+
+/// A body or sketch in the browser: eye toggle, icon, name.
+struct BrowserRow<Icon: View>: View {
+    let name: String
+    let hidden: Bool
+    let toggle: () -> Void
+    @ViewBuilder let icon: () -> Icon
+
+    var body: some View {
+        HStack(spacing: 6) {
+            EyeButton(hidden: hidden, toggle: toggle)
+            icon().frame(width: 18)
+            Text(name)
+        }
+        .foregroundStyle(hidden ? .secondary : .primary)
+    }
+}
+
+/// A browser folder ("Bodies", "Sketches"): its eye shows or hides everything in it.
+struct FolderRow: View {
+    let title: String
+    let ids: [FeatureID]
+    let model: DocumentModel
+
+    var body: some View {
+        let allHidden = !ids.isEmpty && ids.allSatisfy { model.isHidden($0) }
+        HStack(spacing: 6) {
+            EyeButton(hidden: allHidden) { model.setHidden(ids, !allHidden) }
+                .disabled(ids.isEmpty)
+            Image(systemName: "folder").frame(width: 18)
+            Text(title)
+        }
+    }
+}
+
+struct EyeButton: View {
+    let hidden: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            Image(systemName: hidden ? "eye.slash" : "eye")
+                .frame(width: 18)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help(hidden ? "Show" : "Hide")
+    }
+}
+
+/// A sketch's browser icon: a pencil while it's being edited, a lock when fully constrained.
+struct SketchIcon: View {
+    let editing: Bool
+    let locked: Bool
+    let failed: Bool
+
+    var body: some View {
+        Image(systemName: "square.dashed")
+            .overlay(alignment: .bottomTrailing) {
+                if failed {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 8)).foregroundStyle(.red)
+                } else if editing {
+                    Image(systemName: "pencil").font(.system(size: 9, weight: .bold)).foregroundStyle(.orange)
+                } else if locked {
+                    Image(systemName: "lock.fill").font(.system(size: 7)).foregroundStyle(.red)
+                }
+            }
+            .help(failed ? "This sketch has an error" : editing ? "Being edited" : locked ? "Fully constrained" : "Sketch")
     }
 }
 
@@ -194,9 +307,23 @@ struct FeatureRow: View {
     var icon: String {
         switch feature.kind {
         case .sketch: return "pencil.and.outline"
-        case .extrude: return "cube"
-        case .fillet: return "circle.bottomrighthalf.pattern.checkered"
-        case .chamfer: return "triangle.bottomhalf.filled"
+        case .extrude: return DesignTool.extrude.symbol
+        case .fillet: return DesignTool.fillet.symbol
+        case .chamfer: return DesignTool.chamfer.symbol
+        case .revolve: return DesignTool.revolve.symbol
+        case .sweep: return DesignTool.sweep.symbol
+        case .loft: return DesignTool.loft.symbol
+        case .rib: return DesignTool.rib.symbol
+        case .hole: return DesignTool.hole.symbol
+        case .pipe: return DesignTool.pipe.symbol
+        case .primitive(let p):
+            switch p.kind {
+            case .box: return DesignTool.box.symbol
+            case .cylinder: return DesignTool.cylinder.symbol
+            case .sphere: return DesignTool.sphere.symbol
+            case .torus: return DesignTool.torus.symbol
+            case .coil: return DesignTool.coil.symbol
+            }
         }
     }
 
@@ -252,6 +379,7 @@ struct ExpressionField: View {
 
     var body: some View {
         TextField("expression", text: $draft)
+            .labelsHidden()  // in a Form row the label beside the field would read "expression"
             .textFieldStyle(.roundedBorder)
             .font(.body.monospaced())
             .focused($focused)
@@ -271,12 +399,13 @@ struct ExpressionField: View {
 
 // MARK: - Sketch mode
 
-struct SketchToolbar: ToolbarContent {
+/// Sketch mode's tools, in the middle of the toolbar.
+struct SketchToolbar: View {
     let model: DocumentModel
     let session: SketchSession
 
-    var body: some ToolbarContent {
-        ToolbarItem {
+    var body: some View {
+        HStack(spacing: 10) {
             Picker("Tool", selection: Binding(get: { session.tool }, set: { model.setSketchTool($0) })) {
                 ForEach(SketchTool.allCases) { tool in
                     Label(tool.rawValue, systemImage: tool.symbol)
@@ -286,31 +415,70 @@ struct SketchToolbar: ToolbarContent {
             }
             .pickerStyle(.segmented)
             .labelStyle(.iconOnly)
-        }
-        ToolbarItemGroup {
-            Menu {
-                ForEach(ConstraintTool.allCases, id: \.self) { c in
-                    Button(c.rawValue) { model.sketchCommand { $0.apply(c) } }
-                        .disabled(!session.canApply(c))
+            .fixedSize()
+            ControlGroup {
+                Menu {
+                    ForEach(ConstraintTool.allCases, id: \.self) { c in
+                        Button(c.rawValue) { model.sketchCommand { $0.apply(c) } }
+                            .disabled(!session.canApply(c))
+                    }
+                } label: { Label("Constrain", systemImage: "link") }
+                    .help("Constrain the selected sketch entities")
+                Button { session.beginOffset() } label: { Label("Offset", systemImage: "square.on.square.intersection.dashed") }
+                    .help("Offset the selected curves by a distance")
+                    .disabled(!session.canOffset)
+                    .popover(isPresented: Binding(get: { session.offsetRequested }, set: { session.offsetRequested = $0 }),
+                             arrowEdge: .bottom) {
+                        OffsetPopover(model: model, session: session)
+                    }
+                Button { model.sketchCommand { $0.toggleConstruction() } } label: {
+                    Label("Construction", systemImage: "pencil.slash")
                 }
-            } label: { Label("Constrain", systemImage: "link") }
-                .help("Constrain the selected sketch entities")
-            Button { session.beginOffset() } label: { Label("Offset", systemImage: "square.on.square.intersection.dashed") }
-                .help("Offset the selected curves by a distance")
-                .disabled(!session.canOffset)
-                .popover(isPresented: Binding(get: { session.offsetRequested }, set: { session.offsetRequested = $0 }),
-                         arrowEdge: .bottom) {
-                    OffsetPopover(model: model, session: session)
-                }
-            Button { model.sketchCommand { $0.toggleConstruction() } } label: {
-                Label("Construction", systemImage: "pencil.slash")
+                .help("Toggle construction geometry for the selected curves")
+                .disabled(!session.canToggleConstruction)
             }
-            .help("Toggle construction geometry for the selected curves")
-            .disabled(!session.canToggleConstruction)
+            .labelStyle(.iconOnly)
+            .fixedSize()
             Button { model.finishSketch() } label: { Label("Finish Sketch", systemImage: "checkmark.circle.fill") }
                 .help("Finish the sketch (Return)")
                 .buttonStyle(.borderedProminent)
+                .fixedSize()
         }
+    }
+}
+
+/// Design mode's tools, in the middle of the toolbar: Sketch, the features made from sketches,
+/// primitives, and edge modifiers. A tool that is waiting for picks is highlighted.
+struct DesignToolbar: View {
+    let model: DocumentModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if model.isPickingSketchPlane {
+                Button { model.cancelSketchPlanePick() } label: { Label("Cancel Sketch", systemImage: "xmark.circle") }
+                    .help("Stop choosing a sketch plane (Esc)")
+            } else {
+                Button { model.startSketch() } label: { Label("Sketch", systemImage: "pencil.and.outline") }
+                    .help("Create a sketch: then click an origin plane or a flat face in the viewport")
+            }
+            group(DesignTool.fromSketches)
+            group(DesignTool.primitives)
+            group(DesignTool.modifiers)
+        }
+        .labelStyle(.iconOnly)
+        .fixedSize()
+    }
+
+    private func group(_ tools: [DesignTool]) -> some View {
+        ControlGroup {
+            ForEach(tools) { tool in
+                Toggle(isOn: Binding(get: { model.pendingTool == tool }, set: { _ in model.run(tool) })) {
+                    Label(tool.rawValue, systemImage: tool.symbol)
+                }
+                .help(tool.help)
+            }
+        }
+        .toggleStyle(.button)
     }
 }
 

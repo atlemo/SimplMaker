@@ -26,6 +26,13 @@ struct InspectorView: View {
                 case .extrude(let e): ExtrudeInspector(model: model, id: id, extrude: e)
                 case .fillet(let f): EdgeInspector(model: model, id: id, edges: f, fillet: true)
                 case .chamfer(let f): EdgeInspector(model: model, id: id, edges: f, fillet: false)
+                case .revolve(let f): RevolveInspector(model: model, id: id, revolve: f)
+                case .sweep(let f): SweepInspector(model: model, id: id, sweep: f)
+                case .loft(let f): LoftInspector(model: model, id: id, loft: f)
+                case .rib(let f): RibInspector(model: model, id: id, rib: f)
+                case .hole(let f): HoleInspector(model: model, id: id, hole: f)
+                case .primitive(let f): PrimitiveInspector(model: model, id: id, primitive: f)
+                case .pipe(let f): PipeInspector(model: model, id: id, pipe: f)
                 }
                 Section {
                     Button("Delete Feature", role: .destructive) { model.deleteFeature(id) }
@@ -35,7 +42,7 @@ struct InspectorView: View {
             .navigationTitle(feature.name)
         } else {
             ContentUnavailableView("No Feature Selected", systemImage: "cursorarrow.click",
-                                   description: Text("Select a feature in the timeline to edit it. Select edges in the viewport, then use Fillet or Chamfer."))
+                                   description: Text("Select a feature in the timeline to edit it, or pick a tool in the toolbar to create one."))
         }
     }
 }
@@ -242,6 +249,299 @@ struct EdgeInspector: View {
                     model.clearSelection()
                 }
             }
+        }
+    }
+}
+
+// MARK: - Shared pieces for the feature inspectors
+
+/// Reads and writes one kind of feature payload: `update` is an undo step, `preview` is live.
+@MainActor
+struct FeatureEdit<T> {
+    let model: DocumentModel
+    let id: FeatureID
+    let get: (Feature.Kind) -> T?
+    let wrap: (T) -> Feature.Kind
+
+    func update(_ name: String, _ change: @escaping (inout T) -> Void) {
+        model.updateFeature(id, name) { f in
+            if var v = get(f.kind) { change(&v); f.kind = wrap(v) }
+        }
+    }
+
+    func preview(_ change: @escaping (inout T) -> Void) {
+        model.preview(id) { f in
+            if var v = get(f.kind) { change(&v); f.kind = wrap(v) }
+        }
+    }
+
+    /// A labelled expression field that previews while typing and commits as one undo step.
+    func row(_ label: String, _ text: String, _ action: String, _ set: @escaping (inout T, String) -> Void) -> some View {
+        LabeledContent(label) {
+            ExpressionField(text: text, preview: { v in preview { set(&$0, v) } }) { v in update(action) { set(&$0, v) } }
+        }
+    }
+
+    func operation(_ value: BodyOperation, _ set: @escaping (inout T, BodyOperation) -> Void) -> some View {
+        Picker("Operation", selection: Binding(get: { value }, set: { op in update("Change Operation") { set(&$0, op) } })) {
+            ForEach(BodyOperation.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+    }
+}
+
+extension DocumentModel {
+    func featureName(_ id: FeatureID) -> String { document.features.first { $0.id == id }?.name ?? "missing" }
+}
+
+/// Where a path comes from, with a button to replace it with the curves selected in the viewport.
+struct PathSection: View {
+    let model: DocumentModel
+    let path: CurveRef
+    let set: (CurveRef) -> Void
+
+    var body: some View {
+        LabeledContent("Path", value: "\(path.curves.count) curve\(path.curves.count == 1 ? "" : "s") in \(model.featureName(path.sketch))")
+        if let picked = model.pathRef(model.selectedCurves), picked != path {
+            Button("Use the \(picked.curves.count) selected curve\(picked.curves.count == 1 ? "" : "s")") {
+                set(picked)
+                model.clearSelection()
+            }
+        } else {
+            Text("Click sketch curves in the viewport to choose another path.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Revolve, sweep, loft, rib
+
+struct RevolveInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let revolve: RevolveFeature
+
+    var edit: FeatureEdit<RevolveFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .revolve(let r) = $0 { r } else { nil } }, wrap: { .revolve($0) })
+    }
+
+    /// Lines of the sketch, numbered as the user sees them.
+    var lines: [(id: EntityID, title: String)] {
+        let curves = model.result?.sketches[revolve.sketch]?.solved.curves ?? []
+        var n = 0
+        return curves.compactMap { c in
+            guard case .line = c.geometry else { return nil }
+            n += 1
+            return (c.id, "Line \(n)" + (c.construction ? " (construction)" : ""))
+        }
+    }
+
+    var body: some View {
+        Section("Revolve") {
+            edit.row("Angle", revolve.angle, "Edit Angle") { $0.angle = $1 }
+            Picker("Axis", selection: Binding(get: { revolve.axis }, set: { a in edit.update("Change Axis") { $0.axis = a } })) {
+                Text("Sketch vertical").tag(AxisRef.sketchY)
+                Text("Sketch horizontal").tag(AxisRef.sketchX)
+                Text("X axis").tag(AxisRef.x)
+                Text("Y axis").tag(AxisRef.y)
+                Text("Z axis").tag(AxisRef.z)
+                ForEach(lines, id: \.id) { Text($0.title).tag(AxisRef.line($0.id)) }
+            }
+            if let line = model.selectedCurves.first(where: { c in c.sketch == revolve.sketch && lines.contains { $0.id == c.curve } }),
+               revolve.axis != .line(line.curve) {
+                Button("Use the selected line as the axis") {
+                    edit.update("Change Axis") { $0.axis = .line(line.curve) }
+                    model.clearSelection()
+                }
+            }
+            edit.operation(revolve.operation) { $0.operation = $1 }
+            LabeledContent("Profiles", value: "\(revolve.profiles.count) in \(model.featureName(revolve.sketch))")
+        }
+    }
+}
+
+struct SweepInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let sweep: SweepFeature
+
+    var edit: FeatureEdit<SweepFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .sweep(let s) = $0 { s } else { nil } }, wrap: { .sweep($0) })
+    }
+
+    var body: some View {
+        Section("Sweep") {
+            LabeledContent("Profiles", value: "\(sweep.profiles.count) in \(model.featureName(sweep.sketch))")
+            PathSection(model: model, path: sweep.path) { p in edit.update("Change Path") { $0.path = p } }
+            edit.operation(sweep.operation) { $0.operation = $1 }
+        }
+    }
+}
+
+struct LoftInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let loft: LoftFeature
+
+    var edit: FeatureEdit<LoftFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .loft(let l) = $0 { l } else { nil } }, wrap: { .loft($0) })
+    }
+
+    var body: some View {
+        Section("Loft") {
+            Toggle("Straight sides", isOn: Binding(get: { loft.ruled }, set: { v in edit.update("Change Loft") { $0.ruled = v } }))
+            edit.operation(loft.operation) { $0.operation = $1 }
+        }
+        Section("Profiles, in order (\(loft.sections.count))") {
+            ForEach(Array(loft.sections.enumerated()), id: \.offset) { i, section in
+                HStack {
+                    Text("\(i + 1). \(model.featureName(section.sketch))")
+                    Spacer()
+                    Button { edit.update("Remove Profile") { $0.sections.remove(at: i) } } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                        .disabled(loft.sections.count <= 2)
+                }
+            }
+            let picked = model.selectedProfiles.filter { p in !loft.sections.contains { $0.sketch == p.sketch } }
+            if !picked.isEmpty {
+                Button("Add the \(picked.count) selected profile\(picked.count == 1 ? "" : "s")") {
+                    edit.update("Add Profile") { l in l.sections += picked.map { LoftSection(sketch: $0.sketch, profile: $0.ref) } }
+                    model.clearSelection()
+                }
+            } else {
+                Text("Click a profile in another sketch to add it.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+struct RibInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let rib: RibFeature
+
+    var edit: FeatureEdit<RibFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .rib(let r) = $0 { r } else { nil } }, wrap: { .rib($0) })
+    }
+
+    var body: some View {
+        Section("Rib") {
+            edit.row("Thickness", rib.thickness, "Edit Thickness") { $0.thickness = $1 }
+            PathSection(model: model, path: rib.path) { p in edit.update("Change Rib Curve") { $0.path = p } }
+            Text("The rib grows from the curve to the body, and is as thick across the sketch plane.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Hole, primitives, pipe
+
+struct HoleInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let hole: HoleFeature
+
+    var edit: FeatureEdit<HoleFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .hole(let h) = $0 { h } else { nil } }, wrap: { .hole($0) })
+    }
+
+    var body: some View {
+        Section("Hole") {
+            Picker("Type", selection: Binding(get: { hole.kind }, set: { k in edit.update("Change Hole Type") { $0.kind = k } })) {
+                ForEach(HoleKind.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            edit.row("Diameter", hole.diameter, "Edit Diameter") { $0.diameter = $1 }
+            Picker("Extent", selection: Binding(get: { hole.depth == nil }, set: { through in
+                edit.update("Change Extent") { $0.depth = through ? nil : "10 mm" }
+            })) {
+                Text("Distance").tag(false)
+                Text("Through all").tag(true)
+            }
+            if let depth = hole.depth {
+                edit.row("Depth", depth, "Edit Depth") { $0.depth = $1 }
+                edit.row("Drill point", hole.tipAngle, "Edit Drill Point") { $0.tipAngle = $1 }
+            }
+            switch hole.kind {
+            case .simple: EmptyView()
+            case .counterbore:
+                edit.row("Counterbore Ø", hole.headDiameter, "Edit Counterbore") { $0.headDiameter = $1 }
+                edit.row("Counterbore depth", hole.headDepth, "Edit Counterbore") { $0.headDepth = $1 }
+            case .countersink:
+                edit.row("Countersink Ø", hole.headDiameter, "Edit Countersink") { $0.headDiameter = $1 }
+                edit.row("Countersink angle", hole.headAngle, "Edit Countersink") { $0.headAngle = $1 }
+            }
+        }
+        Section("Position on \(hole.face.face)") {
+            edit.row("X", hole.u, "Move Hole") { $0.u = $1 }
+            edit.row("Y", hole.v, "Move Hole") { $0.v = $1 }
+        }
+    }
+}
+
+struct PrimitiveInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let primitive: PrimitiveFeature
+
+    var edit: FeatureEdit<PrimitiveFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .primitive(let p) = $0 { p } else { nil } }, wrap: { .primitive($0) })
+    }
+
+    var planeName: String {
+        switch primitive.plane {
+        case .xy: return "XY plane"
+        case .xz: return "XZ plane"
+        case .yz: return "YZ plane"
+        case .face(let f): return f.face
+        }
+    }
+
+    var body: some View {
+        Section(primitive.kind.rawValue) {
+            switch primitive.kind {
+            case .box:
+                edit.row("Width", primitive.width, "Edit Width") { $0.width = $1 }
+                edit.row("Length", primitive.length, "Edit Length") { $0.length = $1 }
+                edit.row("Height", primitive.height, "Edit Height") { $0.height = $1 }
+            case .cylinder:
+                edit.row("Diameter", primitive.diameter, "Edit Diameter") { $0.diameter = $1 }
+                edit.row("Height", primitive.height, "Edit Height") { $0.height = $1 }
+            case .sphere:
+                edit.row("Diameter", primitive.diameter, "Edit Diameter") { $0.diameter = $1 }
+            case .torus:
+                edit.row("Diameter", primitive.diameter, "Edit Diameter") { $0.diameter = $1 }
+                edit.row("Tube Ø", primitive.tube, "Edit Tube") { $0.tube = $1 }
+            case .coil:
+                edit.row("Diameter", primitive.diameter, "Edit Diameter") { $0.diameter = $1 }
+                edit.row("Section Ø", primitive.tube, "Edit Section") { $0.tube = $1 }
+                edit.row("Pitch", primitive.pitch, "Edit Pitch") { $0.pitch = $1 }
+                edit.row("Turns", primitive.turns, "Edit Turns") { $0.turns = $1 }
+            }
+            edit.operation(primitive.operation) { $0.operation = $1 }
+        }
+        Section("Position on \(planeName)") {
+            edit.row("X", primitive.u, "Move \(primitive.kind.rawValue)") { $0.u = $1 }
+            edit.row("Y", primitive.v, "Move \(primitive.kind.rawValue)") { $0.v = $1 }
+        }
+    }
+}
+
+struct PipeInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let pipe: PipeFeature
+
+    var edit: FeatureEdit<PipeFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .pipe(let p) = $0 { p } else { nil } }, wrap: { .pipe($0) })
+    }
+
+    var body: some View {
+        Section("Pipe") {
+            edit.row("Diameter", pipe.diameter, "Edit Diameter") { $0.diameter = $1 }
+            Toggle("Hollow", isOn: Binding(get: { pipe.wall != nil }, set: { v in edit.update("Change Pipe") { $0.wall = v ? "1 mm" : nil } }))
+            if let wall = pipe.wall {
+                edit.row("Wall", wall, "Edit Wall") { $0.wall = $1 }
+            }
+            PathSection(model: model, path: pipe.path) { p in edit.update("Change Path") { $0.path = p } }
+            edit.operation(pipe.operation) { $0.operation = $1 }
         }
     }
 }

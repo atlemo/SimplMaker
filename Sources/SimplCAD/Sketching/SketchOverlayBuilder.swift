@@ -127,17 +127,21 @@ enum SketchOverlayBuilder {
         o.fullyConstrained = session.solve?.status == .solved && session.solve?.degreesOfFreedom == 0
     }
 
-    /// A finished sketch shown for reference (not pickable).
-    static func inactive(_ s: Sketch, frame: Frame, into o: inout SketchOverlay) {
-        for c in s.curves where !c.construction { o.inactive += segments(polyline(c, in: s), frame: frame, id: 0) }
+    /// A finished sketch's curves, pickable (as paths, axes and rib lines) under its slot.
+    static func finished(_ r: SketchResult, slot: Int, into o: inout SketchOverlay) {
+        let s = r.solved
+        for (i, c) in s.curves.enumerated() {
+            let segs = segments(polyline(c, in: s), frame: r.frame, id: PickID(sketchCurve: i, slot: slot).raw)
+            if c.construction { o.construction += segs } else { o.inactive += segs }
+        }
     }
 
-    /// Profile regions of a sketch, pickable for extrude.
-    static func regions(_ r: SketchResult, into o: inout SketchOverlay) {
+    /// Profile regions of a sketch, pickable under its slot (slot 0: the sketch being edited, not pickable as profiles).
+    static func regions(_ r: SketchResult, slot: Int, into o: inout SketchOverlay) {
         let n = r.frame.normal
         for (i, mesh) in r.regionMeshes.enumerated() {
             let base = UInt32(o.regionVertices.count)
-            let id = PickID(region: i).raw
+            let id = PickID(region: i, slot: slot).raw
             for v in stride(from: 0, to: mesh.positions.count, by: 3) {
                 o.regionVertices.append(FaceVertex(px: mesh.positions[v], py: mesh.positions[v + 1], pz: mesh.positions[v + 2],
                                                    nx: Float(n.x), ny: Float(n.y), nz: Float(n.z), id: id))

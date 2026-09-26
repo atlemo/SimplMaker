@@ -21,6 +21,25 @@
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRepFeat_MakeLinearForm.hxx>
+#include <BRepLib.hxx>
+#include <BRepOffsetAPI_MakePipe.hxx>
+#include <BRepOffsetAPI_MakePipeShell.hxx>
+#include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
+#include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepPrimAPI_MakeTorus.hxx>
+#include <BRepTools_WireExplorer.hxx>
+#include <Geom2d_Line.hxx>
+#include <Geom_CylindricalSurface.hxx>
+#include <Geom_Plane.hxx>
+#include <TopoDS_Wire.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -107,7 +126,13 @@ struct Sketch {
   std::vector<Region> regions;
 };
 
-using Object = std::variant<Body, Profile, Sketch>;
+/// A connected chain of sketch curves (for sweeps, pipes and ribs), with its sketch plane.
+struct Path {
+  TopoDS_Wire wire;
+  gp_Ax3 frame;
+};
+
+using Object = std::variant<Body, Profile, Sketch, Path>;
 
 std::mutex g_mutex;
 std::unordered_map<SKHandle, std::shared_ptr<Object>> g_objects;
@@ -372,6 +397,160 @@ SKMesh *packMesh(const std::vector<float> &pos, const std::vector<float> &nrm, c
   m->segments = copyOut(seg);
   m->segmentEdge = copyOut(segEdge);
   return m;
+}
+
+/// Tag of the sketch curve a profile edge came from ("?" if unknown).
+std::string edgeTag(const Profile &p, const TopoDS_Shape &edge) {
+  for (const Named &t : p.edgeTags)
+    if (t.shape.IsSame(edge)) return t.name;
+  return "?";
+}
+
+/// Names the side faces an operation generated from a profile's edges.
+template <class Op>
+void nameSides(Op &op, const Profile &p, const std::string &feat, std::vector<Named> &names) {
+  for (TopExp_Explorer ex(p.face, TopAbs_EDGE); ex.More(); ex.Next())
+    for (const TopoDS_Shape &g : op.Generated(ex.Current()))
+      if (g.ShapeType() == TopAbs_FACE) names.push_back({g, feat + ".side." + edgeTag(p, ex.Current())});
+}
+
+/// Some operations report no history for some edges (a revolve's edges square to the axis). The face
+/// an edge sweeps still contains the edge where the sweep starts, so name leftover faces by that.
+void nameSidesByContact(const TopoDS_Shape &shape, const Profile &p, const std::string &feat, std::vector<Named> &names) {
+  for (TopExp_Explorer fx(shape, TopAbs_FACE); fx.More(); fx.Next()) {
+    const TopoDS_Shape &f = fx.Current();
+    bool named = false;
+    for (const Named &n : names)
+      if (n.shape.IsSame(f)) named = true;
+    if (named) continue;
+    for (TopExp_Explorer ex(p.face, TopAbs_EDGE); ex.More(); ex.Next()) {
+      BRepAdaptor_Curve c(TopoDS::Edge(ex.Current()));
+      const gp_Pnt mid = c.Value(0.5 * (c.FirstParameter() + c.LastParameter()));
+      BRepExtrema_DistShapeShape d(BRepBuilderAPI_MakeVertex(mid).Vertex(), f);
+      if (d.IsDone() && d.Value() < 1e-6) {
+        names.push_back({f, feat + ".side." + edgeTag(p, ex.Current())});
+        break;
+      }
+    }
+  }
+}
+
+/// Looks up profile handles; false (with the error set) if any is invalid.
+bool profilesOf(const SKHandle *handles, int count, std::vector<std::shared_ptr<Object>> &keep,
+                std::vector<Profile *> &out, const char *what) {
+  if (count < 1) {
+    setError(std::string(what) + " needs at least one profile");
+    return false;
+  }
+  for (int k = 0; k < count; ++k) {
+    Profile *p;
+    keep.push_back(lookup(handles[k], p));
+    if (!p) return false;
+    out.push_back(p);
+  }
+  return true;
+}
+
+/// Fuses the solids of one feature into a single shape, carrying names.
+bool fuseAll(const std::vector<TopoDS_Shape> &solids, std::vector<Named> &names, TopoDS_Shape &result) {
+  result = solids[0];
+  if (solids.size() == 1) return true;
+  BRepAlgoAPI_Fuse fuse;
+  ShapeList args, tools;
+  args.Append(solids[0]);
+  for (size_t k = 1; k < solids.size(); ++k) tools.Append(solids[k]);
+  fuse.SetArguments(args);
+  fuse.SetTools(tools);
+  fuse.Build();
+  if (!fuse.IsDone() || fuse.HasErrors()) {
+    setError("could not merge the profiles' solids");
+    return false;
+  }
+  std::vector<Named> carried;
+  carry(fuse, names, carried);
+  names = std::move(carried);
+  result = unify(fuse.Shape(), names);
+  return true;
+}
+
+/// Stores a body after checking it is a valid solid.
+SKHandle storeChecked(const TopoDS_Shape &shape, const std::vector<Named> &names, const std::string &feat,
+                      const char *failure) {
+  Body b = makeBody(shape, names, feat);
+  if (!BRepCheck_Analyzer(b.shape).IsValid()) {
+    setError(failure);
+    return 0;
+  }
+  return store(std::move(b));
+}
+
+/// Names unnamed faces by where they face in `frame`: top/bottom (along the normal),
+/// right/left (x), back/front (y); curved or slanted faces are "side".
+void nameByDirection(const TopoDS_Shape &shape, const gp_Ax3 &frame, const std::string &feat, std::vector<Named> &names) {
+  for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+    const TopoDS_Face &f = TopoDS::Face(ex.Current());
+    bool named = false;
+    for (const Named &n : names)
+      if (n.shape.IsSame(f)) named = true;
+    if (named) continue;
+    std::string side = "side";
+    BRepAdaptor_Surface s(f);
+    if (s.GetType() == GeomAbs_Plane) {
+      gp_Dir d = s.Plane().Axis().Direction();
+      if (f.Orientation() == TopAbs_REVERSED) d.Reverse();
+      const double z = d.Dot(frame.Direction()), x = d.Dot(frame.XDirection()), y = d.Dot(frame.YDirection());
+      if (z > 0.999) side = "top";
+      else if (z < -0.999) side = "bottom";
+      else if (x > 0.999) side = "right";
+      else if (x < -0.999) side = "left";
+      else if (y > 0.999) side = "back";
+      else if (y < -0.999) side = "front";
+    }
+    names.push_back({f, feat + "." + side});
+  }
+}
+
+/// Start point and unit tangent of a wire, following its edge order.
+bool wireStart(const TopoDS_Wire &w, gp_Pnt &p, gp_Vec &t) {
+  BRepTools_WireExplorer ex(w);
+  if (!ex.More()) return false;
+  const TopoDS_Edge &e = ex.Current();
+  BRepAdaptor_Curve c(e);
+  const bool rev = e.Orientation() == TopAbs_REVERSED;
+  c.D1(rev ? c.LastParameter() : c.FirstParameter(), p, t);
+  if (rev) t.Reverse();
+  if (t.Magnitude() < 1e-12) return false;
+  t.Normalize();
+  return true;
+}
+
+/// Sweeps a circle of `radius` along `spine`, starting perpendicular to it at its start.
+/// Names: <feat>.start / .end for the caps, <feat>.<surface> for the swept face.
+bool sweepCircle(const TopoDS_Wire &spine, double radius, bool frenet, const std::string &feat,
+                 const std::string &surface, TopoDS_Shape &out, std::vector<Named> &names) {
+  gp_Pnt p;
+  gp_Vec t;
+  if (!wireStart(spine, p, t)) {
+    setError("the path is empty or degenerate");
+    return false;
+  }
+  TopoDS_Edge circle = BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(p, gp_Dir(t)), radius)).Edge();
+  TopoDS_Wire section = BRepBuilderAPI_MakeWire(circle).Wire();
+  BRepOffsetAPI_MakePipeShell pipe(spine);
+  pipe.SetMode(frenet);
+  pipe.SetTransitionMode(BRepBuilderAPI_RoundCorner);  // sharp corners in the path become rounded elbows
+  pipe.Add(section);
+  pipe.Build();
+  if (!pipe.IsDone() || !pipe.MakeSolid()) {
+    setError("the sweep failed (does the path turn too tightly for the diameter?)");
+    return false;
+  }
+  out = pipe.Shape();
+  names.push_back({pipe.FirstShape(), feat + ".start"});
+  names.push_back({pipe.LastShape(), feat + ".end"});
+  for (const TopoDS_Shape &g : pipe.Generated(circle))
+    if (g.ShapeType() == TopAbs_FACE) names.push_back({g, feat + "." + surface});
+  return true;
 }
 
 }  // namespace
@@ -652,6 +831,313 @@ SKHandle sk_extrude(const SKHandle *profiles, int count, double dx, double dy, d
     result = unify(fuse.Shape(), names);
   }
   return store(makeBody(result, names, feat));
+  SK_CATCH(0)
+}
+
+SKHandle sk_revolve(const SKHandle *profiles, int count, double ox, double oy, double oz, double dx, double dy,
+                    double dz, double angle, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "revolve");
+  std::vector<std::shared_ptr<Object>> keep;
+  std::vector<Profile *> ps;
+  if (!profilesOf(profiles, count, keep, ps, "revolve")) return 0;
+  if (angle <= Precision::Angular()) {
+    setError("the revolve angle must be positive");
+    return 0;
+  }
+  const gp_Ax1 axis(gp_Pnt(ox, oy, oz), gp_Dir(dx, dy, dz));
+  const bool full = angle >= 2 * M_PI - 1e-9;
+  std::vector<TopoDS_Shape> solids;
+  std::vector<Named> names;
+  for (Profile *p : ps) {
+    std::unique_ptr<BRepPrimAPI_MakeRevol> rev = full ? std::make_unique<BRepPrimAPI_MakeRevol>(p->face, axis)
+                                                       : std::make_unique<BRepPrimAPI_MakeRevol>(p->face, axis, angle);
+    rev->Build();
+    if (!rev->IsDone()) {
+      setError("revolve failed (does the profile cross the axis?)");
+      return 0;
+    }
+    if (!full) {
+      names.push_back({rev->FirstShape(), feat + ".start"});
+      names.push_back({rev->LastShape(), feat + ".end"});
+    }
+    nameSides(*rev, *p, feat, names);
+    nameSidesByContact(rev->Shape(), *p, feat, names);
+    solids.push_back(rev->Shape());
+  }
+  TopoDS_Shape result;
+  if (!fuseAll(solids, names, result)) return 0;
+  return storeChecked(result, names, feat, "revolve produced an invalid solid (does the profile cross the axis?)");
+  SK_CATCH(0)
+}
+
+SKHandle sk_sketch_path(SKHandle sketch, const char *const *tags, int count) {
+  SK_TRY
+  Sketch *s;
+  auto keep = lookup(sketch, s);
+  if (!s) return 0;
+  ShapeList edges;
+  for (int k = 0; k < count; ++k)
+    for (const Named &c : s->curves)
+      if (c.name == tags[k]) edges.Append(c.shape);
+  if (edges.IsEmpty()) {
+    setError("the path has no curves");
+    return 0;
+  }
+  BRepBuilderAPI_MakeWire mw;
+  mw.Add(edges);
+  if (!mw.IsDone()) {
+    setError("the path curves must connect end to end without branching");
+    return 0;
+  }
+  return store(Path{mw.Wire(), s->frame});
+  SK_CATCH(0)
+}
+
+SKHandle sk_sweep(const SKHandle *profiles, int count, SKHandle path, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "sweep");
+  std::vector<std::shared_ptr<Object>> keep;
+  std::vector<Profile *> ps;
+  if (!profilesOf(profiles, count, keep, ps, "sweep")) return 0;
+  Path *pa;
+  auto keepPath = lookup(path, pa);
+  if (!pa) return 0;
+  std::vector<TopoDS_Shape> solids;
+  std::vector<Named> names;
+  for (Profile *p : ps) {
+    BRepOffsetAPI_MakePipe pipe(pa->wire, p->face);
+    pipe.Build();
+    if (!pipe.IsDone()) {
+      setError("sweep failed (does the path turn too tightly for the profile?)");
+      return 0;
+    }
+    names.push_back({pipe.FirstShape(), feat + ".start"});
+    names.push_back({pipe.LastShape(), feat + ".end"});
+    nameSides(pipe, *p, feat, names);
+    nameSidesByContact(pipe.Shape(), *p, feat, names);
+    solids.push_back(pipe.Shape());
+  }
+  TopoDS_Shape result;
+  if (!fuseAll(solids, names, result)) return 0;
+  return storeChecked(result, names, feat, "sweep produced an invalid solid (the profile may intersect itself along the path)");
+  SK_CATCH(0)
+}
+
+SKHandle sk_pipe(SKHandle path, double diameter, double wall, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "pipe");
+  Path *pa;
+  auto keep = lookup(path, pa);
+  if (!pa) return 0;
+  if (diameter <= Precision::Confusion()) {
+    setError("the pipe diameter must be positive");
+    return 0;
+  }
+  if (wall < 0 || wall >= diameter / 2) {
+    setError("the wall must be thinner than the pipe's radius");
+    return 0;
+  }
+  TopoDS_Shape outer;
+  std::vector<Named> names;
+  if (!sweepCircle(pa->wire, diameter / 2, false, feat, "outer", outer, names)) return 0;
+  if (wall <= Precision::Confusion()) return storeChecked(outer, names, feat, "the pipe is invalid");
+  TopoDS_Shape inner;
+  std::vector<Named> innerNames;
+  if (!sweepCircle(pa->wire, diameter / 2 - wall, false, feat, "inner", inner, innerNames)) return 0;
+  BRepAlgoAPI_Cut cut(outer, inner);
+  if (!cut.IsDone() || cut.HasErrors()) {
+    setError("could not hollow the pipe");
+    return 0;
+  }
+  std::vector<Named> carried;
+  carry(cut, names, carried);
+  std::vector<Named> innerCarried;
+  carry(cut, {innerNames.begin() + 2, innerNames.end()}, innerCarried);  // the bore, not the inner caps
+  carried.insert(carried.end(), innerCarried.begin(), innerCarried.end());
+  return storeChecked(cut.Shape(), carried, feat, "the hollow pipe is invalid");
+  SK_CATCH(0)
+}
+
+SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "loft");
+  std::vector<std::shared_ptr<Object>> keep;
+  std::vector<Profile *> ps;
+  if (!profilesOf(profiles, count, keep, ps, "loft")) return 0;
+  if (count < 2) {
+    setError("a loft needs at least two profiles");
+    return 0;
+  }
+  BRepOffsetAPI_ThruSections loft(true, ruled);
+  std::vector<TopoDS_Wire> wires;
+  for (Profile *p : ps) {
+    wires.push_back(BRepTools::OuterWire(p->face));
+    loft.AddWire(wires.back());
+  }
+  loft.Build();
+  if (!loft.IsDone()) {
+    setError("loft failed (are the profiles far enough apart, and not crossing?)");
+    return 0;
+  }
+  std::vector<Named> names{{loft.FirstShape(), feat + ".start"}, {loft.LastShape(), feat + ".end"}};
+  for (TopExp_Explorer ex(wires[0], TopAbs_EDGE); ex.More(); ex.Next()) {
+    TopoDS_Shape g = loft.GeneratedFace(ex.Current());
+    if (!g.IsNull()) names.push_back({g, feat + ".side." + edgeTag(*ps[0], ex.Current())});
+  }
+  return storeChecked(loft.Shape(), names, feat, "loft produced an invalid solid");
+  SK_CATCH(0)
+}
+
+SKHandle sk_rib(SKHandle body, SKHandle path, double thickness, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "rib");
+  Body *b;
+  auto keepBody = lookup(body, b);
+  Path *pa;
+  auto keepPath = lookup(path, pa);
+  if (!b || !pa) return 0;
+  if (thickness <= Precision::Confusion()) {
+    setError("the rib thickness must be positive");
+    return 0;
+  }
+  if (pa->wire.Closed()) {
+    setError("a rib needs an open curve, not a closed shape");
+    return 0;
+  }
+  Handle(Geom_Plane) plane = new Geom_Plane(pa->frame);
+  const gp_Vec n = gp_Vec(pa->frame.Direction()) * (thickness / 2);
+  BRepFeat_MakeLinearForm form(b->shape, pa->wire, plane, n, n.Reversed(), 1, true);
+  form.Perform();
+  if (!form.IsDone() || form.Shape().IsNull()) {
+    setError("the rib must meet the body at both ends (draw it across a corner, on a plane through the body)");
+    return 0;
+  }
+  std::vector<Named> names;
+  carry(form, namedFaces(*b), names);
+  TopoDS_Shape result = unify(form.Shape(), names);
+  return storeChecked(result, names, feat + ".rib", "the rib produced an invalid solid");
+  SK_CATCH(0)
+}
+
+SKHandle sk_hole(SKFrame at, SKHoleKind kind, double diameter, double depth, double tipAngle, double headDiameter,
+                 double headDepth, double headAngle, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "hole") + ".hole";
+  const double r = diameter / 2;
+  if (r <= Precision::Confusion() || depth <= Precision::Confusion()) {
+    setError("the hole diameter and depth must be positive");
+    return 0;
+  }
+  const gp_Ax3 f = toAx3(at);
+  const gp_Pnt o = f.Location();
+  const gp_Vec x(f.XDirection()), z(f.Direction());
+  auto pt = [&](double rr, double zz) { return o.Translated(x * rr + z * zz); };
+  const double top = std::max(1e-3, 1e-3 * depth);  // start just above the face so the cut is clean
+
+  // The half-profile in (radius, height), from the axis at the top round to the axis at the bottom.
+  std::vector<std::pair<gp_Pnt, std::string>> pts;  // point, name of the face the edge from it makes
+  const double R = headDiameter / 2;
+  switch (kind) {
+    case SK_HOLE_COUNTERBORE:
+      if (R <= r || headDepth <= 0 || headDepth >= depth) {
+        setError("the counterbore must be wider than the hole and shallower than it");
+        return 0;
+      }
+      pts = {{pt(0, top), "top"}, {pt(R, top), "head"}, {pt(R, -headDepth), "floor"}, {pt(r, -headDepth), "wall"}};
+      break;
+    case SK_HOLE_COUNTERSINK: {
+      if (R <= r || headAngle <= 0 || headAngle >= M_PI) {
+        setError("the countersink must be wider than the hole, with an angle between 0 and 180 deg");
+        return 0;
+      }
+      const double sinkDepth = (R - r) / std::tan(headAngle / 2);
+      if (sinkDepth >= depth) {
+        setError("the countersink is deeper than the hole");
+        return 0;
+      }
+      pts = {{pt(0, top), "top"}, {pt(R + top * std::tan(headAngle / 2), top), "head"}, {pt(r, -sinkDepth), "wall"}};
+      break;
+    }
+    default:
+      pts = {{pt(0, top), "top"}, {pt(r, top), "wall"}};
+  }
+  pts.push_back({pt(r, -depth), "tip"});
+  const double tip = tipAngle > 0 && tipAngle < M_PI ? r / std::tan(tipAngle / 2) : 0;
+  pts.push_back({pt(0, -depth - tip), "axis"});
+
+  BRepBuilderAPI_MakePolygon poly;
+  for (auto &p : pts) poly.Add(p.first);
+  poly.Close();
+  if (!poly.IsDone()) {
+    setError("could not build the hole's profile");
+    return 0;
+  }
+  TopoDS_Face face = BRepBuilderAPI_MakeFace(poly.Wire(), true).Face();
+  BRepPrimAPI_MakeRevol rev(face, gp_Ax1(o, f.Direction()));
+  rev.Build();
+  if (!rev.IsDone()) {
+    setError("could not build the hole");
+    return 0;
+  }
+  std::vector<Named> names;
+  size_t k = 0;
+  for (BRepTools_WireExplorer ex(poly.Wire()); ex.More(); ex.Next(), ++k) {
+    if (k >= pts.size() || pts[k].second == "axis") continue;
+    for (const TopoDS_Shape &g : rev.Generated(ex.Current()))
+      if (g.ShapeType() == TopAbs_FACE) names.push_back({g, feat + "." + (pts[k].second == "tip" && tip == 0 ? "bottom" : pts[k].second)});
+  }
+  return storeChecked(rev.Shape(), names, feat, "the hole is invalid");
+  SK_CATCH(0)
+}
+
+SKHandle sk_primitive(SKPrimitive kind, SKFrame frame, double a, double b, double c, double d, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "primitive");
+  const gp_Ax3 f = toAx3(frame);
+  const gp_Pnt o = f.Location();
+  const gp_Ax2 ax(o, f.Direction(), f.XDirection());
+  auto positive = [](std::initializer_list<double> v) {
+    for (double x : v)
+      if (!(x > Precision::Confusion())) return false;
+    return true;
+  };
+  TopoDS_Shape shape;
+  std::vector<Named> names;
+  switch (kind) {
+    case SK_BOX: {
+      if (!positive({a, b, c})) { setError("the box sizes must be positive"); return 0; }
+      gp_Pnt corner = o.Translated(gp_Vec(f.XDirection()) * (-a / 2) + gp_Vec(f.YDirection()) * (-b / 2));
+      shape = BRepPrimAPI_MakeBox(gp_Ax2(corner, f.Direction(), f.XDirection()), a, b, c).Shape();
+      break;
+    }
+    case SK_CYLINDER:
+      if (!positive({a, c})) { setError("the cylinder's diameter and height must be positive"); return 0; }
+      shape = BRepPrimAPI_MakeCylinder(ax, a / 2, c).Shape();
+      break;
+    case SK_SPHERE:
+      if (!positive({a})) { setError("the sphere's diameter must be positive"); return 0; }
+      shape = BRepPrimAPI_MakeSphere(ax, a / 2).Shape();
+      break;
+    case SK_TORUS:
+      if (!positive({a, b}) || b >= a) { setError("the torus needs a tube thinner than its diameter"); return 0; }
+      shape = BRepPrimAPI_MakeTorus(ax, a / 2, b / 2).Shape();
+      break;
+    case SK_COIL: {
+      if (!positive({a, b, c, d}) || b >= a) { setError("the coil needs a positive size, and a section thinner than its diameter"); return 0; }
+      if (b >= c) { setError("the pitch must be larger than the section, or the turns would overlap"); return 0; }
+      Handle(Geom_CylindricalSurface) cyl = new Geom_CylindricalSurface(gp_Ax3(ax), a / 2);
+      gp_Lin2d line(gp_Pnt2d(0, 0), gp_Dir2d(2 * M_PI, c));
+      const double length = d * std::hypot(2 * M_PI, c);
+      TopoDS_Edge helix = BRepBuilderAPI_MakeEdge(new Geom2d_Line(line), cyl, 0, length).Edge();
+      BRepLib::BuildCurves3d(helix);
+      TopoDS_Wire spine = BRepBuilderAPI_MakeWire(helix).Wire();
+      if (!sweepCircle(spine, b / 2, true, feat, "side", shape, names)) return 0;
+      break;
+    }
+  }
+  nameByDirection(shape, f, feat, names);
+  return storeChecked(shape, names, feat, "the primitive is invalid");
   SK_CATCH(0)
 }
 
