@@ -397,7 +397,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             model.clickRay = nil  // a label click places things at the plane's origin
             model.click(plane.pickID, additive: false)
             refreshOverlay()
-        } else {
+        } else if let curve = DimensionLabel.curve(ofReference: id) {
+            model.sketchCommand { $0.dimensionReference(curve) }  // a measured size becomes a dimension
+            refreshOverlay()
+        } else if id != DimensionLabel.pendingID {
             model.sketchSession?.editingDimension = id
         }
     }
@@ -470,7 +473,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 labels[l.id] = view
             }
             view.stringValue = l.text
+            view.isReference = l.reference
             view.isEditingHighlight = l.editing
+            view.toolTip = l.reference ? "Measured size · click to make it a dimension you can set" : nil
             view.sizeToFit()
             if let p = renderer.camera.project(l.world, viewSize: bounds.size) {
                 view.isHidden = false
@@ -828,14 +833,15 @@ final class CursorPromptView: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// A small clickable value label for a sketch dimension.
+/// A small clickable value label for a sketch dimension (or, lighter, a measured size).
 final class DimensionLabelView: NSTextField {
     var onClick: (() -> Void)?
+    var isReference = false
     var isEditingHighlight = false {
         didSet {
             backgroundColor = isEditingHighlight ? NSColor.selectedContentBackgroundColor
-                                                 : NSColor.textBackgroundColor.withAlphaComponent(0.85)
-            textColor = isEditingHighlight ? .alternateSelectedControlTextColor : .labelColor
+                : NSColor.textBackgroundColor.withAlphaComponent(isReference ? 0.5 : 0.85)
+            textColor = isEditingHighlight ? .alternateSelectedControlTextColor : isReference ? .secondaryLabelColor : .labelColor
         }
     }
 

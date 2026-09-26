@@ -11,6 +11,13 @@ struct DimensionLabel: Identifiable, Equatable {
     var world: SIMD3<Float>
     var text: String
     var editing: Bool
+    /// A measured size that isn't a dimension yet (drawn lighter; a click makes it a dimension).
+    var reference = false
+
+    /// Id of the light label showing a curve's measured size.
+    static func referenceID(_ curve: EntityID) -> EntityID { "ref:" + curve }
+    static func curve(ofReference id: EntityID) -> EntityID? { id.hasPrefix("ref:") ? String(id.dropFirst(4)) : nil }
+    static let pendingID = "pending-length"
 }
 
 /// A constraint symbol drawn next to the geometry it constrains.
@@ -50,7 +57,7 @@ enum SketchOverlayBuilder {
             if let p = s.position(id) { return p }
             guard let g = s.geometry(of: id) else { return nil }
             switch g {
-            case .line: return g.point(0.5)
+            case .line: return g.point(0.25)  // a quarter along: the middle is where the line's size shows
             case .circle(let c, let r): return c + SIMD2(0, r)
             case .arc: return g.point(0.5)
             }
@@ -157,13 +164,42 @@ enum SketchOverlayBuilder {
     /// Value labels for the dimensions of the sketch being edited.
     static func labels(_ session: SketchSession) -> [DimensionLabel] {
         let s = session.sketch
-        return s.dimensions.compactMap { d in
+        var out: [DimensionLabel] = s.dimensions.compactMap { d in
             guard let anchor = anchor(d.kind, s) else { return nil }
             let value = session.values[d.id].map { d.unitKind.format($0) } ?? "?"
             let isParametric = ((try? Expressions.parse(d.expression))?.references.isEmpty == false)
             return DimensionLabel(id: d.id, world: world(session.frame, anchor),
-                                  text: isParametric ? "\(d.expression) = \(value)" : value,
+                                  text: prefix(d.kind) + (isParametric ? "\(d.expression) = \(value)" : value),
                                   editing: session.editingDimension == d.id)
+        }
+        // Every other line, circle and arc shows its measured size, lighter.
+        let pending = session.pendingLineLength != nil ? session.dimensionPicks.first : nil
+        for m in session.referenceMeasurements where m.curve != pending {
+            guard let anchor = anchor(m.kind, s) else { continue }
+            out.append(DimensionLabel(id: DimensionLabel.referenceID(m.curve), world: world(session.frame, anchor),
+                                      text: prefix(m.kind) + measured(m.value), editing: false, reference: true))
+        }
+        if let length = session.pendingLineLength, let line = pending, let anchor = anchor(.length(line), s) {
+            out.append(DimensionLabel(id: DimensionLabel.pendingID, world: world(session.frame, anchor),
+                                      text: "\(measured(length)) · click again to place", editing: true))
+        }
+        return out
+    }
+
+    /// A measured length for display: at most two decimals ("35.36 mm"), since it's only a guide.
+    static func measured(_ mm: Double) -> String {
+        var s = String(format: "%.2f", mm)
+        while s.hasSuffix("0") { s.removeLast() }
+        if s.hasSuffix(".") { s.removeLast() }
+        return s + " mm"
+    }
+
+    /// "⌀ " for diameters, "R " for radii.
+    static func prefix(_ k: SketchDimension.Kind) -> String {
+        switch k {
+        case .diameter: return "⌀ "
+        case .radius: return "R "
+        default: return ""
         }
     }
 
