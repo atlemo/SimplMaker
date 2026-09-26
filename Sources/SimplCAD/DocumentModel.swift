@@ -62,6 +62,8 @@ final class DocumentModel {
     /// Camera request for the viewport (look at a sketch plane, standard views), with a revision counter.
     private(set) var cameraCommand: (command: CameraCommand, revision: Int)?
     var showInspector = true
+    /// The timeline bar along the bottom.
+    var showTimeline = true
     /// The browser (bodies, sketches, timeline, parameters) on the left.
     var showSidebar = true
     var orthographic = false
@@ -102,6 +104,29 @@ final class DocumentModel {
         } else {
             regenerate()
         }
+    }
+
+    // MARK: timeline marker
+
+    /// How many features the model is built from: the marker's position in the timeline.
+    var markerPosition: Int { document.rollback.map { min($0, document.features.count) } ?? document.features.count }
+
+    /// Moves the timeline marker: the model is rebuilt from the features before it only.
+    func setMarker(_ position: Int) {
+        let p = min(max(position, 0), document.features.count)
+        guard p != markerPosition else { return regenerate() }  // drop a drag preview
+        if sketchSession != nil { finishSketch() }
+        pendingTool = nil
+        mutate("Move Timeline Marker") { $0.rollback = p == $0.features.count ? nil : p }
+        if let id = selectedFeature, let i = document.index(of: id), i >= p { selectedFeature = nil }
+    }
+
+    /// Shows the model as it would be with the marker at `position`, while the marker is dragged.
+    func previewMarker(_ position: Int) {
+        var doc = document
+        let p = min(max(position, 0), doc.features.count)
+        doc.rollback = p == doc.features.count ? nil : p
+        regenerate(preview: doc)
     }
 
     // MARK: visibility
@@ -152,7 +177,11 @@ final class DocumentModel {
 
     func deleteFeature(_ id: FeatureID) {
         if sketchSession?.featureID == id { sketchSession = nil }
-        mutate("Delete Feature") { $0.features.removeAll { $0.id == id } }
+        mutate("Delete Feature") { doc in
+            guard let i = doc.index(of: id) else { return }
+            doc.features.remove(at: i)
+            if let r = doc.rollback, i < r { doc.rollback = r - 1 }  // the marker stays after the same features
+        }
         if selectedFeature == id { selectedFeature = nil }
     }
 
@@ -175,7 +204,13 @@ final class DocumentModel {
     func add(_ feature: Feature) {
         documentBeforeNewFeature = document
         mutate("Add \(feature.typeName)") { doc in
-            doc.features.append(feature)
+            // At the timeline marker: rolled back, a new feature goes where the marker is.
+            if let r = doc.rollback, r < doc.features.count {
+                doc.features.insert(feature, at: r)
+                doc.rollback = r + 1
+            } else {
+                doc.features.append(feature)
+            }
             doc.hidden.formUnion(feature.sketchesUsed)
         }
         selection = []
