@@ -68,7 +68,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .fillet: return "Click the corner point where two lines meet to round it with an arc"
         case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
         case .extend: return "Click near the end of a line or arc to extend it to the next curve"
-        case .dimension: return "Click a line, circle, or two entities · click empty space to place a line length"
+        case .dimension: return "Click a line (then click again to place its length), a circle or arc, or two items for a distance or angle · or click any grey size"
         }
     }
 }
@@ -296,8 +296,12 @@ final class SketchSession {
 
     /// Returns (handled, commit action name). Unhandled drags orbit the camera.
     func handle(_ m: SketchMouse) -> (handled: Bool, commit: String?) {
-        if m.phase == .moved || m.phase == .down { hover = entity(for: m.pick) }
         if let t = m.tolerance { tolerance = t }
+        if m.phase == .moved || m.phase == .down {
+            // What's exactly under the cursor, or else the nearest point or curve within a few
+            // pixels: sketch lines are thin, and picking shouldn't need pixel precision.
+            hover = entity(for: m.pick) ?? m.uv.flatMap { m.snapping ? nearestEntity($0) : nil }
+        }
         gridStep = m.gridStep
         snapping = m.snapping
         if let uv = m.uv, tool != .select || dragEntity != nil { _ = snap(uv, excluding: dragEntity) } else { lastSnap = nil }
@@ -580,15 +584,64 @@ final class SketchSession {
         return finish("Offset")
     }
 
+    /// Dimension tool clicks. A line waits for a second click: the same line or empty space
+    /// places its length, another line an angle, a point a distance. Circles and arcs take one click.
     private func dimensionClick() -> String? {
+        let singleLine = dimensionPicks.count == 1 && sketch.kind(of: dimensionPicks[0]) == .line
         guard let h = hover else {
-            // Empty space: a single picked line gets its length.
-            if dimensionPicks.count == 1, sketch.kind(of: dimensionPicks[0]) == .line { return createDimension() }
+            if singleLine { return createDimension() }  // empty space: place the length
             dimensionPicks = []
             return nil
         }
+        if singleLine, dimensionPicks[0] == h { return createDimension() }  // the same line again
         if !dimensionPicks.contains(h) { dimensionPicks.append(h) }
         return sketch.dimensionPickIsComplete(dimensionPicks) ? createDimension() : nil
+    }
+
+    /// The nearest sketch point within the pick tolerance, else the nearest curve.
+    func nearestEntity(_ uv: SIMD2<Double>) -> EntityID? {
+        var best: (EntityID, Double)?
+        for p in sketch.points {
+            let d = simdLength(p.position - uv)
+            if d <= tolerance, d < (best?.1 ?? .infinity) { best = (p.id, d) }
+        }
+        if let best { return best.0 }
+        for c in sketch.curves {
+            guard let g = sketch.geometry(of: c.id) else { continue }
+            let d = simdLength(Self.closest(uv, on: g) - uv)
+            if d <= tolerance, d < (best?.1 ?? .infinity) { best = (c.id, d) }
+        }
+        return best?.0
+    }
+
+    // MARK: measurements shown for undimensioned geometry
+
+    /// Lines, circles and arcs without a size dimension, with their current size: shown as light
+    /// labels so every size is visible, and a click turns one into a dimension.
+    var referenceMeasurements: [(curve: EntityID, kind: SketchDimension.Kind, value: Double)] {
+        var sized = Set<EntityID>()
+        for d in sketch.dimensions {
+            switch d.kind {
+            case .length(let c), .radius(let c), .diameter(let c): sized.insert(c)
+            default: break
+            }
+        }
+        return sketch.curves.compactMap { c in
+            guard !c.construction, !sized.contains(c.id), let s = sketch.suggestDimension(for: [c.id]) else { return nil }
+            return (c.id, s.kind, s.value)
+        }
+    }
+
+    /// Clicking a light measurement: add it as a dimension and open it for typing.
+    func dimensionReference(_ curve: EntityID) -> String? {
+        dimensionPicks = [curve]
+        return createDimension()
+    }
+
+    /// While the Dimension tool waits after one line: its length, to show at the cursor.
+    var pendingLineLength: Double? {
+        guard tool == .dimension, dimensionPicks.count == 1, case let (a, b)? = sketch.lineEnds(dimensionPicks[0]) else { return nil }
+        return simdLength(b - a)
     }
 
     private func createDimension() -> String? {
