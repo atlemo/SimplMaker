@@ -22,6 +22,11 @@ struct DocumentWindow: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @AppStorage(Preferences.showGrid) private var showGrid = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
+    /// The window's width: below these, the toolbar tools drop their titles so the row still fits
+    /// (otherwise macOS folds the whole row into the toolbar's overflow menu).
+    @State private var windowWidth: CGFloat = 1200
+    static let titledDesignWidth: CGFloat = 1100
+    static let titledSketchWidth: CGFloat = 1200
 
     private var unlinkTitle: String {
         guard let p = model.unlinkPrompt else { return "" }
@@ -82,14 +87,18 @@ struct DocumentWindow: View {
                 .padding(.bottom, model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .toolbar {
             // The tools sit in the middle of the toolbar, in Design and in Sketch mode.
             ToolbarItem(placement: .principal) {
-                if let session = model.sketchSession {
-                    SketchToolbar(model: model, session: session)
-                } else {
-                    DesignToolbar(model: model)
+                Group {
+                    if let session = model.sketchSession {
+                        SketchToolbar(model: model, session: session)
+                    } else {
+                        DesignToolbar(model: model)
+                    }
                 }
+                .environment(\.toolTitles, windowWidth >= (model.sketchSession == nil ? Self.titledDesignWidth : Self.titledSketchWidth))
             }
             ToolbarItem(placement: .navigation) {
                 Button { model.showSidebar.toggle() } label: { Label("Browser", systemImage: "sidebar.left") }
@@ -448,62 +457,120 @@ struct ExpressionField: View {
 
 // MARK: - Sketch mode
 
+/// A toolbar tool: its icon with a short title underneath, so the tools are easy to learn.
+/// Highlighted while `active` (the current sketch tool, or a design tool waiting for picks).
+struct ToolButton: View {
+    let title: String
+    let icon: String
+    var active = false
+    var help: String?
+    let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.toolTitles) private var showsTitle
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 1) {
+                Icon(icon, size: 16).frame(height: 18)
+                if showsTitle {
+                    Text(title)
+                        .font(.system(size: 10))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .frame(minWidth: showsTitle ? 38 : 28, minHeight: showsTitle ? 0 : 26)
+            .padding(.horizontal, DS.Spacing.space1)
+            .padding(.vertical, DS.Spacing.space1)
+            .foregroundStyle(active ? Color.accentColor : Color.primary)
+            .background(active ? Color.accentColor.opacity(0.16) : hovering && isEnabled ? Color.primary.opacity(0.07) : .clear,
+                        in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? 1 : DS.opacityDisabled)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help ?? title)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+extension EnvironmentValues {
+    /// Whether toolbar tools show their title under the icon (they don't when the window is too
+    /// narrow for the titled row; a setting can turn them off later).
+    @Entry var toolTitles = true
+}
+
+/// Tool groups in the toolbar are separated by a thin line.
+struct ToolDivider: View {
+    var body: some View { Divider().frame(height: 28).padding(.horizontal, DS.Spacing.space2) }
+}
+
 /// Sketch mode's tools, in the middle of the toolbar, in groups: Select · draw · change curves ·
 /// dimension and constrain · Finish.
 struct SketchToolbar: View {
     let model: DocumentModel
     let session: SketchSession
+    @State private var constrainOpen = false
+    @Environment(\.toolTitles) private var showsTitles
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: DS.Spacing.space1) {
             tools([.select])
+            ToolDivider()
             tools(SketchTool.draw)
-            ControlGroup {
-                toolToggles(SketchTool.modify)
-                Button { session.beginOffset() } label: { toolLabel("Offset", "expand") }
-                    .help("Offset the selected curves by a distance")
-                    .disabled(!session.canOffset)
-                    .popover(isPresented: Binding(get: { session.offsetRequested }, set: { session.offsetRequested = $0 }),
-                             arrowEdge: .bottom) {
-                        OffsetPopover(model: model, session: session)
-                    }
-            }
-            ControlGroup {
-                toolToggles([.dimension])
-                Menu {
-                    ForEach(ConstraintTool.allCases, id: \.self) { c in
-                        Button(c.rawValue) { model.sketchCommand { $0.apply(c) } }
-                            .disabled(!session.canApply(c))
-                    }
-                } label: { toolLabel("Constrain", "link") }
-                    .help("Constrain the selected sketch entities")
-                Button { model.sketchCommand { $0.toggleConstruction() } } label: {
-                    toolLabel("Construction", "square-dashed")
+            ToolDivider()
+            tools(SketchTool.modify)
+            ToolButton(title: "Offset", icon: "expand", help: "Offset the selected curves by a distance") { session.beginOffset() }
+                .disabled(!session.canOffset)
+                .popover(isPresented: Binding(get: { session.offsetRequested }, set: { session.offsetRequested = $0 }),
+                         arrowEdge: .bottom) {
+                    OffsetPopover(model: model, session: session)
                 }
-                .help("Toggle construction geometry for the selected curves")
-                .disabled(!session.canToggleConstruction)
+            ToolDivider()
+            tools([.dimension])
+            ToolButton(title: "Constrain", icon: "link", help: "Constrain the selected sketch entities") { constrainOpen = true }
+                .popover(isPresented: $constrainOpen, arrowEdge: .bottom) { constrainChoices }
+            ToolButton(title: "Construction", icon: "square-dashed", help: "Toggle construction geometry for the selected curves") {
+                model.sketchCommand { $0.toggleConstruction() }
             }
-            Button { model.finishSketch() } label: { Label("Finish Sketch", systemImage: "checkmark.circle.fill") }
-                .help("Finish the sketch (Return)")
-                .buttonStyle(.borderedProminent)
-                .labelStyle(.titleAndIcon)
+            .disabled(!session.canToggleConstruction)
+            ToolDivider()
+            Button { model.finishSketch() } label: {
+                Label(showsTitles ? "Finish Sketch" : "Finish", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon)
+            }
+            .help("Finish the sketch (Return)")
+            .buttonStyle(.borderedProminent)
         }
-        .labelStyle(.iconOnly)
-        .toggleStyle(.button)
         .fixedSize()
     }
 
     private func tools(_ list: [SketchTool]) -> some View {
-        ControlGroup { toolToggles(list) }
+        ForEach(list) { tool in
+            ToolButton(title: tool.rawValue, icon: tool.symbol, active: session.tool == tool,
+                       help: "\(tool.rawValue) (\(String(tool.key).uppercased()))") { model.setSketchTool(tool) }
+        }
     }
 
-    @ViewBuilder private func toolToggles(_ list: [SketchTool]) -> some View {
-        ForEach(list) { tool in
-            Toggle(isOn: Binding(get: { session.tool == tool }, set: { _ in model.setSketchTool(tool) })) {
-                toolLabel(tool.rawValue, tool.symbol)
+    /// The constraints, enabled when they fit the selection.
+    private var constrainChoices: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space1) {
+            if session.selection.isEmpty {
+                Text("Select sketch entities first").font(.caption).foregroundStyle(.secondary)
+                    .padding(.bottom, DS.Spacing.space2)
             }
-            .help("\(tool.rawValue) (\(String(tool.key).uppercased()))")
+            ForEach(ConstraintTool.allCases, id: \.self) { c in
+                Button(c.rawValue) {
+                    model.sketchCommand { $0.apply(c) }
+                    constrainOpen = false
+                }
+                .buttonStyle(.borderless)
+                .disabled(!session.canApply(c))
+            }
         }
+        .padding(DS.Spacing.space5)
     }
 }
 
@@ -513,32 +580,31 @@ struct DesignToolbar: View {
     let model: DocumentModel
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: DS.Spacing.space1) {
             if model.isPickingSketchPlane {
-                Button { model.cancelSketchPlanePick() } label: { toolLabel("Cancel Sketch", "circle-x") }
-                    .help("Stop choosing a sketch plane (Esc)")
+                ToolButton(title: "Cancel", icon: "circle-x", active: true, help: "Stop choosing a sketch plane (Esc)") {
+                    model.cancelSketchPlanePick()
+                }
             } else {
-                Button { model.startSketch() } label: { toolLabel("Sketch", "pen-tool") }
-                    .help("Create a sketch: then click an origin plane or a flat face in the viewport")
+                ToolButton(title: "Sketch", icon: "pen-tool",
+                           help: "Create a sketch: then click an origin plane or a flat face in the viewport") { model.startSketch() }
             }
+            ToolDivider()
             group(DesignTool.shapes)
+            ToolDivider()
             group(DesignTool.primitives)
+            ToolDivider()
             group(DesignTool.modifiers)
         }
-        .labelStyle(.iconOnly)
         .fixedSize()
     }
 
     private func group(_ tools: [DesignTool]) -> some View {
-        ControlGroup {
-            ForEach(tools) { tool in
-                Toggle(isOn: Binding(get: { model.pendingTool == tool }, set: { _ in model.run(tool) })) {
-                    toolLabel(tool.rawValue, tool.symbol)
-                }
-                .help(tool.help)
+        ForEach(tools) { tool in
+            ToolButton(title: tool.rawValue, icon: tool.symbol, active: model.pendingTool == tool, help: tool.help) {
+                model.run(tool)
             }
         }
-        .toggleStyle(.button)
     }
 }
 
