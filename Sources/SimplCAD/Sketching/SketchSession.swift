@@ -56,6 +56,26 @@ enum SketchTool: String, CaseIterable, Identifiable {
     }
 }
 
+/// A value the user can type while drawing, instead of placing the next point with the mouse.
+enum SketchInput: String, CaseIterable, Identifiable {
+    case length = "Length", angle = "Angle", width = "Width", height = "Height"
+    case diameter = "Diameter", radius = "Radius", sweep = "Sweep"
+
+    var id: String { rawValue }
+    var unit: UnitKind { self == .angle || self == .sweep ? .angle : .length }
+    /// Short label shown in front of the field.
+    var symbol: String {
+        switch self {
+        case .length: return "L"
+        case .angle, .sweep: return "∠"
+        case .width: return "W"
+        case .height: return "H"
+        case .diameter: return "⌀"
+        case .radius: return "R"
+        }
+    }
+}
+
 struct SketchMouse {
     enum Phase { case moved, down, dragged, up }
     var phase: Phase
@@ -84,6 +104,10 @@ final class SketchSession {
     private(set) var cursor: SIMD2<Double>?
     private(set) var clicks: [SketchSnap] = []
     private var chainPoint: EntityID?
+    /// Values typed for the current drawing step, as entered. Cleared when the step completes.
+    private(set) var typed: [SketchInput: String] = [:]
+    /// Typed values from earlier steps of the shape in progress (an arc's radius), as dimensions to add.
+    private var pendingDimensions: [(input: SketchInput, expression: String, value: Double)] = []
     private(set) var dimensionPicks: [EntityID] = []
     var editingDimension: EntityID?
     var message: String?
@@ -121,6 +145,8 @@ final class SketchSession {
     private func resetToolState() {
         clicks = []
         chainPoint = nil
+        typed = [:]
+        pendingDimensions = []
         dimensionPicks = []
         message = nil
     }
@@ -210,7 +236,7 @@ final class SketchSession {
             return (true, filletClick())
         default:
             guard let uv = m.uv else { return (true, nil) }
-            return (true, toolClick(snap(uv)))
+            return (true, toolClick(target() ?? snap(uv)))
         }
     }
 
@@ -224,13 +250,18 @@ final class SketchSession {
     }
 
     private func toolClick(_ s: SketchSnap) -> String? {
+        for f in inputFields {
+            if let v = typedValue(f), let text = typed[f] { pendingDimensions.append((f, Self.expression(text, f), v)) }
+        }
+        typed = [:]
         clicks.append(s)
         switch tool {
         case .line:
             guard clicks.count == 2 else { return nil }
             let start = clicks[0]
-            guard distance(start, s) > 1e-6 else { clicks.removeLast(); return nil }
+            guard distance(start, s) > 1e-6 else { clicks.removeLast(); pendingDimensions = []; return nil }
             let r = sketch.addLine(from: start, to: s, startPoint: chainPoint)
+            addPendingDimensions([.length: .length(r.line)])
             // Keep chaining from the new end, unless we just connected to existing geometry.
             if s.point != nil || s.curve != nil {
                 clicks = []
@@ -244,20 +275,23 @@ final class SketchSession {
             guard clicks.count == 2 else { return nil }
             defer { clicks = [] }
             let a = clicks[0].position, b = s.position
-            guard abs(a.x - b.x) > 1e-6, abs(a.y - b.y) > 1e-6 else { return nil }
-            sketch.addRectangle(from: clicks[0], to: s)
+            guard abs(a.x - b.x) > 1e-6, abs(a.y - b.y) > 1e-6 else { pendingDimensions = []; return nil }
+            let lines = sketch.addRectangle(from: clicks[0], to: s)  // bottom, right, top, left
+            addPendingDimensions([.width: .length(lines[0]), .height: .length(lines[1])])
             return finish("Rectangle")
         case .circle:
             guard clicks.count == 2 else { return nil }
             defer { clicks = [] }
-            guard distance(clicks[0], s) > 1e-6 else { return nil }
-            sketch.addCircle(center: clicks[0], through: s)
+            guard distance(clicks[0], s) > 1e-6 else { pendingDimensions = []; return nil }
+            let circle = sketch.addCircle(center: clicks[0], through: s)
+            addPendingDimensions([.diameter: .diameter(circle)])
             return finish("Circle")
         case .arc:
             guard clicks.count == 3 else { return nil }
             defer { clicks = [] }
-            guard distance(clicks[0], clicks[1]) > 1e-6 else { return nil }
-            sketch.addArc(center: clicks[0], start: clicks[1], end: s)
+            guard distance(clicks[0], clicks[1]) > 1e-6 else { pendingDimensions = []; return nil }
+            let arc = sketch.addArc(center: clicks[0], start: clicks[1], end: s)
+            addPendingDimensions([.radius: .radius(arc)])
             return finish("Arc")
         case .point:
             clicks = []
@@ -267,6 +301,115 @@ final class SketchSession {
         case .select, .dimension, .fillet, .trim, .extend:
             clicks = []
             return nil
+        }
+    }
+
+    // MARK: typed values
+
+    /// The fields for the current drawing step.
+    var inputFields: [SketchInput] {
+        switch (tool, clicks.count) {
+        case (.line, 1): return [.length, .angle]
+        case (.rectangle, 1): return [.width, .height]
+        case (.circle, 1): return [.diameter]
+        case (.arc, 1): return [.radius]
+        case (.arc, 2): return [.sweep]
+        default: return []
+        }
+    }
+
+    /// Sets (or, with empty text, clears) a typed value for the current step.
+    func setTyped(_ field: SketchInput, _ text: String) {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        typed[field] = t.isEmpty ? nil : t
+    }
+
+    func clearTyped() { typed = [:] }
+
+    /// A typed value in base units (mm or radians); nil when nothing usable is typed.
+    func typedValue(_ field: SketchInput) -> Double? {
+        guard let text = typed[field], let v = try? parameters.value(of: text, kind: field.unit) else { return nil }
+        if field.unit == .length, v <= 1e-9 { return nil }
+        if field == .sweep, abs(v) <= 1e-9 { return nil }
+        return v
+    }
+
+    /// Something is typed in the field but it can't be used (a typo, or a zero or negative size).
+    func typedIsInvalid(_ field: SketchInput) -> Bool { typed[field] != nil && typedValue(field) == nil }
+
+    /// Where the next click lands: the cursor's snap, moved to honour the typed values.
+    func target() -> SketchSnap? {
+        guard let cursor else { return nil }
+        let s = snap(cursor)
+        guard let first = clicks.first, inputFields.contains(where: { typedValue($0) != nil }) else { return s }
+        let a = first.position, c = s.position, d = c - a
+        let len = simdLength(d)
+        let dir = len > 1e-9 ? d / len : SIMD2<Double>(1, 0)
+        switch tool {
+        case .line:
+            let angle = typedValue(.angle) ?? (len > 1e-9 ? atan2(d.y, d.x) : 0)
+            let length = typedValue(.length) ?? len
+            return SketchSnap(a + length * SIMD2(cos(angle), sin(angle)))
+        case .rectangle:
+            let w = typedValue(.width) ?? abs(d.x), h = typedValue(.height) ?? abs(d.y)
+            return SketchSnap(a + SIMD2(d.x < 0 ? -w : w, d.y < 0 ? -h : h))
+        case .circle:
+            return SketchSnap(a + dir * ((typedValue(.diameter) ?? 2 * len) / 2))
+        case .arc where clicks.count == 1:
+            return SketchSnap(a + dir * (typedValue(.radius) ?? len))
+        case .arc:
+            let start = clicks[1].position - a
+            let a0 = atan2(start.y, start.x)
+            let sweep = typedValue(.sweep) ?? 0
+            return SketchSnap(a + simdLength(start) * SIMD2(cos(a0 + sweep), sin(a0 + sweep)))
+        default:
+            return s
+        }
+    }
+
+    /// The value a field shows: what the next click would give, in base units.
+    func liveValue(_ field: SketchInput) -> Double? {
+        if let v = typedValue(field) { return v }
+        guard let t = target()?.position, let a = clicks.first?.position else { return nil }
+        let d = t - a
+        switch field {
+        case .length, .radius: return simdLength(d)
+        case .diameter: return 2 * simdLength(d)
+        case .width: return abs(d.x)
+        case .height: return abs(d.y)
+        case .angle:
+            let angle = atan2(d.y, d.x)
+            return angle < 0 ? angle + 2 * .pi : angle
+        case .sweep:
+            guard clicks.count > 1 else { return nil }
+            let s = clicks[1].position - a
+            var sweep = atan2(d.y, d.x) - atan2(s.y, s.x)
+            while sweep <= 0 { sweep += 2 * .pi }
+            return sweep
+        }
+    }
+
+    /// Return in a field: place the next point from the typed values, as a click would.
+    func commitTyped() -> String? {
+        guard !inputFields.isEmpty, let t = target() else { return nil }
+        message = nil
+        return toolClick(t)
+    }
+
+    /// A bare number becomes "25 mm" / "30 deg"; anything else (units, parameters) is kept as typed.
+    private static func expression(_ text: String, _ field: SketchInput) -> String {
+        guard let v = Double(text) else { return text }
+        return formatDimension(field.unit == .angle ? v * .pi / 180 : v, kind: field.unit)
+    }
+
+    /// Adds dimensions for the values typed while drawing the shape just created.
+    private func addPendingDimensions(_ kinds: [SketchInput: SketchDimension.Kind]) {
+        defer { pendingDimensions = [] }
+        var v = values
+        for p in pendingDimensions {
+            guard let kind = kinds[p.input] else { continue }  // e.g. a line's angle: placed, not dimensioned
+            let id = IDs.make()
+            if sketch.applyDimension(kind, expression: p.expression, value: p.value, values: v, id: id) { v[id] = p.value }
         }
     }
 
@@ -440,8 +583,7 @@ final class SketchSession {
 
     /// Rubber-band geometry for the tool in progress, in sketch coordinates.
     func previewPolylines() -> [[SIMD2<Double>]] {
-        guard let cursor, !clicks.isEmpty else { return [] }
-        let c = snap(cursor).position
+        guard !clicks.isEmpty, let c = target()?.position else { return [] }
         let a = clicks[0].position
         switch tool {
         case .line: return [[a, c]]
@@ -471,6 +613,9 @@ final class SketchSession {
     var statusText: String {
         if let message { return message }
         var s = tool.hint
+        if !inputFields.isEmpty {
+            s = "Type a value, Tab for the next one, Return to place it · " + s
+        }
         if let solve {
             switch solve.status {
             case .failed: s = "Over-constrained · " + s

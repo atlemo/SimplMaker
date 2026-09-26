@@ -135,6 +135,7 @@ final class DocumentModel {
         mutate("Add \(base)") { $0.features.append(feature) }
         selection = []
         selectedFeature = feature.id
+        handleFocusRequest += 1
     }
 
     var selectedEdgeCount: Int { selection.filter(\.isEdge).count }
@@ -422,13 +423,7 @@ final class DocumentModel {
     func dimensionLabels() -> [DimensionLabel] {
         if let session = sketchSession { return SketchOverlayBuilder.labels(session) }
         if isPickingSketchPlane { return SketchOverlayBuilder.originPlaneLabels(size: sketchPlaneSize) }
-        if let h = dragHandle {
-            let tip = h.base + h.direction * h.value
-            return [DimensionLabel(id: "drag-handle", world: SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)),
-                                   text: previewInvalid ? "\(h.label) — too large" : h.label,
-                                   editing: handlePreviewValue != nil)]
-        }
-        return []
+        return []  // the drag handle's size is an editable field; see the viewport
     }
 
     /// Pick IDs to highlight as selected.
@@ -457,6 +452,7 @@ final class DocumentModel {
         mutate("Extrude") { $0.features.append(feature) }
         selection = []
         selectedFeature = feature.id
+        handleFocusRequest += 1
     }
 
     // MARK: drag handles (extrude distance, fillet radius, chamfer distance)
@@ -478,10 +474,6 @@ final class DocumentModel {
             if case .extrude(true) = kind { return length * 2 }
             return length
         }
-        var label: String {
-            let v = formatDimension(featureValue(value), kind: .length)
-            return kind == .fillet ? "R \(v)" : v
-        }
     }
 
     /// A parameter-driven value was dragged: ask before replacing the expression with a number.
@@ -498,6 +490,15 @@ final class DocumentModel {
     /// The latest preview failed (e.g. a fillet too big for its faces); the last good model stays visible.
     private(set) var previewInvalid = false
     var unlinkPrompt: UnlinkPrompt?
+    /// Bumped when a new feature wants its size typed right away: the viewport focuses the handle's field.
+    private(set) var handleFocusRequest = 0
+
+    /// What the handle's field shows: the stored expression, or the size being dragged.
+    var handleFieldText: String? {
+        guard let h = dragHandle else { return nil }
+        if handleDragStart != nil { return formatDimension(h.featureValue(h.value), kind: .length) }
+        return h.expression
+    }
 
     var dragHandle: DragHandle? {
         guard sketchSession == nil, let id = selectedFeature, let f = document.features.first(where: { $0.id == id }),
@@ -587,14 +588,67 @@ final class DocumentModel {
         mutate(action) { Self.set(value, of: id, in: &$0) }
     }
 
+    // MARK: typing the handle's size
+
+    /// Evaluates a typed size: a positive length, with a bare number read as millimetres.
+    private func handleSize(_ text: String) -> (expression: String, value: Double)? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard let v = try? parameterValues.value(of: t, kind: .length), v > 1e-9 else { return nil }
+        return (Double(t) != nil ? formatDimension(v, kind: .length) : t, v)
+    }
+
+    /// Previews a size typed in the handle's field. Returns false if the text isn't a usable size.
+    @discardableResult
+    func previewHandle(_ text: String) -> Bool {
+        guard let h = dragHandle, handleDragStart == nil else { return false }
+        guard let size = handleSize(text) else { return false }
+        handlePreviewValue = h.kind == .extrude(symmetric: true) ? size.value / 2 : size.value
+        var preview = document
+        Self.set(expression: size.expression, of: h.featureID, in: &preview)
+        regenerate(preview: preview, previewFeature: h.featureID)
+        overlayRevision += 1
+        return true
+    }
+
+    /// Return in the handle's field: stores the typed size (an expression may use parameters).
+    @discardableResult
+    func commitHandle(_ text: String) -> Bool {
+        guard let h = dragHandle, let size = handleSize(text) else { return false }
+        handlePreviewValue = nil
+        let action: String
+        switch h.kind {
+        case .extrude: action = "Change Distance"
+        case .fillet: action = "Change Radius"
+        case .chamfer: action = "Change Chamfer"
+        }
+        if size.expression == h.expression { regenerate() } else {
+            mutate(action) { Self.set(expression: size.expression, of: h.featureID, in: &$0) }
+        }
+        overlayRevision += 1
+        return true
+    }
+
+    /// Esc in the handle's field: drop the preview and show the stored size again.
+    func cancelHandleEdit() {
+        guard handleDragStart == nil, handlePreviewValue != nil || previewInvalid else { return }
+        handlePreviewValue = nil
+        previewInvalid = false
+        regenerate()
+        overlayRevision += 1
+    }
+
     static func isParametric(_ expression: String) -> Bool {
         ((try? Expressions.parse(expression))?.references.isEmpty == false)
     }
 
     /// Writes a size (mm) into an extrude's first distance or a fillet/chamfer's size.
     private static func set(_ value: Double, of id: FeatureID, in doc: inout CADDocument) {
+        set(expression: formatDimension(value, kind: .length), of: id, in: &doc)
+    }
+
+    /// Writes a size expression into an extrude's first distance or a fillet/chamfer's size.
+    private static func set(expression text: String, of id: FeatureID, in doc: inout CADDocument) {
         guard let i = doc.index(of: id) else { return }
-        let text = formatDimension(value, kind: .length)
         switch doc.features[i].kind {
         case .extrude(var e):
             switch e.extent {
