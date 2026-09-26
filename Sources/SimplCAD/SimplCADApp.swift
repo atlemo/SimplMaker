@@ -90,6 +90,8 @@ struct SimplCADCommands: Commands {
             Toggle("Snap to Grid", isOn: $snapToGrid)
                 .keyboardShortcut("'", modifiers: [.command])
             Divider()
+            Button((model?.showSidebar ?? true) ? "Hide Browser" : "Show Browser") { model?.showSidebar.toggle() }
+                .keyboardShortcut("s", modifiers: [.command, .control])
             Button((model?.showInspector ?? true) ? "Hide Inspector" : "Show Inspector") { model?.showInspector.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
             Divider()

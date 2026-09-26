@@ -29,23 +29,41 @@ struct DocumentWindow: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            Sidebar(model: model)
-                .navigationSplitViewColumnWidth(min: 260, ideal: 300)
-        } detail: {
+        // The viewport fills the window, under the toolbar too; the browser and the inspector float
+        // over it as glass panels, like the sidebars of current macOS apps.
+        ZStack {
             ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
                          highlighted: model.highlighted, fitRevision: model.fitRevision,
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
-                         showGrid: showGrid, showConstraints: showConstraints)
-                // An overlay takes no part in the column's layout. As a sibling in a VStack, the
-                // status bar's text made the detail column resize itself while the split view was
-                // laying it out, a loop AppKit ends by crashing the app.
-                .overlay(alignment: .bottom) { StatusBar(model: model) }
-            .inspector(isPresented: $model.showInspector) {
-                InspectorView(model: model)
-                    .inspectorColumnWidth(min: 240, ideal: 280)
+                         showGrid: showGrid, showConstraints: showConstraints,
+                         panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
+                                       model.showInspector ? Panel.inspectorWidth + Panel.margin : 0))
+                .ignoresSafeArea()
+            HStack(alignment: .top, spacing: 0) {
+                if model.showSidebar {
+                    Sidebar(model: model)
+                        .floatingPanel(width: Panel.sidebarWidth)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+                Spacer(minLength: 0)  // empty: clicks go through to the viewport
+                if model.showInspector {
+                    InspectorView(model: model)
+                        .floatingPanel(width: Panel.inspectorWidth)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
+            .padding(Panel.inset)
+            .animation(.easeOut(duration: DS.Duration.base), value: model.showSidebar)
+            .animation(.easeOut(duration: DS.Duration.base), value: model.showInspector)
         }
+        // The status bar floats at the bottom, between the panels.
+        .overlay(alignment: .bottom) {
+            StatusBar(model: model)
+                .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
+                .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
+                .padding(.bottom, Panel.inset)
+        }
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .toolbar {
             // The tools sit in the middle of the toolbar, in Design and in Sketch mode.
             ToolbarItem(placement: .principal) {
@@ -55,8 +73,12 @@ struct DocumentWindow: View {
                     DesignToolbar(model: model)
                 }
             }
+            ToolbarItem(placement: .navigation) {
+                Button { model.showSidebar.toggle() } label: { Label("Browser", systemImage: "sidebar.left") }
+                    .help("Show or hide the browser (⌃⌘S)")
+            }
             ToolbarItemGroup(placement: .primaryAction) {
-                Button { model.fitView() } label: { Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right") }
+                Button { model.fitView() } label: { toolLabel("Fit", "focus") }
                     .help("Fit the model in view (⌘0)")
                 Button { model.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
                     .help("Show or hide the inspector (⌥⌘I)")
@@ -88,6 +110,29 @@ struct DocumentWindow: View {
     }
 }
 
+/// Sizes of the floating panels.
+enum Panel {
+    static let sidebarWidth: CGFloat = 280
+    static let inspectorWidth: CGFloat = 290
+    /// Gap between a panel and the window edge.
+    static let inset: CGFloat = DS.Spacing.space4
+    /// A panel's width plus its gaps: how much of the viewport it covers.
+    static let margin: CGFloat = 2 * DS.Spacing.space4
+}
+
+extension View {
+    /// A floating glass panel: rounded, inset from the window edge, full height.
+    func floatingPanel(width: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous)
+        return self
+            .scrollContentBackground(.hidden)
+            .frame(width: width)
+            .frame(maxHeight: .infinity)
+            .clipShape(shape)
+            .glassEffect(.regular, in: shape)
+    }
+}
+
 struct StatusBar: View {
     let model: DocumentModel
 
@@ -109,9 +154,8 @@ struct StatusBar: View {
         }
         .font(.callout)
         .padding(.horizontal, DS.Spacing.space5)
-        .frame(height: DS.ControlHeight.regular + 2)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .frame(height: DS.ControlHeight.large)
+        .glassEffect(.regular, in: .capsule)
     }
 
     @ViewBuilder private var message: some View {
@@ -306,7 +350,7 @@ struct FeatureRow: View {
 
     var icon: String {
         switch feature.kind {
-        case .sketch: return "pencil.and.outline"
+        case .sketch: return "pen-tool"
         case .extrude: return DesignTool.extrude.symbol
         case .fillet: return DesignTool.fillet.symbol
         case .chamfer: return DesignTool.chamfer.symbol
@@ -329,7 +373,7 @@ struct FeatureRow: View {
 
     var body: some View {
         HStack {
-            Image(systemName: icon).frame(width: 18)
+            Icon(icon).frame(width: 18)
             Text(feature.name).strikethrough(feature.suppressed)
             Spacer()
             if let error {
@@ -411,7 +455,7 @@ struct SketchToolbar: View {
             tools(SketchTool.draw)
             ControlGroup {
                 toolToggles(SketchTool.modify)
-                Button { session.beginOffset() } label: { Label("Offset", systemImage: "square.on.square.intersection.dashed") }
+                Button { session.beginOffset() } label: { toolLabel("Offset", "expand") }
                     .help("Offset the selected curves by a distance")
                     .disabled(!session.canOffset)
                     .popover(isPresented: Binding(get: { session.offsetRequested }, set: { session.offsetRequested = $0 }),
@@ -426,10 +470,10 @@ struct SketchToolbar: View {
                         Button(c.rawValue) { model.sketchCommand { $0.apply(c) } }
                             .disabled(!session.canApply(c))
                     }
-                } label: { Label("Constrain", systemImage: "link") }
+                } label: { toolLabel("Constrain", "link") }
                     .help("Constrain the selected sketch entities")
                 Button { model.sketchCommand { $0.toggleConstruction() } } label: {
-                    Label("Construction", systemImage: "pencil.slash")
+                    toolLabel("Construction", "square-dashed")
                 }
                 .help("Toggle construction geometry for the selected curves")
                 .disabled(!session.canToggleConstruction)
@@ -451,7 +495,7 @@ struct SketchToolbar: View {
     @ViewBuilder private func toolToggles(_ list: [SketchTool]) -> some View {
         ForEach(list) { tool in
             Toggle(isOn: Binding(get: { session.tool == tool }, set: { _ in model.setSketchTool(tool) })) {
-                Label(tool.rawValue, systemImage: tool.symbol)
+                toolLabel(tool.rawValue, tool.symbol)
             }
             .help("\(tool.rawValue) (\(String(tool.key).uppercased()))")
         }
@@ -466,10 +510,10 @@ struct DesignToolbar: View {
     var body: some View {
         HStack(spacing: 14) {
             if model.isPickingSketchPlane {
-                Button { model.cancelSketchPlanePick() } label: { Label("Cancel Sketch", systemImage: "xmark.circle") }
+                Button { model.cancelSketchPlanePick() } label: { toolLabel("Cancel Sketch", "circle-x") }
                     .help("Stop choosing a sketch plane (Esc)")
             } else {
-                Button { model.startSketch() } label: { Label("Sketch", systemImage: "pencil.and.outline") }
+                Button { model.startSketch() } label: { toolLabel("Sketch", "pen-tool") }
                     .help("Create a sketch: then click an origin plane or a flat face in the viewport")
             }
             group(DesignTool.shapes)
@@ -484,7 +528,7 @@ struct DesignToolbar: View {
         ControlGroup {
             ForEach(tools) { tool in
                 Toggle(isOn: Binding(get: { model.pendingTool == tool }, set: { _ in model.run(tool) })) {
-                    Label(tool.rawValue, systemImage: tool.symbol)
+                    toolLabel(tool.rawValue, tool.symbol)
                 }
                 .help(tool.help)
             }

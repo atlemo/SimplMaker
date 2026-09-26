@@ -69,7 +69,29 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     @objc private func displayOptionsChanged(_ note: Notification) { applyAppearance() }
     override var isFlipped: Bool { true }  // origin top-left, like the ID texture
 
+    /// Widths of the floating panels over the left and right of the view (0 when hidden).
+    var panelInsets: (left: CGFloat, right: CGFloat) = (0, 0)
+
+    /// Points our window covers at the top (the toolbar, which the view extends under).
+    private var topInset: CGFloat {
+        guard let window else { return 0 }
+        let frame = convert(bounds, to: nil)  // window coordinates, origin bottom-left
+        return max(0, frame.maxY - window.contentLayoutRect.maxY)
+    }
+
+    /// Centres the camera on the part of the view the panels and toolbar leave uncovered.
+    func updateCameraInsets() {
+        guard let renderer, bounds.width > 1, bounds.height > 1 else { return }
+        let w = bounds.width, h = bounds.height
+        let left = min(panelInsets.left, w * 0.45), right = min(panelInsets.right, w * 0.45), top = min(topInset, h * 0.4)
+        renderer.camera.centerShift = SIMD2(Float((left - right) / w), Float(-top / h))
+        renderer.camera.visibleFraction = SIMD2(Float((w - left - right) / w), Float((h - top) / h))
+    }
+
+    var viewAspect: Float { Float(bounds.width / max(bounds.height, 1)) }
+
     override func draw(_ dirtyRect: NSRect) {
+        updateCameraInsets()
         renderer?.draw(in: self)
         updateLabels()
     }
@@ -835,6 +857,8 @@ struct ViewportView: NSViewRepresentable {
     let orthographic: Bool
     let showGrid: Bool
     let showConstraints: Bool
+    /// Widths covered by the floating panels, so the camera centres on what's left.
+    var panelInsets: (left: CGFloat, right: CGFloat) = (0, 0)
 
     final class Coordinator {
         var sceneRevision = -1
@@ -861,6 +885,7 @@ struct ViewportView: NSViewRepresentable {
 
     func updateNSView(_ view: ViewportMTKView, context: Context) {
         guard let renderer = view.renderer else { return }
+        view.panelInsets = panelInsets  // before any fit below
         let c = context.coordinator
         if c.sceneRevision != sceneRevision {
             c.sceneRevision = sceneRevision
@@ -869,7 +894,8 @@ struct ViewportView: NSViewRepresentable {
         }
         if c.fitRevision != fitRevision, let b = model.sceneBounds {
             c.fitRevision = fitRevision
-            renderer.camera.fit(min: b.min, max: b.max)
+            view.updateCameraInsets()
+            renderer.camera.fit(min: b.min, max: b.max, aspect: view.viewAspect)
         }
         renderer.camera.orthographic = orthographic
         renderer.showGrid = showGrid
@@ -881,7 +907,10 @@ struct ViewportView: NSViewRepresentable {
                 renderer.camera.look(along: normal, at: target)
             case .standard(let v):
                 renderer.camera.setStandard(v)
-                if let b = model.sceneBounds { renderer.camera.fit(min: b.min, max: b.max) }
+                if let b = model.sceneBounds {
+                    view.updateCameraInsets()
+                    renderer.camera.fit(min: b.min, max: b.max, aspect: view.viewAspect)
+                }
             }
         }
         renderer.setOverlay(model.sketchOverlay())

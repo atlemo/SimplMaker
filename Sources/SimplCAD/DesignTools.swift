@@ -22,22 +22,23 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
     static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole]
 
+    /// A glyph name from the macOS Design System's icon set (see IconGlyphs.swift), not an SF Symbol.
     var symbol: String {
         switch self {
-        case .extrude: return "square.stack.3d.up"
-        case .revolve: return "rotate.3d"
-        case .sweep: return "point.bottomleft.forward.to.point.topright.scurvepath"
-        case .loft: return "cone"
-        case .rib: return "rectangle.split.2x1"
-        case .hole: return "circle.circle"
-        case .box: return "cube"
+        case .extrude: return "layers"
+        case .revolve: return "rotate-3d"
+        case .sweep: return "spline"
+        case .loft: return "layers-2"
+        case .rib: return "square-split-horizontal"
+        case .hole: return "circle-dot"
+        case .box: return "cuboid"
         case .cylinder: return "cylinder"
         case .sphere: return "globe"
         case .torus: return "torus"
-        case .coil: return "tornado"
-        case .pipe: return "capsule.portrait"
-        case .fillet: return "circle.bottomrighthalf.pattern.checkered"
-        case .chamfer: return "triangle.bottomhalf.filled"
+        case .coil: return "orbit"
+        case .pipe: return "waypoints"
+        case .fillet: return "radius"
+        case .chamfer: return "triangle"
         }
     }
 

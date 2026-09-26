@@ -58,6 +58,8 @@ final class DocumentModel {
     /// Camera request for the viewport (look at a sketch plane, standard views), with a revision counter.
     private(set) var cameraCommand: (command: CameraCommand, revision: Int)?
     var showInspector = true
+    /// The browser (bodies, sketches, timeline, parameters) on the left.
+    var showSidebar = true
     var orthographic = false
     var fileURL: URL?
     var alert: AlertInfo?
