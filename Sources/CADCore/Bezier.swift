@@ -6,13 +6,18 @@ public enum Bezier {
     /// Point at t (0…1) of the cubic with control points p.
     public static func point(_ p: [SIMD2<Double>], _ t: Double) -> SIMD2<Double> {
         let u = 1 - t
-        return u * u * u * p[0] + 3 * u * u * t * p[1] + 3 * u * t * t * p[2] + t * t * t * p[3]
+        // Weights first, as plain numbers: one long mixed expression is too slow to type-check.
+        let w0: Double = u * u * u, w1: Double = 3 * u * u * t, w2: Double = 3 * u * t * t, w3: Double = t * t * t
+        let a: SIMD2<Double> = w0 * p[0] + w1 * p[1]
+        return a + w2 * p[2] + w3 * p[3]
     }
 
     /// First derivative at t.
     public static func derivative(_ p: [SIMD2<Double>], _ t: Double) -> SIMD2<Double> {
         let u = 1 - t
-        return 3 * u * u * (p[1] - p[0]) + 6 * u * t * (p[2] - p[1]) + 3 * t * t * (p[3] - p[2])
+        let w0: Double = 3 * u * u, w1: Double = 6 * u * t, w2: Double = 3 * t * t
+        let a: SIMD2<Double> = w0 * (p[1] - p[0]) + w1 * (p[2] - p[1])
+        return a + w2 * (p[3] - p[2])
     }
 
     /// Parameter (0…1) of the curve point closest to q: the best of a coarse sampling, refined by Newton steps.
@@ -28,7 +33,8 @@ public enum Bezier {
             // Minimise |B(t) − q|²: Newton on f(t) = B′(t)·(B(t) − q).
             let b = point(p, t), d1 = derivative(p, t)
             let u = 1 - t
-            let d2 = 6 * u * (p[2] - 2 * p[1] + p[0]) + 6 * t * (p[3] - 2 * p[2] + p[1])
+            let bend0: SIMD2<Double> = p[2] - 2 * p[1] + p[0], bend1: SIMD2<Double> = p[3] - 2 * p[2] + p[1]
+            let d2: SIMD2<Double> = (6 * u) * bend0 + (6 * t) * bend1
             let f = vdot(d1, b - q), df = vdot(d2, b - q) + vdot(d1, d1)
             guard abs(df) > 1e-300 else { break }
             let next = min(max(t - f / df, 0), 1)
