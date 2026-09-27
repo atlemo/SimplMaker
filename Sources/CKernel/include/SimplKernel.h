@@ -45,6 +45,8 @@ bool sk_sketch_add_line(SKHandle sketch, const char *tag, double u1, double v1, 
 bool sk_sketch_add_circle(SKHandle sketch, const char *tag, double cu, double cv, double r);
 /// Counter-clockwise arc from angle a0 to a1 (radians).
 bool sk_sketch_add_arc(SKHandle sketch, const char *tag, double cu, double cv, double r, double a0, double a1);
+/// A Bézier curve through `count` control points (u0, v0, u1, v1, ...): 3 = quadratic, 4 = cubic.
+bool sk_sketch_add_bezier(SKHandle sketch, const char *tag, const double *uv, int count);
 /// Splits the plane by all curves and finds the closed regions (profiles). Returns count or -1.
 int sk_sketch_build_regions(SKHandle sketch);
 /// Sorted, comma-separated tags of the curves bounding region i (stable across edits).
@@ -90,6 +92,11 @@ typedef enum SKPrimitive { SK_BOX = 0, SK_CYLINDER = 1, SK_SPHERE = 2, SK_TORUS 
 ///   coil: a = diameter, b = section diameter, c = pitch, d = revolutions
 /// Faces: "<featureId>.top|bottom|left|right|front|back|side|start|end".
 SKHandle sk_primitive(SKPrimitive kind, SKFrame frame, double a, double b, double c, double d, const char *featureId);
+
+/// A copy of a body moved by (dx, dy, dz), or turned by `angle` radians about the axis through
+/// (ox, oy, oz) along (ax, ay, az). Face and edge names are kept.
+SKHandle sk_translate(SKHandle body, double dx, double dy, double dz);
+SKHandle sk_rotate(SKHandle body, double ox, double oy, double oz, double ax, double ay, double az, double angle);
 
 /// Boolean between two bodies; names from both operands are carried through.
 SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op);

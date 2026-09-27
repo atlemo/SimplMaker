@@ -8,12 +8,12 @@ import Observation
 
 enum SketchTool: String, CaseIterable, Identifiable {
     case select = "Select", line = "Line", rectangle = "Rectangle", circle = "Circle", arc = "Arc"
-    case point = "Point", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
+    case point = "Point", text = "Text", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
 
     var id: String { rawValue }
 
     /// Toolbar groups: drawing, changing curves, and dimensions (Select stands alone).
-    static let draw: [SketchTool] = [.line, .rectangle, .circle, .arc, .point]
+    static let draw: [SketchTool] = [.line, .rectangle, .circle, .arc, .point, .text]
     static let modify: [SketchTool] = [.fillet, .trim, .extend]
 
     /// The name under the icon in the toolbar (menus use the full `rawValue`).
@@ -36,6 +36,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .circle: return "circle"
         case .arc: return "spline"
         case .point: return "dot"
+        case .text: return "type"
         case .fillet: return "corner-round"
         case .trim: return "scissors"
         case .extend: return "arrow-up-right"
@@ -51,6 +52,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .circle: return "c"
         case .arc: return "a"
         case .point: return "p"
+        case .text: return "x"
         case .fillet: return "f"
         case .trim: return "t"
         case .extend: return "e"
@@ -65,6 +67,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .circle: return "Click the center, then a point on the circle"
         case .arc: return "Click the center, the start, then the end (counter-clockwise)"
         case .point: return "Click to place a point"
+        case .text: return "Click where the text starts, type it, and press Return"
         case .fillet: return "Click the corner point where two lines meet to round it with an arc"
         case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
         case .extend: return "Click near the end of a line or arc to extend it to the next curve"
@@ -139,6 +142,8 @@ final class SketchSession {
     var offsetRequested = false
     private(set) var cursor: SIMD2<Double>?
     private(set) var clicks: [SketchSnap] = []
+    /// Where the Text tool was clicked: waiting for the text to be typed.
+    private(set) var pendingText: SketchSnap?
     private var chainPoint: EntityID?
     /// Values typed for the current drawing step, as entered. Cleared when the step completes.
     private(set) var typed: [SketchInput: String] = [:]
@@ -188,6 +193,7 @@ final class SketchSession {
 
     private func resetToolState() {
         clicks = []
+        pendingText = nil
         chainPoint = nil
         typed = [:]
         pendingDimensions = []
@@ -415,6 +421,10 @@ final class SketchSession {
             guard s.point == nil else { return nil }
             _ = sketch.resolve(s)
             return finish("Point")
+        case .text:
+            clicks = []
+            pendingText = s
+            return nil
         case .select, .dimension, .fillet, .trim, .extend:
             clicks = []
             return nil
@@ -612,6 +622,47 @@ final class SketchSession {
             if d <= tolerance, d < (best?.1 ?? .infinity) { best = (c.id, d) }
         }
         return best?.0
+    }
+
+    // MARK: text
+
+    /// Return in the text field: the text starts at the clicked point (or the point it snapped to).
+    func placeText(_ string: String) -> String? {
+        defer { pendingText = nil }
+        let text = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let at = pendingText, !text.isEmpty else { return nil }
+        let p = sketch.resolve(at)
+        let t = SketchText(text: text, position: p)
+        sketch.texts.append(t)
+        selection = [p]
+        return finish("Text")
+    }
+
+    func cancelText() { pendingText = nil }
+
+    /// Changes a text's words, height or font from the inspector.
+    func updateText(_ id: EntityID, _ change: (inout SketchText) -> Void) -> String? {
+        guard let i = sketch.texts.firstIndex(where: { $0.id == id }) else { return nil }
+        var t = sketch.texts[i]
+        change(&t)
+        guard t != sketch.texts[i], !t.text.trimmingCharacters(in: .whitespaces).isEmpty,
+              (try? parameters.value(of: t.height, kind: .length)).map({ $0 > 0 }) == true else {
+            message = "A text needs some letters and a positive height"
+            return nil
+        }
+        sketch.texts[i] = t
+        return finish("Edit Text")
+    }
+
+    /// Letter outlines of the sketch's texts, with the index of each text's anchor point (for picking).
+    func textOutlines() -> [(anchor: Int, polylines: [[SIMD2<Double>]])] {
+        sketch.texts.compactMap { t in
+            guard let i = sketch.points.firstIndex(where: { $0.id == t.position }) else { return nil }
+            let polylines = t.contours(in: sketch, parameters: parameters).map { contour in
+                contour.flatMap { TextOutline.flatten($0) }
+            }
+            return (i, polylines)
+        }
     }
 
     // MARK: measurements shown for undimensioned geometry

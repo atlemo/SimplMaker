@@ -52,6 +52,9 @@ extension DocumentModel {
                 self.clickRay = ray
                 self.place(.hole, on: pick)
             },
+            .separator,
+            .action("Move Body", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.selection = [pick]; self.run(.move) },
+            .action("Rotate Body", symbol: "rotate.right") { self.selection = [pick]; self.run(.rotate) },
         ]
         items += ownerItems(featureMaking(face: ref.face), body: ref.body)
         return items
@@ -203,6 +206,26 @@ extension DocumentModel {
         }
     }
 
+    /// The axis of a move's arrow or a rotation; nil for other features.
+    func transformAxis(_ id: FeatureID) -> Axis3? {
+        switch document.features.first(where: { $0.id == id })?.kind {
+        case .move(let m)?: return m.arrow
+        case .rotate(let r)?: return r.axis
+        default: return nil
+        }
+    }
+
+    func setTransformAxis(_ a: Axis3, of id: FeatureID) {
+        guard transformAxis(id) != a else { return }
+        updateFeature(id, "Change Axis") { f in
+            switch f.kind {
+            case .move(var m): m.arrow = a; f.kind = .move(m)
+            case .rotate(var r): r.axis = a; f.kind = .rotate(r)
+            default: break
+            }
+        }
+    }
+
     /// Whether an extrude goes against its sketch's (or face's) normal; nil for other features.
     func isFlipped(_ id: FeatureID) -> Bool? {
         if case .extrude(let e)? = document.features.first(where: { $0.id == id })?.kind { return e.flipped }
@@ -250,6 +273,15 @@ struct FeatureHUD: View {
                     .labelsHidden()
                     .fixedSize()
                     .help("Join adds to the body, Cut removes from it, New makes a separate body, Intersect keeps the overlap")
+                }
+                if let axis = model.transformAxis(id) {
+                    Picker("Axis", selection: Binding(get: { axis }, set: { model.setTransformAxis($0, of: id) })) {
+                        ForEach(Axis3.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("The axis to move along or turn about")
                 }
                 if let flipped = model.isFlipped(id) {
                     Toggle(isOn: Binding(get: { flipped }, set: { _ in model.toggleFlip(id) })) {

@@ -26,8 +26,8 @@ struct DocumentWindow: View {
     /// The window's width: below these, the toolbar tools drop their titles so the row still fits
     /// (otherwise macOS folds the whole row into the toolbar's overflow menu).
     @State private var windowWidth: CGFloat = 1200
-    static let titledDesignWidth: CGFloat = 1280
-    static let titledSketchWidth: CGFloat = 1360
+    static let titledDesignWidth: CGFloat = 1400
+    static let titledSketchWidth: CGFloat = 1420
 
     private var unlinkTitle: String {
         guard let p = model.unlinkPrompt else { return "" }
@@ -562,7 +562,11 @@ struct SketchToolbar: View {
             .disabled(!session.canToggleConstruction)
             ToolDivider()
             Button { model.finishSketch() } label: {
-                Label(showsTitles ? "Finish Sketch" : "Finish", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon)
+                if showsTitles {
+                    Label("Finish Sketch", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon)
+                } else {
+                    Label("Finish Sketch", systemImage: "checkmark.circle.fill").labelStyle(.iconOnly)
+                }
             }
             .help("Finish the sketch (Return)")
             .buttonStyle(.borderedProminent)
@@ -603,6 +607,8 @@ struct SketchToolbar: View {
 /// primitives · tools that change a body. A tool that is waiting for picks is highlighted.
 struct DesignToolbar: View {
     let model: DocumentModel
+    @State private var shapesOpen = false
+    @Environment(\.toolTitles) private var showsTitles
     /// Space inside the ends of the toolbar's capsule.
     static let edgePadding: CGFloat = 10
 
@@ -619,7 +625,25 @@ struct DesignToolbar: View {
             ToolDivider()
             group(DesignTool.shapes)
             ToolDivider()
-            group(DesignTool.primitives)
+            if showsTitles {
+                group(DesignTool.primitives)
+            } else {
+                // Narrow window: the primitives share one button that opens a palette of them.
+                ToolButton(title: "Shapes", icon: "cuboid", active: DesignTool.primitives.contains { model.pendingTool == $0 },
+                           help: "Box, cylinder, sphere, torus or coil") { shapesOpen = true }
+                    .popover(isPresented: $shapesOpen, arrowEdge: .bottom) {
+                        HStack(spacing: DS.Spacing.space1) {
+                            ForEach(DesignTool.primitives) { tool in
+                                ToolButton(title: tool.rawValue, icon: tool.symbol, help: tool.help) {
+                                    shapesOpen = false
+                                    model.run(tool)
+                                }
+                            }
+                        }
+                        .environment(\.toolTitles, true)
+                        .padding(DS.Spacing.space3)
+                    }
+            }
             ToolDivider()
             group(DesignTool.modifiers)
         }

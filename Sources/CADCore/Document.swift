@@ -217,6 +217,32 @@ public struct PipeFeature: Codable, Hashable, Sendable {
     }
 }
 
+public enum Axis3: String, Codable, Hashable, Sendable, CaseIterable {
+    case x = "X", y = "Y", z = "Z"
+}
+
+/// Moves bodies by (dx, dy, dz). `arrow` is the direction the drag handle points along.
+public struct MoveFeature: Codable, Hashable, Sendable {
+    public var bodies: [FeatureID]
+    public var dx: String
+    public var dy: String
+    public var dz: String
+    public var arrow: Axis3
+    public init(bodies: [FeatureID], dx: String = "0 mm", dy: String = "0 mm", dz: String = "0 mm", arrow: Axis3 = .x) {
+        self.bodies = bodies; self.dx = dx; self.dy = dy; self.dz = dz; self.arrow = arrow
+    }
+}
+
+/// Rotates bodies about an axis (parallel to X, Y or Z) through the middle of their bounding box.
+public struct RotateFeature: Codable, Hashable, Sendable {
+    public var bodies: [FeatureID]
+    public var axis: Axis3
+    public var angle: String
+    public init(bodies: [FeatureID], axis: Axis3 = .z, angle: String = "0 deg") {
+        self.bodies = bodies; self.axis = axis; self.angle = angle
+    }
+}
+
 /// Fillet (size = radius) or chamfer (size = distance) on a set of edges.
 public struct EdgeFeature: Codable, Hashable, Sendable {
     public var edges: [EdgeRef]
@@ -237,6 +263,8 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case hole(HoleFeature)
         case primitive(PrimitiveFeature)
         case pipe(PipeFeature)
+        case move(MoveFeature)
+        case rotate(RotateFeature)
     }
     public var id: FeatureID
     public var name: String
@@ -260,13 +288,15 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .hole: return "Hole"
         case .primitive(let p): return p.kind.rawValue
         case .pipe: return "Pipe"
+        case .move: return "Move"
+        case .rotate: return "Rotate"
         }
     }
 
     /// Sketches this feature is built from (they are hidden once used, as in other CAD tools).
     public var sketchesUsed: [FeatureID] {
         switch kind {
-        case .sketch, .fillet, .chamfer, .hole, .primitive: return []
+        case .sketch, .fillet, .chamfer, .hole, .primitive, .move, .rotate: return []
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
         case .sweep(let s): return [s.sketch, s.path.sketch]
@@ -285,7 +315,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .loft(let l): return l.operation == .newBody
         case .primitive(let p): return p.operation == .newBody
         case .pipe(let p): return p.operation == .newBody
-        case .sketch, .fillet, .chamfer, .rib, .hole: return false
+        case .sketch, .fillet, .chamfer, .rib, .hole, .move, .rotate: return false
         }
     }
 }

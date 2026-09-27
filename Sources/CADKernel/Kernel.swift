@@ -58,6 +58,12 @@ public final class KSketch: @unchecked Sendable {
     public func addCircle(_ tag: String, center: SIMD2<Double>, radius: Double) throws {
         guard sk_sketch_add_circle(handle, tag, center.x, center.y, radius) else { throw KernelError.last("circle \(tag)") }
     }
+    /// A quadratic (3 points) or cubic (4 points) Bézier curve.
+    public func addBezier(_ tag: String, _ points: [SIMD2<Double>]) throws {
+        let flat = points.flatMap { [$0.x, $0.y] }
+        guard sk_sketch_add_bezier(handle, tag, flat, Int32(points.count)) else { throw KernelError.last("curve \(tag)") }
+    }
+
     public func addArc(_ tag: String, center: SIMD2<Double>, radius: Double, from a0: Double, to a1: Double) throws {
         guard sk_sketch_add_arc(handle, tag, center.x, center.y, radius, a0, a1) else { throw KernelError.last("arc \(tag)") }
     }
@@ -196,6 +202,14 @@ public final class KBody: @unchecked Sendable {
         case .coil(let d, let section, let pitch, let turns): h = sk_primitive(SK_COIL, frame.c, d, section, pitch, turns, featureID)
         }
         return try wrap(h, "primitive")
+    }
+
+    public func translated(_ d: SIMD3<Double>) throws -> KBody {
+        try KBody.wrap(sk_translate(handle, d.x, d.y, d.z), "move")
+    }
+
+    public func rotated(about origin: SIMD3<Double>, axis a: SIMD3<Double>, angle: Double) throws -> KBody {
+        try KBody.wrap(sk_rotate(handle, origin.x, origin.y, origin.z, a.x, a.y, a.z, angle), "rotate")
     }
 
     public func boolean(_ tool: KBody, _ op: SKBooleanOp) throws -> KBody {

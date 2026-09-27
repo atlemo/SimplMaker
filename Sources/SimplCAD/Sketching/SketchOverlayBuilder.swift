@@ -130,6 +130,10 @@ enum SketchOverlayBuilder {
             o.points.append(SegmentInstance(ax: w.x, ay: w.y, az: w.z, bx: w.x, by: w.y, bz: w.z,
                                             id: PickID(sketchPoint: i).raw))
         }
+        // Text: the letters are drawn like curves, and picking one picks (and drags) the text's anchor.
+        for text in session.textOutlines() {
+            for line in text.polylines { o.curves += segments(line, frame: f, id: PickID(sketchPoint: text.anchor).raw) }
+        }
         for line in session.previewPolylines() { o.preview += segments(line, frame: f, id: 0) }
         if let snap = session.lastSnap {
             let w = world(f, snap.position)
@@ -139,8 +143,13 @@ enum SketchOverlayBuilder {
     }
 
     /// A finished sketch's curves, pickable (as paths, axes and rib lines) under its slot.
-    static func finished(_ r: SketchResult, slot: Int, into o: inout SketchOverlay) {
+    static func finished(_ r: SketchResult, slot: Int, parameters: ParameterValues, into o: inout SketchOverlay) {
         let s = r.solved
+        for t in s.texts {
+            for contour in t.contours(in: s, parameters: parameters) {
+                o.inactive += segments(contour.flatMap { TextOutline.flatten($0) }, frame: r.frame, id: 0)
+            }
+        }
         for (i, c) in s.curves.enumerated() {
             let segs = segments(polyline(c, in: s), frame: r.frame, id: PickID(sketchCurve: i, slot: slot).raw)
             if c.construction { o.construction += segs } else { o.inactive += segs }
