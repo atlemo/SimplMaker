@@ -279,6 +279,27 @@ struct EdgeInspector: View {
                 Text("Or drag the orange arrow in the viewport.").font(.caption).foregroundStyle(.secondary)
             }
         }
+        let last = edges.edges.count + edges.faces.count == 1  // keep at least one thing to round
+        if !edges.faces.isEmpty || !model.selection.filter(\.isFace).isEmpty {
+            Section("Faces (\(edges.faces.count)) · every edge around them") {
+                ForEach(Array(edges.faces.enumerated()), id: \.offset) { i, f in
+                    HStack {
+                        Text(f.face).font(.caption.monospaced()).lineLimit(2).truncationMode(.middle)
+                        Spacer()
+                        Button { update("Remove Face") { $0.faces.remove(at: i) } } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(.borderless)
+                            .disabled(last)
+                    }
+                }
+                let picked = model.selection.compactMap { model.faceRef($0) }
+                if !picked.isEmpty {
+                    Button("Add \(picked.count) selected face(s)") {
+                        update("Add Faces") { e in e.faces += picked.filter { !e.faces.contains($0) } }
+                        model.clearSelection()
+                    }
+                }
+            }
+        }
         Section("Edges (\(edges.edges.count))") {
             ForEach(Array(edges.edges.enumerated()), id: \.offset) { i, e in
                 HStack {
@@ -286,7 +307,7 @@ struct EdgeInspector: View {
                     Spacer()
                     Button { update("Remove Edge") { $0.edges.remove(at: i) } } label: { Image(systemName: "minus.circle") }
                         .buttonStyle(.borderless)
-                        .disabled(edges.edges.count == 1)
+                        .disabled(last)
                 }
             }
             if model.selectedEdgeCount > 0 {

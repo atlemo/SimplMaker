@@ -59,14 +59,57 @@ public struct RegenResult: Sendable {
     public func body(_ id: FeatureID) -> KBody? { bodies.first { $0.id == id }?.body }
 }
 
+/// What a rebuild had after each feature, keyed by everything that led up to it, so the next
+/// rebuild can pick up at the first feature that changed (dragging a size near the end of the
+/// timeline then rebuilds only that feature and what follows).
+public final class RegenCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshots: [(key: Int, result: RegenResult)] = []
+    public init() {}
+
+    /// The snapshots that still hold: those whose keys match, from the start of the timeline.
+    fileprivate func valid(for keys: [Int]) -> [(key: Int, result: RegenResult)] {
+        lock.lock(); defer { lock.unlock() }
+        var n = 0
+        while n < keys.count, n < snapshots.count, snapshots[n].key == keys[n] { n += 1 }
+        return Array(snapshots.prefix(n))
+    }
+
+    fileprivate func store(_ snapshots: [(key: Int, result: RegenResult)]) {
+        lock.lock(); defer { lock.unlock() }
+        self.snapshots = snapshots
+    }
+}
+
 public enum Regenerator {
-    public static func regenerate(_ doc: CADDocument) -> RegenResult {
+    public static func regenerate(_ doc: CADDocument, cache: RegenCache? = nil) -> RegenResult {
         let start = Date()
         var r = RegenResult()
         r.parameters = ParameterEvaluator.evaluate(doc.parameters)
         r.bodyNames = doc.bodyNames
 
-        for feature in doc.activeFeatures where !feature.suppressed {
+        // Each feature's key covers the parameters, body names and every feature up to it.
+        let features = Array(doc.activeFeatures)
+        var keys: [Int] = []
+        var hasher = Hasher()
+        hasher.combine(doc.parameters)
+        hasher.combine(doc.bodyNames)
+        var previous = hasher.finalize()
+        for f in features {
+            var h = Hasher()
+            h.combine(previous)
+            h.combine(f)
+            previous = h.finalize()
+            keys.append(previous)
+        }
+        // Pick up after the last feature that hasn't changed since the previous rebuild.
+        var snapshots = cache?.valid(for: keys) ?? []
+        if let last = snapshots.last { r = last.result }
+        let first = snapshots.count
+
+        for (index, feature) in features.enumerated() where index >= first {
+            defer { if cache != nil { snapshots.append((keys[index], r)) } }
+            guard !feature.suppressed else { continue }
             do {
                 switch feature.kind {
                 case .sketch(let f): r.sketches[feature.id] = try sketch(f, r)
@@ -88,6 +131,7 @@ public enum Regenerator {
                 r.errors[feature.id] = "\(error)"
             }
         }
+        cache?.store(snapshots)
         r.duration = Date().timeIntervalSince(start)
         return r
     }
@@ -435,9 +479,15 @@ public enum Regenerator {
         // Group edges per body, keeping order.
         var order: [FeatureID] = []
         var byBody: [FeatureID: [String]] = [:]
-        for e in f.edges {
-            if byBody[e.body] == nil { order.append(e.body) }
-            byBody[e.body, default: []].append(e.edge)
+        func add(_ body: FeatureID, _ edge: String) {
+            if byBody[body] == nil { order.append(body) }
+            if byBody[body]?.contains(edge) != true { byBody[body, default: []].append(edge) }
+        }
+        for e in f.edges { add(e.body, e.edge) }
+        // A face stands for every edge around it, as the face is now.
+        for face in f.faces {
+            guard let b = r.body(face.body) else { throw KernelError(message: "body is missing") }
+            for edge in try b.faceEdges(face.face) { add(face.body, edge) }
         }
         // Record the inputs first, so the drag handle still shows when the size is invalid.
         for bodyID in order {

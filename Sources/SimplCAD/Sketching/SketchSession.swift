@@ -89,7 +89,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     }
     var hint: String {
         switch self {
-        case .select: return "Click to select, drag points or curves to move them, ⌫ deletes"
+        case .select: return "Click to select, double-click for all joined curves, drag to move, ⌫ deletes"
         case .line: return "Click points to draw connected lines · Esc ends the chain"
         case .rectangle: return "Click two opposite corners"
         case .circle: return "Click the center, then a point on the circle · C again for 2-point"
@@ -253,6 +253,14 @@ final class SketchSession {
         case .sketchCurve: return pick.element < sketch.curves.count ? sketch.curves[pick.element].id : nil
         default: return nil
         }
+    }
+
+    /// Double-click with Select: the curve under the cursor and every curve joined to it.
+    func selectConnected(additive: Bool) {
+        guard tool == .select, let h = hover, sketch.curve(h) != nil else { return }
+        let chain = sketch.connectedCurves(h)
+        selection = additive ? selection + chain.filter { !selection.contains($0) } : chain
+        dragEntity = nil
     }
 
     func pickID(for id: EntityID) -> PickID? {

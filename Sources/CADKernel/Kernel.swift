@@ -252,6 +252,36 @@ public final class KBody: @unchecked Sendable {
         return Frame(f)
     }
 
+    /// Names of the edges around a face (seams left out).
+    public func faceEdges(_ name: String) throws -> [String] {
+        try indices("face edges") { sk_body_face_edges(handle, name, $0, $1) }
+            .compactMap { sk_body_edge_name(handle, $0).map { String(cString: $0) } }
+    }
+
+    /// Names of the faces on either side of an edge.
+    public func edgeFaces(_ edge: String) throws -> [String] {
+        try indices("edge faces") { sk_body_edge_faces(handle, edge, $0, $1) }
+            .compactMap { sk_body_face_name(handle, $0).map { String(cString: $0) } }
+    }
+
+    /// Names of the edges in the loop of `face` that runs through `edge` (seams left out).
+    public func loopEdges(face: String, edge: String) throws -> [String] {
+        try indices("edge loop") { sk_body_loop_edges(handle, face, edge, $0, $1) }
+            .compactMap { sk_body_edge_name(handle, $0).map { String(cString: $0) } }
+    }
+
+    /// Calls a kernel query that fills an index buffer, growing it if the answer doesn't fit.
+    private func indices(_ what: String, _ query: (UnsafeMutablePointer<Int32>, Int32) -> Int32) throws -> [Int32] {
+        var out = [Int32](repeating: 0, count: 256)
+        var n = Int(out.withUnsafeMutableBufferPointer { query($0.baseAddress!, Int32($0.count)) })
+        guard n >= 0 else { throw KernelError.last(what) }
+        if n > out.count {
+            out = [Int32](repeating: 0, count: n)
+            n = Int(out.withUnsafeMutableBufferPointer { query($0.baseAddress!, Int32($0.count)) })
+        }
+        return Array(out.prefix(n))
+    }
+
     /// Where a fillet/chamfer drag handle goes on an edge: its midpoint and the growth direction.
     public func edgeHandle(_ edge: String) throws -> (origin: SIMD3<Double>, direction: SIMD3<Double>) {
         var o = [Double](repeating: 0, count: 6)

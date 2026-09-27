@@ -112,6 +112,13 @@ int sk_body_edge_count(SKHandle body);
 const char *sk_body_edge_name(SKHandle body, int i);  // i matches SKMesh.segmentEdge
 int sk_body_find_face(SKHandle body, const char *name);  // -1 if not found
 int sk_body_find_edge(SKHandle body, const char *name);  // -1 if not found
+// Edges bounding a face (indices as in sk_body_edge_name; seams left out). Writes up to `max`
+// indices to `out` and returns how many there are, or -1 if the face isn't found.
+int sk_body_face_edges(SKHandle body, const char *faceName, int *out, int max);
+// Faces on either side of an edge (indices as in sk_body_face_name); returns how many, or -1.
+int sk_body_edge_faces(SKHandle body, const char *edgeName, int *out, int max);
+// The edges of the loop of `faceName` that contains `edgeName` (seams left out); returns how many, or -1.
+int sk_body_loop_edges(SKHandle body, const char *faceName, const char *edgeName, int *out, int max);
 /// A planar face of a body as a profile, e.g. to extrude it (press-pull). Its edges are tagged with
 /// the body's edge names, so the sides are named "<featureId>.side.<edgeName>".
 SKHandle sk_body_face_profile(SKHandle body, const char *faceName);

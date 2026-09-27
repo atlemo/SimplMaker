@@ -4,6 +4,7 @@
 import CADCore
 import CADKernel
 import Foundation
+import simd
 
 /// One entry of the viewport's right-click menu.
 enum ContextItem {
@@ -52,6 +53,9 @@ extension DocumentModel {
                 self.clickRay = ray
                 self.place(.hole, on: pick)
             },
+            .separator,
+            .action("Fillet Face Edges", symbol: DesignTool.fillet.symbol) { self.selection = [pick]; self.run(.fillet) },
+            .action("Chamfer Face Edges", symbol: DesignTool.chamfer.symbol) { self.selection = [pick]; self.run(.chamfer) },
             .separator,
             .action("Move Body", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.selection = [pick]; self.run(.move) },
             .action("Rotate Body", symbol: "rotate.right") { self.selection = [pick]; self.run(.rotate) },
@@ -166,9 +170,16 @@ extension DocumentModel {
         handleFocusRequest += 1
     }
 
-    /// Double-click in the viewport: edit the feature that made the face, or the sketch of a curve or profile.
-    func doubleClick(_ pick: PickID?) {
-        guard sketchSession == nil, pendingTool == nil, let pick else { return }
+    /// Double-click in the viewport: edit the feature that made the face, or the sketch of a curve
+    /// or profile; on an edge, select the loop of edges it's part of. `viewDirection` (where the
+    /// camera looks) decides which of an edge's two faces' loops: the face turned toward you.
+    func doubleClick(_ pick: PickID?, viewDirection: SIMD3<Double> = SIMD3(0, 0, -1), additive: Bool = false) {
+        guard sketchSession == nil, let pick else { return }
+        if pick.kind == .edge {
+            selectEdgeLoop(pick, viewDirection: viewDirection, additive: additive)
+            return
+        }
+        guard pendingTool == nil else { return }
         switch pick.kind {
         case .face:
             if let ref = faceRef(pick), let owner = featureMaking(face: ref.face) { editFeature(owner) }
@@ -179,6 +190,35 @@ extension DocumentModel {
         default:
             break
         }
+    }
+
+    /// Selects every edge in the loop through a picked edge, around the face that faces the viewer most.
+    func selectEdgeLoop(_ pick: PickID, viewDirection: SIMD3<Double>, additive: Bool) {
+        guard pick.isEdge, let m = meshes[safe: pick.body], pick.element < m.mesh.edgeNames.count,
+              let body = result?.body(m.id) else { return }
+        let edge = m.mesh.edgeNames[pick.element]
+        let faces = (try? body.edgeFaces(edge)) ?? []
+        // How much a face turns toward the camera: its triangles' normals against the view.
+        func facing(_ name: String) -> Double {
+            guard let f = m.mesh.faceNames.firstIndex(of: name) else { return -.infinity }
+            var sum = SIMD3<Double>.zero
+            for (t, face) in m.mesh.triangleFace.enumerated() where Int(face) == f {
+                for k in 0..<3 {
+                    let v = Int(m.mesh.indices[t * 3 + k]) * 3
+                    sum += SIMD3(Double(m.mesh.normals[v]), Double(m.mesh.normals[v + 1]), Double(m.mesh.normals[v + 2]))
+                }
+            }
+            let len = simd_length(sum)
+            return len > 0 ? -simd_dot(sum / len, viewDirection) : -.infinity
+        }
+        guard let face = faces.max(by: { facing($0) < facing($1) }),
+              let loop = try? body.loopEdges(face: face, edge: edge) else { return }
+        let picks = loop.compactMap { name in m.mesh.edgeNames.firstIndex(of: name).map { PickID(body: pick.body, edge: $0) } }
+        guard !picks.isEmpty, pendingTool?.accepts(.edge) ?? true else { return }
+        // A waiting tool (Fillet, Chamfer) collects edges, so the loop adds to what it has.
+        let add = additive || pendingTool != nil
+        selection = add ? selection + picks.filter { !selection.contains($0) } : picks
+        overlayRevision += 1
     }
 
     // MARK: the options panel next to the handle

@@ -3,6 +3,7 @@ import CADCore
 import CADKernel
 import Foundation
 import Testing
+import simd
 @testable import SimplCAD
 
 /// The Combine tool, and moving a whole sketch.
@@ -52,5 +53,63 @@ import Testing
         try await settle(model)
         let frame = try #require(model.result?.sketches["sk"]?.frame)
         #expect(abs(frame.origin.x - 15) < 1e-9)
+    }
+}
+
+/// Fillet and Chamfer take a face, for every edge around it.
+@Suite @MainActor struct FaceFilletToolTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    @Test func aSelectedFaceIsFilletedAllRound() async throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20", length: "20", height: "10")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let m = try #require(model.meshes.first)
+        let top = try #require(m.mesh.faceNames.firstIndex(of: "b.top"))
+        model.click(PickID(body: 0, face: top), additive: false)
+        model.run(.fillet)
+        guard case .fillet(let f)? = model.document.features.last?.kind else { Issue.record("expected a fillet"); return }
+        #expect(f.faces == [FaceRef(body: "b", face: "b.top")] && f.edges.isEmpty)
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        #expect(model.dragHandle?.label == "Radius", "the handle sits on one of the face's edges")
+    }
+}
+
+/// Double-click selects connected geometry: an edge loop on a body, a chain of curves in a sketch.
+@Suite @MainActor struct DoubleClickSelectTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    @Test func anEdgeLoopAroundTheFaceYouSee() async throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20", length: "20", height: "10")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let m = try #require(model.meshes.first)
+        let body = try #require(model.result?.body("b"))
+        let topEdges = try body.faceEdges("b.top")
+        let edge = try #require(m.mesh.edgeNames.firstIndex(of: topEdges[0]))
+        model.doubleClick(PickID(body: 0, edge: edge), viewDirection: SIMD3(0.3, 0.2, -1))  // looking down on it
+        #expect(Set(model.selection.compactMap { model.name(of: $0) }) == Set(topEdges))
+        model.doubleClick(PickID(body: 0, edge: edge), viewDirection: simd_normalize(SIMD3(0.1, 1, -0.05)), additive: true)
+        #expect(model.selection.count > 4, "shift adds the side face's loop too")
+    }
+
+    @Test func aChainOfCurvesInASketch() throws {
+        var s = Sketch()
+        let rect = s.addRectangle(0, 0, 40, 20)
+        s.addLine(s.addPoint(0, 50), s.addPoint(10, 50))
+        let session = SketchSession(featureID: IDs.make(), frame: .xy, sketch: s, parameters: ParameterEvaluator.evaluate([]))
+        session.setTool(.select)
+        _ = session.handle(SketchMouse(phase: .moved, uv: SIMD2(20, 0.01), pick: nil, tolerance: 0.5))
+        session.selectConnected(additive: false)
+        #expect(Set(session.selection) == Set(rect.lines))
     }
 }
