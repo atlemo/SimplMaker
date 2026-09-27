@@ -12,7 +12,7 @@ import simd
 enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
-    case fillet = "Fillet", chamfer = "Chamfer", move = "Move", rotate = "Rotate"
+    case fillet = "Fillet", chamfer = "Chamfer", move = "Move", rotate = "Rotate", combine = "Combine"
 
     var id: String { rawValue }
 
@@ -20,7 +20,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// change an existing body.
     static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
-    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .move, .rotate]
+    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .move, .rotate, .combine]
 
     /// A glyph name from the macOS Design System's icon set (see IconGlyphs.swift), not an SF Symbol.
     var symbol: String {
@@ -41,6 +41,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .chamfer: return "triangle"
         case .move: return "move"
         case .rotate: return "rotate-cw"
+        case .combine: return "combine"
         }
     }
 
@@ -59,9 +60,10 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .coil: return "Coil: place a coil spring on a plane or face"
         case .pipe: return "Pipe: a round tube along sketch curves"
         case .fillet: return "Fillet: round the selected edges"
-        case .move: return "Move: slide a body along X, Y or Z"
+        case .move: return "Move: slide bodies or sketches along X, Y or Z"
         case .rotate: return "Rotate: turn a body about an X, Y or Z axis"
         case .chamfer: return "Chamfer: bevel the selected edges"
+        case .combine: return "Combine: join, cut or intersect bodies (e.g. cut text out of a plate)"
         }
     }
 
@@ -89,7 +91,8 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .hole: return kind == .face
         case .box, .cylinder, .sphere, .torus, .coil: return kind == .plane || kind == .face
         case .fillet, .chamfer: return kind == .edge
-        case .move, .rotate: return kind == .face || kind == .edge
+        case .move: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve
+        case .rotate, .combine: return kind == .face || kind == .edge
         }
     }
 }
@@ -153,7 +156,12 @@ extension DocumentModel {
         case .hole: return "Click a flat face where the hole goes"
         case .box, .cylinder, .sphere, .torus, .coil:
             return "Click a plane or flat face to place the \(tool.rawValue.lowercased())"
-        case .move, .rotate: return "Click the body to \(tool.rawValue.lowercased())"
+        case .move: return "Click the bodies or sketches to move"
+        case .rotate: return "Click the body to rotate"
+        case .combine:
+            let n = pickedBodies.count
+            return n == 0 ? "Click the body to cut from, join to or intersect with"
+                : "Click the bodies to combine with it, then press Return (\(n - 1) picked)"
         case .fillet, .chamfer:
             let n = selectedEdgeCount
             return n == 0 ? "Select edges to \(tool.rawValue.lowercased())" : "Select more edges, or press Return (\(n) selected)"
@@ -218,16 +226,32 @@ extension DocumentModel {
         case .fillet, .chamfer:
             guard selectedEdgeCount > 0, !waiting else { return false }
             addEdgeFeature(fillet: tool == .fillet)
-        case .move, .rotate:
-            var bodies: [FeatureID] = []
-            for pick in selection where pick.isFace || pick.isEdge {
-                if let id = meshes[safe: pick.body]?.id, !bodies.contains(id) { bodies.append(id) }
-            }
+        case .move:
+            var sketches: [FeatureID] = []
+            for s in profiles.map(\.sketch) + curves.map(\.sketch) where !sketches.contains(s) { sketches.append(s) }
+            let bodies = pickedBodies
+            guard !bodies.isEmpty || !sketches.isEmpty else { return false }
+            add(Feature(name: document.nextName(tool.rawValue), .move(MoveFeature(bodies: bodies, sketches: sketches))))
+        case .rotate:
+            let bodies = pickedBodies
             guard !bodies.isEmpty else { return false }
+            add(Feature(name: document.nextName(tool.rawValue), .rotate(RotateFeature(bodies: bodies))))
+        case .combine:
+            // The first body picked is the target; the rest are the tools. Return combines them.
+            let bodies = pickedBodies
+            guard bodies.count >= 2, !waiting else { return false }
             add(Feature(name: document.nextName(tool.rawValue),
-                        tool == .move ? .move(MoveFeature(bodies: bodies)) : .rotate(RotateFeature(bodies: bodies))))
+                        .combine(CombineFeature(target: bodies[0], tools: Array(bodies.dropFirst())))))
         }
         return true
+    }
+
+    /// Moves whole sketches or bodies (from the browser or a right-click), with a drag handle to set how far.
+    func move(sketches: [FeatureID] = [], bodies: [FeatureID] = []) {
+        guard !sketches.isEmpty || !bodies.isEmpty else { return }
+        if sketchSession != nil { finishSketch() }
+        pendingTool = nil
+        add(Feature(name: document.nextName(DesignTool.move.rawValue), .move(MoveFeature(bodies: bodies, sketches: sketches))))
     }
 
     /// Places a hole or primitive on a picked origin plane or flat face, where the user clicked
@@ -265,6 +289,15 @@ extension DocumentModel {
     }
 
     // MARK: helpers
+
+    /// Bodies with a picked face or edge, in the order they were picked.
+    var pickedBodies: [FeatureID] {
+        var bodies: [FeatureID] = []
+        for pick in selection where pick.isFace || pick.isEdge {
+            if let id = meshes[safe: pick.body]?.id, !bodies.contains(id) { bodies.append(id) }
+        }
+        return bodies
+    }
 
     /// A size that suits the model on screen: 20 mm, or about a fifth of the model.
     private var defaultPrimitiveSize: String {
@@ -331,7 +364,7 @@ extension DocumentModel {
     static func chain(from seed: EntityID, in s: Sketch) -> [EntityID] {
         func ends(_ id: EntityID) -> [SIMD2<Double>] {
             switch s.curve(id)?.geometry {
-            case .line(let a, let b)?, .arc(_, let a, let b)?: return [a, b].compactMap { s.position($0) }
+            case .line(let a, let b)?, .arc(_, let a, let b)?, .bezier(let a, _, _, let b)?: return [a, b].compactMap { s.position($0) }
             default: return []
             }
         }

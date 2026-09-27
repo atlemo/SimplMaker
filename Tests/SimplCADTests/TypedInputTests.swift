@@ -85,6 +85,60 @@ import Testing
         #expect(a.sketch.dimensions.map(\.expression) == ["8 mm"])
     }
 
+    @Test func twoPointCircleSpansItsDiameter() throws {
+        let c = session()
+        c.setTool(.circle2Point)
+        click(c, 0, 0)
+        click(c, 10, 0)
+        let circle = try #require(c.sketch.curves.first)
+        guard case .circle(let center, _) = circle.geometry else { Issue.record("expected a circle"); return }
+        #expect(c.sketch.position(center).map { simdLength($0 - SIMD2(5, 0)) < 1e-6 } == true)
+        #expect(c.sketch.radius(of: circle).map { abs($0 - 5) < 1e-6 } == true)
+
+        let typed = session()
+        typed.setTool(.circle2Point)
+        click(typed, 0, 0)
+        move(typed, 0, 1)
+        #expect(typed.liveValue(.diameter).map { abs($0 - 1) < 1e-6 } == true, "the distance between the two points")
+        typed.setTyped(.diameter, "12")
+        #expect(typed.commitTyped() == "Circle")
+        let d = try #require(typed.sketch.curves.first)
+        #expect(typed.sketch.radius(of: d).map { abs($0 - 6) < 1e-6 } == true)
+
+        #expect(SketchTool.forKey("c", current: .circle) == .circle2Point)
+        #expect(SketchTool.forKey("c", current: .circle2Point) == .circle)
+        #expect(SketchTool.forKey("c", current: .line) == .circle)
+    }
+
+    @Test func drawingSnapsToTheMiddleOfARectangle() throws {
+        let c = session()
+        c.setTool(.rectangle)
+        click(c, 0, 0)
+        click(c, 30, 20)
+        c.setTool(.circle)
+        move(c, 15.2, 9.9)
+        #expect(c.lastSnap?.kind == .center && c.lastSnap.map { simdLength($0.position - SIMD2(15, 10)) < 1e-9 } == true)
+        click(c, 15.2, 9.9)
+        click(c, 20, 10)
+        let circle = try #require(c.sketch.curves.first { if case .circle = $0.geometry { return true }; return false })
+        let center = try #require(c.sketch.center(of: circle.id).flatMap { c.sketch.position($0) })
+        #expect(simdLength(center - SIMD2(15, 10)) < 1e-6)
+    }
+
+    @Test func bezierToolTakesStartEndAndBend() throws {
+        let c = session()
+        c.setTool(.bezier)
+        click(c, 0, 0)
+        click(c, 20, 0)
+        move(c, 10, 6)
+        #expect(c.previewPolylines().count == 3, "the curve and its two handles")
+        click(c, 10, 6)
+        let curve = try #require(c.sketch.curves.first)
+        let g = try #require(c.sketch.geometry(of: curve.id))
+        #expect(simdLength(g.point(0.5) - SIMD2(10, 6)) < 1e-6)
+        #expect(c.sketch.curves.count == 1 && c.clicks.isEmpty)
+    }
+
     @Test func unusableTextIsIgnoredAndEscapeClearsIt() throws {
         let s = session()
         s.setTool(.line)

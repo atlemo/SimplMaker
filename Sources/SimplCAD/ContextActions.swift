@@ -55,6 +55,10 @@ extension DocumentModel {
             .separator,
             .action("Move Body", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.selection = [pick]; self.run(.move) },
             .action("Rotate Body", symbol: "rotate.right") { self.selection = [pick]; self.run(.rotate) },
+            .action("Combine with Other Bodies…", symbol: "square.on.square.intersection.dashed") {
+                self.selection = [pick]
+                self.run(.combine)
+            },
         ]
         items += ownerItems(featureMaking(face: ref.face), body: ref.body)
         return items
@@ -94,6 +98,7 @@ extension DocumentModel {
     private func sketchOwnerItems(_ sketch: FeatureID) -> [ContextItem] {
         [.separator,
          .action("Edit \(featureName(sketch))", symbol: "pencil") { self.editSketch(sketch) },
+         .action("Move \(featureName(sketch))", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.move(sketches: [sketch]) },
          .action("Hide \(featureName(sketch))", symbol: "eye.slash") { self.setHidden([sketch], true) }]
     }
 
@@ -262,47 +267,61 @@ struct FeatureHUD: View {
 
     var body: some View {
         if let id = model.dragHandle?.featureID {
-            HStack(spacing: DS.Spacing.space3) {
-                if let op = model.operation(of: id) {
-                    Picker("Operation", selection: Binding(get: { op }, set: { model.setOperation($0, of: id) })) {
-                        ForEach(BodyOperation.allCases, id: \.self) { o in
-                            Text(o == .newBody ? "New" : o.rawValue).tag(o)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .help("Join adds to the body, Cut removes from it, New makes a separate body, Intersect keeps the overlap")
+            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                // Why the typed size can't be used, right where the user is looking.
+                if let problem = model.handleProblem {
+                    Text(problem)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 320, alignment: .leading)
                 }
-                if let axis = model.transformAxis(id) {
-                    Picker("Axis", selection: Binding(get: { axis }, set: { model.setTransformAxis($0, of: id) })) {
-                        ForEach(Axis3.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .help("The axis to move along or turn about")
-                }
-                if let flipped = model.isFlipped(id) {
-                    Toggle(isOn: Binding(get: { flipped }, set: { _ in model.toggleFlip(id) })) {
-                        Image(systemName: "arrow.up.arrow.down")
-                    }
-                    .toggleStyle(.button)
-                    .help("Flip the direction")
-                }
-                if model.newFeature == id {
-                    Button("Cancel") { model.cancelNewFeature() }
-                        .help("Remove this new feature (Esc in the field only undoes the typing)")
-                }
-                // No default-button shortcut: it would take Return from the size field before the
-                // field could store what was typed. Return in the field already means OK.
-                Button("OK") { model.finishFeatureEdit() }
-                    .help("Done (Return)")
+                controls(id)
             }
             .controlSize(.small)
             .padding(DS.Spacing.space3)
             .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.xl2))
             .fixedSize()
+        }
+    }
+
+    private func controls(_ id: FeatureID) -> some View {
+        HStack(spacing: DS.Spacing.space3) {
+            if let op = model.operation(of: id) {
+                Picker("Operation", selection: Binding(get: { op }, set: { model.setOperation($0, of: id) })) {
+                    ForEach(BodyOperation.allCases, id: \.self) { o in
+                        Text(o == .newBody ? "New" : o.rawValue).tag(o)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help("Join adds to the body, Cut removes from it, New makes a separate body, Intersect keeps the overlap")
+            }
+            if let axis = model.transformAxis(id) {
+                Picker("Axis", selection: Binding(get: { axis }, set: { model.setTransformAxis($0, of: id) })) {
+                    ForEach(Axis3.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help("The axis to move along or turn about")
+            }
+            if let flipped = model.isFlipped(id) {
+                Toggle(isOn: Binding(get: { flipped }, set: { _ in model.toggleFlip(id) })) {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .toggleStyle(.button)
+                .help("Flip the direction")
+            }
+            if model.newFeature == id {
+                Button("Cancel") { model.cancelNewFeature() }
+                    .help("Remove this new feature (Esc in the field only undoes the typing)")
+            }
+            // No default-button shortcut: it would take Return from the size field before the
+            // field could store what was typed. Return in the field already means OK.
+            Button("OK") { model.finishFeatureEdit() }
+                .help("Done (Return)")
         }
     }
 }

@@ -11,6 +11,8 @@ public enum CurveGeometry: Sendable, Equatable {
     case circle(center: SIMD2<Double>, radius: Double)
     /// Counter-clockwise from `start` angle over `sweep` radians.
     case arc(center: SIMD2<Double>, radius: Double, start: Double, sweep: Double)
+    /// Cubic Bézier through its four control points, t 0…1.
+    case bezier([SIMD2<Double>])
 
     /// Point at parameter t: lines 0…1 start→end, arcs 0…1 start→end, circles t = angle.
     public func point(_ t: Double) -> SIMD2<Double> {
@@ -18,6 +20,7 @@ public enum CurveGeometry: Sendable, Equatable {
         case .line(let a, let b): return a + (b - a) * t
         case .circle(let c, let r): return c + r * SIMD2(cos(t), sin(t))
         case .arc(let c, let r, let a0, let sw): let a = a0 + sw * t; return c + r * SIMD2(cos(a), sin(a))
+        case .bezier(let p): return Bezier.point(p, t)
         }
     }
 
@@ -36,6 +39,8 @@ public enum CurveGeometry: Sendable, Equatable {
             while t < 0 { t += 2 * .pi }
             while t >= 2 * .pi { t -= 2 * .pi }
             return t / sw
+        case .bezier(let ctrl):
+            return Bezier.closest(p, ctrl)
         }
     }
 
@@ -45,19 +50,36 @@ public enum CurveGeometry: Sendable, Equatable {
     func contains(_ t: Double, eps: Double = 1e-9) -> Bool {
         switch self {
         case .circle: return true
-        case .line, .arc: return t >= -eps && t <= 1 + eps
+        case .line, .arc, .bezier: return t >= -eps && t <= 1 + eps
         }
     }
 }
 
-/// Intersections of the underlying infinite line / full circle of two curves.
+/// Intersections of the underlying infinite line / full circle of two curves (a Bézier has no
+/// extension: only its own crossings count).
 func intersect(_ g: CurveGeometry, _ h: CurveGeometry) -> [SIMD2<Double>] {
     func circle(_ x: CurveGeometry) -> (SIMD2<Double>, Double)? {
         switch x {
         case .circle(let c, let r), .arc(let c, let r, _, _): return (c, r)
-        case .line: return nil
+        case .line, .bezier: return nil
         }
     }
+    if case .bezier(let p) = g {
+        // Cross each piece of the flattened curve, then pull the hits back onto the curve.
+        let line = Bezier.flatten(p, steps: 96)
+        var hits: [SIMD2<Double>] = []
+        for i in 0..<(line.count - 1) {
+            let a = line[i], b = line[i + 1], d = b - a
+            for x in intersect(.line(a, b), h) {
+                let s = vdot(x - a, d) / max(vdot(d, d), 1e-300)
+                guard s >= -1e-9, s < 1 - 1e-9 || i == line.count - 2 else { continue }
+                let onCurve = Bezier.point(p, Bezier.closest(x, p))
+                if !hits.contains(where: { vlen($0 - onCurve) < 1e-7 }) { hits.append(onCurve) }
+            }
+        }
+        return hits
+    }
+    if case .bezier = h { return intersect(h, g) }
     switch (g, h) {
     case (.line(let a1, let b1), .line(let a2, let b2)):
         let d1 = b1 - a1, d2 = b2 - a2
@@ -105,6 +127,9 @@ extension Sketch {
             var a1 = atan2(pe.y - pc.y, pe.x - pc.x)
             while a1 <= a0 { a1 += 2 * .pi }
             return .arc(center: pc, radius: vlen(ps - pc), start: a0, sweep: a1 - a0)
+        case .bezier:
+            let p = pointIDs(of: c).compactMap { position($0) }
+            return p.count == 4 ? .bezier(p) : nil
         }
     }
 
@@ -166,6 +191,10 @@ extension Sketch {
         case .arc(let c, let a, let b):
             old = start ? a : b
             curves[i].geometry = start ? .arc(center: c, start: p, end: b) : .arc(center: c, start: a, end: p)
+        case .bezier(let a, let c1, let c2, let b):
+            old = start ? a : b
+            curves[i].geometry = start ? .bezier(start: p, control1: c1, control2: c2, end: b)
+                                       : .bezier(start: a, control1: c1, control2: c2, end: p)
         case .circle: return
         }
         // Length dimensions no longer describe the modified curve.
@@ -199,17 +228,22 @@ extension Sketch {
                 curves[i].geometry = .arc(center: center, start: s, end: e)  // keeps the rest of the circle
             }
             return true
-        case .line, .arc:
+        case .line, .arc, .bezier:
             t = min(max(t, 0), 1)
             let before = crossings.last(where: { $0.t < t })
             let after = crossings.first(where: { $0.t > t })
+            // A Bézier keeps its shape: the piece that stays gets new handles.
+            var ctrl: [SIMD2<Double>]?
+            if case .bezier(let p) = g { ctrl = p }
             switch (before, after) {
             case (nil, nil):
                 delete([id])
             case (nil, let a?):
                 replaceEndpoint(of: id, start: true, with: point(for: a))
+                if let ctrl { moveHandles(of: id, to: Bezier.piece(ctrl, from: a.t, to: 1)) }
             case (let b?, nil):
                 replaceEndpoint(of: id, start: false, with: point(for: b))
+                if let ctrl { moveHandles(of: id, to: Bezier.piece(ctrl, from: 0, to: b.t)) }
             case (let b?, let a?):
                 // Split: this curve keeps start…b, a new one takes a…end.
                 let pb = point(for: b), pa = point(for: a)
@@ -222,6 +256,13 @@ extension Sketch {
                 case .arc(let center, _, let end):
                     curves.append(SketchCurve(id: second, .arc(center: center, start: pa, end: end), construction: original.construction))
                     constrain(.equal(id, second))
+                case .bezier(_, _, _, let end):
+                    guard let ctrl else { return false }
+                    let tail = Bezier.piece(ctrl, from: a.t, to: 1)
+                    let k1 = addPoint(tail[1].x, tail[1].y), k2 = addPoint(tail[2].x, tail[2].y)
+                    curves.append(SketchCurve(id: second, .bezier(start: pa, control1: k1, control2: k2, end: end),
+                                              construction: original.construction))
+                    moveHandles(of: id, to: Bezier.piece(ctrl, from: 0, to: b.t))
                 case .circle:
                     return false
                 }
@@ -231,12 +272,21 @@ extension Sketch {
         }
     }
 
+    /// Moves a Bézier's two handle points to the middle control points of `ctrl`.
+    mutating func moveHandles(of id: EntityID, to ctrl: [SIMD2<Double>]) {
+        guard case .bezier(_, let c1, let c2, _)? = curve(id)?.geometry else { return }
+        for (p, q) in [(c1, ctrl[1]), (c2, ctrl[2])] {
+            if let i = points.firstIndex(where: { $0.id == p }) { points[i].x = q.x; points[i].y = q.y }
+        }
+    }
+
     // MARK: extend
 
     /// Extends the end of line/arc `id` nearest to `click` to the next curve it would meet.
     @discardableResult
     public mutating func extend(_ id: EntityID, near click: SIMD2<Double>) -> Bool {
         guard let g = geometry(of: id), !g.isClosed else { return false }
+        if case .bezier = g { return false }  // a Bézier has no natural continuation
         let atStart = vlen(g.point(0) - click) < vlen(g.point(1) - click)
         var best: (distance: Double, cut: Cut)?
         for other in curves where other.id != id {
@@ -252,7 +302,7 @@ extension Sketch {
                     // and "before the start" wraps round to just under 2π/sweep.
                     guard t > 1 else { continue }
                     beyond = atStart ? 2 * .pi / sw - t : t - 1
-                case .circle: continue
+                case .circle, .bezier: continue
                 }
                 guard beyond > 1e-7 else { continue }
                 if best == nil || beyond < best!.distance {
@@ -287,7 +337,12 @@ extension Sketch {
     @discardableResult
     public mutating func offset(_ ids: [EntityID], distance: Double, expression: String) -> [EntityID] {
         var created: [EntityID] = []
-        let chainable = ids.filter { if case .circle? = curve($0)?.geometry { return false }; return curve($0) != nil }
+        let chainable = ids.filter { id in
+            switch curve(id)?.geometry {
+            case .line?, .arc?: return true
+            default: return false  // circles are offset on their own; Béziers aren't offset
+            }
+        }
         // Circles: concentric copies.
         for id in ids {
             guard let c = curve(id), case .circle(let center, let r) = c.geometry else { continue }
@@ -310,6 +365,7 @@ extension Sketch {
             switch c.geometry {
             case .line(let a, let b): return (a, b)
             case .arc(_, let a, let b): return (a, b)
+            case .bezier(let a, _, _, let b): return (a, b)
             case .circle: return nil
             }
         }
@@ -363,7 +419,7 @@ extension Sketch {
                 let nr = item.reversed ? r + left : r - left
                 guard nr > 1e-6 else { return [] }
                 pieces.append(.arc(center: c, radius: nr, start: a0, sweep: sw))
-            case .circle:
+            case .circle, .bezier:
                 return []
             }
         }
@@ -404,7 +460,7 @@ extension Sketch {
                 let nid = addArc(center: center, start: a, end: b)
                 dimension(.radialOffset(from: item.id, to: nid), expression)
                 created.append(nid)
-            case .circle:
+            case .circle, .bezier:
                 continue
             }
         }

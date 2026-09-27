@@ -92,6 +92,7 @@ public enum SketchSolver {
         var arcs: [EntityID: (center: EntityID, start: EntityID)] = [:]
         var lines: [EntityID: (EntityID, EntityID)] = [:]
         var circleCenters: [EntityID: EntityID] = [:]  // circles and arcs
+        var beziers: [EntityID: [EntityID]] = [:]      // start, control 1, control 2, end
         var terms: [([Double]) -> Double] = []
 
         init(_ s: Sketch) {
@@ -107,6 +108,8 @@ public enum SketchSolver {
                     radiusSlot[c.id] = initial.count; initial.append(r); circleCenters[c.id] = center
                 case .arc(let center, let start, _):
                     arcs[c.id] = (center, start); circleCenters[c.id] = center
+                case .bezier(let a, let c1, let c2, let b):
+                    beziers[c.id] = [a, c1, c2, b]
                 }
             }
         }
@@ -174,7 +177,16 @@ public enum SketchSolver {
                     add { me.radius(a, $0) - me.radius(b, $0) }
                 }
             case .tangent(let a, let b):
-                if let line = me.lines[a] != nil ? a : (me.lines[b] != nil ? b : nil) {
+                if let bz = me.beziers[a] ?? me.beziers[b], let line = me.lines[a] != nil ? a : (me.lines[b] != nil ? b : nil),
+                   let ends = me.lines[line] {
+                    // At the Bézier end the line shares a point with (its start, unless only the end is shared).
+                    let atEnd = [ends.0, ends.1].contains(bz[3]) && ![ends.0, ends.1].contains(bz[0])
+                    add {
+                        let d = me.dir(line, $0)
+                        let h = atEnd ? me.p(bz[3], $0) - me.p(bz[2], $0) : me.p(bz[1], $0) - me.p(bz[0], $0)
+                        return vcross(d, h) / norm(d, h)
+                    }
+                } else if let line = me.lines[a] != nil ? a : (me.lines[b] != nil ? b : nil) {
                     let circle = line == a ? b : a
                     guard let center = me.circleCenters[circle], let ends = me.lines[line] else { return }
                     add {
@@ -196,6 +208,15 @@ public enum SketchSolver {
                     add { let d = me.dir(c, $0); return vcross(d, me.p(pt, $0) - me.p(ends.0, $0)) / max(vlen(d), 1e-12) }
                 } else if let center = me.circleCenters[c] {
                     add { vlen(me.p(pt, $0) - me.p(center, $0)) - me.radius(c, $0) }
+                } else if let bz = me.beziers[c] {
+                    add { x in
+                        // Signed distance from the point to the curve, along the curve's normal.
+                        let ctrl = bz.map { me.p($0, x) }, q = me.p(pt, x)
+                        let t = Bezier.closest(q, ctrl)
+                        let b = Bezier.point(ctrl, t), d = Bezier.derivative(ctrl, t)
+                        let len = vlen(d)
+                        return len > 1e-12 ? vcross(d, q - b) / len : vlen(q - b)
+                    }
                 }
             case .midpoint(let pt, let l):
                 guard case let (a, b)? = me.lines[l] else { return }

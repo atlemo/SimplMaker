@@ -17,6 +17,20 @@ public struct SketchResult: Sendable {
     let kernelSketch: KSketch
 }
 
+extension SketchResult {
+    /// World-space box around the sketch's profiles (or its points, when it has none).
+    public var bounds: (min: SIMD3<Double>, max: SIMD3<Double>)? {
+        var points: [SIMD3<Double>] = regionMeshes.flatMap { m in
+            stride(from: 0, to: m.positions.count, by: 3).map {
+                SIMD3(Double(m.positions[$0]), Double(m.positions[$0 + 1]), Double(m.positions[$0 + 2]))
+            }
+        }
+        if points.isEmpty { points = solved.points.filter { $0.id != "origin" }.map { frame.point($0.x, $0.y) } }
+        guard let first = points.first else { return nil }
+        return points.dropFirst().reduce((first, first)) { (simd_min($0.0, $1), simd_max($0.1, $1)) }
+    }
+}
+
 public struct BodyResult: Sendable, Identifiable {
     /// Id of the feature that created the body (stable across regenerations).
     public var id: FeatureID
@@ -36,6 +50,10 @@ public struct RegenResult: Sendable {
     public var edgeFeatureInputs: [FeatureID: [FeatureID: KBody]] = [:]
     /// For face extrudes: the body as it was before, so the handle can sit on the original face.
     public var featureInputs: [FeatureID: [FeatureID: KBody]] = [:]
+    /// For moves: the sketches as they were before, so the handle can sit where they were.
+    public var sketchInputs: [FeatureID: [FeatureID: SketchResult]] = [:]
+    /// Names given to bodies (the rest are "Body1", "Body2"…).
+    public var bodyNames: [FeatureID: String] = [:]
     public var duration: TimeInterval = 0
 
     public func body(_ id: FeatureID) -> KBody? { bodies.first { $0.id == id }?.body }
@@ -46,6 +64,7 @@ public enum Regenerator {
         let start = Date()
         var r = RegenResult()
         r.parameters = ParameterEvaluator.evaluate(doc.parameters)
+        r.bodyNames = doc.bodyNames
 
         for feature in doc.activeFeatures where !feature.suppressed {
             do {
@@ -63,6 +82,7 @@ public enum Regenerator {
                 case .pipe(let f): try pipe(f, feature, &r)
                 case .move(let f): try move(f, feature, &r)
                 case .rotate(let f): try rotate(f, feature, &r)
+                case .combine(let f): try combine(f, feature, &r)
                 }
             } catch {
                 r.errors[feature.id] = "\(error)"
@@ -97,25 +117,16 @@ public enum Regenerator {
         guard solve.status == .solved else {
             throw KernelError(message: "sketch cannot satisfy its constraints (residual \(solve.maxResidual))")
         }
+        return try sketchResult(solved, solve: solve, frame: frame, parameters: r.parameters)
+    }
 
+    /// A solved sketch's profiles on a plane.
+    static func sketchResult(_ solved: Sketch, solve: SolveResult, frame: Frame, parameters: ParameterValues) throws -> SketchResult {
         let ks = try KSketch(frame: frame)
-        for c in solved.curves where !c.construction {
-            switch c.geometry {
-            case .line(let a, let b):
-                guard let pa = solved.point(a), let pb = solved.point(b) else { continue }
-                try ks.addLine(c.id, pa.position, pb.position)
-            case .circle(let center, let radius):
-                guard let pc = solved.point(center) else { continue }
-                try ks.addCircle(c.id, center: pc.position, radius: radius)
-            case .arc(let center, let s, let e):
-                guard let pc = solved.point(center), let ps = solved.point(s), let pe = solved.point(e) else { continue }
-                let a0 = atan2(ps.y - pc.y, ps.x - pc.x), a1 = atan2(pe.y - pc.y, pe.x - pc.x)
-                try ks.addArc(c.id, center: pc.position, radius: vlength(ps.position - pc.position), from: a0, to: a1)
-            }
-        }
+        for c in solved.curves where !c.construction { try add(c, of: solved, to: ks) }
         // Text: every letter contour's pieces share a tag, so a letter is one profile.
         for t in solved.texts {
-            for (n, contour) in t.contours(in: solved, parameters: r.parameters).enumerated() {
+            for (n, contour) in t.contours(in: solved, parameters: parameters).enumerated() {
                 let tag = "\(t.id)#\(n)"
                 for seg in contour {
                     if seg.count == 2 { try ks.addLine(tag, seg[0], seg[1]) } else { try ks.addBezier(tag, seg) }
@@ -172,6 +183,10 @@ public enum Regenerator {
             guard let pc = solved.point(center), let ps = solved.point(s), let pe = solved.point(e) else { return }
             let a0 = atan2(ps.y - pc.y, ps.x - pc.x), a1 = atan2(pe.y - pc.y, pe.x - pc.x)
             try ks.addArc(c.id, center: pc.position, radius: vlength(ps.position - pc.position), from: a0, to: a1)
+        case .bezier:
+            let poles = solved.pointIDs(of: c).compactMap { solved.point($0)?.position }
+            guard poles.count == 4 else { return }
+            try ks.addBezier(c.id, poles)
         }
     }
 
@@ -179,7 +194,7 @@ public enum Regenerator {
     static func combine(_ tool: KBody, _ operation: BodyOperation, target: FeatureID?, _ feature: Feature,
                         _ r: inout RegenResult) throws {
         if operation == .newBody {
-            r.bodies.append(BodyResult(id: feature.id, name: "Body\(r.bodies.count + 1)", body: tool))
+            r.bodies.append(BodyResult(id: feature.id, name: r.bodyNames[feature.id] ?? "Body\(r.bodies.count + 1)", body: tool))
             return
         }
         if operation == .cut, target == nil {
@@ -188,14 +203,21 @@ public enum Regenerator {
             guard let tb = tool.bounds else { return }
             for i in r.bodies.indices {
                 guard let b = r.bodies[i].body.bounds, overlaps(b, tb) else { continue }
-                r.bodies[i].body = try r.bodies[i].body.boolean(tool, SK_CUT)
+                let cut = try r.bodies[i].body.boolean(tool, SK_CUT)
+                if cut.volume <= 1e-9 { throw KernelError(message: "the cut removes all of \(r.bodies[i].name)") }
+                r.bodies[i].body = cut
             }
             return
         }
         guard let index = target.flatMap({ t in r.bodies.firstIndex { $0.id == t } }) ?? (r.bodies.isEmpty ? nil : r.bodies.count - 1)
         else { throw KernelError(message: "no body to \(operation.rawValue.lowercased())") }
         let op: SKBooleanOp = operation == .join ? SK_FUSE : operation == .cut ? SK_CUT : SK_COMMON
-        r.bodies[index].body = try r.bodies[index].body.boolean(tool, op)
+        let combined = try r.bodies[index].body.boolean(tool, op)
+        if operation != .join, combined.volume <= 1e-9 {
+            throw KernelError(message: operation == .cut ? "the cut removes all of \(r.bodies[index].name)"
+                                                         : "the new shape doesn't overlap \(r.bodies[index].name)")
+        }
+        r.bodies[index].body = combined
     }
 
     static func extrude(_ f: ExtrudeFeature, _ feature: Feature, _ r: inout RegenResult) throws {
@@ -345,8 +367,8 @@ public enum Regenerator {
     }
 
     /// The middle of the bounding box around several bodies.
-    public static func center(of bodies: [KBody]) -> SIMD3<Double>? {
-        let boxes = bodies.compactMap(\.bounds)
+    public static func center(of bodies: [KBody], sketches: [SketchResult] = []) -> SIMD3<Double>? {
+        let boxes = bodies.compactMap(\.bounds) + sketches.compactMap(\.bounds)
         guard let first = boxes.first else { return nil }
         let lo = boxes.dropFirst().reduce(first.min) { simd_min($0, $1.min) }
         let hi = boxes.dropFirst().reduce(first.max) { simd_max($0, $1.max) }
@@ -367,7 +389,31 @@ public enum Regenerator {
     static func move(_ f: MoveFeature, _ feature: Feature, _ r: inout RegenResult) throws {
         let p = r.parameters
         let d = SIMD3(try p.value(of: f.dx, kind: .length), try p.value(of: f.dy, kind: .length), try p.value(of: f.dz, kind: .length))
+        for id in f.sketches {
+            guard let sk = r.sketches[id] else { throw KernelError(message: "a sketch it moves failed or is missing") }
+            r.sketchInputs[feature.id, default: [:]][id] = sk
+            var frame = sk.frame
+            frame.origin += d
+            r.sketches[id] = try sketchResult(sk.solved, solve: sk.solve, frame: frame, parameters: p)
+        }
+        if f.bodies.isEmpty && !f.sketches.isEmpty { return }
         for i in try transformInputs(f.bodies, feature, &r) { r.bodies[i].body = try r.bodies[i].body.translated(d) }
+    }
+
+    static func combine(_ f: CombineFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        guard let t = r.bodies.firstIndex(where: { $0.id == f.target }) else { throw KernelError(message: "the target body is missing") }
+        let tools = f.tools.filter { $0 != f.target }
+        guard !tools.isEmpty else { throw KernelError(message: "pick at least one body to combine with the target") }
+        var body = r.bodies[t].body
+        for id in tools {
+            guard let tool = r.body(id) else { throw KernelError(message: "a tool body is missing") }
+            body = try body.boolean(tool, f.operation == .cut ? SK_CUT : f.operation == .intersect ? SK_COMMON : SK_FUSE)
+        }
+        if f.operation != .join, body.volume <= 1e-9 {
+            throw KernelError(message: f.operation == .cut ? "the cut removes the whole body" : "the bodies don't overlap")
+        }
+        r.bodies[t].body = body
+        if !f.keepTools { r.bodies.removeAll { tools.contains($0.id) } }
     }
 
     static func rotate(_ f: RotateFeature, _ feature: Feature, _ r: inout RegenResult) throws {

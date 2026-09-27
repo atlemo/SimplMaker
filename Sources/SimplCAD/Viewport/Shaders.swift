@@ -83,12 +83,14 @@ enum Shaders {
         return o;
     }
 
-    // Sketch profiles: translucent fills on the sketch plane, pulled slightly toward the camera.
+    // Sketch profiles: translucent fills on the sketch plane, pulled slightly toward the camera
+    // (less than the sketch lines, so a line with fill on both sides, like a hole's, still shows).
     vertex FaceOut regionVertex(uint vid [[vertex_id]],
                                 device const FaceVertex* verts [[buffer(0)]],
-                                constant Uniforms& u [[buffer(1)]]) {
+                                constant Uniforms& u [[buffer(1)]],
+                                constant DrawParams& p [[buffer(3)]]) {
         FaceOut o = transformFace(verts[vid], u);
-        o.position.z -= 0.0002 * o.position.w;
+        o.position.z -= p.depthBias;
         return o;
     }
 

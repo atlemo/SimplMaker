@@ -39,7 +39,7 @@
 #include <BRepTools_WireExplorer.hxx>
 #include <Geom2d_Line.hxx>
 #include <Geom_BezierCurve.hxx>
-#include <TColgp_Array1OfPnt.hxx>
+#include <NCollection_Array1.hxx>
 #include <Geom_CylindricalSurface.hxx>
 #include <Geom_Plane.hxx>
 #include <TopoDS_Wire.hxx>
@@ -644,7 +644,7 @@ bool sk_sketch_add_bezier(SKHandle sketch, const char *tag, const double *uv, in
     setError("a Bézier curve needs 2 to 25 control points");
     return false;
   }
-  TColgp_Array1OfPnt poles(1, count);
+  NCollection_Array1<gp_Pnt> poles(1, count);
   for (int k = 0; k < count; ++k) poles(k + 1) = frameToWorld(s->frame, uv[2 * k], uv[2 * k + 1]);
   if (poles(1).Distance(poles(count)) <= Precision::Confusion()) {
     setError("degenerate Bézier curve");

@@ -181,6 +181,7 @@ enum IconGlyphs {
     "zoom-out": "<circle cx=\"11\" cy=\"11\" r=\"8\" /><line x1=\"21\" x2=\"16.65\" y1=\"21\" y2=\"16.65\" /><line x1=\"8\" x2=\"14\" y1=\"11\" y2=\"11\" />",
     // SimplCAD's own, drawn in the same style: two sketch lines meeting in a rounded corner, with a
     // dot where the sharp corner was (the sketch tool that rounds a corner).
+"bezier": "<path d=\"M3 19C6 6 18 6 21 19\" /><path d=\"M3 19 6.5 7\" /><path d=\"M21 19 17.5 7\" /><circle cx=\"6.5\" cy=\"6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"17.5\" cy=\"6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",
     "corner-round": "<path d=\"M4 20v-8a8 8 0 0 1 8-8h8\" /><circle cx=\"4\" cy=\"4\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\" />",
     ]
 }

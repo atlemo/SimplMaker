@@ -221,15 +221,53 @@ public enum Axis3: String, Codable, Hashable, Sendable, CaseIterable {
     case x = "X", y = "Y", z = "Z"
 }
 
-/// Moves bodies by (dx, dy, dz). `arrow` is the direction the drag handle points along.
+/// Moves bodies and sketches by (dx, dy, dz). `arrow` is the direction the drag handle points along.
+/// A moved sketch is moved for the features after this one.
 public struct MoveFeature: Codable, Hashable, Sendable {
     public var bodies: [FeatureID]
+    public var sketches: [FeatureID]
     public var dx: String
     public var dy: String
     public var dz: String
     public var arrow: Axis3
-    public init(bodies: [FeatureID], dx: String = "0 mm", dy: String = "0 mm", dz: String = "0 mm", arrow: Axis3 = .x) {
-        self.bodies = bodies; self.dx = dx; self.dy = dy; self.dz = dz; self.arrow = arrow
+    public init(bodies: [FeatureID], sketches: [FeatureID] = [], dx: String = "0 mm", dy: String = "0 mm",
+                dz: String = "0 mm", arrow: Axis3 = .x) {
+        self.bodies = bodies; self.sketches = sketches; self.dx = dx; self.dy = dy; self.dz = dz; self.arrow = arrow
+    }
+
+    private enum CodingKeys: String, CodingKey { case bodies, sketches, dx, dy, dz, arrow }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bodies = try c.decode([FeatureID].self, forKey: .bodies)
+        sketches = try c.decodeIfPresent([FeatureID].self, forKey: .sketches) ?? []  // older files move bodies only
+        dx = try c.decode(String.self, forKey: .dx)
+        dy = try c.decode(String.self, forKey: .dy)
+        dz = try c.decode(String.self, forKey: .dz)
+        arrow = try c.decode(Axis3.self, forKey: .arrow)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(bodies, forKey: .bodies)
+        if !sketches.isEmpty { try c.encode(sketches, forKey: .sketches) }
+        try c.encode(dx, forKey: .dx)
+        try c.encode(dy, forKey: .dy)
+        try c.encode(dz, forKey: .dz)
+        try c.encode(arrow, forKey: .arrow)
+    }
+}
+
+/// Combines bodies: joins the tool bodies to the target, cuts them out of it, or keeps only where
+/// they overlap. The tool bodies are used up unless `keepTools` is set.
+public struct CombineFeature: Codable, Hashable, Sendable {
+    public var target: FeatureID
+    public var tools: [FeatureID]
+    /// Join, Cut or Intersect (New Body isn't offered).
+    public var operation: BodyOperation
+    public var keepTools: Bool
+    public init(target: FeatureID, tools: [FeatureID], operation: BodyOperation = .cut, keepTools: Bool = false) {
+        self.target = target; self.tools = tools; self.operation = operation; self.keepTools = keepTools
     }
 }
 
@@ -265,6 +303,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case pipe(PipeFeature)
         case move(MoveFeature)
         case rotate(RotateFeature)
+        case combine(CombineFeature)
     }
     public var id: FeatureID
     public var name: String
@@ -290,13 +329,14 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .pipe: return "Pipe"
         case .move: return "Move"
         case .rotate: return "Rotate"
+        case .combine: return "Combine"
         }
     }
 
     /// Sketches this feature is built from (they are hidden once used, as in other CAD tools).
     public var sketchesUsed: [FeatureID] {
         switch kind {
-        case .sketch, .fillet, .chamfer, .hole, .primitive, .move, .rotate: return []
+        case .sketch, .fillet, .chamfer, .hole, .primitive, .move, .rotate, .combine: return []
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
         case .sweep(let s): return [s.sketch, s.path.sketch]
@@ -315,7 +355,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .loft(let l): return l.operation == .newBody
         case .primitive(let p): return p.operation == .newBody
         case .pipe(let p): return p.operation == .newBody
-        case .sketch, .fillet, .chamfer, .rib, .hole, .move, .rotate: return false
+        case .sketch, .fillet, .chamfer, .rib, .hole, .move, .rotate, .combine: return false
         }
     }
 }
@@ -329,12 +369,14 @@ public struct CADDocument: Codable, Hashable, Sendable {
     public var rollback: Int?
     /// Bodies and sketches hidden in the viewport, by the id of the feature that made them.
     public var hidden: Set<FeatureID> = []
+    /// Names given to bodies, by the id of the feature that made them (others are "Body1", "Body2"…).
+    public var bodyNames: [FeatureID: String] = [:]
 
     public init(parameters: [Parameter] = [], features: [Feature] = []) {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, bodyNames }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -343,6 +385,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         features = try c.decodeIfPresent([Feature].self, forKey: .features) ?? []
         rollback = try c.decodeIfPresent(Int.self, forKey: .rollback)
         hidden = try c.decodeIfPresent(Set<FeatureID>.self, forKey: .hidden) ?? []  // older files have none
+        bodyNames = try c.decodeIfPresent([FeatureID: String].self, forKey: .bodyNames) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -352,12 +395,15 @@ public struct CADDocument: Codable, Hashable, Sendable {
         try c.encode(features, forKey: .features)
         try c.encodeIfPresent(rollback, forKey: .rollback)
         if !hidden.isEmpty { try c.encode(hidden.sorted(), forKey: .hidden) }  // sorted: stable files
+        if !bodyNames.isEmpty { try c.encode(bodyNames, forKey: .bodyNames) }  // sorted keys when encoded()
     }
 
-    /// The same design with visibility ignored: a visibility change needs no rebuild.
-    public var ignoringVisibility: CADDocument {
+    /// The same design with visibility and names ignored: changing those needs no rebuild.
+    public var ignoringPresentation: CADDocument {
         var d = self
         d.hidden = []
+        d.bodyNames = [:]
+        for i in d.features.indices { d.features[i].name = "" }
         return d
     }
 

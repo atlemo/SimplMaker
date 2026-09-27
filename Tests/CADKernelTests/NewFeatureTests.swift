@@ -189,7 +189,7 @@ import Testing
         doc.hidden = ["base", "plate"]
         let back = try CADDocument.decode(try doc.encoded())
         #expect(back.hidden == ["base", "plate"])
-        #expect(back.ignoringVisibility == doc.ignoringVisibility && back.ignoringVisibility != back)
+        #expect(back.ignoringPresentation == doc.ignoringPresentation && back.ignoringPresentation != back)
 
         var json = try JSONSerialization.jsonObject(with: try CADDocument.demo().encoded()) as! [String: Any]
         json["hidden"] = nil

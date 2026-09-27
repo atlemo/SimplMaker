@@ -52,3 +52,72 @@ import Testing
         try await settle(model)
     }
 }
+
+/// A typed size that can't be used says why, next to the field.
+@Suite @MainActor struct HandleProblemTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    @Test func refusedSizesExplainThemselves() async throws {
+        var d = CADDocument()
+        d.parameters = [Parameter("p1", "13 mm")]
+        d.features = [Feature(id: "c", name: "Cylinder1", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, height: "5", diameter: "40")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        model.click(PickID(body: 0, face: 0), additive: false)
+        model.run(.rotate)
+        try await settle(model)
+        #expect(!model.previewHandle("p1"))
+        #expect(model.handleProblem == "That's a length (13 mm), but this needs an angle")
+        #expect(!model.commitHandle("p2"))
+        #expect(model.handleProblem?.contains("p2") == true, "\(model.handleProblem ?? "")")
+        #expect(model.previewHandle("30"))
+        #expect(model.handleProblem == nil)
+
+        model.finishFeatureEdit()
+        model.selection = []
+        model.click(PickID(body: 0, edge: 0), additive: false)
+        model.run(.fillet)
+        model.confirmTool()
+        try await settle(model)
+        #expect(model.previewHandle("p1"), "13 mm is a fine length…")
+        try await settle(model)
+        #expect(model.handleProblem?.hasPrefix("Can't build it at that size: fillet failed") == true, "\(model.handleProblem ?? "")")
+    }
+}
+
+/// Clicking OK (or away) closes the handle before its field hands over what was typed; the size
+/// still goes to the feature the field was for, and a parameter there keeps driving it.
+@Suite @MainActor struct HandleCommitAfterCloseTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    @Test func okKeepsATypedParameter() async throws {
+        var d = CADDocument()
+        d.parameters = [Parameter("p2", "1 mm")]
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20", length: "20", height: "10")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        model.click(PickID(body: 0, edge: 0), additive: false)
+        model.run(.fillet)
+        model.confirmTool()
+        try await settle(model)
+        let fillet = try #require(model.document.features.last?.id)
+        #expect(model.previewHandle("p2"))  // typing
+        model.finishFeatureEdit()           // OK: the handle goes…
+        #expect(model.dragHandle == nil)
+        #expect(model.commitHandle("p2", for: fillet))  // …then the field ends editing
+        guard case .fillet(let f)? = model.document.features.last?.kind else { Issue.record("expected a fillet"); return }
+        #expect(f.size == "p2")
+        try await settle(model)
+        let v1 = try #require(model.result?.body("b")).volume
+        model.setParameter("p2", expression: "3 mm")
+        try await settle(model)
+        let v2 = try #require(model.result?.body("b")).volume
+        #expect(v2 < v1 - 1e-6, "a bigger fillet takes more material off: \(v1) → \(v2)")
+    }
+}

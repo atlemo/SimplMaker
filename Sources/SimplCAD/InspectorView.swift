@@ -11,6 +11,14 @@ struct InspectorView: View {
         if let id = model.selectedFeature, let feature = model.document.features.first(where: { $0.id == id }) {
             Form {
                 Section {
+                    LabeledContent("Name") {
+                        ExpressionField(text: feature.name, monospaced: false) { model.renameFeature(id, to: $0) }
+                    }
+                    if feature.createsBody, let body = model.bodies.first(where: { $0.id == id }) {
+                        LabeledContent("Body name") {
+                            ExpressionField(text: body.name, monospaced: false) { model.renameBody(id, to: $0) }
+                        }
+                    }
                     LabeledContent("Type", value: feature.typeName)
                     if let error = model.result?.errors[feature.id] {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -35,6 +43,7 @@ struct InspectorView: View {
                 case .pipe(let f): PipeInspector(model: model, id: id, pipe: f)
                 case .move(let f): MoveInspector(model: model, id: id, move: f)
                 case .rotate(let f): RotateInspector(model: model, id: id, rotate: f)
+                case .combine(let f): CombineInspector(model: model, id: id, combine: f)
                 }
                 Section {
                     Button("Delete Feature", role: .destructive) { model.deleteFeature(id) }
@@ -593,9 +602,13 @@ struct PipeInspector: View {
 struct BodiesRow: View {
     let model: DocumentModel
     let ids: [FeatureID]
+    var title: String?
     var body: some View {
-        let names = ids.map { id in model.bodies.first { $0.id == id }?.name ?? "missing" }
-        LabeledContent(ids.count == 1 ? "Body" : "Bodies", value: names.joined(separator: ", "))
+        // A body used up by a later Combine is named after the feature that made it.
+        let names = ids.map { id in
+            model.bodies.first { $0.id == id }?.name ?? model.document.features.first { $0.id == id }?.name ?? "missing"
+        }
+        LabeledContent(title ?? (ids.count == 1 ? "Body" : "Bodies"), value: names.joined(separator: ", "))
     }
 }
 
@@ -616,7 +629,42 @@ struct MoveInspector: View {
             Picker("Arrow along", selection: Binding(get: { move.arrow }, set: { a in edit.update("Change Axis") { $0.arrow = a } })) {
                 ForEach(Axis3.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            BodiesRow(model: model, ids: move.bodies)
+            if !move.bodies.isEmpty { BodiesRow(model: model, ids: move.bodies) }
+            if !move.sketches.isEmpty {
+                let names = move.sketches.map { id in model.document.features.first { $0.id == id }?.name ?? "missing" }
+                LabeledContent(names.count == 1 ? "Sketch" : "Sketches", value: names.joined(separator: ", "))
+            }
+        }
+    }
+}
+
+struct CombineInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let combine: CombineFeature
+
+    var edit: FeatureEdit<CombineFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .combine(let c) = $0 { c } else { nil } }, wrap: { .combine($0) })
+    }
+
+    var body: some View {
+        Section("Combine") {
+            Picker("Operation", selection: Binding(get: { combine.operation },
+                                                   set: { op in edit.update("Change Operation") { $0.operation = op } })) {
+                ForEach([BodyOperation.join, .cut, .intersect], id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            BodiesRow(model: model, ids: [combine.target], title: "Target")
+            BodiesRow(model: model, ids: combine.tools, title: combine.tools.count == 1 ? "Tool" : "Tools")
+            Toggle("Keep tool bodies", isOn: Binding(get: { combine.keepTools },
+                                                     set: { v in edit.update("Keep Tools") { $0.keepTools = v } }))
+            Button("Swap Target and Tool") {
+                edit.update("Swap Bodies") { c in
+                    guard let tool = c.tools.first else { return }
+                    c.tools[0] = c.target
+                    c.target = tool
+                }
+            }
+            .disabled(combine.tools.count != 1)
         }
     }
 }

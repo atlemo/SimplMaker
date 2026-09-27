@@ -35,6 +35,8 @@ public struct SketchCurve: Codable, Hashable, Sendable, Identifiable {
         case circle(center: EntityID, radius: Double)
         /// Counter-clockwise from start to end; the solver keeps |center-start| == |center-end|.
         case arc(center: EntityID, start: EntityID, end: EntityID)
+        /// Cubic Bézier from `start` to `end`, pulled toward the two control points (its handles).
+        case bezier(start: EntityID, control1: EntityID, control2: EntityID, end: EntityID)
     }
     public var id: EntityID
     public var geometry: Geometry
@@ -162,6 +164,14 @@ public struct Sketch: Codable, Hashable, Sendable {
         curves.append(SketchCurve(id: id, .arc(center: center, start: start, end: end))); return id
     }
 
+    @discardableResult
+    public mutating func addBezier(start: EntityID, control1: EntityID, control2: EntityID, end: EntityID,
+                                   id: EntityID = IDs.make(), construction: Bool = false) -> EntityID {
+        curves.append(SketchCurve(id: id, .bezier(start: start, control1: control1, control2: control2, end: end),
+                                  construction: construction))
+        return id
+    }
+
     public mutating func constrain(_ kind: SketchConstraint.Kind) { constraints.append(SketchConstraint(kind)) }
 
     public mutating func dimension(_ kind: SketchDimension.Kind, _ expression: String, id: EntityID = IDs.make()) {
@@ -184,7 +194,7 @@ public struct Sketch: Codable, Hashable, Sendable {
     /// Circle/arc radius as currently stored in the geometry.
     public func radius(of curve: SketchCurve) -> Double? {
         switch curve.geometry {
-        case .line: return nil
+        case .line, .bezier: return nil
         case .circle(_, let r): return r
         case .arc(let c, let s, _):
             guard let pc = point(c), let ps = point(s) else { return nil }
