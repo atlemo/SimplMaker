@@ -11,6 +11,13 @@ struct DimensionLabel: Identifiable, Equatable {
     var world: SIMD3<Float>
     var text: String
     var editing: Bool
+    /// A measured size that isn't a dimension yet (drawn lighter; a click makes it a dimension).
+    var reference = false
+
+    /// Id of the light label showing a curve's measured size.
+    static func referenceID(_ curve: EntityID) -> EntityID { "ref:" + curve }
+    static func curve(ofReference id: EntityID) -> EntityID? { id.hasPrefix("ref:") ? String(id.dropFirst(4)) : nil }
+    static let pendingID = "pending-length"
 }
 
 /// A constraint symbol drawn next to the geometry it constrains.
@@ -50,9 +57,9 @@ enum SketchOverlayBuilder {
             if let p = s.position(id) { return p }
             guard let g = s.geometry(of: id) else { return nil }
             switch g {
-            case .line: return g.point(0.5)
+            case .line: return g.point(0.25)  // a quarter along: the middle is where the line's size shows
             case .circle(let c, let r): return c + SIMD2(0, r)
-            case .arc: return g.point(0.5)
+            case .arc, .bezier: return g.point(0.5)
             }
         }
         for c in s.constraints {
@@ -100,6 +107,9 @@ enum SketchOverlayBuilder {
             var a1 = atan2(pe.y - pc.y, pe.x - pc.x)
             while a1 <= a0 { a1 += 2 * .pi }
             return arc(pc, simdLength(ps - pc), a0, a1)
+        case .bezier:
+            let poles = s.pointIDs(of: c).compactMap { s.position($0) }
+            return poles.count == 4 ? Bezier.flatten(poles) : []
         }
     }
 
@@ -117,27 +127,60 @@ enum SketchOverlayBuilder {
         for (i, c) in s.curves.enumerated() {
             let segs = segments(polyline(c, in: s), frame: f, id: PickID(sketchCurve: i).raw)
             if c.construction { o.construction += segs } else { o.curves += segs }
+            // A Bézier's handles: thin lines from each end to its control point.
+            if case .bezier(let a, let c1, let c2, let b) = c.geometry {
+                for (end, handle) in [(a, c1), (b, c2)] {
+                    guard let pe = s.position(end), let ph = s.position(handle) else { continue }
+                    o.preview += segments([pe, ph], frame: f, id: 0)
+                }
+            }
         }
         for (i, p) in s.points.enumerated() {
             let w = world(f, p.position)
             o.points.append(SegmentInstance(ax: w.x, ay: w.y, az: w.z, bx: w.x, by: w.y, bz: w.z,
                                             id: PickID(sketchPoint: i).raw))
         }
+        // Text: the letters are drawn like curves, and picking one picks (and drags) the text's anchor.
+        for text in session.textOutlines() {
+            for line in text.polylines { o.curves += segments(line, frame: f, id: PickID(sketchPoint: text.anchor).raw) }
+        }
+        // While drawing, a small + marks the middle of each closed shape, where the cursor snaps.
+        if session.tool.placesPoints {
+            let r = session.snapTolerance
+            for c in s.shapeCenters() {
+                let p = c.position
+                o.construction += segments([p - SIMD2(r, 0), p + SIMD2(r, 0)], frame: f, id: 0)
+                o.construction += segments([p - SIMD2(0, r), p + SIMD2(0, r)], frame: f, id: 0)
+            }
+        }
         for line in session.previewPolylines() { o.preview += segments(line, frame: f, id: 0) }
+        if let snap = session.lastSnap {
+            let w = world(f, snap.position)
+            o.snap = [SegmentInstance(ax: w.x, ay: w.y, az: w.z, bx: w.x, by: w.y, bz: w.z, id: 0)]
+        }
         o.fullyConstrained = session.solve?.status == .solved && session.solve?.degreesOfFreedom == 0
     }
 
-    /// A finished sketch shown for reference (not pickable).
-    static func inactive(_ s: Sketch, frame: Frame, into o: inout SketchOverlay) {
-        for c in s.curves where !c.construction { o.inactive += segments(polyline(c, in: s), frame: frame, id: 0) }
+    /// A finished sketch's curves, pickable (as paths, axes and rib lines) under its slot.
+    static func finished(_ r: SketchResult, slot: Int, parameters: ParameterValues, into o: inout SketchOverlay) {
+        let s = r.solved
+        for t in s.texts {
+            for contour in t.contours(in: s, parameters: parameters) {
+                o.inactive += segments(contour.flatMap { TextOutline.flatten($0) }, frame: r.frame, id: 0)
+            }
+        }
+        for (i, c) in s.curves.enumerated() {
+            let segs = segments(polyline(c, in: s), frame: r.frame, id: PickID(sketchCurve: i, slot: slot).raw)
+            if c.construction { o.construction += segs } else { o.inactive += segs }
+        }
     }
 
-    /// Profile regions of a sketch, pickable for extrude.
-    static func regions(_ r: SketchResult, into o: inout SketchOverlay) {
+    /// Profile regions of a sketch, pickable under its slot (slot 0: the sketch being edited, not pickable as profiles).
+    static func regions(_ r: SketchResult, slot: Int, into o: inout SketchOverlay) {
         let n = r.frame.normal
         for (i, mesh) in r.regionMeshes.enumerated() {
             let base = UInt32(o.regionVertices.count)
-            let id = PickID(region: i).raw
+            let id = PickID(region: i, slot: slot).raw
             for v in stride(from: 0, to: mesh.positions.count, by: 3) {
                 o.regionVertices.append(FaceVertex(px: mesh.positions[v], py: mesh.positions[v + 1], pz: mesh.positions[v + 2],
                                                    nx: Float(n.x), ny: Float(n.y), nz: Float(n.z), id: id))
@@ -149,13 +192,42 @@ enum SketchOverlayBuilder {
     /// Value labels for the dimensions of the sketch being edited.
     static func labels(_ session: SketchSession) -> [DimensionLabel] {
         let s = session.sketch
-        return s.dimensions.compactMap { d in
+        var out: [DimensionLabel] = s.dimensions.compactMap { d in
             guard let anchor = anchor(d.kind, s) else { return nil }
             let value = session.values[d.id].map { d.unitKind.format($0) } ?? "?"
             let isParametric = ((try? Expressions.parse(d.expression))?.references.isEmpty == false)
             return DimensionLabel(id: d.id, world: world(session.frame, anchor),
-                                  text: isParametric ? "\(d.expression) = \(value)" : value,
+                                  text: prefix(d.kind) + (isParametric ? "\(d.expression) = \(value)" : value),
                                   editing: session.editingDimension == d.id)
+        }
+        // Every other line, circle and arc shows its measured size, lighter.
+        let pending = session.pendingLineLength != nil ? session.dimensionPicks.first : nil
+        for m in session.referenceMeasurements where m.curve != pending {
+            guard let anchor = anchor(m.kind, s) else { continue }
+            out.append(DimensionLabel(id: DimensionLabel.referenceID(m.curve), world: world(session.frame, anchor),
+                                      text: prefix(m.kind) + measured(m.value), editing: false, reference: true))
+        }
+        if let length = session.pendingLineLength, let line = pending, let anchor = anchor(.length(line), s) {
+            out.append(DimensionLabel(id: DimensionLabel.pendingID, world: world(session.frame, anchor),
+                                      text: "\(measured(length)) · click again to place", editing: true))
+        }
+        return out
+    }
+
+    /// A measured length for display: at most two decimals ("35.36 mm"), since it's only a guide.
+    static func measured(_ mm: Double) -> String {
+        var s = String(format: "%.2f", mm)
+        while s.hasSuffix("0") { s.removeLast() }
+        if s.hasSuffix(".") { s.removeLast() }
+        return s + " mm"
+    }
+
+    /// "⌀ " for diameters, "R " for radii.
+    static func prefix(_ k: SketchDimension.Kind) -> String {
+        switch k {
+        case .diameter: return "⌀ "
+        case .radius: return "R "
+        default: return ""
         }
     }
 

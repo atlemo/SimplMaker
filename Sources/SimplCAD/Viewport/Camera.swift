@@ -38,6 +38,11 @@ struct Camera {
     var pitch: Float = 0.55          // above the XY plane
     var fovY: Float = 35 * .pi / 180
     var orthographic = false
+    /// Where the middle of the uncovered part of the view is, in normalized device coordinates
+    /// (floating panels cover the sides). The image is shifted so the camera looks at that spot.
+    var centerShift = SIMD2<Float>(0, 0)
+    /// How much of the view's width and height is uncovered, 0...1 (used to fit the model into it).
+    var visibleFraction = SIMD2<Float>(1, 1)
 
     /// Half the visible height at the target, in mm (used for orthographic size and panning).
     var halfHeight: Float { distance * tan(fovY / 2) }
@@ -61,8 +66,27 @@ struct Camera {
             SIMD4(-simd_dot(s, e), -simd_dot(u, e), simd_dot(f, e), 1)))
     }
 
-    /// Right-handed perspective with Metal's [0, 1] depth range.
+    /// Clip-space depth offset that moves a point toward the camera by 1× its view depth (perspective)
+    /// or by 1× the camera distance (orthographic). Edges and sketch lines are drawn a small multiple of
+    /// this in front, so they win over their own faces without showing through the body: a constant
+    /// offset in depth-buffer units grows with distance in perspective and let hidden edges poke out
+    /// near corners.
+    var depthBiasScale: Float {
+        if orthographic {
+            let near: Float = 1, far = orthoBack * 2 + 1000
+            return distance / (far - near)
+        }
+        return max(distance * 0.005, 0.01)  // the near plane: Δz = bias · z / near in perspective
+    }
+
+    /// Right-handed perspective with Metal's [0, 1] depth range, shifted by `centerShift`.
     func projectionMatrix(aspect: Float) -> simd_float4x4 {
+        let shift = simd_float4x4(columns: (SIMD4(1, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, 1, 0),
+                                            SIMD4(centerShift.x, centerShift.y, 0, 1)))
+        return shift * unshiftedProjection(aspect: aspect)
+    }
+
+    private func unshiftedProjection(aspect: Float) -> simd_float4x4 {
         if orthographic {
             let h = halfHeight, w = h * aspect
             let near: Float = 1, far = orthoBack * 2 + 1000
@@ -92,7 +116,7 @@ struct Camera {
     /// Ray through a point in view coordinates (points, origin top-left).
     func ray(at p: CGPoint, viewSize: CGSize) -> (origin: SIMD3<Float>, direction: SIMD3<Float>) {
         let w = Float(max(viewSize.width, 1)), h = Float(max(viewSize.height, 1))
-        let nx = 2 * Float(p.x) / w - 1, ny = 1 - 2 * Float(p.y) / h
+        let nx = 2 * Float(p.x) / w - 1 - centerShift.x, ny = 1 - 2 * Float(p.y) / h - centerShift.y
         if orthographic {
             let h2 = halfHeight
             return (viewEye + nx * h2 * (w / h) * right + ny * h2 * up, forward)
@@ -128,9 +152,12 @@ struct Camera {
         }
     }
 
-    mutating func fit(min lo: SIMD3<Float>, max hi: SIMD3<Float>) {
+    /// Frames a bounding box in the uncovered part of a view with this width/height ratio.
+    mutating func fit(min lo: SIMD3<Float>, max hi: SIMD3<Float>, aspect: Float = 1) {
         target = (lo + hi) / 2
         let radius = max(simd_length(hi - lo) / 2, 1)
-        distance = radius / sin(fovY / 2) * 1.15
+        let t = tan(fovY / 2)
+        let half = atan(min(t * visibleFraction.y, t * aspect * visibleFraction.x))
+        distance = radius / sin(max(half, 0.05)) * 1.15
     }
 }

@@ -20,6 +20,15 @@ import Testing
         #expect(try eval("1.5e1") == 15)
     }
 
+    @Test func decimalCommas() throws {
+        #expect(try eval("12,5") == 12.5)
+        #expect(try eval("12,5 mm + 0,5") == 13)
+        #expect(abs(try eval("1,5 in") - 38.1) < 1e-9)
+        #expect(try eval("max(1, 5)") == 5, "with a space, the comma separates arguments")
+        #expect(try eval("max(1,5 , 2)") == 2)
+        #expect(throws: ExpressionError.self) { try eval("1,2,3") }
+    }
+
     @Test func units() throws {
         #expect(try eval("1 in") == 25.4)
         #expect(try eval("2cm + 3 mm") == 23)

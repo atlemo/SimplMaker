@@ -9,24 +9,19 @@
 /* Begin PBXBuildFile section */
 		4128102F9B727A5EE2B93976 /* CADKernel in Frameworks */ = {isa = PBXBuildFile; productRef = 287A5E78A75C340F28E8DE77 /* CADKernel */; };
 		46339D3E64EFB926D17CB68A /* CADCore in Frameworks */ = {isa = PBXBuildFile; productRef = EE92712BD4279C1BADFBBF6B /* CADCore */; };
-		96BEDF105C98299B88C3483E /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 72F05ED180AF401B033E9524 /* AppIcon.icns */; };
+		96BEDF105C98299B88C3483E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 72F05ED180AF401B033E9524 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0FAEFC94E3FD6E9F68CAEBBD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		53366E12770BB0814BE6140E /* SimplCAD */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SimplCAD; path = .; sourceTree = SOURCE_ROOT; };
-		72F05ED180AF401B033E9524 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
-		7440A648B20F9F88CBCD0DDA /* SimplCADApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimplCADApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		72F05ED180AF401B033E9524 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		7440A648B20F9F88CBCD0DDA /* SimplCAD.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimplCAD.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		6635FE65A7E3BB091D099ADE /* SimplCAD */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			name = SimplCAD;
 			path = SimplCAD;
 			sourceTree = "<group>";
 		};
@@ -48,7 +43,7 @@
 		0F90098F011981ABBC460C3F /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				7440A648B20F9F88CBCD0DDA /* SimplCADApp.app */,
+				7440A648B20F9F88CBCD0DDA /* SimplCAD.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -56,7 +51,7 @@
 		524297B4A9651C4C2A3A2628 /* Packaging */ = {
 			isa = PBXGroup;
 			children = (
-				72F05ED180AF401B033E9524 /* AppIcon.icns */,
+				72F05ED180AF401B033E9524 /* AppIcon.icon */,
 				0FAEFC94E3FD6E9F68CAEBBD /* Info.plist */,
 			);
 			path = Packaging;
@@ -112,7 +107,7 @@
 				287A5E78A75C340F28E8DE77 /* CADKernel */,
 			);
 			productName = SimplCADApp;
-			productReference = 7440A648B20F9F88CBCD0DDA /* SimplCADApp.app */;
+			productReference = 7440A648B20F9F88CBCD0DDA /* SimplCAD.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -157,7 +152,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				96BEDF105C98299B88C3483E /* AppIcon.icns in Resources */,
+				96BEDF105C98299B88C3483E /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -297,6 +292,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -304,6 +301,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Packaging/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SimplCAD;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.graphics-design";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -318,6 +317,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -325,6 +326,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Packaging/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SimplCAD;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.graphics-design";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

@@ -6,6 +6,8 @@ import SwiftUI
 
 @main
 struct SimplCADApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         // Lets `swift run SimplCAD` show a normal, focusable app without an .app bundle.
         // (Use scripts/bundle-app.sh or Xcode for the full document experience.)
@@ -15,9 +17,20 @@ struct SimplCADApp: App {
     var body: some Scene {
         DocumentGroup(newDocument: { CADFile() }) { configuration in
             ContentView(file: configuration.document, fileURL: configuration.fileURL)
-                .frame(minWidth: 900, minHeight: 560)
+                .frame(minWidth: 1000, minHeight: 560)  // room for the toolbar row, even in sketch mode
         }
         .commands { SimplCADCommands() }
+
+        // The welcome window replaces the empty document macOS would otherwise open at launch
+        // (see AppDelegate). It is never restored; launch decides whether it appears.
+        Window("Welcome to SimplCAD", id: AppWindows.welcomeID) {
+            WelcomeView()
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(Preferences.showsWelcome ? .presented : .suppressed)
 
         Settings {
             SettingsView()
@@ -25,16 +38,40 @@ struct SimplCADApp: App {
     }
 }
 
+/// Launch and Dock behaviour for a document app with a welcome window.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// No empty document at launch while the welcome window is on; the Window scene presents it.
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        !Preferences.showsWelcome
+    }
+
+    /// Clicking the Dock icon with no windows open brings the welcome window back, not an empty part.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        guard !hasVisibleWindows, Preferences.showsWelcome else { return true }
+        AppWindows.showWelcome()
+        return false
+    }
+}
+
 /// Menu commands. They act on the frontmost document window through a focused value.
 struct SimplCADCommands: Commands {
     @FocusedValue(\.documentModel) private var model
     @Environment(\.newDocument) private var newDocument
+    @Environment(\.openWindow) private var openWindow
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
+    @AppStorage(Preferences.snapToGrid) private var snapToGrid = true
+    @AppStorage(Preferences.showGrid) private var showGrid = true
+    @AppStorage(Preferences.showAxes) private var showAxes = true
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("New Demo Part") { newDocument { CADFile(document: .demo()) } }
                 .keyboardShortcut("n", modifiers: [.command, .option])
+        }
+        CommandGroup(before: .windowList) {
+            Button("Welcome to SimplCAD") { openWindow(id: AppWindows.welcomeID) }
+                .keyboardShortcut("1", modifiers: [.command, .shift])
         }
         CommandGroup(after: .importExport) {
             Button("Export STEP…") { model?.export(stl: false) }.disabled(model == nil)
@@ -51,39 +88,58 @@ struct SimplCADCommands: Commands {
             Toggle("Orthographic Projection", isOn: Binding(get: { model?.orthographic ?? false },
                                                             set: { model?.orthographic = $0 }))
                 .keyboardShortcut("o", modifiers: [.command, .option])
-            Toggle("Show Constraints", isOn: $showConstraints)
             Divider()
+            Toggle("Show Grid", isOn: $showGrid)
+                .keyboardShortcut("g", modifiers: [.command, .option])
+            Toggle("Show Axes", isOn: $showAxes)
+                .keyboardShortcut("a", modifiers: [.command, .option])
+            Toggle("Show Constraints", isOn: $showConstraints)
+            Toggle("Snap to Grid", isOn: $snapToGrid)
+                .keyboardShortcut("'", modifiers: [.command])
+            Divider()
+            Button((model?.showSidebar ?? true) ? "Hide Browser" : "Show Browser") { model?.showSidebar.toggle() }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+            Button((model?.showTimeline ?? true) ? "Hide Timeline" : "Show Timeline") { model?.showTimeline.toggle() }
+                .keyboardShortcut("t", modifiers: [.command, .option])
             Button((model?.showInspector ?? true) ? "Hide Inspector" : "Show Inspector") { model?.showInspector.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
             Divider()
         }
         CommandMenu("Sketch") {
-            Button("New Sketch on XY Plane") { model?.beginSketch(on: .xy) }
-            Button("New Sketch on XZ Plane") { model?.beginSketch(on: .xz) }
-            Button("New Sketch on YZ Plane") { model?.beginSketch(on: .yz) }
-            Button("New Sketch on Selected Face") { if let p = model?.selectedFacePlane { model?.beginSketch(on: p) } }
-                .disabled(model?.selectedFacePlane == nil)
-            Divider()
-            ForEach(SketchTool.allCases) { tool in
-                Button(tool.rawValue) { model?.setSketchTool(tool) }
-                    .disabled(model?.sketchSession == nil)
+            Button("New Sketch…") { model?.startSketch() }
+                .disabled(model == nil)
+            Menu("New Sketch On") {
+                Button("XY Plane") { model?.beginSketch(on: .xy) }
+                Button("XZ Plane") { model?.beginSketch(on: .xz) }
+                Button("YZ Plane") { model?.beginSketch(on: .yz) }
+                Button("Selected Face") { if let p = model?.selectedFacePlane { model?.beginSketch(on: p) } }
+                    .disabled(model?.selectedFacePlane == nil)
             }
-            Button("Offset Selection…") { model?.sketchSession?.beginOffset() }
-                .disabled(!(model?.sketchSession?.canOffset ?? false))
-            Divider()
-            Button("Finish Sketch") { model?.finishSketch() }
-                .disabled(model?.sketchSession == nil)
+            .disabled(model == nil)
+            // The drawing tools only appear while a sketch is being edited.
+            if model?.sketchSession != nil {
+                Divider()
+                ForEach(SketchTool.allCases) { tool in
+                    Button(tool.rawValue) { model?.setSketchTool(tool) }
+                }
+                Button("Offset Selection…") { model?.sketchSession?.beginOffset() }
+                    .disabled(!(model?.sketchSession?.canOffset ?? false))
+                Divider()
+                Button("Finish Sketch") { model?.finishSketch() }
+            }
         }
-        CommandMenu("Model") {
-            Button("Extrude Selected Profiles") { model?.extrudeSelectedProfiles() }
-                .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(model?.selectedRegions.isEmpty ?? true)
-            Button("Fillet Selected Edges") { model?.addEdgeFeature(fillet: true) }
-                .disabled((model?.selectedEdgeCount ?? 0) == 0)
-            Button("Chamfer Selected Edges") { model?.addEdgeFeature(fillet: false) }
-                .disabled((model?.selectedEdgeCount ?? 0) == 0)
+        CommandMenu("Create") {
+            ForEach(DesignTool.shapes) { tool in
+                Button(tool.rawValue) { model?.run(tool) }
+                    .keyboardShortcut(tool == .extrude ? KeyboardShortcut("e", modifiers: [.command, .shift]) : nil)
+            }
+            Divider()
+            ForEach(DesignTool.primitives) { tool in Button(tool.rawValue) { model?.run(tool) } }
             Divider()
             Button("Rebuild") { model?.regenerate() }
+        }
+        CommandMenu("Modify") {
+            ForEach(DesignTool.modifiers) { tool in Button(tool.rawValue) { model?.run(tool) } }
         }
     }
 }

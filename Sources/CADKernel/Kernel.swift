@@ -58,6 +58,12 @@ public final class KSketch: @unchecked Sendable {
     public func addCircle(_ tag: String, center: SIMD2<Double>, radius: Double) throws {
         guard sk_sketch_add_circle(handle, tag, center.x, center.y, radius) else { throw KernelError.last("circle \(tag)") }
     }
+    /// A quadratic (3 points) or cubic (4 points) Bézier curve.
+    public func addBezier(_ tag: String, _ points: [SIMD2<Double>]) throws {
+        let flat = points.flatMap { [$0.x, $0.y] }
+        guard sk_sketch_add_bezier(handle, tag, flat, Int32(points.count)) else { throw KernelError.last("curve \(tag)") }
+    }
+
     public func addArc(_ tag: String, center: SIMD2<Double>, radius: Double, from a0: Double, to a1: Double) throws {
         guard sk_sketch_add_arc(handle, tag, center.x, center.y, radius, a0, a1) else { throw KernelError.last("arc \(tag)") }
     }
@@ -90,6 +96,13 @@ public final class KSketch: @unchecked Sendable {
         return Mesh(m.pointee, faceNames: [], edgeNames: [])
     }
 
+    /// A path through the curves with these ids (they must connect end to end).
+    public func path(_ curves: [String]) throws -> KPath {
+        let h = withCStrings(curves) { sk_sketch_path(handle, $0, Int32(curves.count)) }
+        guard h != 0 else { throw KernelError.last("path") }
+        return KPath(handle: h)
+    }
+
     public func profile(_ region: Int) throws -> KProfile {
         let h = sk_sketch_region_profile(handle, Int32(region))
         guard h != 0 else { throw KernelError.last("profile") }
@@ -101,6 +114,26 @@ public final class KProfile: @unchecked Sendable {
     let handle: SKHandle
     init(handle: SKHandle) { self.handle = handle }
     deinit { sk_release(handle) }
+}
+
+public final class KPath: @unchecked Sendable {
+    let handle: SKHandle
+    init(handle: SKHandle) { self.handle = handle }
+    deinit { sk_release(handle) }
+}
+
+public enum KPrimitive: Sendable {
+    case box(width: Double, length: Double, height: Double)
+    case cylinder(diameter: Double, height: Double)
+    case sphere(diameter: Double)
+    case torus(diameter: Double, tube: Double)
+    case coil(diameter: Double, section: Double, pitch: Double, turns: Double)
+}
+
+public enum KHole: Sendable {
+    case simple
+    case counterbore(diameter: Double, depth: Double)
+    case countersink(diameter: Double, angle: Double)
 }
 
 public final class KBody: @unchecked Sendable {
@@ -117,6 +150,66 @@ public final class KBody: @unchecked Sendable {
                                back: Double = 0, featureID: String) throws -> KBody {
         let hs = profiles.map(\.handle)
         return try wrap(sk_extrude(hs, Int32(hs.count), d.x, d.y, d.z, distance, back, featureID), "extrude")
+    }
+
+    public static func revolve(_ profiles: [KProfile], axisOrigin o: SIMD3<Double>, axisDirection d: SIMD3<Double>,
+                               angle: Double, featureID: String) throws -> KBody {
+        let hs = profiles.map(\.handle)
+        return try wrap(sk_revolve(hs, Int32(hs.count), o.x, o.y, o.z, d.x, d.y, d.z, angle, featureID), "revolve")
+    }
+
+    public static func sweep(_ profiles: [KProfile], along path: KPath, featureID: String) throws -> KBody {
+        let hs = profiles.map(\.handle)
+        return try wrap(sk_sweep(hs, Int32(hs.count), path.handle, featureID), "sweep")
+    }
+
+    public static func pipe(along path: KPath, diameter: Double, wall: Double, featureID: String) throws -> KBody {
+        try wrap(sk_pipe(path.handle, diameter, wall, featureID), "pipe")
+    }
+
+    public static func loft(_ profiles: [KProfile], ruled: Bool, featureID: String) throws -> KBody {
+        let hs = profiles.map(\.handle)
+        return try wrap(sk_loft(hs, Int32(hs.count), ruled, featureID), "loft")
+    }
+
+    public func rib(along path: KPath, thickness: Double, featureID: String) throws -> KBody {
+        try KBody.wrap(sk_rib(handle, path.handle, thickness, featureID), "rib")
+    }
+
+    /// The solid to cut for a hole whose top centre is the frame origin, drilled against the normal.
+    public static func hole(at frame: Frame, _ kind: KHole, diameter: Double, depth: Double, tipAngle: Double,
+                            featureID: String) throws -> KBody {
+        let h: SKHandle
+        switch kind {
+        case .simple:
+            h = sk_hole(frame.c, SK_HOLE_SIMPLE, diameter, depth, tipAngle, 0, 0, 0, featureID)
+        case .counterbore(let d, let depth2):
+            h = sk_hole(frame.c, SK_HOLE_COUNTERBORE, diameter, depth, tipAngle, d, depth2, 0, featureID)
+        case .countersink(let d, let angle):
+            h = sk_hole(frame.c, SK_HOLE_COUNTERSINK, diameter, depth, tipAngle, d, 0, angle, featureID)
+        }
+        return try wrap(h, "hole")
+    }
+
+    /// A primitive standing on the frame's plane, centred at its origin.
+    public static func primitive(_ p: KPrimitive, on frame: Frame, featureID: String) throws -> KBody {
+        let h: SKHandle
+        switch p {
+        case .box(let w, let l, let height): h = sk_primitive(SK_BOX, frame.c, w, l, height, 0, featureID)
+        case .cylinder(let d, let height): h = sk_primitive(SK_CYLINDER, frame.c, d, 0, height, 0, featureID)
+        case .sphere(let d): h = sk_primitive(SK_SPHERE, frame.c, d, 0, 0, 0, featureID)
+        case .torus(let d, let tube): h = sk_primitive(SK_TORUS, frame.c, d, tube, 0, 0, featureID)
+        case .coil(let d, let section, let pitch, let turns): h = sk_primitive(SK_COIL, frame.c, d, section, pitch, turns, featureID)
+        }
+        return try wrap(h, "primitive")
+    }
+
+    public func translated(_ d: SIMD3<Double>) throws -> KBody {
+        try KBody.wrap(sk_translate(handle, d.x, d.y, d.z), "move")
+    }
+
+    public func rotated(about origin: SIMD3<Double>, axis a: SIMD3<Double>, angle: Double) throws -> KBody {
+        try KBody.wrap(sk_rotate(handle, origin.x, origin.y, origin.z, a.x, a.y, a.z, angle), "rotate")
     }
 
     public func boolean(_ tool: KBody, _ op: SKBooleanOp) throws -> KBody {
@@ -140,10 +233,53 @@ public final class KBody: @unchecked Sendable {
     public func hasFace(_ name: String) -> Bool { sk_body_find_face(handle, name) >= 0 }
     public func hasEdge(_ name: String) -> Bool { sk_body_find_edge(handle, name) >= 0 }
 
+    /// A flat face as a profile, for extruding it.
+    public func faceProfile(_ name: String) throws -> KProfile {
+        let h = sk_body_face_profile(handle, name)
+        guard h != 0 else { throw KernelError.last("face profile") }
+        return KProfile(handle: h)
+    }
+
+    public func faceCenter(_ name: String) throws -> SIMD3<Double> {
+        var o = [Double](repeating: 0, count: 3)
+        guard sk_body_face_center(handle, name, &o) else { throw KernelError.last("face centre") }
+        return SIMD3(o[0], o[1], o[2])
+    }
+
     public func faceFrame(_ name: String) throws -> Frame {
         var f = SKFrame()
         guard sk_body_face_frame(handle, name, &f) else { throw KernelError.last("sketch plane") }
         return Frame(f)
+    }
+
+    /// Names of the edges around a face (seams left out).
+    public func faceEdges(_ name: String) throws -> [String] {
+        try indices("face edges") { sk_body_face_edges(handle, name, $0, $1) }
+            .compactMap { sk_body_edge_name(handle, $0).map { String(cString: $0) } }
+    }
+
+    /// Names of the faces on either side of an edge.
+    public func edgeFaces(_ edge: String) throws -> [String] {
+        try indices("edge faces") { sk_body_edge_faces(handle, edge, $0, $1) }
+            .compactMap { sk_body_face_name(handle, $0).map { String(cString: $0) } }
+    }
+
+    /// Names of the edges in the loop of `face` that runs through `edge` (seams left out).
+    public func loopEdges(face: String, edge: String) throws -> [String] {
+        try indices("edge loop") { sk_body_loop_edges(handle, face, edge, $0, $1) }
+            .compactMap { sk_body_edge_name(handle, $0).map { String(cString: $0) } }
+    }
+
+    /// Calls a kernel query that fills an index buffer, growing it if the answer doesn't fit.
+    private func indices(_ what: String, _ query: (UnsafeMutablePointer<Int32>, Int32) -> Int32) throws -> [Int32] {
+        var out = [Int32](repeating: 0, count: 256)
+        var n = Int(out.withUnsafeMutableBufferPointer { query($0.baseAddress!, Int32($0.count)) })
+        guard n >= 0 else { throw KernelError.last(what) }
+        if n > out.count {
+            out = [Int32](repeating: 0, count: n)
+            n = Int(out.withUnsafeMutableBufferPointer { query($0.baseAddress!, Int32($0.count)) })
+        }
+        return Array(out.prefix(n))
     }
 
     /// Where a fillet/chamfer drag handle goes on an edge: its midpoint and the growth direction.

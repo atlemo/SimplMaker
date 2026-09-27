@@ -113,7 +113,17 @@ public enum Expressions {
             if c.isWhitespace { i += 1; continue }
             if c.isNumber || (c == "." && i + 1 < chars.count && chars[i + 1].isNumber) {
                 var j = i
-                while j < chars.count, chars[j].isNumber || chars[j] == "." { j += 1 }
+                var separator = false  // a number has at most one decimal separator
+                while j < chars.count {
+                    if chars[j].isNumber { j += 1; continue }
+                    // "." always; "," too when it sits between two digits ("12,5" is 12.5, as typed in
+                    // locales like Norwegian). Function arguments need a space: max(1, 5).
+                    let decimal = chars[j] == "." ||
+                        (chars[j] == "," && j > i && chars[j - 1].isNumber && j + 1 < chars.count && chars[j + 1].isNumber)
+                    guard decimal, !separator else { break }
+                    separator = true
+                    j += 1
+                }
                 if j < chars.count, chars[j] == "e" || chars[j] == "E" {  // exponent, only if digits follow
                     var k = j + 1
                     if k < chars.count, chars[k] == "+" || chars[k] == "-" { k += 1 }
@@ -122,7 +132,7 @@ public enum Expressions {
                         while j < chars.count, chars[j].isNumber { j += 1 }
                     }
                 }
-                guard let v = Double(String(chars[i..<j])) else { throw ExpressionError("bad number '\(String(chars[i..<j]))'") }
+                guard let v = Double(String(chars[i..<j]).replacingOccurrences(of: ",", with: ".")) else { throw ExpressionError("bad number '\(String(chars[i..<j]))'") }
                 out.append(.num(v)); i = j; continue
             }
             if c.isLetter || c == "_" {

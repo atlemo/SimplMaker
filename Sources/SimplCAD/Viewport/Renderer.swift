@@ -8,20 +8,24 @@ import simd
 /// What the pick buffer encodes (0 = nothing):
 ///   body face  (body+1) << 20 | face           (bodies < 1023)
 ///   body edge  0x8000_0000 | (body+1) << 20 | edge
-///   sketch     0x4000_0000 point, 0x5000_0000 curve, 0x6000_0000 profile region | index
+///   sketch     0x4000_0000 point, 0x5000_0000 curve, 0x6000_0000 profile region | slot << 16 | index
+///              (slot 0 = the sketch being edited, n = the n-th sketch in the document)
 ///   handle     0x7000_0000 (the extrude drag handle)
+///   plane      0x7100_0000 | index (an origin plane offered when choosing where to sketch)
 struct PickID: Hashable, Sendable {
-    enum Kind: Sendable { case none, face, edge, sketchPoint, sketchCurve, region, handle }
+    enum Kind: Sendable { case none, face, edge, sketchPoint, sketchCurve, region, handle, plane }
     static let edgeFlag: UInt32 = 0x8000_0000
     static let sketchFlag: UInt32 = 0x4000_0000
+    static let planeFlag: UInt32 = 0x0100_0000
     var raw: UInt32
 
     init(raw: UInt32) { self.raw = raw }
     init(body: Int, face: Int) { raw = UInt32(body + 1) << 20 | UInt32(face) }
     init(body: Int, edge: Int) { raw = PickID.edgeFlag | UInt32(body + 1) << 20 | UInt32(edge) }
-    init(sketchPoint i: Int) { raw = 0x4000_0000 | UInt32(i) }
-    init(sketchCurve i: Int) { raw = 0x5000_0000 | UInt32(i) }
-    init(region i: Int) { raw = 0x6000_0000 | UInt32(i) }
+    init(sketchPoint i: Int, slot: Int = 0) { raw = 0x4000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
+    init(sketchCurve i: Int, slot: Int = 0) { raw = 0x5000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
+    init(region i: Int, slot: Int = 0) { raw = 0x6000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
+    init(plane i: Int) { raw = 0x7000_0000 | PickID.planeFlag | UInt32(i) }
     static let handle = PickID(raw: 0x7000_0000)
 
     var kind: Kind {
@@ -32,7 +36,7 @@ struct PickID: Hashable, Sendable {
             case 0: return .sketchPoint
             case 1: return .sketchCurve
             case 2: return .region
-            default: return .handle
+            default: return raw & PickID.planeFlag != 0 ? .plane : .handle
             }
         }
         return .face
@@ -41,11 +45,20 @@ struct PickID: Hashable, Sendable {
     var isFace: Bool { kind == .face }
     /// Body index (faces and edges only).
     var body: Int { Int((raw & 0x3FF0_0000) >> 20) - 1 }
-    /// Face/edge index within the body, or the sketch point/curve/region index.
+    /// Face/edge index within the body, or the sketch point/curve/region/plane index.
     var element: Int {
         switch kind {
         case .face, .edge: return Int(raw & 0xFFFFF)
+        case .plane: return Int(raw & 0xFF)
+        case .sketchPoint, .sketchCurve, .region: return Int(raw & 0xFFFF)
         default: return Int(raw & 0x0FFF_FFFF)
+        }
+    }
+    /// Which sketch a sketch point, curve or region belongs to (see the table above).
+    var sketchSlot: Int {
+        switch kind {
+        case .sketchPoint, .sketchCurve, .region: return Int((raw >> 16) & 0xFFF)
+        default: return 0
         }
     }
 }
@@ -54,12 +67,17 @@ struct PickID: Hashable, Sendable {
 struct SketchOverlay {
     var regionVertices: [FaceVertex] = []
     var regionIndices: [UInt32] = []
+    /// Origin planes offered while choosing where to sketch: 4 vertices and 6 indices per plane.
+    var planeVertices: [FaceVertex] = []
+    var planeIndices: [UInt32] = []
+    var planeOutline: [SegmentInstance] = []
     var curves: [SegmentInstance] = []
     var construction: [SegmentInstance] = []
-    var inactive: [SegmentInstance] = []   // other visible sketches: thin, not pickable
+    var inactive: [SegmentInstance] = []   // finished sketches: thin, pickable as paths and axes
     var preview: [SegmentInstance] = []
     var points: [SegmentInstance] = []     // zero-length segments drawn as squares
     var handle: [SegmentInstance] = []     // drag handle: shaft + tip (zero-length)
+    var snap: [SegmentInstance] = []       // where the cursor snapped: a zero-length marker
     var handleInvalid = false               // the previewed size can't be built
     var fullyConstrained = false
 }
@@ -85,6 +103,8 @@ struct ViewportPalette: Equatable {
     var edge, hover, selection: SIMD4<Float>
     var sketch, sketchConstrained, construction, preview, point, inactiveSketch, handle, invalid: SIMD4<Float>
     var region: SIMD4<Float>
+    /// Origin planes offered when choosing where to sketch (rgb + fill alpha; outlines are opaque).
+    var plane: SIMD4<Float>
     /// Line width multiplier (thicker with Increase Contrast).
     var lineScale: Float
 
@@ -103,7 +123,7 @@ struct ViewportPalette: Equatable {
                 sketch: SIMD4(0.45, 0.68, 1, 1), sketchConstrained: SIMD4(0.93, 0.93, 0.95, 1),
                 construction: SIMD4(1, 0.62, 0.25, 1), preview: SIMD4(0.65, 0.65, 0.7, 1), point: SIMD4(0.85, 0.87, 0.92, 1),
                 inactiveSketch: SIMD4(0.5, 0.6, 0.85, 1), handle: SIMD4(1, 0.58, 0.1, 1), invalid: SIMD4(1, 0.3, 0.3, 1),
-                region: SIMD4(0.35, 0.6, 1, 0.18), lineScale: 1)
+                region: SIMD4(0.35, 0.6, 1, 0.18), plane: SIMD4(1, 0.65, 0.2, 0.22), lineScale: 1)
         } else {
             p = ViewportPalette(
                 background: SIMD4(0.95, 0.96, 0.97, 1), grid: SIMD4(0.8, 0.82, 0.86, 1),
@@ -113,13 +133,14 @@ struct ViewportPalette: Equatable {
                 sketch: SIMD4(0.1, 0.3, 0.85, 1), sketchConstrained: SIMD4(0.08, 0.08, 0.1, 1),
                 construction: SIMD4(0.9, 0.55, 0.15, 1), preview: SIMD4(0.45, 0.45, 0.5, 1), point: SIMD4(0.15, 0.2, 0.35, 1),
                 inactiveSketch: SIMD4(0.35, 0.45, 0.7, 1), handle: SIMD4(0.95, 0.5, 0.05, 1), invalid: SIMD4(0.9, 0.12, 0.12, 1),
-                region: SIMD4(0.25, 0.5, 0.95, 0.16), lineScale: 1)
+                region: SIMD4(0.25, 0.5, 0.95, 0.16), plane: SIMD4(0.95, 0.6, 0.15, 0.2), lineScale: 1)
         }
         if increaseContrast {
             p.lineScale = 1.6
             p.grid = dark ? SIMD4(0.4, 0.42, 0.46, 1) : SIMD4(0.6, 0.62, 0.66, 1)
             p.edge = dark ? SIMD4(0, 0, 0, 1) : SIMD4(0, 0, 0, 1)
             p.region.w = 0.3
+            p.plane.w = 0.35
         }
         return p
     }
@@ -153,9 +174,15 @@ final class Renderer {
     private let queue: MTLCommandQueue
     private let facePipeline: MTLRenderPipelineState
     private let segmentPipeline: MTLRenderPipelineState
+    /// Lines drawn only to be seen (grid, axes, previews, the snap marker): they write colour but
+    /// leave the ID buffer alone, so they never hide what's picked beneath them.
+    private let decorationPipeline: MTLRenderPipelineState
     private let regionPipeline: MTLRenderPipelineState
+    private let planePipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
     private let onTopDepthState: MTLDepthStencilState
+    /// Depth-tested but not depth-writing: translucent planes hide nothing drawn after them.
+    private let noWriteDepthState: MTLDepthStencilState
 
     private struct GPUBody {
         var faces: MTLBuffer?
@@ -173,12 +200,18 @@ final class Renderer {
         var regions: MTLBuffer?
         var regionIndices: MTLBuffer?
         var regionIndexCount = 0
+        var planes: MTLBuffer?
+        var planeIndices: MTLBuffer?
+        /// One centre per plane (6 indices each), to draw them back to front.
+        var planeCenters: [SIMD3<Float>] = []
+        var planeOutline: MTLBuffer?, planeOutlineCount = 0
         var curves: MTLBuffer?, curveCount = 0
         var construction: MTLBuffer?, constructionCount = 0
         var inactive: MTLBuffer?, inactiveCount = 0
         var preview: MTLBuffer?, previewCount = 0
         var points: MTLBuffer?, pointCount = 0
         var handle: MTLBuffer?, handleCount = 0
+        var snap: MTLBuffer?, snapCount = 0
         var handleInvalid = false
         var fullyConstrained = false
     }
@@ -190,6 +223,8 @@ final class Renderer {
     var camera = Camera()
     var palette = ViewportPalette.make(dark: false, increaseContrast: false)
     var showGrid = true
+    /// The red, green and blue X, Y and Z axes through the origin.
+    var showAxes = true
     var hovered: UInt32 = 0
     var selected: [UInt32] = []
     /// Pixel (in drawable coordinates, origin top-left) to read from the ID buffer on the next frame.
@@ -207,7 +242,8 @@ final class Renderer {
         self.pickBuffer = pickBuffer
         do {
             let library = try device.makeLibrary(source: Shaders.source, options: nil)
-            func pipeline(_ vertex: String, _ fragment: String, blend: Bool = false) throws -> MTLRenderPipelineState {
+            func pipeline(_ vertex: String, _ fragment: String, blend: Bool = false,
+                          writesID: Bool = true) throws -> MTLRenderPipelineState {
                 let d = MTLRenderPipelineDescriptor()
                 d.vertexFunction = library.makeFunction(name: vertex)
                 d.fragmentFunction = library.makeFunction(name: fragment)
@@ -220,12 +256,15 @@ final class Renderer {
                     d.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
                 }
                 d.colorAttachments[1].pixelFormat = .r32Uint
+                if !writesID { d.colorAttachments[1].writeMask = [] }
                 d.depthAttachmentPixelFormat = Renderer.depthFormat
                 return try device.makeRenderPipelineState(descriptor: d)
             }
             facePipeline = try pipeline("faceVertex", "faceFragment")
             segmentPipeline = try pipeline("segmentVertex", "segmentFragment")
+            decorationPipeline = try pipeline("segmentVertex", "segmentFragment", writesID: false)
             regionPipeline = try pipeline("regionVertex", "regionFragment", blend: true)
+            planePipeline = try pipeline("regionVertex", "planeFragment", blend: true)
         } catch {
             print("SimplCAD: Metal setup failed: \(error)")
             return nil
@@ -236,10 +275,15 @@ final class Renderer {
         let top = MTLDepthStencilDescriptor()
         top.depthCompareFunction = .always
         top.isDepthWriteEnabled = true
+        let noWrite = MTLDepthStencilDescriptor()
+        noWrite.depthCompareFunction = .lessEqual
+        noWrite.isDepthWriteEnabled = false
         guard let depthState = device.makeDepthStencilState(descriptor: ds),
-              let onTop = device.makeDepthStencilState(descriptor: top) else { return nil }
+              let onTop = device.makeDepthStencilState(descriptor: top),
+              let noWriteState = device.makeDepthStencilState(descriptor: noWrite) else { return nil }
         self.depthState = depthState
         self.onTopDepthState = onTop
+        self.noWriteDepthState = noWriteState
         buildGrid(size: 200, step: 10)
     }
 
@@ -254,12 +298,21 @@ final class Renderer {
         g.regions = makeBuffer(o.regionVertices)
         g.regionIndices = makeBuffer(o.regionIndices)
         g.regionIndexCount = o.regionIndices.count
+        g.planes = makeBuffer(o.planeVertices)
+        g.planeIndices = makeBuffer(o.planeIndices)
+        g.planeCenters = (0..<(o.planeIndices.count / 6)).map { i in
+            var c = SIMD3<Float>.zero
+            for v in o.planeVertices[(i * 4)..<min(i * 4 + 4, o.planeVertices.count)] { c += SIMD3(v.px, v.py, v.pz) }
+            return c / 4
+        }
+        g.planeOutline = makeBuffer(o.planeOutline); g.planeOutlineCount = o.planeOutline.count
         g.curves = makeBuffer(o.curves); g.curveCount = o.curves.count
         g.construction = makeBuffer(o.construction); g.constructionCount = o.construction.count
         g.inactive = makeBuffer(o.inactive); g.inactiveCount = o.inactive.count
         g.preview = makeBuffer(o.preview); g.previewCount = o.preview.count
         g.points = makeBuffer(o.points); g.pointCount = o.points.count
         g.handle = makeBuffer(o.handle); g.handleCount = o.handle.count
+        g.snap = makeBuffer(o.snap); g.snapCount = o.snap.count
         g.handleInvalid = o.handleInvalid
         g.fullyConstrained = o.fullyConstrained
         overlay = g
@@ -304,7 +357,8 @@ final class Renderer {
     func buildGrid(size: Float, step: Float) {
         var lines: [SegmentInstance] = []
         let n = Int(size / step)
-        for i in -n...n where i != 0 {
+        // The lines through the origin too: the axes cover only their positive halves, and are hidden while sketching.
+        for i in -n...n {
             let t = Float(i) * step
             lines.append(SegmentInstance(ax: t, ay: -size, az: 0, bx: t, by: size, bz: 0, id: 0))
             lines.append(SegmentInstance(ax: -size, ay: t, az: 0, bx: size, by: t, bz: 0, id: 0))
@@ -363,28 +417,56 @@ final class Renderer {
                                       indexBuffer: indices, indexBufferOffset: 0)
         }
 
-        if let regions = overlay.regions, let indices = overlay.regionIndices {
-            enc.setRenderPipelineState(regionPipeline)
-            enc.setVertexBuffer(regions, offset: 0, index: 0)
-            enc.drawIndexedPrimitives(type: .triangle, indexCount: overlay.regionIndexCount, indexType: .uint32,
-                                      indexBuffer: indices, indexBufferOffset: 0)
-        }
-
-        enc.setRenderPipelineState(segmentPipeline)
+        // Depth bias per layer, as a fraction of the view depth (0.001 ≈ 0.2 mm at the default zoom).
+        let biasScale = camera.depthBiasScale * 2.5
         func segments(_ buffer: MTLBuffer?, _ count: Int, _ params: DrawParams) {
             guard let buffer, count > 0 else { return }
             var p = params
+            p.depthBias *= biasScale
+            enc.setRenderPipelineState(p.pickable != 0 ? segmentPipeline : decorationPipeline)
             enc.setVertexBuffer(buffer, offset: 0, index: 0)
             enc.setVertexBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.setFragmentBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count)
         }
         let p = palette
+        // The grid goes under the translucent profile fills, so it shows through them.
         if showGrid {
             segments(grid, gridCount, DrawParams(color: p.grid, hoverColor: p.grid, selectColor: p.grid,
                                                  thickness: 1 * scale, depthBias: 0, pickable: 0))
         }
-        for (i, (buffer, _)) in axes.enumerated() {
+        // Fills sit just in front of the faces they lie on, but behind every edge and sketch line.
+        let fillBias = 0.0002 * biasScale
+        if let regions = overlay.regions, let indices = overlay.regionIndices {
+            var regionParams = DrawParams(color: .zero, hoverColor: .zero, selectColor: .zero,
+                                          thickness: 0, depthBias: fillBias, pickable: 1)
+            enc.setRenderPipelineState(regionPipeline)
+            enc.setVertexBuffer(regions, offset: 0, index: 0)
+            enc.setVertexBytes(&regionParams, length: MemoryLayout<DrawParams>.stride, index: 3)
+            enc.drawIndexedPrimitives(type: .triangle, indexCount: overlay.regionIndexCount, indexType: .uint32,
+                                      indexBuffer: indices, indexBufferOffset: 0)
+        }
+
+        // Origin planes: translucent, back to front so the nearest one is what the cursor picks.
+        if let planes = overlay.planes, let indices = overlay.planeIndices, !overlay.planeCenters.isEmpty {
+            let fill = palette.plane, hoverFill = SIMD4(fill.x, fill.y, fill.z, min(fill.w * 2.2, 0.75))
+            var planeParams = DrawParams(color: fill, hoverColor: hoverFill, selectColor: fill,
+                                         thickness: 0, depthBias: fillBias, pickable: 1)
+            enc.setRenderPipelineState(planePipeline)
+            enc.setDepthStencilState(noWriteDepthState)
+            enc.setVertexBuffer(planes, offset: 0, index: 0)
+            enc.setVertexBytes(&planeParams, length: MemoryLayout<DrawParams>.stride, index: 3)
+            enc.setFragmentBytes(&planeParams, length: MemoryLayout<DrawParams>.stride, index: 3)
+            let forward = camera.forward, centers = overlay.planeCenters  // farthest along the view direction first
+            let order = centers.indices.sorted { simd_dot(centers[$0], forward) > simd_dot(centers[$1], forward) }
+            for i in order {
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: 6, indexType: .uint32,
+                                          indexBuffer: indices, indexBufferOffset: i * 6 * MemoryLayout<UInt32>.stride)
+            }
+            enc.setDepthStencilState(depthState)
+        }
+
+        for (i, (buffer, _)) in axes.enumerated() where showAxes {
             let color = i == 0 ? p.axes.x : i == 1 ? p.axes.y : p.axes.z
             segments(buffer, 1, DrawParams(color: color, hoverColor: color, selectColor: color,
                                            thickness: 1.5 * scale, depthBias: 0.0001, pickable: 0))
@@ -396,9 +478,13 @@ final class Renderer {
         }
         // Sketch overlay, drawn last with increasing depth bias so it sits on top of faces it lies on.
         let hover = p.hover, select = p.selection
+        let planeLine = SIMD4(p.plane.x, p.plane.y, p.plane.z, 1)
+        segments(overlay.planeOutline, overlay.planeOutlineCount,
+                 DrawParams(color: planeLine, hoverColor: planeLine, selectColor: planeLine,
+                            thickness: 1.2 * scale, depthBias: 0.0005, pickable: 1))
         segments(overlay.inactive, overlay.inactiveCount,
                  DrawParams(color: p.inactiveSketch, hoverColor: hover, selectColor: select,
-                            thickness: 1.2 * scale, depthBias: 0.0006, pickable: 0))
+                            thickness: 1.6 * scale, depthBias: 0.0006, pickable: 1))
         let curveColor = overlay.fullyConstrained ? p.sketchConstrained : p.sketch
         segments(overlay.curves, overlay.curveCount,
                  DrawParams(color: curveColor, hoverColor: hover, selectColor: select,
@@ -412,6 +498,9 @@ final class Renderer {
         segments(overlay.points, overlay.pointCount,
                  DrawParams(color: p.point, hoverColor: hover, selectColor: select,
                             thickness: 7 * scale, depthBias: 0.0012, pickable: 1))
+        segments(overlay.snap, overlay.snapCount,
+                 DrawParams(color: p.handle, hoverColor: p.handle, selectColor: p.handle,
+                            thickness: 9 * scale, depthBias: 0.0014, pickable: 0))
         // The extrude handle is drawn on top of everything so it can always be grabbed.
         enc.setDepthStencilState(onTopDepthState)
         let handleColor = overlay.handleInvalid ? p.invalid : p.handle

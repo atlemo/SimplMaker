@@ -5,7 +5,7 @@
 import Foundation
 
 public enum SketchEntityKind: Sendable, Equatable {
-    case point, line, circle, arc
+    case point, line, circle, arc, bezier
     public var isCircular: Bool { self == .circle || self == .arc }
 }
 
@@ -14,9 +14,21 @@ public struct SketchSnap: Sendable, Equatable {
     public var position: SIMD2<Double>
     public var point: EntityID?
     public var curve: EntityID?
-    public init(_ position: SIMD2<Double>, point: EntityID? = nil, curve: EntityID? = nil) {
-        self.position = position; self.point = point; self.curve = curve
+    /// Two opposite corners of the four-sided shape whose center this is: a point placed here
+    /// is kept at the middle of the diagonal between them.
+    public var centerOf: [EntityID]?
+    public init(_ position: SIMD2<Double>, point: EntityID? = nil, curve: EntityID? = nil, centerOf: [EntityID]? = nil) {
+        self.position = position; self.point = point; self.curve = curve; self.centerOf = centerOf
     }
+}
+
+/// The center of a closed shape in a sketch: the middle of its bounding box.
+public struct ShapeCenter: Sendable, Equatable {
+    public var position: SIMD2<Double>
+    /// For a four-sided shape, two opposite corners (the center stays on their diagonal's middle).
+    public var corners: [EntityID]?
+    /// The points the shape is built from.
+    public var points: Set<EntityID>
 }
 
 /// Constraint commands offered for a selection ("select, then constrain").
@@ -43,6 +55,7 @@ extension Sketch {
         case .line: return .line
         case .circle: return .circle
         case .arc: return .arc
+        case .bezier: return .bezier
         }
     }
 
@@ -52,6 +65,7 @@ extension Sketch {
         case .line(let a, let b): return [a, b]
         case .circle(let center, _): return [center]
         case .arc(let center, let s, let e): return [center, s, e]
+        case .bezier(let a, let c1, let c2, let b): return [a, c1, c2, b]
         }
     }
 
@@ -66,7 +80,7 @@ extension Sketch {
         guard let c = curve(id) else { return nil }
         switch c.geometry {
         case .circle(let center, _), .arc(let center, _, _): return center
-        case .line: return nil
+        case .line, .bezier: return nil
         }
     }
 
@@ -98,7 +112,73 @@ extension Sketch {
         if let p = snap.point, point(p) != nil { return p }
         let id = addPoint(snap.position.x, snap.position.y)
         if let c = snap.curve, curve(c) != nil { constrain(.pointOnCurve(point: id, curve: c)) }
+        if let corners = snap.centerOf, corners.count == 2, corners.allSatisfy({ point($0) != nil }) {
+            // Centred for good: the middle of a construction diagonal across the shape.
+            let diagonal = addLine(corners[0], corners[1], construction: true)
+            constrain(.midpoint(point: id, line: diagonal))
+        }
         return id
+    }
+
+    /// Every curve joined to `id` end to end, directly or through others (points that are shared
+    /// or constrained coincident count as joined), `id` first. Construction curves join only a
+    /// construction curve, and the others only each other.
+    public func connectedCurves(_ id: EntityID) -> [EntityID] {
+        guard let seed = curve(id) else { return [] }
+        // Points tied by coincident constraints are one place.
+        var group: [EntityID: EntityID] = [:]
+        func root(_ p: EntityID) -> EntityID {
+            var r = p
+            while let next = group[r], next != r { r = next }
+            return r
+        }
+        for c in constraints {
+            if case .coincident(let a, let b) = c.kind { let ra = root(a), rb = root(b); if ra != rb { group[ra] = rb } }
+        }
+        func ends(_ c: SketchCurve) -> [EntityID] {
+            switch c.geometry {
+            case .line(let a, let b), .arc(_, let a, let b), .bezier(let a, _, _, let b): return [a, b]
+            case .circle: return []
+            }
+        }
+        let candidates = curves.filter { $0.construction == seed.construction }
+        var found = [id], frontier = ends(seed).map(root)
+        var seen = Set(frontier)
+        while let p = frontier.popLast() {
+            for c in candidates where !found.contains(c.id) && ends(c).map(root).contains(p) {
+                found.append(c.id)
+                for q in ends(c).map(root) where seen.insert(q).inserted { frontier.append(q) }
+            }
+        }
+        return found
+    }
+
+    /// Centers of the closed shapes made of lines, arcs and curves joined end to end
+    /// (construction geometry left out).
+    public func shapeCenters() -> [ShapeCenter] {
+        let ids = curves.filter { c in
+            if case .circle = c.geometry { return false }
+            return !c.construction
+        }.map(\.id)
+        return chains(ids).compactMap { chain -> ShapeCenter? in
+            guard chain.closed else { return nil }
+            var lo = SIMD2(Double.infinity, .infinity), hi = -lo
+            var corners: [EntityID] = [], points = Set<EntityID>()
+            var allLines = true
+            for item in chain.items {
+                guard let c = curve(item.id), let g = geometry(of: item.id) else { return nil }
+                for t in stride(from: 0.0, through: 1, by: 1.0 / 16) {
+                    let p = g.point(t)
+                    lo = pointwiseMin(lo, p); hi = pointwiseMax(hi, p)
+                }
+                let ends = pointIDs(of: c)
+                points.formUnion(ends)
+                if case .line = c.geometry {} else { allLines = false }
+                corners.append(item.reversed ? ends[ends.count - 1] : ends[0])
+            }
+            let fourSided = allLines && corners.count == 4
+            return ShapeCenter(position: (lo + hi) / 2, corners: fourSided ? [corners[0], corners[2]] : nil, points: points)
+        }
     }
 
     public enum Alignment: Sendable { case horizontal, vertical }
@@ -148,6 +228,19 @@ extension Sketch {
         return addCircle(center: c, radius: r)
     }
 
+    /// Circle through two points on opposite sides (they span its diameter), with a new center point
+    /// midway. Clicked points that snapped to geometry are kept on the circle.
+    @discardableResult
+    public mutating func addCircle(diameterFrom a: SketchSnap, to b: SketchSnap) -> EntityID {
+        let pa = a.point.flatMap { position($0) } ?? a.position, pb = b.point.flatMap { position($0) } ?? b.position
+        let mid = (pa + pb) / 2
+        let id = addCircle(center: addPoint(mid.x, mid.y), radius: max(vlen(pb - pa) / 2, 1e-3))
+        for s in [a, b] where s.point != nil || s.curve != nil {
+            constrain(.pointOnCurve(point: resolve(s), curve: id))
+        }
+        return id
+    }
+
     /// Center-point arc, counter-clockwise from `start` to `end` (end is projected onto the circle).
     @discardableResult
     public mutating func addArc(center s: SketchSnap, start: SketchSnap, end: SketchSnap) -> EntityID {
@@ -163,6 +256,17 @@ extension Sketch {
         }
         let b = resolve(endSnap)
         return addArc(center: c, start: a, end: b)
+    }
+
+    /// Cubic Bézier from `a` to `b` that bends through `bend`: its handles start a third of the way
+    /// along, pushed sideways together so the curve's middle lands on `bend`.
+    @discardableResult
+    public mutating func addBezier(from a: SketchSnap, to b: SketchSnap, through bend: SIMD2<Double>) -> EntityID {
+        let s = resolve(a), e = resolve(b)
+        let ps = position(s) ?? a.position, pe = position(e) ?? b.position
+        let push = (bend - (ps + pe) / 2) / 0.75  // B(½) = midpoint + ¾ · push
+        let c1 = ps + (pe - ps) / 3 + push, c2 = ps + (pe - ps) * 2 / 3 + push
+        return addBezier(start: s, control1: addPoint(c1.x, c1.y), control2: addPoint(c2.x, c2.y), end: e)
     }
 
     mutating func attach(_ p: EntityID, to snap: SketchSnap) {
@@ -181,7 +285,8 @@ extension Sketch {
         for c in removedCurves { gone.insert(c.id) }
         curves.removeAll { gone.contains($0.id) }
         // Points that only belonged to removed curves.
-        let stillUsed = Set(curves.flatMap { pointIDs(of: $0) })
+        texts.removeAll { gone.contains($0.id) || gone.contains($0.position) }  // a text goes with its anchor
+        let stillUsed = Set(curves.flatMap { pointIDs(of: $0) } + texts.map(\.position))
         for c in removedCurves {
             for p in pointIDs(of: c) where p != "origin" && !stillUsed.contains(p) { gone.insert(p) }
         }
@@ -294,7 +399,9 @@ extension Sketch {
             guard ids.count == 2, lines.count == 2 || circular.count == 2 else { return nil }
             return [.equal(ids[0], ids[1])]
         case .tangent:
-            guard ids.count == 2, circular.count >= 1, lines.count + circular.count == 2 else { return nil }
+            let beziers = kinds.filter { $0 == .bezier }.count
+            guard ids.count == 2, (circular.count >= 1 && lines.count + circular.count == 2) || (lines.count == 1 && beziers == 1)
+            else { return nil }
             return [.tangent(ids[0], ids[1])]
         case .coincident:
             guard ids.count == 2 else { return nil }
@@ -367,6 +474,11 @@ extension Sketch {
         case .circle?, .arc?:
             guard let c = center(of: id), let cp = position(c) else { return false }
             soft = [.radius(id, max(vlen(target - cp), 1e-3))]
+        case .bezier?:
+            // The whole curve, handles and all, slides with the cursor.
+            guard let c = curve(id), let start = pointIDs(of: c).first.flatMap({ position($0) }) else { return false }
+            let delta = target - grabOffset - start
+            soft = pointIDs(of: c).compactMap { p in position(p).map { .point(p, $0 + delta) } }
         case nil: return false
         }
         var trial = self

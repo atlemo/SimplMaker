@@ -45,6 +45,8 @@ bool sk_sketch_add_line(SKHandle sketch, const char *tag, double u1, double v1, 
 bool sk_sketch_add_circle(SKHandle sketch, const char *tag, double cu, double cv, double r);
 /// Counter-clockwise arc from angle a0 to a1 (radians).
 bool sk_sketch_add_arc(SKHandle sketch, const char *tag, double cu, double cv, double r, double a0, double a1);
+/// A Bézier curve through `count` control points (u0, v0, u1, v1, ...): 3 = quadratic, 4 = cubic.
+bool sk_sketch_add_bezier(SKHandle sketch, const char *tag, const double *uv, int count);
 /// Splits the plane by all curves and finds the closed regions (profiles). Returns count or -1.
 int sk_sketch_build_regions(SKHandle sketch);
 /// Sorted, comma-separated tags of the curves bounding region i (stable across edits).
@@ -60,6 +62,42 @@ SKHandle sk_sketch_region_profile(SKHandle sketch, int i);
 /// "<featureId>.start|end|side.<tag>". Returns a body.
 SKHandle sk_extrude(const SKHandle *profiles, int count, double dx, double dy, double dz,
                     double distance, double distanceBack, const char *featureId);
+/// Revolves profiles about the axis through (ox, oy, oz) along (dx, dy, dz) by `angle` radians
+/// (2π or more = a full turn). Faces: "<featureId>.start|end|side.<tag>".
+SKHandle sk_revolve(const SKHandle *profiles, int count, double ox, double oy, double oz, double dx, double dy,
+                    double dz, double angle, const char *featureId);
+/// A path made of the sketch curves with these tags; they must connect end to end.
+SKHandle sk_sketch_path(SKHandle sketch, const char *const *tags, int count);
+/// Sweeps profiles along a path. Faces: "<featureId>.start|end|side.<tag>".
+SKHandle sk_sweep(const SKHandle *profiles, int count, SKHandle path, const char *featureId);
+/// Round pipe along a path; wall > 0 makes it hollow. Faces: "<featureId>.start|end|outer|inner".
+SKHandle sk_pipe(SKHandle path, double diameter, double wall, const char *featureId);
+/// Loft through the outer boundaries of profiles, in order. Faces: "<featureId>.start|end|side.<tag>".
+SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *featureId);
+/// Adds a rib to `body`: the open path (in its sketch plane) is thickened symmetrically across the
+/// plane and extended until it meets the body. New faces: "<featureId>.rib".
+SKHandle sk_rib(SKHandle body, SKHandle path, double thickness, const char *featureId);
+
+typedef enum SKHoleKind { SK_HOLE_SIMPLE = 0, SK_HOLE_COUNTERBORE = 1, SK_HOLE_COUNTERSINK = 2 } SKHoleKind;
+/// The solid to cut for a hole: its top centre at the frame origin, going against the frame normal.
+/// Counterbore: head diameter and depth. Countersink: head diameter and angle (radians).
+/// tipAngle > 0 adds a drill point. Faces: "<featureId>.hole.wall|tip|head|floor|top".
+SKHandle sk_hole(SKFrame at, SKHoleKind kind, double diameter, double depth, double tipAngle,
+                 double headDiameter, double headDepth, double headAngle, const char *featureId);
+
+typedef enum SKPrimitive { SK_BOX = 0, SK_CYLINDER = 1, SK_SPHERE = 2, SK_TORUS = 3, SK_COIL = 4 } SKPrimitive;
+/// A primitive standing on the frame's plane, centred at its origin (the normal is "up"):
+///   box: a = width (x), b = length (y), c = height     cylinder: a = diameter, c = height
+///   sphere: a = diameter (centre on the plane)          torus: a = diameter, b = tube diameter
+///   coil: a = diameter, b = section diameter, c = pitch, d = revolutions
+/// Faces: "<featureId>.top|bottom|left|right|front|back|side|start|end".
+SKHandle sk_primitive(SKPrimitive kind, SKFrame frame, double a, double b, double c, double d, const char *featureId);
+
+/// A copy of a body moved by (dx, dy, dz), or turned by `angle` radians about the axis through
+/// (ox, oy, oz) along (ax, ay, az). Face and edge names are kept.
+SKHandle sk_translate(SKHandle body, double dx, double dy, double dz);
+SKHandle sk_rotate(SKHandle body, double ox, double oy, double oz, double ax, double ay, double az, double angle);
+
 /// Boolean between two bodies; names from both operands are carried through.
 SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op);
 /// Constant-radius fillet on the named edges. New faces: "<featureId>.fillet.<edgeName>".
@@ -74,6 +112,18 @@ int sk_body_edge_count(SKHandle body);
 const char *sk_body_edge_name(SKHandle body, int i);  // i matches SKMesh.segmentEdge
 int sk_body_find_face(SKHandle body, const char *name);  // -1 if not found
 int sk_body_find_edge(SKHandle body, const char *name);  // -1 if not found
+// Edges bounding a face (indices as in sk_body_edge_name; seams left out). Writes up to `max`
+// indices to `out` and returns how many there are, or -1 if the face isn't found.
+int sk_body_face_edges(SKHandle body, const char *faceName, int *out, int max);
+// Faces on either side of an edge (indices as in sk_body_face_name); returns how many, or -1.
+int sk_body_edge_faces(SKHandle body, const char *edgeName, int *out, int max);
+// The edges of the loop of `faceName` that contains `edgeName` (seams left out); returns how many, or -1.
+int sk_body_loop_edges(SKHandle body, const char *faceName, const char *edgeName, int *out, int max);
+/// A planar face of a body as a profile, e.g. to extrude it (press-pull). Its edges are tagged with
+/// the body's edge names, so the sides are named "<featureId>.side.<edgeName>".
+SKHandle sk_body_face_profile(SKHandle body, const char *faceName);
+/// Centre of mass of a face.
+bool sk_body_face_center(SKHandle body, const char *faceName, double out[3]);
 /// Frame of a planar face (normal points out of the material). False if missing / not planar.
 bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out);
 /// Drag handle for a fillet/chamfer on an edge: out[0..2] = edge midpoint, out[3..5] = unit

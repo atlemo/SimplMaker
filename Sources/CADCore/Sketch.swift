@@ -35,6 +35,8 @@ public struct SketchCurve: Codable, Hashable, Sendable, Identifiable {
         case circle(center: EntityID, radius: Double)
         /// Counter-clockwise from start to end; the solver keeps |center-start| == |center-end|.
         case arc(center: EntityID, start: EntityID, end: EntityID)
+        /// Cubic Bézier from `start` to `end`, pulled toward the two control points (its handles).
+        case bezier(start: EntityID, control1: EntityID, control2: EntityID, end: EntityID)
     }
     public var id: EntityID
     public var geometry: Geometry
@@ -90,11 +92,49 @@ public struct SketchDimension: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// Text in a sketch: its letters' outlines become sketch profiles (e.g. to extrude or cut).
+public struct SketchText: Codable, Hashable, Sendable, Identifiable {
+    public var id: EntityID
+    public var text: String
+    /// Where the text starts: a sketch point on the baseline, so it can be dragged and constrained.
+    public var position: EntityID
+    /// Height of the capital letters, as an expression ("10 mm").
+    public var height: String
+    /// PostScript name of the font ("Helvetica-Bold").
+    public var font: String
+    public init(id: EntityID = IDs.make(), text: String, position: EntityID, height: String = "10 mm",
+                font: String = SketchText.defaultFont) {
+        self.id = id; self.text = text; self.position = position; self.height = height; self.font = font
+    }
+    public static let defaultFont = "Helvetica-Bold"
+}
+
 public struct Sketch: Codable, Hashable, Sendable {
     public var points: [SketchPoint] = []
     public var curves: [SketchCurve] = []
     public var constraints: [SketchConstraint] = []
     public var dimensions: [SketchDimension] = []
+    public var texts: [SketchText] = []
+
+    private enum CodingKeys: String, CodingKey { case points, curves, constraints, dimensions, texts }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        points = try c.decode([SketchPoint].self, forKey: .points)
+        curves = try c.decode([SketchCurve].self, forKey: .curves)
+        constraints = try c.decode([SketchConstraint].self, forKey: .constraints)
+        dimensions = try c.decode([SketchDimension].self, forKey: .dimensions)
+        texts = try c.decodeIfPresent([SketchText].self, forKey: .texts) ?? []  // older files have none
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(points, forKey: .points)
+        try c.encode(curves, forKey: .curves)
+        try c.encode(constraints, forKey: .constraints)
+        try c.encode(dimensions, forKey: .dimensions)
+        if !texts.isEmpty { try c.encode(texts, forKey: .texts) }
+    }
 
     /// Every sketch starts with a fixed origin point, id "origin".
     public init() { points.append(SketchPoint(id: "origin", x: 0, y: 0, fixed: true)) }
@@ -124,6 +164,14 @@ public struct Sketch: Codable, Hashable, Sendable {
         curves.append(SketchCurve(id: id, .arc(center: center, start: start, end: end))); return id
     }
 
+    @discardableResult
+    public mutating func addBezier(start: EntityID, control1: EntityID, control2: EntityID, end: EntityID,
+                                   id: EntityID = IDs.make(), construction: Bool = false) -> EntityID {
+        curves.append(SketchCurve(id: id, .bezier(start: start, control1: control1, control2: control2, end: end),
+                                  construction: construction))
+        return id
+    }
+
     public mutating func constrain(_ kind: SketchConstraint.Kind) { constraints.append(SketchConstraint(kind)) }
 
     public mutating func dimension(_ kind: SketchDimension.Kind, _ expression: String, id: EntityID = IDs.make()) {
@@ -146,7 +194,7 @@ public struct Sketch: Codable, Hashable, Sendable {
     /// Circle/arc radius as currently stored in the geometry.
     public func radius(of curve: SketchCurve) -> Double? {
         switch curve.geometry {
-        case .line: return nil
+        case .line, .bezier: return nil
         case .circle(_, let r): return r
         case .arc(let c, let s, _):
             guard let pc = point(c), let ps = point(s) else { return nil }

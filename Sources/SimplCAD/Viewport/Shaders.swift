@@ -83,12 +83,14 @@ enum Shaders {
         return o;
     }
 
-    // Sketch profiles: translucent fills on the sketch plane, pulled slightly toward the camera.
+    // Sketch profiles: translucent fills on the sketch plane, pulled slightly toward the camera
+    // (less than the sketch lines, so a line with fill on both sides, like a hole's, still shows).
     vertex FaceOut regionVertex(uint vid [[vertex_id]],
                                 device const FaceVertex* verts [[buffer(0)]],
-                                constant Uniforms& u [[buffer(1)]]) {
+                                constant Uniforms& u [[buffer(1)]],
+                                constant DrawParams& p [[buffer(3)]]) {
         FaceOut o = transformFace(verts[vid], u);
-        o.position.z -= 0.0002 * o.position.w;
+        o.position.z -= p.depthBias;
         return o;
     }
 
@@ -100,6 +102,16 @@ enum Shaders {
         if (isSelected(in.id, sel, u.selectedCount)) alpha *= 3.0;
         FragOut o;
         o.color = float4(u.regionColor.rgb, min(alpha, 0.7));
+        o.id = in.id;
+        return o;
+    }
+
+    // Origin planes offered when choosing where to sketch: a translucent fill that brightens under the cursor.
+    fragment FragOut planeFragment(FaceOut in [[stage_in]],
+                                   constant Uniforms& u [[buffer(1)]],
+                                   constant DrawParams& p [[buffer(3)]]) {
+        FragOut o;
+        o.color = in.id == u.hovered ? p.hoverColor : p.color;
         o.id = in.id;
         return o;
     }
@@ -123,7 +135,7 @@ enum Shaders {
         float4 c = atB ? cb : ca;
         float2 offset = (nrm * side + d * (atB ? 1.0 : -1.0)) * p.thickness * 0.5;
         c.xy += offset / halfSize * c.w;
-        c.z -= p.depthBias * c.w;
+        c.z -= p.depthBias;  // constant in clip space: a fixed fraction of the view depth (see Camera.depthBiasScale)
         LineOut o;
         o.position = c;
         o.id = s.id;
