@@ -22,6 +22,27 @@ struct BodyMesh: Sendable {
     var mesh: Mesh
 }
 
+/// Display meshes of the last rebuild's bodies: a body a rebuild didn't touch (the same kernel
+/// body) keeps its mesh instead of being tessellated again.
+final class MeshCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var meshes: [ObjectIdentifier: (body: KBody, mesh: Mesh)] = [:]  // holds the body, so its id isn't reused
+
+    func meshes(for bodies: [BodyResult]) -> [BodyMesh] {
+        lock.lock(); defer { lock.unlock() }
+        var kept: [ObjectIdentifier: (body: KBody, mesh: Mesh)] = [:]
+        var out: [BodyMesh] = []
+        for (i, b) in bodies.enumerated() {
+            let key = ObjectIdentifier(b.body)
+            guard let mesh = meshes[key]?.mesh ?? (try? b.body.tessellate()) else { continue }
+            kept[key] = (b.body, mesh)
+            out.append(BodyMesh(index: i, id: b.id, name: b.name, mesh: mesh))
+        }
+        meshes = kept
+        return out
+    }
+}
+
 @MainActor
 @Observable
 final class DocumentModel {
@@ -74,6 +95,15 @@ final class DocumentModel {
     /// Called with every new document, so the file can snapshot it off the main thread.
     @ObservationIgnored var onDocumentChange: (@Sendable (CADDocument) -> Void)?
     @ObservationIgnored private var generation = 0
+    /// Rebuilds run one at a time: while one runs, only the newest request waits (a drag asks
+    /// many times a second, and piling those up made every one of them slower).
+    @ObservationIgnored private var regenRunning = false
+    @ObservationIgnored private var queuedRegen: (@MainActor () -> Void)?
+    /// The newest rebuild whose result is on screen: older results arriving later are dropped.
+    @ObservationIgnored private var appliedGeneration = 0
+    /// What earlier rebuilds left after each feature, so the next one starts at the first change.
+    @ObservationIgnored private let regenCache = RegenCache()
+    @ObservationIgnored private let meshCache = MeshCache()
 
     init(document: CADDocument = CADDocument()) {
         self.document = document
@@ -228,7 +258,7 @@ final class DocumentModel {
         if selectedFeature == id { selectedFeature = nil }
     }
 
-    /// Creates a fillet or chamfer on the selected edges.
+    /// Creates a fillet or chamfer on the selected edges, and all round the selected faces.
     func addEdgeFeature(fillet: Bool) {
         let edges: [EdgeRef] = selection.compactMap { pick in
             guard pick.isEdge, pick.body < meshes.count else { return nil }
@@ -236,9 +266,10 @@ final class DocumentModel {
             guard pick.element < m.mesh.edgeNames.count else { return nil }
             return EdgeRef(body: m.id, edge: m.mesh.edgeNames[pick.element])
         }
-        guard !edges.isEmpty else { return }
+        let faces = selection.compactMap { faceRef($0) }
+        guard !edges.isEmpty || !faces.isEmpty else { return }
         let base = fillet ? "Fillet" : "Chamfer"
-        let edgeFeature = EdgeFeature(edges: edges, size: fillet ? "2 mm" : "1 mm")
+        let edgeFeature = EdgeFeature(edges: edges, faces: faces, size: fillet ? "2 mm" : "1 mm")
         add(Feature(name: document.nextName(base), fillet ? .fillet(edgeFeature) : .chamfer(edgeFeature)))
     }
 
@@ -275,18 +306,33 @@ final class DocumentModel {
             doc.rollback = min(doc.rollback ?? Int.max, i + 1)  // show the model as it was at this sketch
         }
         isRegenerating = true
-        Task.detached(priority: .userInitiated) {
-            let r = Regenerator.regenerate(doc)
-            var meshes: [BodyMesh] = []
-            for (i, b) in r.bodies.enumerated() {
-                if let mesh = try? b.body.tessellate() { meshes.append(BodyMesh(index: i, id: b.id, name: b.name, mesh: mesh)) }
+        let cache = regenCache, meshCache = self.meshCache, snapshot = doc
+        let job: @MainActor () -> Void = {
+            self.regenRunning = true
+            Task.detached(priority: .userInitiated) {
+                let r = Regenerator.regenerate(snapshot, cache: cache)
+                let meshes = meshCache.meshes(for: r.bodies)
+                await self.finishRegen(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature)
             }
-            await self.apply(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature)
         }
+        if regenRunning { queuedRegen = job } else { job() }
     }
 
-    private func apply(_ r: RegenResult, _ meshes: [BodyMesh], generation gen: Int, fit: Bool, previewFeature: FeatureID?) {
-        guard gen == generation else { return }  // a newer edit is already regenerating
+    private func finishRegen(_ r: RegenResult, _ meshes: [BodyMesh], generation gen: Int, fit: Bool, previewFeature: FeatureID?) {
+        regenRunning = false
+        let next = queuedRegen
+        queuedRegen = nil
+        apply(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature, final: next == nil)
+        next?()
+    }
+
+    /// Shows a rebuild's result. Intermediate ones (a newer rebuild is queued) are shown too, so a
+    /// drag keeps moving; `final` is the last of them.
+    private func apply(_ r: RegenResult, _ meshes: [BodyMesh], generation gen: Int, fit: Bool, previewFeature: FeatureID?,
+                       final: Bool) {
+        if final { isRegenerating = false }
+        guard gen > appliedGeneration else { return }  // something newer is already on screen
+        appliedGeneration = gen
         if let previewFeature, let error = r.errors[previewFeature] {
             // Keep showing the last good model; the handle turns red instead, and says why.
             previewInvalid = true
@@ -294,7 +340,6 @@ final class DocumentModel {
             let parts = error.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
             let reason = parts.count == 2 && parts[1].hasPrefix(parts[0]) ? parts[1] : error
             handleProblem = "Can't build it at that size: \(reason)"
-            isRegenerating = false
             overlayRevision += 1
             return
         }
@@ -313,7 +358,6 @@ final class DocumentModel {
         sceneRevision += 1
         overlayRevision += 1
         if fit { fitRevision += 1 }
-        isRegenerating = false
         if let session = sketchSession, let frame = r.sketches[session.featureID]?.frame { session.frame = frame }
         updateSketchReferences()
     }
@@ -746,7 +790,11 @@ final class DocumentModel {
             case .twoSides(let d, _): return handle("Distance", base, n, d, negative: true)
             }
         case .fillet(let ef), .chamfer(let ef):
-            guard let ref = ef.edges.first, let body = result.edgeFeatureInputs[id]?[ref.body],
+            // On the first edge, or the first edge around the first face.
+            let ref = ef.edges.first ?? ef.faces.first.flatMap { face in
+                (try? result.edgeFeatureInputs[id]?[face.body]?.faceEdges(face.face))?.first.map { EdgeRef(body: face.body, edge: $0) }
+            }
+            guard let ref, let body = result.edgeFeatureInputs[id]?[ref.body],
                   let h = try? body.edgeHandle(ref.edge) else { return nil }
             if case .fillet = f.kind { return handle("Radius", h.origin, h.direction, ef.size) }
             return handle("Distance", h.origin, h.direction, ef.size)

@@ -228,8 +228,16 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if event.modifierFlags.contains(.control) { return showContextMenu(event) }  // ⌃-click = right-click
         window?.makeFirstResponder(self)
         let p = location(event)
+        let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
         if event.clickCount == 2, model?.sketchSession == nil, let renderer {
-            model?.doubleClick(renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered))
+            let f = renderer.camera.forward
+            model?.doubleClick(renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered),
+                               viewDirection: SIMD3(Double(f.x), Double(f.y), Double(f.z)), additive: additive)
+            refreshOverlay()
+            return
+        }
+        if event.clickCount == 2, let session = model?.sketchSession, session.tool == .select, session.hover.flatMap({ session.sketch.curve($0) }) != nil {
+            session.selectConnected(additive: additive)  // the whole chain of joined curves
             refreshOverlay()
             return
         }
@@ -274,7 +282,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             sketchEvent(.up, at: location(event), additive: false)
             return
         }
-        guard !dragged, let renderer, let model, model.sketchSession == nil else { return }
+        // A double-click's second release isn't a click: the double-click already did its job.
+        guard !dragged, event.clickCount < 2, let renderer, let model, model.sketchSession == nil else { return }
         let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
         model.clickRay = (SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
                           SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)))
@@ -651,6 +660,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             panel.addArrangedSubview(field)
             sketchFields[input] = field
         }
+        // Start at the size the fields need: added at zero width, its frame would fight the fields'
+        // fixed widths the first time it's measured (a "conflicting constraints" log).
+        panel.setFrameSize(panel.fittingSize)
         addSubview(panel)
         sketchPanel = panel
         sketchFieldOrder = inputs

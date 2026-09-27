@@ -120,6 +120,39 @@ extension Sketch {
         return id
     }
 
+    /// Every curve joined to `id` end to end, directly or through others (points that are shared
+    /// or constrained coincident count as joined), `id` first. Construction curves join only a
+    /// construction curve, and the others only each other.
+    public func connectedCurves(_ id: EntityID) -> [EntityID] {
+        guard let seed = curve(id) else { return [] }
+        // Points tied by coincident constraints are one place.
+        var group: [EntityID: EntityID] = [:]
+        func root(_ p: EntityID) -> EntityID {
+            var r = p
+            while let next = group[r], next != r { r = next }
+            return r
+        }
+        for c in constraints {
+            if case .coincident(let a, let b) = c.kind { let ra = root(a), rb = root(b); if ra != rb { group[ra] = rb } }
+        }
+        func ends(_ c: SketchCurve) -> [EntityID] {
+            switch c.geometry {
+            case .line(let a, let b), .arc(_, let a, let b), .bezier(let a, _, _, let b): return [a, b]
+            case .circle: return []
+            }
+        }
+        let candidates = curves.filter { $0.construction == seed.construction }
+        var found = [id], frontier = ends(seed).map(root)
+        var seen = Set(frontier)
+        while let p = frontier.popLast() {
+            for c in candidates where !found.contains(c.id) && ends(c).map(root).contains(p) {
+                found.append(c.id)
+                for q in ends(c).map(root) where seen.insert(q).inserted { frontier.append(q) }
+            }
+        }
+        return found
+    }
+
     /// Centers of the closed shapes made of lines, arcs and curves joined end to end
     /// (construction geometry left out).
     public func shapeCenters() -> [ShapeCenter] {

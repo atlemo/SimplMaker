@@ -242,7 +242,7 @@ struct StatusBar: View {
             Label(name, systemImage: hovered.isEdge ? "line.diagonal" : "square")
                 .truncationMode(.middle)
         } else {
-            Text("Click faces or edges to select · ⇧-click to add · drag to orbit").foregroundStyle(.secondary)
+            Text("Click faces or edges to select · double-click an edge for its loop · ⇧-click to add · drag to orbit").foregroundStyle(.secondary)
         }
     }
 }
@@ -289,22 +289,29 @@ struct Sidebar: View {
                     FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model)
                 }
             }
-            Section(isExpanded: $parametersOpen) {
-                ForEach(model.document.parameters) { p in
-                    ParameterRow(model: model, parameter: p)
+            // A plain section with its own chevron: the sidebar's built-in one only shows on hover.
+            Section {
+                if parametersOpen {
+                    ForEach(model.document.parameters) { p in
+                        ParameterRow(model: model, parameter: p)
+                    }
                 }
             } header: {
-                HStack {
+                HStack(spacing: DS.Spacing.space1) {
                     Text("Parameters")
+                        .contentShape(Rectangle())
+                        .onTapGesture { toggleParameters() }
                     Spacer()
-                    Button {
-                        parametersOpen = true  // show the new one
+                    HeaderIconButton(systemImage: "plus", help: "Add a parameter") {
+                        withAnimation(.easeOut(duration: 0.15)) { parametersOpen = true }  // show the new one
                         model.addParameter()
-                    } label: { Image(systemName: "plus") }
-                        .buttonStyle(.borderless)
-                        .help("Add a parameter")
-                        .padding(.trailing, DS.Spacing.space5)  // in line with the rows below, clear of the panel edge
+                    }
+                    HeaderIconButton(systemImage: "chevron.right", rotation: parametersOpen ? 90 : 0,
+                                     help: parametersOpen ? "Hide the parameters" : "Show the parameters") {
+                        toggleParameters()
+                    }
                 }
+                .padding(.trailing, DS.Spacing.space4)  // clear of the panel edge, in line with the rows below
             }
         }
         .listStyle(.sidebar)
@@ -314,6 +321,10 @@ struct Sidebar: View {
             // Double-click to edit: a sketch opens in sketch mode, other features show their handle.
             if ids.count == 1, let id = ids.first { model.editFeature(id) }
         }
+    }
+
+    private func toggleParameters() {
+        withAnimation(.easeOut(duration: 0.15)) { parametersOpen.toggle() }
     }
 
     /// Whether a row is being renamed; ending the edit clears it.
@@ -349,6 +360,34 @@ struct Sidebar: View {
             Button("Hide") { model.setHidden(Array(ids), true) }
             Button("Show") { model.setHidden(Array(ids), false) }
         }
+    }
+}
+
+/// A small icon button in a sidebar section header (add, expand/collapse), with a hover highlight.
+struct HeaderIconButton: View {
+    let systemImage: String
+    var rotation: Double = 0
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .rotationEffect(.degrees(rotation))
+                .frame(width: 20, height: 20)
+                .foregroundStyle(hovering ? Color.primary : Color.secondary)
+                .background(hovering ? Color.primary.opacity(0.1) : .clear,
+                            in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(.easeOut(duration: 0.15), value: rotation)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 

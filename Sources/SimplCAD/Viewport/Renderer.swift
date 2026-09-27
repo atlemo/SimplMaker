@@ -357,7 +357,8 @@ final class Renderer {
     func buildGrid(size: Float, step: Float) {
         var lines: [SegmentInstance] = []
         let n = Int(size / step)
-        for i in -n...n where i != 0 {
+        // The lines through the origin too: the axes cover only their positive halves, and are hidden while sketching.
+        for i in -n...n {
             let t = Float(i) * step
             lines.append(SegmentInstance(ax: t, ay: -size, az: 0, bx: t, by: size, bz: 0, id: 0))
             lines.append(SegmentInstance(ax: -size, ay: t, az: 0, bx: size, by: t, bz: 0, id: 0))
@@ -418,6 +419,22 @@ final class Renderer {
 
         // Depth bias per layer, as a fraction of the view depth (0.001 ≈ 0.2 mm at the default zoom).
         let biasScale = camera.depthBiasScale * 2.5
+        func segments(_ buffer: MTLBuffer?, _ count: Int, _ params: DrawParams) {
+            guard let buffer, count > 0 else { return }
+            var p = params
+            p.depthBias *= biasScale
+            enc.setRenderPipelineState(p.pickable != 0 ? segmentPipeline : decorationPipeline)
+            enc.setVertexBuffer(buffer, offset: 0, index: 0)
+            enc.setVertexBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
+            enc.setFragmentBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
+            enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count)
+        }
+        let p = palette
+        // The grid goes under the translucent profile fills, so it shows through them.
+        if showGrid {
+            segments(grid, gridCount, DrawParams(color: p.grid, hoverColor: p.grid, selectColor: p.grid,
+                                                 thickness: 1 * scale, depthBias: 0, pickable: 0))
+        }
         // Fills sit just in front of the faces they lie on, but behind every edge and sketch line.
         let fillBias = 0.0002 * biasScale
         if let regions = overlay.regions, let indices = overlay.regionIndices {
@@ -449,22 +466,6 @@ final class Renderer {
             enc.setDepthStencilState(depthState)
         }
 
-        enc.setRenderPipelineState(segmentPipeline)
-        func segments(_ buffer: MTLBuffer?, _ count: Int, _ params: DrawParams) {
-            guard let buffer, count > 0 else { return }
-            var p = params
-            p.depthBias *= biasScale
-            enc.setRenderPipelineState(p.pickable != 0 ? segmentPipeline : decorationPipeline)
-            enc.setVertexBuffer(buffer, offset: 0, index: 0)
-            enc.setVertexBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
-            enc.setFragmentBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
-            enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count)
-        }
-        let p = palette
-        if showGrid {
-            segments(grid, gridCount, DrawParams(color: p.grid, hoverColor: p.grid, selectColor: p.grid,
-                                                 thickness: 1 * scale, depthBias: 0, pickable: 0))
-        }
         for (i, (buffer, _)) in axes.enumerated() where showAxes {
             let color = i == 0 ? p.axes.x : i == 1 ? p.axes.y : p.axes.z
             segments(buffer, 1, DrawParams(color: color, hoverColor: color, selectColor: color,

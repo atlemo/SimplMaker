@@ -841,13 +841,31 @@ SKHandle sk_extrude(const SKHandle *profiles, int count, double dx, double dy, d
   }
 
   TopoDS_Shape result = solids[0];
-  if (solids.size() > 1) {
+  // Pieces that don't touch (the letters of a text, say) need no merging: they go into the body
+  // as they are, which is what merging would give, only much faster.
+  bool touching = false;
+  std::vector<Bnd_Box> boxes(solids.size());
+  for (size_t k = 0; k < solids.size(); ++k) BRepBndLib::Add(solids[k], boxes[k]);
+  for (size_t i = 0; i < solids.size() && !touching; ++i)
+    for (size_t j = i + 1; j < solids.size() && !touching; ++j) {
+      Bnd_Box bi = boxes[i];
+      bi.Enlarge(1e-6);
+      touching = !bi.IsOut(boxes[j]);
+    }
+  if (solids.size() > 1 && !touching) {
+    TopoDS_Compound all;
+    BRep_Builder bb;
+    bb.MakeCompound(all);
+    for (const TopoDS_Shape &sol : solids) bb.Add(all, sol);
+    result = all;
+  } else if (solids.size() > 1) {
     BRepAlgoAPI_Fuse fuse;
     ShapeList args, tools;
     args.Append(solids[0]);
     for (size_t k = 1; k < solids.size(); ++k) tools.Append(solids[k]);
     fuse.SetArguments(args);
     fuse.SetTools(tools);
+    fuse.SetRunParallel(true);
     fuse.Build();
     if (!fuse.IsDone() || fuse.HasErrors()) {
       setError("could not merge extruded profiles");
@@ -1207,10 +1225,17 @@ SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op) {
   if (!a || !b) return 0;
   std::unique_ptr<BRepAlgoAPI_BooleanOperation> bop;
   switch (op) {
-    case SK_FUSE: bop = std::make_unique<BRepAlgoAPI_Fuse>(a->shape, b->shape); break;
-    case SK_CUT: bop = std::make_unique<BRepAlgoAPI_Cut>(a->shape, b->shape); break;
-    case SK_COMMON: bop = std::make_unique<BRepAlgoAPI_Common>(a->shape, b->shape); break;
+    case SK_FUSE: bop = std::make_unique<BRepAlgoAPI_Fuse>(); break;
+    case SK_CUT: bop = std::make_unique<BRepAlgoAPI_Cut>(); break;
+    case SK_COMMON: bop = std::make_unique<BRepAlgoAPI_Common>(); break;
   }
+  ShapeList args, tools;
+  args.Append(a->shape);
+  tools.Append(b->shape);
+  bop->SetArguments(args);
+  bop->SetTools(tools);
+  bop->SetRunParallel(true);  // many faces (text, patterns) intersect faster on all cores
+  bop->Build();
   if (!bop->IsDone() || bop->HasErrors()) {
     setError("boolean operation failed");
     return 0;
@@ -1286,6 +1311,79 @@ int sk_body_find_edge(SKHandle body, const char *name) {
   if (!b) return -1;
   auto it = b->edgeIndex.find(name);
   return it == b->edgeIndex.end() ? -1 : it->second;
+}
+
+int sk_body_face_edges(SKHandle body, const char *faceName, int *out, int max) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return -1;
+  auto it = b->faceIndex.find(faceName);
+  if (it == b->faceIndex.end()) {
+    setError(std::string("face not found: ") + faceName);
+    return -1;
+  }
+  std::vector<int> found;
+  for (TopExp_Explorer ex(b->faces(it->second + 1), TopAbs_EDGE); ex.More(); ex.Next()) {
+    int i = b->edges.FindIndex(ex.Current()) - 1;
+    if (i < 0 || b->edgeHidden[i] || std::find(found.begin(), found.end(), i) != found.end()) continue;
+    found.push_back(i);
+  }
+  for (int k = 0; k < (int)found.size() && k < max; ++k) out[k] = found[k];
+  return (int)found.size();
+  SK_CATCH(-1)
+}
+
+int sk_body_edge_faces(SKHandle body, const char *edgeName, int *out, int max) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return -1;
+  auto it = b->edgeIndex.find(edgeName);
+  if (it == b->edgeIndex.end()) {
+    setError(std::string("edge not found: ") + edgeName);
+    return -1;
+  }
+  const TopoDS_Shape &edge = b->edges(it->second + 1);
+  std::vector<int> found;
+  for (int f = 1; f <= b->faces.Extent(); ++f)
+    for (TopExp_Explorer ex(b->faces(f), TopAbs_EDGE); ex.More(); ex.Next())
+      if (ex.Current().IsSame(edge)) {
+        if (std::find(found.begin(), found.end(), f - 1) == found.end()) found.push_back(f - 1);
+        break;
+      }
+  for (int k = 0; k < (int)found.size() && k < max; ++k) out[k] = found[k];
+  return (int)found.size();
+  SK_CATCH(-1)
+}
+
+int sk_body_loop_edges(SKHandle body, const char *faceName, const char *edgeName, int *out, int max) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return -1;
+  auto fi = b->faceIndex.find(faceName);
+  auto ei = b->edgeIndex.find(edgeName);
+  if (fi == b->faceIndex.end() || ei == b->edgeIndex.end()) {
+    setError("face or edge not found");
+    return -1;
+  }
+  const TopoDS_Shape &edge = b->edges(ei->second + 1);
+  std::vector<int> found;
+  for (TopExp_Explorer wires(b->faces(fi->second + 1), TopAbs_WIRE); wires.More(); wires.Next()) {
+    bool mine = false;
+    for (TopExp_Explorer ex(wires.Current(), TopAbs_EDGE); ex.More() && !mine; ex.Next()) mine = ex.Current().IsSame(edge);
+    if (!mine) continue;
+    for (TopExp_Explorer ex(wires.Current(), TopAbs_EDGE); ex.More(); ex.Next()) {
+      int i = b->edges.FindIndex(ex.Current()) - 1;
+      if (i < 0 || b->edgeHidden[i] || std::find(found.begin(), found.end(), i) != found.end()) continue;
+      found.push_back(i);
+    }
+    break;
+  }
+  for (int k = 0; k < (int)found.size() && k < max; ++k) out[k] = found[k];
+  return (int)found.size();
+  SK_CATCH(-1)
 }
 
 SKHandle sk_body_face_profile(SKHandle body, const char *faceName) {

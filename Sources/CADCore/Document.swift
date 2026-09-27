@@ -281,11 +281,29 @@ public struct RotateFeature: Codable, Hashable, Sendable {
     }
 }
 
-/// Fillet (size = radius) or chamfer (size = distance) on a set of edges.
+/// Fillet (size = radius) or chamfer (size = distance) on a set of edges, and on every edge
+/// around a set of faces (found again at each rebuild, so they follow the face as it changes).
 public struct EdgeFeature: Codable, Hashable, Sendable {
     public var edges: [EdgeRef]
+    public var faces: [FaceRef]
     public var size: String
-    public init(edges: [EdgeRef], size: String) { self.edges = edges; self.size = size }
+    public init(edges: [EdgeRef], faces: [FaceRef] = [], size: String) { self.edges = edges; self.faces = faces; self.size = size }
+
+    private enum CodingKeys: String, CodingKey { case edges, faces, size }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        edges = try c.decode([EdgeRef].self, forKey: .edges)
+        faces = try c.decodeIfPresent([FaceRef].self, forKey: .faces) ?? []  // older files: edges only
+        size = try c.decode(String.self, forKey: .size)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(edges, forKey: .edges)
+        if !faces.isEmpty { try c.encode(faces, forKey: .faces) }
+        try c.encode(size, forKey: .size)
+    }
 }
 
 public struct Feature: Codable, Hashable, Sendable, Identifiable {

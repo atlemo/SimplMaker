@@ -59,10 +59,10 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .torus: return "Torus: place a torus on a plane or face"
         case .coil: return "Coil: place a coil spring on a plane or face"
         case .pipe: return "Pipe: a round tube along sketch curves"
-        case .fillet: return "Fillet: round the selected edges"
+        case .fillet: return "Fillet: round the selected edges, or every edge around a selected face"
         case .move: return "Move: slide bodies or sketches along X, Y or Z"
         case .rotate: return "Rotate: turn a body about an X, Y or Z axis"
-        case .chamfer: return "Chamfer: bevel the selected edges"
+        case .chamfer: return "Chamfer: bevel the selected edges, or every edge around a selected face"
         case .combine: return "Combine: join, cut or intersect bodies (e.g. cut text out of a plate)"
         }
     }
@@ -90,7 +90,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .rib, .pipe: return kind == .sketchCurve
         case .hole: return kind == .face
         case .box, .cylinder, .sphere, .torus, .coil: return kind == .plane || kind == .face
-        case .fillet, .chamfer: return kind == .edge
+        case .fillet, .chamfer: return kind == .edge || kind == .face  // a face: every edge around it
         case .move: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve
         case .rotate, .combine: return kind == .face || kind == .edge
         }
@@ -163,8 +163,10 @@ extension DocumentModel {
             return n == 0 ? "Click the body to cut from, join to or intersect with"
                 : "Click the bodies to combine with it, then press Return (\(n - 1) picked)"
         case .fillet, .chamfer:
-            let n = selectedEdgeCount
-            return n == 0 ? "Select edges to \(tool.rawValue.lowercased())" : "Select more edges, or press Return (\(n) selected)"
+            let n = selectedEdgeCount, f = selection.filter(\.isFace).count
+            if n + f == 0 { return "Select edges or faces to \(tool.rawValue.lowercased())" }
+            let picked = [n > 0 ? "\(n) edge\(n == 1 ? "" : "s")" : nil, f > 0 ? "\(f) face\(f == 1 ? "" : "s")" : nil].compactMap { $0 }
+            return "Select more, or press Return (\(picked.joined(separator: ", ")))"
         }
     }
 
@@ -224,7 +226,7 @@ extension DocumentModel {
             guard selection.count == 1, let pick = selection.first, pick.isFace else { return false }
             return place(tool, on: pick)
         case .fillet, .chamfer:
-            guard selectedEdgeCount > 0, !waiting else { return false }
+            guard selectedEdgeCount + selection.filter(\.isFace).count > 0, !waiting else { return false }
             addEdgeFeature(fillet: tool == .fillet)
         case .move:
             var sketches: [FeatureID] = []
