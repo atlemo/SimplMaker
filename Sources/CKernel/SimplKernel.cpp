@@ -23,6 +23,7 @@
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepFeat_MakeLinearForm.hxx>
@@ -37,6 +38,8 @@
 #include <BRepPrimAPI_MakeTorus.hxx>
 #include <BRepTools_WireExplorer.hxx>
 #include <Geom2d_Line.hxx>
+#include <Geom_BezierCurve.hxx>
+#include <TColgp_Array1OfPnt.hxx>
 #include <Geom_CylindricalSurface.hxx>
 #include <Geom_Plane.hxx>
 #include <TopoDS_Wire.hxx>
@@ -632,6 +635,31 @@ bool sk_sketch_add_arc(SKHandle sketch, const char *tag, double cu, double cv, d
   SK_CATCH(false)
 }
 
+bool sk_sketch_add_bezier(SKHandle sketch, const char *tag, const double *uv, int count) {
+  SK_TRY
+  Sketch *s;
+  auto keep = lookup(sketch, s);
+  if (!s) return false;
+  if (count < 2 || count > 25) {
+    setError("a Bézier curve needs 2 to 25 control points");
+    return false;
+  }
+  TColgp_Array1OfPnt poles(1, count);
+  for (int k = 0; k < count; ++k) poles(k + 1) = frameToWorld(s->frame, uv[2 * k], uv[2 * k + 1]);
+  if (poles(1).Distance(poles(count)) <= Precision::Confusion()) {
+    setError("degenerate Bézier curve");
+    return false;
+  }
+  Handle(Geom_BezierCurve) curve = new Geom_BezierCurve(poles);
+  BRepBuilderAPI_MakeEdge mk(curve);
+  if (!mk.IsDone()) {
+    setError("could not make a Bézier edge");
+    return false;
+  }
+  return addCurve(sketch, tag, mk.Edge());
+  SK_CATCH(false)
+}
+
 int sk_sketch_build_regions(SKHandle sketch) {
   SK_TRY
   Sketch *s;
@@ -1138,6 +1166,36 @@ SKHandle sk_primitive(SKPrimitive kind, SKFrame frame, double a, double b, doubl
   }
   nameByDirection(shape, f, feat, names);
   return storeChecked(shape, names, feat, "the primitive is invalid");
+  SK_CATCH(0)
+}
+
+static SKHandle transformed(SKHandle body, const gp_Trsf &t) {
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  BRepBuilderAPI_Transform tr(b->shape, t, true);
+  if (!tr.IsDone()) {
+    setError("could not move the body");
+    return 0;
+  }
+  std::vector<Named> names;
+  for (const Named &n : namedFaces(*b)) names.push_back({tr.ModifiedShape(n.shape), n.name});
+  return store(makeBody(tr.Shape(), names, "moved"));
+}
+
+SKHandle sk_translate(SKHandle body, double dx, double dy, double dz) {
+  SK_TRY
+  gp_Trsf t;
+  t.SetTranslation(gp_Vec(dx, dy, dz));
+  return transformed(body, t);
+  SK_CATCH(0)
+}
+
+SKHandle sk_rotate(SKHandle body, double ox, double oy, double oz, double ax, double ay, double az, double angle) {
+  SK_TRY
+  gp_Trsf t;
+  t.SetRotation(gp_Ax1(gp_Pnt(ox, oy, oz), gp_Dir(ax, ay, az)), angle);
+  return transformed(body, t);
   SK_CATCH(0)
 }
 

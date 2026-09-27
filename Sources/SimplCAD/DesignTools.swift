@@ -12,7 +12,7 @@ import simd
 enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
-    case fillet = "Fillet", chamfer = "Chamfer"
+    case fillet = "Fillet", chamfer = "Chamfer", move = "Move", rotate = "Rotate"
 
     var id: String { rawValue }
 
@@ -20,7 +20,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// change an existing body.
     static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
-    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole]
+    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .move, .rotate]
 
     /// A glyph name from the macOS Design System's icon set (see IconGlyphs.swift), not an SF Symbol.
     var symbol: String {
@@ -39,6 +39,8 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .pipe: return "waypoints"
         case .fillet: return "radius"
         case .chamfer: return "triangle"
+        case .move: return "move"
+        case .rotate: return "rotate-cw"
         }
     }
 
@@ -57,6 +59,8 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .coil: return "Coil: place a coil spring on a plane or face"
         case .pipe: return "Pipe: a round tube along sketch curves"
         case .fillet: return "Fillet: round the selected edges"
+        case .move: return "Move: slide a body along X, Y or Z"
+        case .rotate: return "Rotate: turn a body about an X, Y or Z axis"
         case .chamfer: return "Chamfer: bevel the selected edges"
         }
     }
@@ -85,6 +89,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .hole: return kind == .face
         case .box, .cylinder, .sphere, .torus, .coil: return kind == .plane || kind == .face
         case .fillet, .chamfer: return kind == .edge
+        case .move, .rotate: return kind == .face || kind == .edge
         }
     }
 }
@@ -148,6 +153,7 @@ extension DocumentModel {
         case .hole: return "Click a flat face where the hole goes"
         case .box, .cylinder, .sphere, .torus, .coil:
             return "Click a plane or flat face to place the \(tool.rawValue.lowercased())"
+        case .move, .rotate: return "Click the body to \(tool.rawValue.lowercased())"
         case .fillet, .chamfer:
             let n = selectedEdgeCount
             return n == 0 ? "Select edges to \(tool.rawValue.lowercased())" : "Select more edges, or press Return (\(n) selected)"
@@ -212,6 +218,14 @@ extension DocumentModel {
         case .fillet, .chamfer:
             guard selectedEdgeCount > 0, !waiting else { return false }
             addEdgeFeature(fillet: tool == .fillet)
+        case .move, .rotate:
+            var bodies: [FeatureID] = []
+            for pick in selection where pick.isFace || pick.isEdge {
+                if let id = meshes[safe: pick.body]?.id, !bodies.contains(id) { bodies.append(id) }
+            }
+            guard !bodies.isEmpty else { return false }
+            add(Feature(name: document.nextName(tool.rawValue),
+                        tool == .move ? .move(MoveFeature(bodies: bodies)) : .rotate(RotateFeature(bodies: bodies))))
         }
         return true
     }

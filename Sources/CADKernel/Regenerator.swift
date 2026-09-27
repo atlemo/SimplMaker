@@ -4,6 +4,7 @@
 import CADCore
 import CKernel
 import Foundation
+import simd
 
 public struct SketchResult: Sendable {
     public var frame: Frame
@@ -60,6 +61,8 @@ public enum Regenerator {
                 case .hole(let f): try hole(f, feature, &r)
                 case .primitive(let f): try primitive(f, feature, &r)
                 case .pipe(let f): try pipe(f, feature, &r)
+                case .move(let f): try move(f, feature, &r)
+                case .rotate(let f): try rotate(f, feature, &r)
                 }
             } catch {
                 r.errors[feature.id] = "\(error)"
@@ -108,6 +111,15 @@ public enum Regenerator {
                 guard let pc = solved.point(center), let ps = solved.point(s), let pe = solved.point(e) else { continue }
                 let a0 = atan2(ps.y - pc.y, ps.x - pc.x), a1 = atan2(pe.y - pc.y, pe.x - pc.x)
                 try ks.addArc(c.id, center: pc.position, radius: vlength(ps.position - pc.position), from: a0, to: a1)
+            }
+        }
+        // Text: every letter contour's pieces share a tag, so a letter is one profile.
+        for t in solved.texts {
+            for (n, contour) in t.contours(in: solved, parameters: r.parameters).enumerated() {
+                let tag = "\(t.id)#\(n)"
+                for seg in contour {
+                    if seg.count == 2 { try ks.addLine(tag, seg[0], seg[1]) } else { try ks.addBezier(tag, seg) }
+                }
             }
         }
         let regions = try ks.buildRegions()
@@ -322,6 +334,47 @@ public enum Regenerator {
         }
         let tool = try KBody.primitive(shape, on: try primitiveFrame(f, r), featureID: feature.id)
         try combine(tool, f.operation, target: f.target, feature, &r)
+    }
+
+    public static func direction(_ a: Axis3) -> SIMD3<Double> {
+        switch a {
+        case .x: return SIMD3(1, 0, 0)
+        case .y: return SIMD3(0, 1, 0)
+        case .z: return SIMD3(0, 0, 1)
+        }
+    }
+
+    /// The middle of the bounding box around several bodies.
+    public static func center(of bodies: [KBody]) -> SIMD3<Double>? {
+        let boxes = bodies.compactMap(\.bounds)
+        guard let first = boxes.first else { return nil }
+        let lo = boxes.dropFirst().reduce(first.min) { simd_min($0, $1.min) }
+        let hi = boxes.dropFirst().reduce(first.max) { simd_max($0, $1.max) }
+        return (lo + hi) / 2
+    }
+
+    /// The bodies a move or rotate works on, recorded as they were before it (for its drag handle).
+    static func transformInputs(_ ids: [FeatureID], _ feature: Feature, _ r: inout RegenResult) throws -> [Int] {
+        let indices = try ids.map { id in
+            guard let i = r.bodies.firstIndex(where: { $0.id == id }) else { throw KernelError(message: "a body it moves is missing") }
+            return i
+        }
+        guard !indices.isEmpty else { throw KernelError(message: "no body to move") }
+        for i in indices { r.featureInputs[feature.id, default: [:]][r.bodies[i].id] = r.bodies[i].body }
+        return indices
+    }
+
+    static func move(_ f: MoveFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let p = r.parameters
+        let d = SIMD3(try p.value(of: f.dx, kind: .length), try p.value(of: f.dy, kind: .length), try p.value(of: f.dz, kind: .length))
+        for i in try transformInputs(f.bodies, feature, &r) { r.bodies[i].body = try r.bodies[i].body.translated(d) }
+    }
+
+    static func rotate(_ f: RotateFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let angle = try r.parameters.value(of: f.angle, kind: .angle)
+        let indices = try transformInputs(f.bodies, feature, &r)
+        guard let c = center(of: indices.map { r.bodies[$0].body }) else { throw KernelError(message: "the body is empty") }
+        for i in indices { r.bodies[i].body = try r.bodies[i].body.rotated(about: c, axis: direction(f.axis), angle: angle) }
     }
 
     static func pipe(_ f: PipeFeature, _ feature: Feature, _ r: inout RegenResult) throws {

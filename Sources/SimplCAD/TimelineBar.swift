@@ -18,6 +18,8 @@ extension Feature {
         case .rib: return DesignTool.rib.symbol
         case .hole: return DesignTool.hole.symbol
         case .pipe: return DesignTool.pipe.symbol
+        case .move: return DesignTool.move.symbol
+        case .rotate: return DesignTool.rotate.symbol
         case .primitive(let p):
             switch p.kind {
             case .box: return DesignTool.box.symbol

@@ -599,7 +599,7 @@ final class DocumentModel {
         }
         for (i, id) in sketchSlots.enumerated() where isSketchShown(id) {
             guard let r = result?.sketches[id] else { continue }
-            SketchOverlayBuilder.finished(r, slot: i + 1, into: &o)
+            SketchOverlayBuilder.finished(r, slot: i + 1, parameters: parameterValues, into: &o)
             SketchOverlayBuilder.regions(r, slot: i + 1, into: &o)
         }
         return o
@@ -739,8 +739,34 @@ final class DocumentModel {
         case .rib(let rf):
             guard let at = pathPoint(rf.path, result, middle: true) else { return nil }
             return handle("Thickness", at.point, at.normal, rf.thickness, per: 0.5)
+        case .move(let mf):
+            guard let inputs = result.featureInputs[id], let center = Regenerator.center(of: Array(inputs.values)) else { return nil }
+            let offset = SIMD3((try? params.value(of: mf.dx, kind: .length)) ?? 0, (try? params.value(of: mf.dy, kind: .length)) ?? 0,
+                               (try? params.value(of: mf.dz, kind: .length)) ?? 0)
+            let dir = Regenerator.direction(mf.arrow)
+            let along = simd_dot(offset, dir)
+            // The arrow starts where the body is, apart from the part of the move along the arrow.
+            return handle("Move \(mf.arrow.rawValue)", center + offset - along * dir, dir, Self.component(mf, mf.arrow), negative: true)
+        case .rotate(let rf):
+            guard let inputs = result.featureInputs[id], let center = Regenerator.center(of: Array(inputs.values)),
+                  let box = inputs.values.first?.bounds else { return nil }
+            let axis = Regenerator.direction(rf.axis)
+            let radial: SIMD3<Double> = rf.axis == .z ? SIMD3(1, 0, 0) : rf.axis == .x ? SIMD3(0, 1, 0) : SIMD3(0, 0, 1)
+            let r = max(simd_reduce_max(box.max - box.min) * 0.6, 1)
+            var h = handle("Angle", center + r * radial, simd_cross(axis, radial), rf.angle, unit: .angle, per: r, max: 2 * .pi)
+            h.allowsNegative = true
+            return h
         case .sketch, .sweep, .loft:
             return nil
+        }
+    }
+
+    /// A move's distance along one axis, as stored.
+    static func component(_ m: MoveFeature, _ a: Axis3) -> String {
+        switch a {
+        case .x: return m.dx
+        case .y: return m.dy
+        case .z: return m.dz
         }
     }
 
@@ -914,6 +940,16 @@ final class DocumentModel {
         case .rib(var r):
             r.thickness = text
             doc.features[i].kind = .rib(r)
+        case .move(var m):
+            switch m.arrow {
+            case .x: m.dx = text
+            case .y: m.dy = text
+            case .z: m.dz = text
+            }
+            doc.features[i].kind = .move(m)
+        case .rotate(var r):
+            r.angle = text
+            doc.features[i].kind = .rotate(r)
         case .sketch, .sweep, .loft:
             break
         }

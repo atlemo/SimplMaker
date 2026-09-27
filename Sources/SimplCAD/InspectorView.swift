@@ -33,6 +33,8 @@ struct InspectorView: View {
                 case .hole(let f): HoleInspector(model: model, id: id, hole: f)
                 case .primitive(let f): PrimitiveInspector(model: model, id: id, primitive: f)
                 case .pipe(let f): PipeInspector(model: model, id: id, pipe: f)
+                case .move(let f): MoveInspector(model: model, id: id, move: f)
+                case .rotate(let f): RotateInspector(model: model, id: id, rotate: f)
                 }
                 Section {
                     Button("Delete Feature", role: .destructive) { model.deleteFeature(id) }
@@ -98,6 +100,22 @@ struct SketchInspector: View {
                 }
             }
         }
+        if !sketch.sketch.texts.isEmpty {
+            Section("Text") {
+                ForEach(sketch.sketch.texts) { t in
+                    LabeledContent("Text") {
+                        ExpressionField(text: t.text) { v in updateText(t.id) { $0.text = v } }
+                    }
+                    LabeledContent("Height") {
+                        ExpressionField(text: t.height) { v in updateText(t.id) { $0.height = v } }
+                    }
+                    Picker("Font", selection: Binding(get: { t.font }, set: { f in updateText(t.id) { $0.font = f } })) {
+                        ForEach(Self.fonts, id: \.name) { Text($0.title).tag($0.name) }
+                        if !Self.fonts.contains(where: { $0.name == t.font }) { Text(t.font).tag(t.font) }
+                    }
+                }
+            }
+        }
         Section("Dimensions") {
             ForEach(Array(sketch.sketch.dimensions.enumerated()), id: \.element.id) { i, d in
                 LabeledContent(label(d)) {
@@ -110,6 +128,26 @@ struct SketchInspector: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Fonts offered for sketch text: bold, regular, rounded, stencil-friendly and monospaced faces.
+    static let fonts: [(name: String, title: String)] = [
+        ("Helvetica-Bold", "Helvetica Bold"), ("Helvetica", "Helvetica"), ("AvenirNext-DemiBold", "Avenir Next"),
+        ("Futura-Bold", "Futura Bold"), ("ArialRoundedMTBold", "Arial Rounded"), ("Menlo-Bold", "Menlo Bold"),
+        ("Georgia-Bold", "Georgia Bold"),
+    ]
+
+    /// Edits a text: through the sketch being edited, or straight in the document.
+    func updateText(_ textID: EntityID, _ change: @escaping (inout SketchText) -> Void) {
+        if session != nil {
+            model.sketchCommand { $0.updateText(textID, change) }
+        } else {
+            model.updateFeature(id, "Edit Text") { f in
+                guard case .sketch(var sf) = f.kind, let i = sf.sketch.texts.firstIndex(where: { $0.id == textID }) else { return }
+                change(&sf.sketch.texts[i])
+                f.kind = .sketch(sf)
             }
         }
     }
@@ -545,6 +583,61 @@ struct PipeInspector: View {
             }
             PathSection(model: model, path: pipe.path) { p in edit.update("Change Path") { $0.path = p } }
             edit.operation(pipe.operation) { $0.operation = $1 }
+        }
+    }
+}
+
+// MARK: - Move and rotate
+
+/// The bodies a move or rotate works on.
+struct BodiesRow: View {
+    let model: DocumentModel
+    let ids: [FeatureID]
+    var body: some View {
+        let names = ids.map { id in model.bodies.first { $0.id == id }?.name ?? "missing" }
+        LabeledContent(ids.count == 1 ? "Body" : "Bodies", value: names.joined(separator: ", "))
+    }
+}
+
+struct MoveInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let move: MoveFeature
+
+    var edit: FeatureEdit<MoveFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .move(let m) = $0 { m } else { nil } }, wrap: { .move($0) })
+    }
+
+    var body: some View {
+        Section("Move") {
+            edit.row("X", move.dx, "Move X") { $0.dx = $1 }
+            edit.row("Y", move.dy, "Move Y") { $0.dy = $1 }
+            edit.row("Z", move.dz, "Move Z") { $0.dz = $1 }
+            Picker("Arrow along", selection: Binding(get: { move.arrow }, set: { a in edit.update("Change Axis") { $0.arrow = a } })) {
+                ForEach(Axis3.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            BodiesRow(model: model, ids: move.bodies)
+        }
+    }
+}
+
+struct RotateInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let rotate: RotateFeature
+
+    var edit: FeatureEdit<RotateFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .rotate(let r) = $0 { r } else { nil } }, wrap: { .rotate($0) })
+    }
+
+    var body: some View {
+        Section("Rotate") {
+            edit.row("Angle", rotate.angle, "Edit Angle") { $0.angle = $1 }
+            Picker("About", selection: Binding(get: { rotate.axis }, set: { a in edit.update("Change Axis") { $0.axis = a } })) {
+                ForEach(Axis3.allCases, id: \.self) { Text("\($0.rawValue) axis").tag($0) }
+            }
+            Text("Turns about an axis through the middle of the body.").font(.caption).foregroundStyle(.secondary)
+            BodiesRow(model: model, ids: rotate.bodies)
         }
     }
 }

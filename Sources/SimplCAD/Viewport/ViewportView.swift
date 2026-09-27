@@ -33,6 +33,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var handleField: ValueField?
     private var seenHandleFocusRequest = 0
     private var handlePreviewTask: Task<Void, Never>?
+    /// Where Text tool input is typed, at the clicked spot.
+    private var textEntryField: ValueField?
     /// Options for the selected feature (Join/Cut, Flip, OK, Cancel), below the size field.
     private var featureHUD: NSHostingView<FeatureHUD>?
     /// Typed values for the sketch step in progress (a line's length and angle, ...), beside the cursor.
@@ -489,6 +491,41 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         syncPopover()
         syncHandleField()
         syncSketchFields()
+        syncTextEntry()
+    }
+
+    /// The Text tool's field: appears where the tool was clicked, focused, until Return or Esc.
+    private func syncTextEntry() {
+        guard let renderer, let session = model?.sketchSession, let at = session.pendingText?.position else {
+            if let f = textEntryField {
+                if f.currentEditor() != nil { window?.makeFirstResponder(self) }
+                f.removeFromSuperview()
+                textEntryField = nil
+            }
+            return
+        }
+        let field: ValueField
+        if let textEntryField {
+            field = textEntryField
+        } else {
+            field = ValueField(frame: .zero)
+            field.alignment = .left
+            field.font = .systemFont(ofSize: 13)
+            field.placeholderString = "Type the text, then Return"
+            field.delegate = self
+            addSubview(field)
+            textEntryField = field
+            DispatchQueue.main.async { [weak self, weak field] in
+                guard let field, field.superview != nil else { return }
+                self?.window?.makeFirstResponder(field)
+            }
+        }
+        let w = session.frame.point(at.x, at.y)
+        guard let p = renderer.camera.project(SIMD3(Float(w.x), Float(w.y), Float(w.z)), viewSize: bounds.size) else { return }
+        let size = NSSize(width: 220, height: 24)
+        field.frame = NSRect(x: min(max(p.x, 0), max(bounds.width - size.width, 0)),
+                             y: min(max(p.y - size.height - 4, 0), max(bounds.height - size.height, 0)),
+                             width: size.width, height: size.height)
     }
 
     // MARK: typed values
@@ -666,6 +703,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         guard let field = control as? ValueField, let model else { return false }
         let newline = selector == #selector(NSResponder.insertNewline(_:))
         let cancel = selector == #selector(NSResponder.cancelOperation(_:))
+        if field === textEntryField {
+            guard newline || cancel else { return false }
+            let text = field.stringValue
+            window?.makeFirstResponder(self)
+            if newline { model.sketchCommand { $0.placeText(text) } } else { model.sketchSession?.cancelText() }
+            refreshOverlay()
+            return true
+        }
         if field === handleField {
             if newline {
                 handlePreviewTask?.cancel()

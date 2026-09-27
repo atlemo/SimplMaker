@@ -181,7 +181,8 @@ extension Sketch {
         for c in removedCurves { gone.insert(c.id) }
         curves.removeAll { gone.contains($0.id) }
         // Points that only belonged to removed curves.
-        let stillUsed = Set(curves.flatMap { pointIDs(of: $0) })
+        texts.removeAll { gone.contains($0.id) || gone.contains($0.position) }  // a text goes with its anchor
+        let stillUsed = Set(curves.flatMap { pointIDs(of: $0) } + texts.map(\.position))
         for c in removedCurves {
             for p in pointIDs(of: c) where p != "origin" && !stillUsed.contains(p) { gone.insert(p) }
         }
