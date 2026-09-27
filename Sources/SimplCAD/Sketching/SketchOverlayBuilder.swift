@@ -59,7 +59,7 @@ enum SketchOverlayBuilder {
             switch g {
             case .line: return g.point(0.25)  // a quarter along: the middle is where the line's size shows
             case .circle(let c, let r): return c + SIMD2(0, r)
-            case .arc: return g.point(0.5)
+            case .arc, .bezier: return g.point(0.5)
             }
         }
         for c in s.constraints {
@@ -107,6 +107,9 @@ enum SketchOverlayBuilder {
             var a1 = atan2(pe.y - pc.y, pe.x - pc.x)
             while a1 <= a0 { a1 += 2 * .pi }
             return arc(pc, simdLength(ps - pc), a0, a1)
+        case .bezier:
+            let poles = s.pointIDs(of: c).compactMap { s.position($0) }
+            return poles.count == 4 ? Bezier.flatten(poles) : []
         }
     }
 
@@ -124,6 +127,13 @@ enum SketchOverlayBuilder {
         for (i, c) in s.curves.enumerated() {
             let segs = segments(polyline(c, in: s), frame: f, id: PickID(sketchCurve: i).raw)
             if c.construction { o.construction += segs } else { o.curves += segs }
+            // A Bézier's handles: thin lines from each end to its control point.
+            if case .bezier(let a, let c1, let c2, let b) = c.geometry {
+                for (end, handle) in [(a, c1), (b, c2)] {
+                    guard let pe = s.position(end), let ph = s.position(handle) else { continue }
+                    o.preview += segments([pe, ph], frame: f, id: 0)
+                }
+            }
         }
         for (i, p) in s.points.enumerated() {
             let w = world(f, p.position)
@@ -133,6 +143,15 @@ enum SketchOverlayBuilder {
         // Text: the letters are drawn like curves, and picking one picks (and drags) the text's anchor.
         for text in session.textOutlines() {
             for line in text.polylines { o.curves += segments(line, frame: f, id: PickID(sketchPoint: text.anchor).raw) }
+        }
+        // While drawing, a small + marks the middle of each closed shape, where the cursor snaps.
+        if session.tool.placesPoints {
+            let r = session.snapTolerance
+            for c in s.shapeCenters() {
+                let p = c.position
+                o.construction += segments([p - SIMD2(r, 0), p + SIMD2(r, 0)], frame: f, id: 0)
+                o.construction += segments([p - SIMD2(0, r), p + SIMD2(0, r)], frame: f, id: 0)
+            }
         }
         for line in session.previewPolylines() { o.preview += segments(line, frame: f, id: 0) }
         if let snap = session.lastSnap {

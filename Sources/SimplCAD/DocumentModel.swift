@@ -98,7 +98,7 @@ final class DocumentModel {
             MainActor.assumeIsolated { model.replace(with: old, actionName: actionName) }
         }
         undoManager?.setActionName(actionName)
-        if doc.ignoringVisibility == old.ignoringVisibility {  // only shown/hidden changed: nothing to rebuild
+        if doc.ignoringPresentation == old.ignoringPresentation {  // only visibility or names changed: nothing to rebuild
             sceneRevision += 1
             overlayRevision += 1
         } else {
@@ -160,7 +160,14 @@ final class DocumentModel {
     var visibleMeshes: [BodyMesh] { meshes.filter { !document.hidden.contains($0.id) } }
 
     /// Bodies for the browser, in creation order.
-    var bodies: [BodyResult] { result?.bodies ?? [] }
+    /// The bodies, with the names given to them (renaming a body needs no rebuild).
+    var bodies: [BodyResult] {
+        (result?.bodies ?? []).map { b in
+            var b = b
+            if let name = document.bodyNames[b.id] { b.name = name }
+            return b
+        }
+    }
 
     /// Sketch features for the browser.
     var sketches: [Feature] { document.features.filter { if case .sketch = $0.kind { true } else { false } } }
@@ -177,6 +184,28 @@ final class DocumentModel {
             while doc.parameters.contains(where: { $0.name == "p\(n)" }) { n += 1 }
             doc.parameters.append(Parameter("p\(n)", "10 mm"))
         }
+    }
+
+    /// Renames a parameter and every expression that uses it. Returns why not, if it can't.
+    @discardableResult
+    func renameParameter(_ old: String, to new: String) -> String? {
+        var doc = document
+        do { try doc.renameParameter(old, to: new) } catch { return "\(error)" }
+        mutate("Rename \(old)") { $0 = doc }
+        return nil
+    }
+
+    /// Renames a sketch or other feature (an empty name keeps the old one).
+    func renameFeature(_ id: FeatureID, to name: String) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        updateFeature(id, "Rename") { $0.name = n }
+    }
+
+    /// Renames a body (an empty name goes back to its "BodyN" name).
+    func renameBody(_ id: FeatureID, to name: String) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        mutate("Rename Body") { doc in doc.bodyNames[id] = n.isEmpty ? nil : n }
     }
 
     func removeParameter(_ name: String) {
@@ -258,14 +287,19 @@ final class DocumentModel {
 
     private func apply(_ r: RegenResult, _ meshes: [BodyMesh], generation gen: Int, fit: Bool, previewFeature: FeatureID?) {
         guard gen == generation else { return }  // a newer edit is already regenerating
-        if let previewFeature, r.errors[previewFeature] != nil {
-            // Keep showing the last good model; the handle turns red instead.
+        if let previewFeature, let error = r.errors[previewFeature] {
+            // Keep showing the last good model; the handle turns red instead, and says why.
             previewInvalid = true
+            // Kernel errors read "fillet: fillet failed (…)"; drop the repeated context.
+            let parts = error.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            let reason = parts.count == 2 && parts[1].hasPrefix(parts[0]) ? parts[1] : error
+            handleProblem = "Can't build it at that size: \(reason)"
             isRegenerating = false
             overlayRevision += 1
             return
         }
         previewInvalid = false
+        handleProblem = nil
         result = r
         self.meshes = meshes
         selection = selection.filter { pick in
@@ -663,6 +697,8 @@ final class DocumentModel {
     private(set) var handlePreviewValue: Double?
     /// The latest preview failed (e.g. a fillet too big for its faces); the last good model stays visible.
     private(set) var previewInvalid = false
+    /// Why the size typed in the handle's field can't be used, shown under the field.
+    private(set) var handleProblem: String?
     var unlinkPrompt: UnlinkPrompt?
     /// Bumped when a new feature wants its size typed right away: the viewport focuses the handle's field.
     var handleFocusRequest = 0
@@ -675,8 +711,13 @@ final class DocumentModel {
     }
 
     var dragHandle: DragHandle? {
-        guard sketchSession == nil, pendingTool == nil, let id = selectedFeature,
-              let f = document.features.first(where: { $0.id == id }), !f.suppressed, let result else { return nil }
+        guard sketchSession == nil, pendingTool == nil, let id = selectedFeature else { return nil }
+        return handle(for: id)
+    }
+
+    /// The drag handle a feature shows while it's selected.
+    func handle(for id: FeatureID) -> DragHandle? {
+        guard let f = document.features.first(where: { $0.id == id }), !f.suppressed, let result else { return nil }
         let params = parameterValues
         func handle(_ label: String, _ base: SIMD3<Double>, _ direction: SIMD3<Double>, _ expression: String,
                     unit: UnitKind = .length, per: Double = 1, max: Double? = nil, negative: Bool = false) -> DragHandle {
@@ -740,7 +781,8 @@ final class DocumentModel {
             guard let at = pathPoint(rf.path, result, middle: true) else { return nil }
             return handle("Thickness", at.point, at.normal, rf.thickness, per: 0.5)
         case .move(let mf):
-            guard let inputs = result.featureInputs[id], let center = Regenerator.center(of: Array(inputs.values)) else { return nil }
+            let bodies = Array((result.featureInputs[id] ?? [:]).values), sketches = Array((result.sketchInputs[id] ?? [:]).values)
+            guard let center = Regenerator.center(of: bodies, sketches: sketches) else { return nil }
             let offset = SIMD3((try? params.value(of: mf.dx, kind: .length)) ?? 0, (try? params.value(of: mf.dy, kind: .length)) ?? 0,
                                (try? params.value(of: mf.dz, kind: .length)) ?? 0)
             let dir = Regenerator.direction(mf.arrow)
@@ -756,7 +798,7 @@ final class DocumentModel {
             var h = handle("Angle", center + r * radial, simd_cross(axis, radial), rf.angle, unit: .angle, per: r, max: 2 * .pi)
             h.allowsNegative = true
             return h
-        case .sketch, .sweep, .loft:
+        case .sketch, .sweep, .loft, .combine:
             return nil
         }
     }
@@ -867,10 +909,37 @@ final class DocumentModel {
         return (bare.map { formatDimension($0, kind: h.unit) } ?? t, v)
     }
 
+    /// Why a typed size can't be used: an unknown name, the wrong kind of value, or out of range.
+    func handleSizeProblem(_ text: String, _ h: DragHandle) -> String? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return "Type a size" }
+        let needed = h.unit == .angle ? "an angle" : "a length"
+        do {
+            let v = try parameterValues.value(of: t, kind: h.unit)
+            if h.allowsNegative ? abs(v) <= 1e-9 : v <= 1e-9 { return h.allowsNegative ? "It can't be zero" : "It must be more than zero" }
+            if let m = h.maxValue, v > m + 1e-9 { return "It can be at most \(h.unit.format(m))" }
+            return nil
+        } catch {
+            // The right expression with the wrong kind of value, e.g. a length parameter in an angle field.
+            for other in [UnitKind.length, .angle, .none] where other != h.unit {
+                if let v = try? parameterValues.value(of: t, kind: other) {
+                    let got = other == .angle ? "an angle" : other == .length ? "a length" : "a plain number"
+                    return "That's \(got) (\(other.format(v))), but this needs \(needed)"
+                }
+            }
+            return "\(error)".prefix(1).uppercased() + "\(error)".dropFirst()
+        }
+    }
+
     /// Previews a size typed in the handle's field. Returns false if the text isn't a usable size.
     @discardableResult
     func previewHandle(_ text: String) -> Bool {
-        guard let h = dragHandle, handleDragStart == nil, let size = handleSize(text, h) else { return false }
+        guard let h = dragHandle, handleDragStart == nil else { return false }
+        guard let size = handleSize(text, h) else {
+            handleProblem = handleSizeProblem(text, h)
+            return false
+        }
+        handleProblem = nil
         handlePreviewValue = size.value * h.lengthPerUnit
         var preview = document
         Self.set(expression: size.expression, of: h.featureID, in: &preview)
@@ -881,9 +950,16 @@ final class DocumentModel {
     }
 
     /// Return in the handle's field: stores the typed size (an expression may use parameters).
+    /// `feature` is the feature the field was for, which may no longer be selected (OK, or a
+    /// click elsewhere, closes the handle before the field hands over its text).
     @discardableResult
-    func commitHandle(_ text: String) -> Bool {
-        guard let h = dragHandle, let size = handleSize(text, h) else { return false }
+    func commitHandle(_ text: String, for feature: FeatureID? = nil) -> Bool {
+        guard let h = feature.flatMap({ handle(for: $0) }) ?? dragHandle else { return false }
+        guard let size = handleSize(text, h) else {
+            handleProblem = handleSizeProblem(text, h)
+            return false
+        }
+        handleProblem = nil
         handlePreviewValue = nil
         let old = (try? parameterValues.value(of: h.expression, kind: h.unit)) ?? 0
         if size.expression == h.expression { regenerate() } else { commitHandle(h.featureID, h.label, size.expression, from: old, to: size.value) }
@@ -893,6 +969,7 @@ final class DocumentModel {
 
     /// Esc in the handle's field: drop the preview and show the stored size again.
     func cancelHandleEdit() {
+        handleProblem = nil
         guard handleDragStart == nil, handlePreviewValue != nil || previewInvalid else { return }
         handlePreviewValue = nil
         previewInvalid = false
@@ -950,7 +1027,7 @@ final class DocumentModel {
         case .rotate(var r):
             r.angle = text
             doc.features[i].kind = .rotate(r)
-        case .sketch, .sweep, .loft:
+        case .sketch, .sweep, .loft, .combine:
             break
         }
     }

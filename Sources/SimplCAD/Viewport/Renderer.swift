@@ -416,9 +416,16 @@ final class Renderer {
                                       indexBuffer: indices, indexBufferOffset: 0)
         }
 
+        // Depth bias per layer, as a fraction of the view depth (0.001 ≈ 0.2 mm at the default zoom).
+        let biasScale = camera.depthBiasScale * 2.5
+        // Fills sit just in front of the faces they lie on, but behind every edge and sketch line.
+        let fillBias = 0.0002 * biasScale
         if let regions = overlay.regions, let indices = overlay.regionIndices {
+            var regionParams = DrawParams(color: .zero, hoverColor: .zero, selectColor: .zero,
+                                          thickness: 0, depthBias: fillBias, pickable: 1)
             enc.setRenderPipelineState(regionPipeline)
             enc.setVertexBuffer(regions, offset: 0, index: 0)
+            enc.setVertexBytes(&regionParams, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.drawIndexedPrimitives(type: .triangle, indexCount: overlay.regionIndexCount, indexType: .uint32,
                                       indexBuffer: indices, indexBufferOffset: 0)
         }
@@ -427,10 +434,11 @@ final class Renderer {
         if let planes = overlay.planes, let indices = overlay.planeIndices, !overlay.planeCenters.isEmpty {
             let fill = palette.plane, hoverFill = SIMD4(fill.x, fill.y, fill.z, min(fill.w * 2.2, 0.75))
             var planeParams = DrawParams(color: fill, hoverColor: hoverFill, selectColor: fill,
-                                         thickness: 0, depthBias: 0, pickable: 1)
+                                         thickness: 0, depthBias: fillBias, pickable: 1)
             enc.setRenderPipelineState(planePipeline)
             enc.setDepthStencilState(noWriteDepthState)
             enc.setVertexBuffer(planes, offset: 0, index: 0)
+            enc.setVertexBytes(&planeParams, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.setFragmentBytes(&planeParams, length: MemoryLayout<DrawParams>.stride, index: 3)
             let forward = camera.forward, centers = overlay.planeCenters  // farthest along the view direction first
             let order = centers.indices.sorted { simd_dot(centers[$0], forward) > simd_dot(centers[$1], forward) }
@@ -442,8 +450,6 @@ final class Renderer {
         }
 
         enc.setRenderPipelineState(segmentPipeline)
-        // Depth bias per layer, as a fraction of the view depth (0.001 ≈ 0.2 mm at the default zoom).
-        let biasScale = camera.depthBiasScale * 2.5
         func segments(_ buffer: MTLBuffer?, _ count: Int, _ params: DrawParams) {
             guard let buffer, count > 0 else { return }
             var p = params

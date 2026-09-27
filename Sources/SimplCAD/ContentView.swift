@@ -26,8 +26,8 @@ struct DocumentWindow: View {
     /// The window's width: below these, the toolbar tools drop their titles so the row still fits
     /// (otherwise macOS folds the whole row into the toolbar's overflow menu).
     @State private var windowWidth: CGFloat = 1200
-    static let titledDesignWidth: CGFloat = 1400
-    static let titledSketchWidth: CGFloat = 1420
+    static let titledDesignWidth: CGFloat = 1470
+    static let titledSketchWidth: CGFloat = 1500
 
     private var unlinkTitle: String {
         guard let p = model.unlinkPrompt else { return "" }
@@ -41,7 +41,7 @@ struct DocumentWindow: View {
             ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
                          highlighted: model.highlighted, fitRevision: model.fitRevision,
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
-                         showGrid: showGrid, showAxes: showAxes, showConstraints: showConstraints,
+                         showGrid: showGrid, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                        Panel.bottomInset(timeline: model.showTimeline)))
@@ -253,6 +253,9 @@ struct Sidebar: View {
     @Bindable var model: DocumentModel
     @State private var bodiesOpen = true
     @State private var sketchesOpen = true
+    @State private var parametersOpen = true
+    /// The body or sketch whose name is being edited in place.
+    @State private var renaming: FeatureID?
 
     var body: some View {
         List(selection: $model.selectedFeature) {
@@ -260,7 +263,8 @@ struct Sidebar: View {
                 DisclosureGroup(isExpanded: $bodiesOpen) {
                     ForEach(model.bodies) { b in
                         BrowserRow(name: b.name, hidden: model.isHidden(b.id),
-                                   toggle: { model.setHidden([b.id], !model.isHidden(b.id)) }) {
+                                   toggle: { model.setHidden([b.id], !model.isHidden(b.id)) },
+                                   renaming: renamingBinding(b.id), rename: { model.renameBody(b.id, to: $0) }) {
                             Image(systemName: "cylinder")
                         }
                         .tag(b.id)
@@ -272,7 +276,8 @@ struct Sidebar: View {
                 DisclosureGroup(isExpanded: $sketchesOpen) {
                     ForEach(model.sketches) { f in
                         BrowserRow(name: f.name, hidden: model.isHidden(f.id),
-                                   toggle: { model.setHidden([f.id], !model.isHidden(f.id)) }) {
+                                   toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
+                                   renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
                             SketchIcon(editing: model.sketchSession?.featureID == f.id,
                                        locked: model.result?.sketches[f.id]?.solve.degreesOfFreedom == 0,
                                        failed: model.result?.errors[f.id] != nil)
@@ -284,18 +289,21 @@ struct Sidebar: View {
                     FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model)
                 }
             }
-            Section {
+            Section(isExpanded: $parametersOpen) {
                 ForEach(model.document.parameters) { p in
                     ParameterRow(model: model, parameter: p)
-                        .contextMenu { Button("Delete", role: .destructive) { model.removeParameter(p.name) } }
                 }
             } header: {
                 HStack {
                     Text("Parameters")
                     Spacer()
-                    Button { model.addParameter() } label: { Image(systemName: "plus") }
+                    Button {
+                        parametersOpen = true  // show the new one
+                        model.addParameter()
+                    } label: { Image(systemName: "plus") }
                         .buttonStyle(.borderless)
                         .help("Add a parameter")
+                        .padding(.trailing, DS.Spacing.space5)  // in line with the rows below, clear of the panel edge
                 }
             }
         }
@@ -306,6 +314,11 @@ struct Sidebar: View {
             // Double-click to edit: a sketch opens in sketch mode, other features show their handle.
             if ids.count == 1, let id = ids.first { model.editFeature(id) }
         }
+    }
+
+    /// Whether a row is being renamed; ending the edit clears it.
+    private func renamingBinding(_ id: FeatureID) -> Binding<Bool> {
+        Binding(get: { renaming == id }, set: { if !$0, renaming == id { renaming = nil } })
     }
 
     private func isSketch(_ id: FeatureID) -> Bool {
@@ -320,8 +333,12 @@ struct Sidebar: View {
                     if model.sketchSession?.featureID == id { model.finishSketch() } else { model.editSketch(id) }
                 }
                 Button(model.isHidden(id) ? "Show Sketch" : "Hide Sketch") { model.setHidden([id], !model.isHidden(id)) }
+                Button("Move Sketch") { model.move(sketches: [id]) }
+                Button("Rename Sketch") { renaming = id }
             } else if model.bodies.contains(where: { $0.id == id }) {
                 Button(model.isHidden(id) ? "Show Body" : "Hide Body") { model.setHidden([id], !model.isHidden(id)) }
+                Button("Move Body") { model.move(bodies: [id]) }
+                Button("Rename Body") { renaming = id }
             }
             Divider()
             Button(f.suppressed ? "Unsuppress" : "Suppress") {
@@ -335,20 +352,57 @@ struct Sidebar: View {
     }
 }
 
-/// A body or sketch in the browser: eye toggle, icon, name.
+/// A body or sketch in the browser: eye toggle, icon, name (edited in place while `renaming`).
 struct BrowserRow<Icon: View>: View {
     let name: String
     let hidden: Bool
     let toggle: () -> Void
+    @Binding var renaming: Bool
+    let rename: (String) -> Void
     @ViewBuilder let icon: () -> Icon
 
     var body: some View {
         HStack(spacing: DS.Spacing.labelGap) {
             EyeButton(hidden: hidden, toggle: toggle)
             icon().frame(width: 18)
-            Text(name)
+            if renaming {
+                InlineNameField(name: name, commit: { rename($0); renaming = false }, cancel: { renaming = false })
+            } else {
+                Text(name)
+            }
         }
         .foregroundStyle(hidden ? .secondary : .primary)
+    }
+}
+
+/// A name edited in place: focused and selected when it appears; Return or clicking away keeps
+/// it, Esc puts the old name back.
+struct InlineNameField: View {
+    let name: String
+    let commit: (String) -> Void
+    let cancel: () -> Void
+    @State private var draft = ""
+    @State private var done = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Name", text: $draft)
+            .textFieldStyle(.roundedBorder)
+            .labelsHidden()
+            .focused($focused)
+            .onAppear {
+                draft = name
+                DispatchQueue.main.async { focused = true }
+            }
+            .onSubmit { finish(keep: true) }
+            .onExitCommand { finish(keep: false) }
+            .onChange(of: focused) { if !focused { finish(keep: true) } }
+    }
+
+    private func finish(keep: Bool) {
+        guard !done else { return }
+        done = true
+        if keep, draft != name { commit(draft) } else { cancel() }
     }
 }
 
@@ -421,11 +475,24 @@ struct SketchIcon: View {
 struct ParameterRow: View {
     let model: DocumentModel
     let parameter: Parameter
+    @State private var renaming = false
+    /// Why the last rename was refused (a taken or invalid name).
+    @State private var renameError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(parameter.name).font(.body.monospaced())
+                if renaming {
+                    InlineNameField(name: parameter.name, commit: { new in
+                        renameError = model.renameParameter(parameter.name, to: new)
+                        renaming = false
+                    }, cancel: { renaming = false })
+                    .font(.body.monospaced())
+                } else {
+                    Text(parameter.name).font(.body.monospaced())
+                        .onTapGesture(count: 2) { renameError = nil; renaming = true }
+                        .help("Double-click to rename; every expression that uses it follows")
+                }
                 Spacer()
                 if let error = model.result?.parameters.errors[parameter.name] {
                     Text(error).foregroundStyle(.red).font(.caption).lineLimit(1)
@@ -433,9 +500,21 @@ struct ParameterRow: View {
                     Text(parameter.unit.format(q.value)).foregroundStyle(.secondary).font(.caption)
                 }
             }
+            if let renameError {
+                Text(renameError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
             ExpressionField(text: parameter.expression) { model.setParameter(parameter.name, expression: $0) }
+            let users = model.document.features(using: parameter.name).map(\.name)
+            Text(users.isEmpty ? "Not used yet · type \(parameter.name) in any size field" : "Used by \(users.joined(separator: ", "))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
         }
         .padding(.vertical, DS.Spacing.space2)
+        .contextMenu {
+            Button("Rename") { renameError = nil; renaming = true }
+            Button("Delete", role: .destructive) { model.removeParameter(parameter.name) }
+        }
     }
 }
 
@@ -445,12 +524,15 @@ struct ExpressionField: View {
     /// Called shortly after typing pauses, to preview the uncommitted value (no undo step).
     var preview: ((String) -> Void)? = nil
     let commit: (String) -> Void
+    /// Expressions are monospaced; plain text (a name) isn't.
+    var monospaced = true
     @State private var draft = ""
     @State private var edited = false
     @FocusState private var focused: Bool
 
-    init(text: String, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
+    init(text: String, monospaced: Bool = true, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
         self.text = text
+        self.monospaced = monospaced
         self.preview = preview
         self.commit = commit
     }
@@ -459,7 +541,7 @@ struct ExpressionField: View {
         TextField("expression", text: $draft)
             .labelsHidden()  // in a Form row the label beside the field would read "expression"
             .textFieldStyle(.roundedBorder)
-            .font(.body.monospaced())
+            .font(monospaced ? .body.monospaced() : .body)
             .focused($focused)
             .onSubmit { edited = false; commit(draft) }
             .onAppear { draft = text }
@@ -487,7 +569,14 @@ struct ToolButton: View {
     let action: () -> Void
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.toolTitles) private var showsTitle
+    @Environment(\.toolsOnTint) private var onTint
     @State private var hovering = false
+
+    private var ink: Color { onTint ? .white : .primary }
+    private var background: Color {
+        if active { return onTint ? Color.white.opacity(0.24) : Color.accentColor.opacity(0.16) }
+        return hovering && isEnabled ? ink.opacity(onTint ? 0.14 : 0.07) : .clear
+    }
 
     var body: some View {
         Button(action: action) {
@@ -503,9 +592,8 @@ struct ToolButton: View {
             .frame(minWidth: showsTitle ? 44 : 28, minHeight: showsTitle ? 0 : 28)
             .padding(.horizontal, showsTitle ? DS.Spacing.space2 : DS.Spacing.space1)
             .padding(.vertical, DS.Spacing.space1)
-            .foregroundStyle(active ? Color.accentColor : Color.primary)
-            .background(active ? Color.accentColor.opacity(0.16) : hovering && isEnabled ? Color.primary.opacity(0.07) : .clear,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .foregroundStyle(active && !onTint ? Color.accentColor : ink)
+            .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
             .contentShape(Rectangle())
             .opacity(isEnabled ? 1 : DS.opacityDisabled)
         }
@@ -521,13 +609,19 @@ extension EnvironmentValues {
     /// Whether toolbar tools show their title under the icon (they don't when the window is too
     /// narrow for the titled row; a setting can turn them off later).
     @Entry var toolTitles = true
+    /// Whether the tools sit on a tinted (accent-coloured) toolbar, as in Sketch mode, and so draw in white.
+    @Entry var toolsOnTint = false
 }
 
 /// Tool groups in the toolbar are separated by a thin line.
 struct ToolDivider: View {
     @Environment(\.toolTitles) private var showsTitles
+    @Environment(\.toolsOnTint) private var onTint
     var body: some View {
-        Divider().frame(height: 30).padding(.horizontal, showsTitles ? DS.Spacing.space3 : DS.Spacing.space2)
+        Group {
+            if onTint { Rectangle().fill(Color.white.opacity(0.35)).frame(width: 1) } else { Divider() }
+        }
+        .frame(height: 30).padding(.horizontal, showsTitles ? DS.Spacing.space3 : DS.Spacing.space2)
     }
 }
 
@@ -537,7 +631,9 @@ struct SketchToolbar: View {
     let model: DocumentModel
     let session: SketchSession
     @State private var constrainOpen = false
+    @State private var circleModesOpen = false
     @Environment(\.toolTitles) private var showsTitles
+    @Environment(\.controlActiveState) private var activeState
 
     var body: some View {
         HStack(spacing: DS.Spacing.space1) {
@@ -571,14 +667,54 @@ struct SketchToolbar: View {
             .help("Finish the sketch (Return)")
             .buttonStyle(.borderedProminent)
         }
+        // The prominent Finish button tints the whole toolbar group while the window is active.
+        .environment(\.toolsOnTint, activeState != .inactive)
         .padding(.horizontal, DesignToolbar.edgePadding)
         .fixedSize()
     }
 
     private func tools(_ list: [SketchTool]) -> some View {
-        ForEach(list) { tool in
-            ToolButton(title: tool.shortTitle, icon: tool.symbol, active: session.tool == tool, help: tool.help) {
-                model.setSketchTool(tool)
+        ForEach(list.filter { $0 != .circle2Point }) { tool in
+            if tool == .circle {
+                circleTool
+            } else {
+                ToolButton(title: tool.shortTitle, icon: tool.symbol, active: session.tool == tool, help: tool.help) {
+                    model.setSketchTool(tool)
+                }
+            }
+        }
+    }
+
+    /// The circle tools share one button, which draws circles the way used last, and a small
+    /// arrow beside it to choose the way: from the center, or from two points across it.
+    private var circleTool: some View {
+        let mode = session.circleMode
+        return HStack(spacing: 0) {
+            ToolButton(title: mode.shortTitle, icon: mode.symbol, active: session.tool.isCircle, help: mode.help) {
+                model.setSketchTool(mode)
+            }
+            Button { circleModesOpen = true } label: {
+                Icon("chevron-down", size: 10)
+                    .frame(width: 12, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(activeState != .inactive ? Color.white : Color.primary)
+            .help("Choose how to draw circles")
+            .accessibilityLabel("Circle options")
+            .popover(isPresented: $circleModesOpen, arrowEdge: .bottom) {
+                HStack(spacing: DS.Spacing.space1) {
+                    ForEach([SketchTool.circle, .circle2Point]) { tool in
+                        ToolButton(title: tool == .circle ? "Center" : "2-Point", icon: tool.symbol,
+                                   active: session.tool == tool, help: tool.help) {
+                            circleModesOpen = false
+                            model.setSketchTool(tool)
+                        }
+                    }
+                }
+                .environment(\.toolTitles, true)
+                .environment(\.toolsOnTint, false)
+                .padding(DS.Spacing.space3)
             }
         }
     }

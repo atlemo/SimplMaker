@@ -7,17 +7,42 @@ import Foundation
 import Observation
 
 enum SketchTool: String, CaseIterable, Identifiable {
-    case select = "Select", line = "Line", rectangle = "Rectangle", circle = "Circle", arc = "Arc"
+    case select = "Select", line = "Line", rectangle = "Rectangle", circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", bezier = "Bézier Curve"
     case point = "Point", text = "Text", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
 
     var id: String { rawValue }
 
     /// Toolbar groups: drawing, changing curves, and dimensions (Select stands alone).
-    static let draw: [SketchTool] = [.line, .rectangle, .circle, .arc, .point, .text]
+    static let draw: [SketchTool] = [.line, .rectangle, .circle, .circle2Point, .arc, .bezier, .point, .text]
     static let modify: [SketchTool] = [.fillet, .trim, .extend]
 
     /// The name under the icon in the toolbar (menus use the full `rawValue`).
-    var shortTitle: String { self == .fillet ? "Corner" : rawValue }
+    var shortTitle: String {
+        switch self {
+        case .fillet: return "Corner"
+        case .circle2Point: return "Circle"
+        case .bezier: return "Curve"
+        default: return rawValue
+        }
+    }
+
+    /// Tools whose clicks place points (and so snap to shape centers).
+    var placesPoints: Bool {
+        switch self {
+        case .line, .rectangle, .circle, .circle2Point, .arc, .bezier, .point, .text: return true
+        case .select, .fillet, .trim, .extend, .dimension: return false
+        }
+    }
+
+    /// The circle tools share a toolbar button (and the C key), each a way to draw a circle.
+    var isCircle: Bool { self == .circle || self == .circle2Point }
+
+    /// The tool for a key press: pressing C again while drawing circles switches between the two ways.
+    static func forKey(_ key: Character, current: SketchTool) -> SketchTool? {
+        guard let tool = allCases.first(where: { $0.key == key }) else { return nil }
+        if tool.isCircle, current.isCircle { return current == .circle ? .circle2Point : .circle }
+        return tool
+    }
 
     /// Tooltip: the name, its key, and what it does.
     var help: String {
@@ -34,7 +59,9 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .line: return "minus"
         case .rectangle: return "square"
         case .circle: return "circle"
+        case .circle2Point: return "diameter"
         case .arc: return "spline"
+        case .bezier: return "bezier"
         case .point: return "dot"
         case .text: return "type"
         case .fillet: return "corner-round"
@@ -49,8 +76,9 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .select: return "s"
         case .line: return "l"
         case .rectangle: return "r"
-        case .circle: return "c"
+        case .circle, .circle2Point: return "c"
         case .arc: return "a"
+        case .bezier: return "b"
         case .point: return "p"
         case .text: return "x"
         case .fillet: return "f"
@@ -64,8 +92,10 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .select: return "Click to select, drag points or curves to move them, ⌫ deletes"
         case .line: return "Click points to draw connected lines · Esc ends the chain"
         case .rectangle: return "Click two opposite corners"
-        case .circle: return "Click the center, then a point on the circle"
+        case .circle: return "Click the center, then a point on the circle · C again for 2-point"
+        case .circle2Point: return "Click two points on opposite sides of the circle · C again for center"
         case .arc: return "Click the center, the start, then the end (counter-clockwise)"
+        case .bezier: return "Click the start and the end, then where the curve bends · drag its handles to shape it"
         case .point: return "Click to place a point"
         case .text: return "Click where the text starts, type it, and press Return"
         case .fillet: return "Click the corner point where two lines meet to round it with an arc"
@@ -134,8 +164,11 @@ final class SketchSession {
 
     func setTool(_ t: SketchTool) {
         tool = t
+        if t.isCircle { circleMode = t }
         resetToolState()
     }
+    /// The way of drawing circles the toolbar's Circle button picks: the one used last.
+    private(set) var circleMode: SketchTool = .circle
     var selection: [EntityID] = []
     private(set) var hover: EntityID?
     /// Set by the Offset command to ask the toolbar to show the offset distance popover.
@@ -161,6 +194,8 @@ final class SketchSession {
     /// Model edges and corners in the sketch plane, for snapping (kept up to date by the model).
     @ObservationIgnored var references = SketchReferences()
     @ObservationIgnored private var tolerance = 0.5
+    /// How far the cursor snaps, in mm at the current zoom (a few pixels).
+    var snapTolerance: Double { tolerance }
     @ObservationIgnored private var gridStep: Double?
     @ObservationIgnored private var snapping = true
     /// The latest snap, for the marker and the status bar.
@@ -259,6 +294,9 @@ final class SketchSession {
                 return false
             } ? .center : .point)
         }
+        // The middle of a closed shape (not one being dragged): a point placed there stays centred.
+        let centers = sketch.shapeCenters().filter { own.isDisjoint(with: $0.points) }
+        if let c = nearest(centers, { $0.position }) { return (SketchSnap(c.position, centerOf: c.corners), .center) }
         let lines = sketch.curves.compactMap { c -> SIMD2<Double>? in
             guard !own.contains(c.id), case .line(let a, let b) = c.geometry, let pa = sketch.position(a),
                   let pb = sketch.position(b) else { return nil }
@@ -295,6 +333,8 @@ final class SketchSession {
             let a = g.point(0), b = g.point(1)
             _ = sweep
             return simdLength(p - a) < simdLength(p - b) ? a : b
+        case .bezier(let ctrl):
+            return Bezier.point(ctrl, Bezier.closest(p, ctrl))
         }
     }
 
@@ -337,7 +377,10 @@ final class SketchSession {
             }
             if sketch.point(h)?.fixed != true {
                 dragEntity = h
-                if let uv = m.uv, case let (a, _)? = sketch.lineEnds(h) { dragOffset = uv - a } else { dragOffset = .zero }
+                if let uv = m.uv, case let (a, _)? = sketch.lineEnds(h) { dragOffset = uv - a }
+                else if let uv = m.uv, sketch.kind(of: h) == .bezier, let c = sketch.curve(h),
+                        let start = sketch.pointIDs(of: c).first.flatMap({ sketch.position($0) }) { dragOffset = uv - start }
+                else { dragOffset = .zero }
             }
             return (true, nil)
         case .dimension:
@@ -402,11 +445,12 @@ final class SketchSession {
             let lines = sketch.addRectangle(from: clicks[0], to: s)  // bottom, right, top, left
             addPendingDimensions([.width: .length(lines[0]), .height: .length(lines[1])])
             return finish("Rectangle")
-        case .circle:
+        case .circle, .circle2Point:
             guard clicks.count == 2 else { return nil }
             defer { clicks = [] }
             guard distance(clicks[0], s) > 1e-6 else { pendingDimensions = []; return nil }
-            let circle = sketch.addCircle(center: clicks[0], through: s)
+            let circle = tool == .circle ? sketch.addCircle(center: clicks[0], through: s)
+                                         : sketch.addCircle(diameterFrom: clicks[0], to: s)
             addPendingDimensions([.diameter: .diameter(circle)])
             return finish("Circle")
         case .arc:
@@ -416,6 +460,12 @@ final class SketchSession {
             let arc = sketch.addArc(center: clicks[0], start: clicks[1], end: s)
             addPendingDimensions([.radius: .radius(arc)])
             return finish("Arc")
+        case .bezier:
+            if clicks.count == 2, distance(clicks[0], s) <= 1e-6 { clicks.removeLast(); return nil }
+            guard clicks.count == 3 else { return nil }
+            defer { clicks = [] }
+            sketch.addBezier(from: clicks[0], to: clicks[1], through: s.position)
+            return finish("Curve")
         case .point:
             clicks = []
             guard s.point == nil else { return nil }
@@ -438,7 +488,7 @@ final class SketchSession {
         switch (tool, clicks.count) {
         case (.line, 1): return [.length, .angle]
         case (.rectangle, 1): return [.width, .height]
-        case (.circle, 1): return [.diameter]
+        case (.circle, 1), (.circle2Point, 1): return [.diameter]
         case (.arc, 1): return [.radius]
         case (.arc, 2): return [.sweep]
         default: return []
@@ -482,6 +532,8 @@ final class SketchSession {
             return SketchSnap(a + SIMD2(d.x < 0 ? -w : w, d.y < 0 ? -h : h))
         case .circle:
             return SketchSnap(a + dir * ((typedValue(.diameter) ?? 2 * len) / 2))
+        case .circle2Point:
+            return SketchSnap(a + dir * (typedValue(.diameter) ?? len))
         case .arc where clicks.count == 1:
             return SketchSnap(a + dir * (typedValue(.radius) ?? len))
         case .arc:
@@ -501,7 +553,7 @@ final class SketchSession {
         let d = t - a
         switch field {
         case .length, .radius: return simdLength(d)
-        case .diameter: return 2 * simdLength(d)
+        case .diameter: return tool == .circle2Point ? simdLength(d) : 2 * simdLength(d)
         case .width: return abs(d.x)
         case .height: return abs(d.y)
         case .angle:
@@ -808,6 +860,14 @@ final class SketchSession {
         case .circle:
             let r = simdLength(c - a)
             return [circle(a, r, 0, 2 * .pi)]
+        case .circle2Point:
+            return [circle((a + c) / 2, simdLength(c - a) / 2, 0, 2 * .pi), [a, c]]
+        case .bezier:
+            // Straight until the end is placed; then the curve bends through the cursor.
+            guard clicks.count > 1 else { return [[a, c]] }
+            let e = clicks[1].position, push = (c - (a + e) / 2) / 0.75
+            let ctrl = [a, a + (e - a) / 3 + push, a + (e - a) * 2 / 3 + push, e]
+            return [Bezier.flatten(ctrl), [a, ctrl[1]], [e, ctrl[2]]]
         case .arc:
             let r = simdLength(clicks.count > 1 ? clicks[1].position - a : c - a)
             if clicks.count == 1 { return [[a, c]] }

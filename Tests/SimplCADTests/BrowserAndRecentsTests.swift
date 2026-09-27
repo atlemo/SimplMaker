@@ -53,3 +53,28 @@ import Testing
         #expect(RecentParts.urls.first?.lastPathComponent == "A.simplcad", "opening it again brings it back")
     }
 }
+
+/// Bodies and sketches keep the names given to them, without rebuilding the model.
+@Suite @MainActor struct RenameInBrowserTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    @Test func bodiesAndSketchesTakeNewNames() async throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy)))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let before = model.result?.duration
+        model.renameBody("b", to: "Lid")
+        model.renameFeature("b", to: "Lid box")
+        #expect(model.bodies.first?.name == "Lid" && model.document.features[0].name == "Lid box")
+        #expect(!model.isRegenerating && model.result?.duration == before, "names need no rebuild")
+        let back = try CADDocument.decode(try model.document.encoded())
+        #expect(back.bodyNames == ["b": "Lid"])
+        model.renameBody("b", to: " ")
+        #expect(model.bodies.first?.name == "Body1", "an empty name goes back to the default")
+        #expect(model.renameParameter("nope", to: "x") != nil)
+    }
+}

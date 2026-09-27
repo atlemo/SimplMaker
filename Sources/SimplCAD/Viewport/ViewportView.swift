@@ -31,6 +31,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var popoverID: EntityID?
     /// The drag handle's size, typed beside the arrow.
     private var handleField: ValueField?
+    /// The feature whose size the handle's field shows, and the size it showed.
+    private var handleFieldFeature: (id: FeatureID, text: String)?
     private var seenHandleFocusRequest = 0
     private var handlePreviewTask: Task<Void, Never>?
     /// Where Text tool input is typed, at the clicked spot.
@@ -368,7 +370,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 return
             }
             if let key = event.charactersIgnoringModifiers?.lowercased().first,
-               let tool = SketchTool.allCases.first(where: { $0.key == key }) {
+               let tool = SketchTool.forKey(key, current: session.tool) {
                 model.setSketchTool(tool)
                 refreshOverlay()
                 return
@@ -556,6 +558,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             handleField = field
         }
         if field.currentEditor() == nil { field.stringValue = text }
+        if field.currentEditor() == nil || handleFieldFeature?.id != h.featureID { handleFieldFeature = (h.featureID, text) }
         field.textColor = model.previewInvalid ? .systemRed : .labelColor
         let tip = h.base + h.direction * h.value
         guard let p = renderer.camera.project(SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)), viewSize: bounds.size) else {
@@ -695,7 +698,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         // Clicking away from the handle's field keeps what was typed, if it's a usable size.
         guard let field = note.object as? ValueField, field === handleField, let model else { return }
         handlePreviewTask?.cancel()
-        if field.stringValue != model.handleFieldText, !model.commitHandle(field.stringValue) { model.cancelHandleEdit() }
+        // Store what was typed on the feature the field was for, even if the handle has just gone.
+        let owner = handleFieldFeature
+        if field.stringValue != (owner?.text ?? model.handleFieldText), !model.commitHandle(field.stringValue, for: owner?.id) {
+            model.cancelHandleEdit()
+        }
         refreshOverlay()
     }
 
@@ -717,9 +724,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 guard model.commitHandle(field.stringValue) else {
                     NSSound.beep()
                     field.textColor = .systemRed
+                    refreshOverlay()  // the options panel grows to say why
                     return true
                 }
                 field.stringValue = model.handleFieldText ?? field.stringValue
+                handleFieldFeature?.text = field.stringValue  // stored: nothing left to commit
                 window?.makeFirstResponder(self)
                 model.finishFeatureEdit()  // done: the handle and its field go away
             } else if cancel {

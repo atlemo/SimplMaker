@@ -20,6 +20,7 @@ extension Feature {
         case .pipe: return DesignTool.pipe.symbol
         case .move: return DesignTool.move.symbol
         case .rotate: return DesignTool.rotate.symbol
+        case .combine: return DesignTool.combine.symbol
         case .primitive(let p):
             switch p.kind {
             case .box: return DesignTool.box.symbol
@@ -37,7 +38,7 @@ struct TimelineBar: View {
     /// Where the marker is while it's being dragged.
     @State private var dragPosition: Int?
 
-    static let height: CGFloat = 44
+    nonisolated static let height: CGFloat = 44
     private static let item: CGFloat = 30
     private static let spacing: CGFloat = 4
     private static var step: CGFloat { item + spacing }
