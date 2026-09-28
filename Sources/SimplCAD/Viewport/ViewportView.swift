@@ -105,6 +105,59 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         renderer?.draw(in: self)
         updateLabels()
         updateSketchRulers()
+        layoutViewCube()
+    }
+
+    // MARK: view cube
+
+    private var viewCube: ViewCubeView?
+    private var cameraAnimation: Task<Void, Never>?
+
+    /// The navigation cube, in the top-right corner of the part of the view the panels leave free.
+    private func layoutViewCube() {
+        guard renderer != nil else { return }
+        let cube = viewCube ?? {
+            let c = ViewCubeView(frame: NSRect(origin: .zero, size: ViewCubeView.size))
+            c.camera = { [weak self] in self?.renderer?.camera }
+            c.lookAlong = { [weak self] n in self?.animateCamera(along: n) }
+            c.orbit = { [weak self] dx, dy in
+                self?.cameraAnimation?.cancel()
+                self?.renderer?.camera.orbit(dx: dx, dy: dy)
+                self?.needsDisplay = true
+            }
+            c.home = { [weak self] in self?.model?.show(.home) }
+            addSubview(c)
+            viewCube = c
+            return c
+        }()
+        let right = min(panelInsets.right, bounds.width * 0.45)
+        cube.frame.origin = NSPoint(x: bounds.width - right - ViewCubeView.size.width - DS.Spacing.space4,
+                                    y: topInset + DS.Spacing.space4)
+        cube.needsDisplay = true
+    }
+
+    /// Turns the camera smoothly to look from `direction` (a unit vector from the model toward the
+    /// eye), about the same target and at the same distance.
+    private func animateCamera(along direction: SIMD3<Float>) {
+        guard let renderer else { return }
+        cameraAnimation?.cancel()
+        var goal = renderer.camera
+        goal.look(along: direction, at: goal.target)
+        let yaw0 = renderer.camera.yaw, pitch0 = renderer.camera.pitch
+        let dYaw = remainder(goal.yaw - yaw0, 2 * .pi), dPitch = goal.pitch - pitch0  // the short way round
+        let start = Date(), duration = 0.3
+        cameraAnimation = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self, let renderer = self.renderer else { return }
+                let t = min(Date().timeIntervalSince(start) / duration, 1)
+                let e = Float(t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2)  // ease in and out
+                renderer.camera.yaw = yaw0 + dYaw * e
+                renderer.camera.pitch = pitch0 + dPitch * e
+                self.needsDisplay = true
+                if t >= 1 { return }
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+        }
     }
 
     // MARK: sketch grid and rulers
