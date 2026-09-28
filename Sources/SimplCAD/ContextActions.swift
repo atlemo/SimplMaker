@@ -162,6 +162,8 @@ extension DocumentModel {
     func editFeature(_ id: FeatureID) {
         guard let f = document.features.first(where: { $0.id == id }) else { return }
         if case .sketch = f.kind { editSketch(id); return }
+        // A failed extrude, revolve or sweep usually lost a profile: pick its profiles again.
+        if result?.errors[id] != nil, profileSource(id) != nil { reselectProfiles(id); return }
         if sketchSession != nil { finishSketch() }
         pendingTool = nil
         selection = []

@@ -198,7 +198,7 @@ public enum Regenerator {
     static func profiles(_ refs: [ProfileRef], in sk: SketchResult) throws -> [KProfile] {
         try refs.map { ref in
             guard let region = region(ref, in: sk) else {
-                throw KernelError(message: "profile bounded by \(ref.tagString) no longer exists")
+                throw KernelError(message: "a profile it used no longer exists · double-click it in the timeline to pick again")
             }
             return try sk.kernelSketch.profile(region.index)
         }

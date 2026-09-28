@@ -113,3 +113,46 @@ import simd
         #expect(Set(session.selection) == Set(rect.lines))
     }
 }
+
+/// A failed extrude (its profile is gone) gets its profiles picked again from the timeline.
+@Suite @MainActor struct ReselectProfilesTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    @Test func doubleClickAFailedExtrudeToPickAgain() async throws {
+        var s = Sketch()
+        s.addRectangle(0, 0, 40, 20)
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s))),
+            Feature(id: "e", name: "Extrude1", .extrude(ExtrudeFeature(sketch: "sk", profiles: [ProfileRef(curves: ["gone"])], extent: .distance("5 mm")))),
+        ]
+        d.hidden = ["sk"]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        #expect(model.result?.errors["e"]?.contains("double-click it in the timeline") == true)
+
+        model.editFeature("e")  // what a double-click in the timeline does
+        #expect(model.reselecting == "e" && model.pendingTool == .extrude && model.selection.isEmpty)
+        #expect(model.isSketchShown("sk"), "its sketch shows while picking, though it's hidden")
+        #expect(model.toolPrompt?.hasPrefix("Click the profiles for Extrude1") == true)
+
+        model.toolClick(.extrude, PickID(region: 0, slot: 1))
+        #expect(model.pendingTool == .extrude, "waits for Return, so more profiles can be picked")
+        model.confirmTool()
+        #expect(model.reselecting == nil && model.pendingTool == nil)
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        #expect(abs((model.result?.body("e")?.volume ?? 0) - 4000) < 1e-6)
+        #expect(!model.isSketchShown("sk") || model.selectedFeature == "sk")
+
+        // A working one can be re-picked too; its profile starts selected, and Esc changes nothing.
+        let before = model.document
+        model.reselectProfiles("e")
+        #expect(model.selection.count == 1)
+        model.cancelTool()
+        #expect(model.reselecting == nil && model.document == before)
+    }
+}

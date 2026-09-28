@@ -73,7 +73,11 @@ final class DocumentModel {
     var newFeature: FeatureID?
     @ObservationIgnored var documentBeforeNewFeature: CADDocument?
     /// A tool waiting for the user to pick what it needs (a profile, a path, a face...). See DesignTools.swift.
-    var pendingTool: DesignTool?
+    var pendingTool: DesignTool? {
+        didSet { if pendingTool == nil { reselecting = nil } }  // cancelling the tool ends a re-pick too
+    }
+    /// An extrude, revolve or sweep whose profiles are being picked again (its tool waits for picks).
+    var reselecting: FeatureID?
     /// The pointer ray of the latest click in the viewport, for placing things where the user clicked.
     @ObservationIgnored var clickRay: (origin: SIMD3<Double>, direction: SIMD3<Double>)?
     /// Side length of the origin plane squares shown while picking, in mm.
@@ -631,7 +635,7 @@ final class DocumentModel {
     /// A sketch is drawn unless hidden, suppressed or rolled back; the selected sketch always shows.
     func isSketchShown(_ id: FeatureID) -> Bool {
         guard document.activeFeatures.contains(where: { $0.id == id && !$0.suppressed }) else { return false }
-        return !document.hidden.contains(id) || selectedFeature == id
+        return !document.hidden.contains(id) || selectedFeature == id || reselecting.flatMap { profileSource($0)?.sketch } == id
     }
 
     /// The sketch, region and profile reference a profile pick points at.

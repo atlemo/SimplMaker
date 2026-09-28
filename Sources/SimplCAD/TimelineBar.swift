@@ -119,6 +119,9 @@ struct TimelineBar: View {
             .onTapGesture { model.selection = []; model.selectedFeature = f.id }
             .contextMenu {
                 Button("Edit \(f.name)") { model.editFeature(f.id) }
+                if model.profileSource(f.id) != nil {
+                    Button("Reselect Profiles…") { model.reselectProfiles(f.id) }
+                }
                 Button(f.suppressed ? "Unsuppress" : "Suppress") {
                     model.updateFeature(f.id, f.suppressed ? "Unsuppress" : "Suppress") { $0.suppressed.toggle() }
                 }

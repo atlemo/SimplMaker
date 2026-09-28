@@ -236,7 +236,12 @@ struct ExtrudeInspector: View {
             if let face = extrude.face {
                 LabeledContent("Face", value: face.face)
             } else {
-                LabeledContent("Profiles", value: "\(extrude.profiles.count)")
+                LabeledContent("Profiles") {
+                    HStack {
+                        Text("\(extrude.profiles.count)")
+                        Button("Reselect…") { model.reselectProfiles(id) }.help("Pick the profiles to extrude again")
+                    }
+                }
             }
         }
     }
@@ -424,7 +429,12 @@ struct RevolveInspector: View {
                 }
             }
             edit.operation(revolve.operation) { $0.operation = $1 }
-            LabeledContent("Profiles", value: "\(revolve.profiles.count) in \(model.featureName(revolve.sketch))")
+            LabeledContent("Profiles") {
+                HStack {
+                    Text("\(revolve.profiles.count) in \(model.featureName(revolve.sketch))")
+                    Button("Reselect…") { model.reselectProfiles(id) }.help("Pick the profiles (and axis line) again")
+                }
+            }
         }
     }
 }
@@ -440,7 +450,12 @@ struct SweepInspector: View {
 
     var body: some View {
         Section("Sweep") {
-            LabeledContent("Profiles", value: "\(sweep.profiles.count) in \(model.featureName(sweep.sketch))")
+            LabeledContent("Profiles") {
+                HStack {
+                    Text("\(sweep.profiles.count) in \(model.featureName(sweep.sketch))")
+                    Button("Reselect…") { model.reselectProfiles(id) }.help("Pick the profiles to sweep again")
+                }
+            }
             PathSection(model: model, path: sweep.path) { p in edit.update("Change Path") { $0.path = p } }
             edit.operation(sweep.operation) { $0.operation = $1 }
         }

@@ -130,6 +130,11 @@ extension DocumentModel {
     /// A viewport click while a tool waits for input.
     func toolClick(_ tool: DesignTool, _ pick: PickID?) {
         guard let pick, tool.accepts(pick.kind) else { return }
+        // Re-picking: only the feature's own sketch counts.
+        if let id = reselecting, let source = profileSource(id) {
+            let sketch = profile(of: pick)?.sketch ?? curve(of: pick)?.sketch
+            guard sketch == source.sketch else { return }
+        }
         if tool.needsPlane || tool == .hole {
             if place(tool, on: pick) { pendingTool = nil }
             return
@@ -144,6 +149,11 @@ extension DocumentModel {
     var toolPrompt: String? {
         guard let tool = pendingTool else { return nil }
         let profiles = selectedProfiles.count
+        if let id = reselecting {
+            let name = document.features.first { $0.id == id }?.name ?? tool.rawValue
+            let axis = tool == .revolve ? " (and a line for the axis)" : ""
+            return "Click the profiles for \(name)\(axis) · \(profiles) selected · Return to use them"
+        }
         switch tool {
         case .extrude: return "Select a profile or a flat face to extrude"
         case .revolve:
@@ -176,6 +186,7 @@ extension DocumentModel {
     /// `confirmed` (Return) accepts defaults for optional inputs.
     @discardableResult
     func perform(_ tool: DesignTool, confirmed: Bool = false) -> Bool {
+        if let id = reselecting { return finishReselect(id, confirmed: confirmed) }
         let profiles = selectedProfiles, curves = selectedCurves
         let waiting = pendingTool == tool && !confirmed
         let noBodies = result?.bodies.isEmpty ?? true
@@ -245,6 +256,61 @@ extension DocumentModel {
             add(Feature(name: document.nextName(tool.rawValue),
                         .combine(CombineFeature(target: bodies[0], tools: Array(bodies.dropFirst())))))
         }
+        return true
+    }
+
+    // MARK: picking a feature's profiles again
+
+    /// The sketch and profiles of a feature built from sketch profiles, with the tool that makes it.
+    func profileSource(_ id: FeatureID) -> (sketch: FeatureID, profiles: [ProfileRef], tool: DesignTool)? {
+        switch document.features.first(where: { $0.id == id })?.kind {
+        case .extrude(let e)? where e.face == nil: return (e.sketch, e.profiles, .extrude)
+        case .revolve(let r)?: return (r.sketch, r.profiles, .revolve)
+        case .sweep(let s)?: return (s.sketch, s.profiles, .sweep)
+        default: return nil
+        }
+    }
+
+    /// Shows the feature's sketch with the profiles that still exist selected; clicks add or remove
+    /// profiles, Return stores them in the feature, Esc leaves it as it was.
+    func reselectProfiles(_ id: FeatureID) {
+        guard let source = profileSource(id) else { return }
+        if sketchSession != nil { finishSketch() }
+        cancelSketchPlanePick()
+        pendingTool = source.tool
+        reselecting = id
+        selectedFeature = id
+        selection = []
+        if let slot = sketchSlots.firstIndex(of: source.sketch), let sk = result?.sketches[source.sketch] {
+            for ref in source.profiles {
+                guard let region = Regenerator.region(ref, in: sk),
+                      let i = sk.regions.firstIndex(where: { $0.index == region.index }) else { continue }
+                selection.append(PickID(region: i, slot: slot + 1))
+            }
+        }
+        overlayRevision += 1
+    }
+
+    /// Return while re-picking: store the picked profiles (and, for a revolve, a picked line as its axis).
+    private func finishReselect(_ id: FeatureID, confirmed: Bool) -> Bool {
+        guard confirmed, let source = profileSource(id) else { return false }
+        let refs = selectedProfiles.filter { $0.sketch == source.sketch }.map(\.ref)
+        guard !refs.isEmpty else {
+            alert = AlertInfo(title: "Pick at least one profile", message: "Click the shapes in the sketch to use, then press Return.")
+            return false
+        }
+        let axis = selectedCurves.first { $0.sketch == source.sketch && isLine($0.curve, in: $0.sketch) }?.curve
+        updateFeature(id, "Reselect Profiles") { f in
+            switch f.kind {
+            case .extrude(var e): e.profiles = refs; f.kind = .extrude(e)
+            case .revolve(var r): r.profiles = refs; if let axis { r.axis = .line(axis) }; f.kind = .revolve(r)
+            case .sweep(var s): s.profiles = refs; f.kind = .sweep(s)
+            default: break
+            }
+        }
+        reselecting = nil
+        selection = []
+        selectedFeature = id
         return true
     }
 
