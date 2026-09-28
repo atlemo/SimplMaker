@@ -337,6 +337,22 @@ extension Sketch {
         }
     }
 
+    /// A line's full extent when corners were rounded off it: the outermost of its ends and the
+    /// points kept on it (a rounded corner's "virtual sharp"). Nil when that's just its own ends.
+    public func lineSpan(_ id: EntityID) -> (EntityID, EntityID)? {
+        guard case .line(let a, let b)? = curve(id)?.geometry, let pa = position(a), let pb = position(b) else { return nil }
+        let d = pb - pa, len2 = vdot(d, d)
+        guard len2 > 1e-18 else { return nil }
+        var candidates = [a, b]
+        for c in constraints {
+            if case .pointOnCurve(let p, let line) = c.kind, line == id, !candidates.contains(p) { candidates.append(p) }
+        }
+        let along = candidates.compactMap { p in position(p).map { (p, vdot($0 - pa, d) / len2) } }
+        guard let lo = along.min(by: { $0.1 < $1.1 }), let hi = along.max(by: { $0.1 < $1.1 }),
+              lo.0 != a || hi.0 != b else { return nil }
+        return (lo.0, hi.0)
+    }
+
     /// The dimension that fits a picked set of entities, with its current value.
     /// One line → length; circle → diameter; arc → radius; two points → distance;
     /// point + line → distance to line; two lines → angle (or distance if parallel).
@@ -344,7 +360,10 @@ extension Sketch {
         let kinds = ids.map { kind(of: $0) }
         func result(_ k: SketchDimension.Kind) -> (kind: SketchDimension.Kind, value: Double)? { measure(k).map { (kind: k, value: $0) } }
         switch (ids.count, kinds.first ?? nil, kinds.count > 1 ? kinds[1] : nil) {
-        case (1, .line?, _): return result(.length(ids[0]))
+        case (1, .line?, _):
+            // A side with rounded corners is measured corner to corner.
+            if let span = lineSpan(ids[0]) { return result(.distance(span.0, span.1)) }
+            return result(.length(ids[0]))
         case (1, .circle?, _): return result(.diameter(ids[0]))
         case (1, .arc?, _): return result(.radius(ids[0]))
         case (2, .point?, .point?): return result(.distance(ids[0], ids[1]))

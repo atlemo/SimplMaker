@@ -344,3 +344,53 @@ public enum SketchSolver {
         return rank
     }
 }
+
+extension SketchSolver {
+    /// Solves after dimensions changed, moving only what they're about when that's enough: first
+    /// with everything else held still, then letting the geometry next to it move too, ring by
+    /// ring, and only then everything. So typing a rounded corner's radius moves the arc and its
+    /// two touch points, not the whole rectangle a little. Nothing changed: a plain solve.
+    public static func solveLocally(_ sketch: inout Sketch, dimensionValues: [EntityID: Double]) -> SolveResult {
+        var moving = Set<EntityID>()
+        for d in sketch.dimensions {
+            guard let target = dimensionValues[d.id], let now = sketch.measure(d.kind), abs(now - target) > 1e-9 else { continue }
+            moving.formUnion(sketch.points(of: Sketch.references(d.kind)))
+        }
+        guard !moving.isEmpty else { return solve(&sketch, dimensionValues: dimensionValues) }
+        for _ in 0..<4 {
+            var trial = sketch
+            for i in trial.points.indices where !moving.contains(trial.points[i].id) { trial.points[i].fixed = true }
+            if solve(&trial, dimensionValues: dimensionValues).status == .solved {
+                for i in trial.points.indices { trial.points[i].fixed = sketch.points[i].fixed }  // held only for this solve
+                sketch = trial
+                return solve(&sketch, dimensionValues: dimensionValues)  // already solved: reports the real freedom
+            }
+            let wider = moving.union(sketch.neighbours(of: moving))
+            if wider == moving { break }
+            moving = wider
+        }
+        return solve(&sketch, dimensionValues: dimensionValues)
+    }
+}
+
+extension Sketch {
+    /// The points of some entities: points themselves, and the points curves are built from.
+    func points(of ids: [EntityID]) -> Set<EntityID> {
+        var out = Set<EntityID>()
+        for id in ids {
+            if point(id) != nil { out.insert(id) } else if let c = curve(id) { out.formUnion(pointIDs(of: c)) }
+        }
+        return out
+    }
+
+    /// Points one step away from `points`: on the same curves, or tied to them by a constraint.
+    func neighbours(of points: Set<EntityID>) -> Set<EntityID> {
+        var out = Set<EntityID>()
+        for c in curves where !points.isDisjoint(with: pointIDs(of: c)) { out.formUnion(pointIDs(of: c)) }
+        for c in constraints {
+            let tied = self.points(of: Sketch.references(c.kind))
+            if !points.isDisjoint(with: tied) { out.formUnion(tied) }
+        }
+        return out
+    }
+}

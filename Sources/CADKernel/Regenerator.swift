@@ -157,7 +157,7 @@ public enum Regenerator {
             catch { throw KernelError(message: "dimension '\(d.expression)': \(error)") }
         }
         var solved = f.sketch
-        let solve = SketchSolver.solve(&solved, dimensionValues: values)
+        let solve = SketchSolver.solveLocally(&solved, dimensionValues: values)  // a changed parameter moves only what it drives
         guard solve.status == .solved else {
             throw KernelError(message: "sketch cannot satisfy its constraints (residual \(solve.maxResidual))")
         }

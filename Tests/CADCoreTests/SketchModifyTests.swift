@@ -131,3 +131,57 @@ func approxLine(_ g: CurveGeometry?, _ a: SIMD2<Double>, _ b: SIMD2<Double>) -> 
         #expect(r8 == nil)  // corner no longer shared
     }
 }
+
+/// Rounding a rectangle's corners keeps its sizes: they're measured corner to corner, through the
+/// virtual sharps, and still drive it.
+@Suite struct RoundCornerKeepsSizesTests {
+    @Test func widthAndHeightSurviveAndStillDrive() throws {
+        var s = Sketch()
+        let r = s.addRectangle(0, 0, 40, 20)
+        s.constrain(.fix(r.corners[0], x: 0, y: 0))
+        s.dimension(.length(r.lines[0]), "w", id: "W")
+        s.dimension(.length(r.lines[1]), "20 mm", id: "H")
+        var v: [EntityID: Double] = ["W": 40, "H": 20]
+        for corner in r.corners {
+            guard let dim = s.filletCorner(corner, radius: 4, expression: "4 mm") else { Issue.record("corner not rounded"); return }
+            v[dim] = 4
+            #expect(SketchSolver.solve(&s, dimensionValues: v).status == .solved)
+        }
+        #expect(s.dimensions.first { $0.id == "W" }?.expression == "w", "same dimension, same expression")
+        #expect(s.measure(s.dimensions.first { $0.id == "W" }!.kind).map { abs($0 - 40) < 1e-9 } == true)
+        #expect(r.lines.map { s.suggestDimension(for: [$0])?.value ?? 0 } == [40, 20, 40, 20], "grey sizes: corner to corner")
+        v["W"] = 50
+        #expect(SketchSolver.solve(&s, dimensionValues: v).status == .solved)
+        #expect(abs((s.position(r.corners[2])?.x ?? 0) - 50) < 1e-6, "the width still drives the rounded rectangle")
+    }
+}
+
+/// Changing a dimension moves what it's about and leaves the rest where it is.
+@Suite struct LocalSolveTests {
+    @Test func aCornerRadiusLeavesTheRectangleAlone() throws {
+        var s = Sketch()
+        let r = s.addRectangle(10, 10, 50, 30)
+        var v: [EntityID: Double] = [:]
+        for corner in r.corners {
+            guard let dim = s.filletCorner(corner, radius: 2, expression: "2 mm") else { Issue.record("corner not rounded"); return }
+            v[dim] = 2
+            #expect(SketchSolver.solveLocally(&s, dimensionValues: v).status == .solved)
+            v[dim] = 5  // typing a bigger radius
+            #expect(SketchSolver.solveLocally(&s, dimensionValues: v).status == .solved)
+        }
+        for (corner, at) in zip(r.corners, [SIMD2(10.0, 10), SIMD2(50, 10), SIMD2(50, 30), SIMD2(10, 30)]) {
+            #expect(vlen((s.position(corner) ?? .zero) - at) < 1e-6, "corner \(corner) stayed put")
+        }
+        #expect(r.lines.map { s.suggestDimension(for: [$0])?.value ?? 0 } == [40, 20, 40, 20])
+    }
+
+    @Test func aWidthStillMovesASide() {
+        var s = Sketch()
+        let r = s.addRectangle(0, 0, 40, 20)
+        s.constrain(.fix(r.corners[0], x: 0, y: 0))
+        s.dimension(.length(r.lines[0]), "40 mm", id: "W")
+        s.dimension(.length(r.lines[1]), "20 mm", id: "H")
+        #expect(SketchSolver.solveLocally(&s, dimensionValues: ["W": 55, "H": 20]).status == .solved)
+        #expect(abs((s.position(r.corners[2])?.x ?? 0) - 55) < 1e-6 && abs((s.position(r.corners[2])?.y ?? 0) - 20) < 1e-6)
+    }
+}

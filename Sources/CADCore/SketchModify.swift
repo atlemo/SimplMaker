@@ -484,6 +484,11 @@ extension Sketch {
             return position(a == p ? b : a)
         }
         guard let f1 = farEnd(lines[0]), let f2 = farEnd(lines[1]) else { return nil }
+        // The lines' own ends, before they're shortened: their sizes stay measured between these.
+        let originalEnds = lines.map { line -> (EntityID, EntityID)? in
+            if case .line(let a, let b) = line.geometry { return (a, b) }
+            return nil
+        }
         let l1 = vlen(f1 - pp), l2 = vlen(f2 - pp)
         guard l1 > 1e-9, l2 > 1e-9 else { return nil }
         let u1 = (f1 - pp) / l1, u2 = (f2 - pp) / l2
@@ -510,7 +515,14 @@ extension Sketch {
         // Keep the old corner as a virtual sharp on both (infinite) lines.
         constrain(.pointOnCurve(point: p, curve: lines[0].id))
         constrain(.pointOnCurve(point: p, curve: lines[1].id))
-        dimensions.removeAll { if case .length(let l) = $0.kind { return l == lines[0].id || l == lines[1].id }; return false }
+        // A side's length stays what it was: measured from corner to corner (the old corner is now a
+        // virtual sharp on both lines), not along the shorter straight part.
+        for (line, ends) in zip(lines, originalEnds) {
+            guard let ends else { continue }
+            for i in dimensions.indices {
+                if case .length(let l) = dimensions[i].kind, l == line.id { dimensions[i].kind = .distance(ends.0, ends.1) }
+            }
+        }
         let dimID = IDs.make()
         dimension(.radius(arc), expression, id: dimID)
         return dimID

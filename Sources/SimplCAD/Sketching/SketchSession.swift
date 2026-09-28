@@ -227,7 +227,7 @@ final class SketchSession {
 
     private func resolve() {
         values = sketch.dimensionValues(parameters)
-        solve = SketchSolver.solve(&sketch, dimensionValues: values)
+        solve = SketchSolver.solveLocally(&sketch, dimensionValues: values)
     }
 
     private func resetToolState() {
@@ -755,9 +755,12 @@ final class SketchSession {
     /// labels so every size is visible, and a click turns one into a dimension.
     var referenceMeasurements: [(curve: EntityID, kind: SketchDimension.Kind, value: Double)] {
         var sized = Set<EntityID>()
+        var spans: [Set<EntityID>: EntityID] = [:]  // a rounded side's corner-to-corner span -> the line
+        for c in sketch.curves { if let s = sketch.lineSpan(c.id) { spans[[s.0, s.1]] = c.id } }
         for d in sketch.dimensions {
             switch d.kind {
             case .length(let c), .radius(let c), .diameter(let c): sized.insert(c)
+            case .distance(let a, let b): if let line = spans[[a, b]] { sized.insert(line) }
             default: break
             }
         }
@@ -867,7 +870,8 @@ final class SketchSession {
         do {
             var v = values
             v[id] = try parameters.value(of: expression, kind: trial.dimensions[i].unitKind)
-            guard SketchSolver.solve(&trial, dimensionValues: v).status == .solved else {
+            // Moves what the dimension is about, not the whole sketch a little.
+            guard SketchSolver.solveLocally(&trial, dimensionValues: v).status == .solved else {
                 message = "The sketch can't take that value"
                 return nil
             }
