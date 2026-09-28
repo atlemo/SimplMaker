@@ -94,10 +94,25 @@ struct Uniforms {
     var regionColor: SIMD4<Float>
 }
 
+/// The grid drawn in the plane of the sketch being edited: minor and major lines over the visible
+/// area, and the sketch's own axes through its origin. Ranges are in sketch mm, on major lines.
+struct SketchGrid: Equatable {
+    var frame: Frame
+    var minor: Double
+    var major: Double
+    var u: ClosedRange<Double>
+    var v: ClosedRange<Double>
+    /// Grid lines (off with View ▸ Show Grid); the axes always show.
+    var lines: Bool
+}
+
 /// Viewport colours for the current appearance (light/dark) and Increase Contrast.
 struct ViewportPalette: Equatable {
     var background: SIMD4<Float>
     var grid: SIMD4<Float>
+    /// Sketch mode: faint minor grid lines, and its horizontal / vertical axes.
+    var gridMinor: SIMD4<Float>
+    var sketchAxisU: SIMD4<Float>, sketchAxisV: SIMD4<Float>
     var axes: (x: SIMD4<Float>, y: SIMD4<Float>, z: SIMD4<Float>)
     var face, faceHover, faceSelected: SIMD4<Float>
     var edge, hover, selection: SIMD4<Float>
@@ -117,6 +132,7 @@ struct ViewportPalette: Equatable {
         if dark {
             p = ViewportPalette(
                 background: SIMD4(0.12, 0.125, 0.14, 1), grid: SIMD4(0.24, 0.25, 0.28, 1),
+                gridMinor: SIMD4(0.165, 0.17, 0.19, 1), sketchAxisU: SIMD4(0.5, 0.52, 0.56, 1), sketchAxisV: SIMD4(0.35, 0.78, 0.4, 1),
                 axes: (SIMD4(0.9, 0.35, 0.35, 1), SIMD4(0.4, 0.8, 0.45, 1), SIMD4(0.4, 0.55, 1, 1)),
                 face: SIMD4(0.56, 0.59, 0.64, 1), faceHover: SIMD4(0.52, 0.66, 0.88, 1), faceSelected: SIMD4(0.25, 0.52, 1, 1),
                 edge: SIMD4(0.04, 0.04, 0.05, 1), hover: SIMD4(0.45, 0.72, 1, 1), selection: SIMD4(0.2, 0.55, 1, 1),
@@ -127,6 +143,7 @@ struct ViewportPalette: Equatable {
         } else {
             p = ViewportPalette(
                 background: SIMD4(0.95, 0.96, 0.97, 1), grid: SIMD4(0.8, 0.82, 0.86, 1),
+                gridMinor: SIMD4(0.89, 0.9, 0.92, 1), sketchAxisU: SIMD4(0.55, 0.56, 0.6, 1), sketchAxisV: SIMD4(0.5, 0.86, 0.5, 1),
                 axes: (SIMD4(0.85, 0.25, 0.25, 1), SIMD4(0.25, 0.7, 0.3, 1), SIMD4(0.3, 0.45, 0.9, 1)),
                 face: SIMD4(0.64, 0.67, 0.72, 1), faceHover: SIMD4(0.55, 0.72, 0.95, 1), faceSelected: SIMD4(0.3, 0.56, 1, 1),
                 edge: SIMD4(0.12, 0.13, 0.16, 1), hover: SIMD4(0.1, 0.55, 1, 1), selection: SIMD4(0, 0.4, 1, 1),
@@ -138,6 +155,7 @@ struct ViewportPalette: Equatable {
         if increaseContrast {
             p.lineScale = 1.6
             p.grid = dark ? SIMD4(0.4, 0.42, 0.46, 1) : SIMD4(0.6, 0.62, 0.66, 1)
+            p.gridMinor = dark ? SIMD4(0.28, 0.29, 0.32, 1) : SIMD4(0.75, 0.77, 0.8, 1)
             p.edge = dark ? SIMD4(0, 0, 0, 1) : SIMD4(0, 0, 0, 1)
             p.region.w = 0.3
             p.plane.w = 0.35
@@ -195,6 +213,10 @@ final class Renderer {
     private var grid: MTLBuffer?
     private var gridCount = 0
     private var axes: [(MTLBuffer, SIMD4<Float>)] = []
+    /// While sketching: the grid in the sketch's plane (replaces the world grid and axes).
+    private(set) var sketchGrid: SketchGrid?
+    private var sketchGridBuffers: (minor: MTLBuffer?, minorCount: Int, major: MTLBuffer?, majorCount: Int,
+                                    axisU: MTLBuffer?, axisV: MTLBuffer?) = (nil, 0, nil, 0, nil, nil)
 
     private struct GPUOverlay {
         var regions: MTLBuffer?
@@ -354,6 +376,35 @@ final class Renderer {
         return array.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: .storageModeShared) }
     }
 
+    /// Sets (or, with nil, removes) the sketch-plane grid; lines are rebuilt only when it changes.
+    func setSketchGrid(_ g: SketchGrid?) {
+        guard g != sketchGrid else { return }
+        sketchGrid = g
+        guard let g else { sketchGridBuffers = (nil, 0, nil, 0, nil, nil); return }
+        func w(_ u: Double, _ v: Double) -> SIMD3<Float> { let p = g.frame.point(u, v); return SIMD3(Float(p.x), Float(p.y), Float(p.z)) }
+        func seg(_ a: SIMD3<Float>, _ b: SIMD3<Float>) -> SegmentInstance {
+            SegmentInstance(ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z, id: 0)
+        }
+        var minor: [SegmentInstance] = [], major: [SegmentInstance] = []
+        if g.lines {
+            // Lines at multiples of the minor step; every fifth (a multiple of the major) is darker.
+            let ratio = max(Int((g.major / g.minor).rounded()), 1)
+            let i0 = Int((g.u.lowerBound / g.minor).rounded()), i1 = Int((g.u.upperBound / g.minor).rounded())
+            let j0 = Int((g.v.lowerBound / g.minor).rounded()), j1 = Int((g.v.upperBound / g.minor).rounded())
+            for i in i0...max(i0, i1) where i != 0 {
+                let s = seg(w(Double(i) * g.minor, g.v.lowerBound), w(Double(i) * g.minor, g.v.upperBound))
+                if i % ratio == 0 { major.append(s) } else { minor.append(s) }
+            }
+            for j in j0...max(j0, j1) where j != 0 {
+                let s = seg(w(g.u.lowerBound, Double(j) * g.minor), w(g.u.upperBound, Double(j) * g.minor))
+                if j % ratio == 0 { major.append(s) } else { minor.append(s) }
+            }
+        }
+        sketchGridBuffers = (makeBuffer(minor), minor.count, makeBuffer(major), major.count,
+                             makeBuffer([seg(w(g.u.lowerBound, 0), w(g.u.upperBound, 0))]),
+                             makeBuffer([seg(w(0, g.v.lowerBound), w(0, g.v.upperBound))]))
+    }
+
     func buildGrid(size: Float, step: Float) {
         var lines: [SegmentInstance] = []
         let n = Int(size / step)
@@ -431,7 +482,18 @@ final class Renderer {
         }
         let p = palette
         // The grid goes under the translucent profile fills, so it shows through them.
-        if showGrid {
+        if sketchGrid != nil {
+            // Just in front of a face being sketched on, behind everything drawn in the sketch.
+            let b = sketchGridBuffers
+            func line(_ buffer: MTLBuffer?, _ count: Int, _ color: SIMD4<Float>, _ width: Float) {
+                segments(buffer, count, DrawParams(color: color, hoverColor: color, selectColor: color,
+                                                   thickness: width * scale, depthBias: 0.00005, pickable: 0))
+            }
+            line(b.minor, b.minorCount, p.gridMinor, 1)
+            line(b.major, b.majorCount, p.grid, 1)
+            line(b.axisU, 1, p.sketchAxisU, 1.2)
+            line(b.axisV, 1, p.sketchAxisV, 1.2)
+        } else if showGrid {
             segments(grid, gridCount, DrawParams(color: p.grid, hoverColor: p.grid, selectColor: p.grid,
                                                  thickness: 1 * scale, depthBias: 0, pickable: 0))
         }

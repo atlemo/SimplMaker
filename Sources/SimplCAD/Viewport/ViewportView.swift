@@ -101,8 +101,99 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     override func draw(_ dirtyRect: NSRect) {
         updateCameraInsets()
+        updateSketchGrid()
         renderer?.draw(in: self)
         updateLabels()
+        updateSketchRulers()
+    }
+
+    // MARK: sketch grid and rulers
+
+    /// Rulers along the sketch axes (keyed "u:25", "v:-50") and the origin marker.
+    private var rulerLabels: [String: AxisLabelView] = [:]
+    private var originMarker: OriginMarkerView?
+
+    /// Sketch grid spacing at the current zoom: minor lines about 40 px apart (1, 2 or 5 × 10ⁿ mm),
+    /// a major line every fifth, and the snapping step, which lands on the minor lines too.
+    private func sketchGridSteps() -> (minor: Double, major: Double, snap: Double)? {
+        let c = NSPoint(x: bounds.midX, y: bounds.midY)
+        guard let a = sketchUV(c), let b = sketchUV(NSPoint(x: c.x + 1, y: c.y)) else { return nil }
+        let minor = Self.niceStep(40 * simdLength(b - a))
+        let twos = abs(minor / pow(10, floor(log10(minor))) - 2) < 1e-9
+        return (minor, minor * 5, minor / (twos ? 4 : 5))
+    }
+
+    /// The grid in the plane of the sketch being edited, over the part of it that's in view.
+    private func updateSketchGrid() {
+        guard let renderer else { return }
+        guard let session = model?.sketchSession, let steps = sketchGridSteps() else { renderer.setSketchGrid(nil); return }
+        let corners = [NSPoint(x: 0, y: 0), NSPoint(x: bounds.width, y: 0), NSPoint(x: 0, y: bounds.height),
+                       NSPoint(x: bounds.width, y: bounds.height), NSPoint(x: bounds.midX, y: bounds.midY)].compactMap { sketchUV($0) }
+        let reach = 60 * steps.major  // cap: a plane seen edge-on reaches to the horizon
+        let center = corners.last ?? .zero
+        func span(_ values: [Double], _ mid: Double) -> ClosedRange<Double> {
+            let lo = max((values.min() ?? mid) - steps.major, mid - reach), hi = min((values.max() ?? mid) + steps.major, mid + reach)
+            return (lo / steps.major).rounded(.down) * steps.major...(hi / steps.major).rounded(.up) * steps.major
+        }
+        renderer.setSketchGrid(SketchGrid(frame: session.frame, minor: steps.minor, major: steps.major,
+                                          u: span(corners.map(\.x), center.x), v: span(corners.map(\.y), center.y),
+                                          lines: renderer.showGrid))
+    }
+
+    /// Numbers at the major grid lines along the sketch's axes, and the origin marker.
+    private func updateSketchRulers() {
+        guard let renderer, let grid = renderer.sketchGrid else {
+            rulerLabels.values.forEach { $0.removeFromSuperview() }
+            rulerLabels = [:]
+            originMarker?.removeFromSuperview()
+            originMarker = nil
+            return
+        }
+        func screen(_ u: Double, _ v: Double) -> CGPoint? {
+            let w = grid.frame.point(u, v)
+            guard let p = renderer.camera.project(SIMD3(Float(w.x), Float(w.y), Float(w.z)), viewSize: bounds.size),
+                  bounds.insetBy(dx: -40, dy: -40).contains(p) else { return nil }
+            return p
+        }
+        var wanted: [String: (text: String, point: CGPoint, alongU: Bool)] = [:]
+        for (alongU, range) in [(true, grid.u), (false, grid.v)] {
+            var k = (range.lowerBound / grid.major).rounded()
+            while k * grid.major <= range.upperBound + 1e-9 {
+                let value = k * grid.major
+                k += 1
+                guard abs(value) > 1e-9, let p = alongU ? screen(value, 0) : screen(0, value) else { continue }
+                let text = String(format: "%g", (value * 1e6).rounded() / 1e6)
+                wanted[(alongU ? "u:" : "v:") + text] = (text, p, alongU)
+            }
+        }
+        for (key, view) in rulerLabels where wanted[key] == nil {
+            view.removeFromSuperview()
+            rulerLabels[key] = nil
+        }
+        for (key, w) in wanted {
+            let view = rulerLabels[key] ?? {
+                let v = AxisLabelView(text: w.text)
+                addSubview(v, positioned: .below, relativeTo: nil)
+                rulerLabels[key] = v
+                return v
+            }()
+            let size = view.frame.size
+            // Below the horizontal axis, centred on its line; right of the vertical axis.
+            view.setFrameOrigin(w.alongU ? NSPoint(x: w.point.x - size.width / 2, y: w.point.y + 6)
+                                         : NSPoint(x: w.point.x + 6, y: w.point.y - size.height / 2))
+        }
+        if let p = screen(0, 0) {
+            let marker = originMarker ?? {
+                let m = OriginMarkerView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+                addSubview(m, positioned: .below, relativeTo: nil)
+                originMarker = m
+                return m
+            }()
+            marker.isHidden = false
+            marker.setFrameOrigin(NSPoint(x: p.x - 10, y: p.y - 10))
+        } else {
+            originMarker?.isHidden = true
+        }
     }
 
     override func updateTrackingAreas() {
@@ -186,7 +277,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if let point, let a = sketchUV(point), let b = sketchUV(NSPoint(x: point.x + 1, y: point.y)) {
             let mmPerPixel = simdLength(b - a)
             tolerance = 8 * mmPerPixel
-            if Preferences.snapsToGrid { gridStep = Self.niceStep(12 * mmPerPixel) }
+            // The same spacing as the drawn grid, so points snap onto its lines.
+            if Preferences.snapsToGrid { gridStep = sketchGridSteps()?.snap ?? Self.niceStep(12 * mmPerPixel) }
         }
         let handled = model.sketchMouse(SketchMouse(phase: phase, uv: point.flatMap { sketchUV($0) },
                                                     pick: hovered, additive: additive, tolerance: tolerance,
@@ -1074,5 +1166,54 @@ struct ViewportView: NSViewRepresentable {
         renderer.setOverlay(model.sketchOverlay())
         renderer.selected = highlighted
         view.needsDisplay = true
+    }
+}
+
+/// A ruler number along a sketch axis, turned to read upwards, as in other CAD tools. Clicks go
+/// through to the viewport.
+final class AxisLabelView: NSView {
+    private let text: NSAttributedString
+
+    init(text: String) {
+        self.text = NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+        let size = self.text.size()
+        super.init(frame: NSRect(x: 0, y: 0, width: ceil(size.height) + 2, height: ceil(size.width) + 2))
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let size = text.size()
+        ctx.translateBy(x: bounds.midX, y: bounds.midY)
+        ctx.rotate(by: .pi / 2)  // reads bottom to top
+        text.draw(at: NSPoint(x: -size.width / 2, y: -size.height / 2))
+    }
+}
+
+/// The sketch origin: a grey disc with one quarter light, where the axes cross.
+final class OriginMarkerView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let r = bounds.insetBy(dx: 2, dy: 2)
+        let disc = NSBezierPath(ovalIn: r)
+        NSColor.secondaryLabelColor.withAlphaComponent(0.55).setFill()
+        disc.fill()
+        let c = NSPoint(x: r.midX, y: r.midY)
+        let quarter = NSBezierPath()
+        quarter.move(to: c)
+        quarter.appendArc(withCenter: c, radius: r.width / 2, startAngle: 90, endAngle: 180)
+        quarter.close()
+        NSColor.windowBackgroundColor.withAlphaComponent(0.9).setFill()
+        quarter.fill()
+        NSColor.secondaryLabelColor.setStroke()
+        disc.lineWidth = 1.2
+        disc.stroke()
     }
 }
