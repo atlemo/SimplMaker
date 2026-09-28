@@ -26,8 +26,10 @@ struct PickID: Hashable, Sendable {
     init(sketchCurve i: Int, slot: Int = 0) { raw = 0x5000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
     init(region i: Int, slot: Int = 0) { raw = 0x6000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
     init(plane i: Int) { raw = 0x7000_0000 | PickID.planeFlag | UInt32(i) }
-    /// Stands for every face of a body in the selection highlight (no real face has this index).
+    /// A whole body, picked from the browser (no real face has this index). It counts as a face of
+    /// the body for tools that pick bodies, and the highlight covers every face.
     init(wholeBody i: Int) { raw = UInt32(i + 1) << 20 | 0xFFFFF }
+    var isWholeBody: Bool { isFace && raw & 0xFFFFF == 0xFFFFF }
     static let handle = PickID(raw: 0x7000_0000)
 
     var kind: Kind {

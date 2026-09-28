@@ -54,6 +54,24 @@ struct InspectorView: View {
                 }
             }
             .formStyle(.grouped)
+        } else if let body = model.selectedBody, let b = model.bodies.first(where: { $0.id == body }) {
+            // A body picked in the browser: its name, size and the feature that made it.
+            Form {
+                Section("Body") {
+                    LabeledContent("Name") {
+                        ExpressionField(text: b.name, monospaced: false) { model.renameBody(body, to: $0) }
+                    }
+                    LabeledContent("Volume", value: String(format: "%.2f mm³", b.body.volume))
+                    LabeledContent("Made by") {
+                        HStack {
+                            Text(model.featureName(body))
+                            Button("Edit") { model.editFeature(body) }
+                        }
+                    }
+                    Button(model.isHidden(body) ? "Show Body" : "Hide Body") { model.setHidden([body], !model.isHidden(body)) }
+                }
+            }
+            .formStyle(.grouped)
         } else {
             ContentUnavailableView("No Feature Selected", systemImage: "cursorarrow.click",
                                    description: Text("Select a feature in the timeline to edit it, or pick a tool in the toolbar to create one."))

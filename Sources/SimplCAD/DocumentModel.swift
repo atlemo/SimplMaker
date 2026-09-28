@@ -177,6 +177,26 @@ final class DocumentModel {
     }
 
     /// Bodies and sketches that own what's selected in the viewport: highlighted in the browser.
+    /// The body selected as a whole (from the browser), if that's what's selected.
+    var selectedBody: FeatureID? {
+        guard selection.count == 1, let pick = selection.first, pick.isWholeBody else { return nil }
+        return meshes[safe: pick.body]?.id
+    }
+
+    /// A body clicked in the browser: selected whole, with no tool or handle, the way a click on it
+    /// in the viewport would. While a tool waits for bodies, it picks the body for the tool instead.
+    func selectBody(_ id: FeatureID) {
+        guard let index = meshes.firstIndex(where: { $0.id == id }) else { return }
+        let pick = PickID(wholeBody: index)
+        if let tool = pendingTool {
+            if tool.accepts(.face) { toolClick(tool, pick) }
+            return
+        }
+        if sketchSession != nil { finishSketch() }
+        selectedFeature = nil
+        selection = [pick]
+    }
+
     var browserHighlights: Set<FeatureID> {
         var ids = Set<FeatureID>()
         for pick in selection {
@@ -770,12 +790,7 @@ final class DocumentModel {
 
     /// The waiting tool works on whole bodies (a click on any face picks its body), so hover and
     /// selection light up whole bodies. Pattern's edges pick a direction, so only its faces do.
-    var picksWholeBodies: Bool {
-        switch pendingTool {
-        case .move?, .rotate?, .combine?, .mirror?, .pattern?: return true
-        default: return false
-        }
-    }
+    var picksWholeBodies: Bool { pendingTool?.picksBodies == true }
 
     // MARK: drag handles
 

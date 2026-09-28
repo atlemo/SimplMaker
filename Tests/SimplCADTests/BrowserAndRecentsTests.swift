@@ -95,3 +95,31 @@ import Testing
         #expect(values.values["n"]?.value == 12.5)
     }
 }
+
+/// Clicking a body in the browser selects the body, not the feature that made it.
+@Suite @MainActor struct BrowserBodySelectionTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    @Test func aBodyIsSelectedWithoutATool() async throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy)))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        model.selectBody("b")
+        #expect(model.selectedBody == "b" && model.selectedFeature == nil)
+        #expect(model.dragHandle == nil && model.pendingTool == nil, "no handle, no tool")
+        #expect(model.highlighted == [PickID(wholeBody: 0).raw] && model.browserHighlights == ["b"])
+
+        // Move takes the selected body straight away; Extrude doesn't mistake it for a face.
+        model.run(.extrude)
+        #expect(model.alert == nil && model.pendingTool == .extrude)
+        model.cancelTool()
+        model.selectBody("b")
+        model.run(.move)
+        guard case .move(let m)? = model.document.features.last?.kind else { Issue.record("expected a move"); return }
+        #expect(m.bodies == ["b"])
+    }
+}

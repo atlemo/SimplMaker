@@ -258,8 +258,22 @@ struct Sidebar: View {
     /// The body or sketch whose name is being edited in place.
     @State private var renaming: FeatureID?
 
+    /// Body rows are tagged apart from features ("body:<id>"): a click selects the body, not the
+    /// feature that made it (that one opens on double-click).
+    private static let bodyTag = "body:"
+    private var listSelection: Binding<FeatureID?> {
+        Binding(get: { model.selectedBody.map { Self.bodyTag + $0 } ?? model.selectedFeature },
+                set: { tag in
+                    if let tag, tag.hasPrefix(Self.bodyTag) { model.selectBody(String(tag.dropFirst(Self.bodyTag.count))) }
+                    else { model.selectedFeature = tag }
+                })
+    }
+    private func featureID(_ tag: FeatureID) -> FeatureID {
+        tag.hasPrefix(Self.bodyTag) ? String(tag.dropFirst(Self.bodyTag.count)) : tag
+    }
+
     var body: some View {
-        List(selection: $model.selectedFeature) {
+        List(selection: listSelection) {
             Section("Browser") {
                 DisclosureGroup(isExpanded: $bodiesOpen) {
                     ForEach(model.bodies) { b in
@@ -268,8 +282,8 @@ struct Sidebar: View {
                                    renaming: renamingBinding(b.id), rename: { model.renameBody(b.id, to: $0) }) {
                             Image(systemName: "cylinder")
                         }
-                        .tag(b.id)
-                        .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(b.id)))
+                        .tag(Self.bodyTag + b.id)
+                        .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(b.id) && model.selectedBody != b.id))
                     }
                 } label: {
                     FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model)
@@ -331,10 +345,11 @@ struct Sidebar: View {
         }
         .listStyle(.sidebar)
         .contextMenu(forSelectionType: FeatureID.self) { ids in
-            menu(for: ids)
+            menu(for: Set(ids.map(featureID)))
         } primaryAction: { ids in
-            // Double-click to edit: a sketch opens in sketch mode, other features show their handle.
-            if ids.count == 1, let id = ids.first { model.editFeature(id) }
+            // Double-click to edit: a sketch opens in sketch mode, other features (and the one that
+            // made a body) show their handle.
+            if ids.count == 1, let id = ids.first { model.editFeature(featureID(id)) }
         }
     }
 

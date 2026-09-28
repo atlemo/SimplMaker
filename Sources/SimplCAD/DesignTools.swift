@@ -95,6 +95,14 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// Shows the origin planes while it waits, to pick one (mirror across a plane).
     var showsPlanes: Bool { needsPlane || self == .mirror }
 
+    /// Works on whole bodies: a click on any face picks the body (and so does a body in the browser).
+    var picksBodies: Bool {
+        switch self {
+        case .move, .rotate, .combine, .mirror, .pattern: return true
+        default: return false
+        }
+    }
+
     /// What a click can pick while this tool waits.
     func accepts(_ kind: PickID.Kind) -> Bool {
         switch self {
@@ -125,10 +133,11 @@ extension DocumentModel {
             return
         }
         pendingTool = nil
+        if !tool.picksBodies { selection.removeAll(where: \.isWholeBody) }  // a body from the browser isn't a face
         if perform(tool) { return }
         pendingTool = tool
         if tool.showsPlanes { sketchPlaneSize = OriginPlane.displaySize(for: sceneBounds) }
-        selection = selection.filter { tool.accepts($0.kind) && accepts($0) }
+        selection = selection.filter { tool.accepts($0.kind) && accepts($0) && (!$0.isWholeBody || tool.picksBodies) }
         overlayRevision += 1
     }
 
@@ -147,7 +156,7 @@ extension DocumentModel {
 
     /// A viewport click while a tool waits for input.
     func toolClick(_ tool: DesignTool, _ pick: PickID?) {
-        guard let pick, tool.accepts(pick.kind) else { return }
+        guard let pick, tool.accepts(pick.kind), !pick.isWholeBody || tool.picksBodies else { return }
         // Re-picking: only the feature's own sketch counts.
         if let id = reselecting, let source = profileSource(id) {
             let sketch = profile(of: pick)?.sketch ?? curve(of: pick)?.sketch
