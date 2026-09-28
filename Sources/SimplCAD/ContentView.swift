@@ -208,7 +208,8 @@ struct StatusBar: View {
                 .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
             Group {
                 if !model.selection.isEmpty { Text("\(model.selection.count) selected") }
-                if model.isRegenerating {
+                if model.isImporting { Text("Reading the STEP file…").foregroundStyle(.secondary) }
+                if model.isRegenerating || model.isImporting {
                     ProgressView().controlSize(.small)
                 } else if let r = model.result {
                     Text(String(format: "rebuilt in %.0f ms", r.duration * 1000)).foregroundStyle(.secondary)

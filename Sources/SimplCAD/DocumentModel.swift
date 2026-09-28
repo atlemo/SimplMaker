@@ -52,6 +52,8 @@ final class DocumentModel {
     private(set) var sceneRevision = 0
     private(set) var fitRevision = 0
     private(set) var isRegenerating = false
+    /// A STEP file is being read (see importSTEP).
+    private(set) var isImporting = false
 
     var selection: [PickID] = []
     private(set) var hovered: PickID?
@@ -966,7 +968,7 @@ final class DocumentModel {
             let bodies = Array((result.featureInputs[id] ?? [:]).values)
             guard let center = Regenerator.center(of: bodies), let axis = try? Regenerator.line(pf.axis, result) else { return nil }
             return handle("Spacing", center, axis.direction, pf.spacing, negative: true)
-        case .sketch, .sweep, .loft, .combine, .mirror, .pattern, .shell:
+        case .sketch, .sweep, .loft, .combine, .mirror, .pattern, .shell, .importBody:
             return nil
         }
     }
@@ -1215,7 +1217,7 @@ final class DocumentModel {
         case .pattern(var p):
             p.spacing = text
             doc.features[i].kind = .pattern(p)
-        case .sketch, .sweep, .loft, .combine, .mirror, .shell:
+        case .sketch, .sweep, .loft, .combine, .mirror, .shell, .importBody:
             break
         }
     }
@@ -1229,6 +1231,91 @@ final class DocumentModel {
     }
 
     // MARK: files
+
+    /// Asks for a STEP file and adds it to the timeline as a body of its own.
+    func importSTEP() {
+        guard let url = Self.chooseSTEP("Import") else { return }
+        Task { await importSTEP(from: url) }
+    }
+
+    /// Reads a STEP file and adds it as an Import feature, at the timeline marker, with the body
+    /// named after the file. False if it can't be read (an alert says why).
+    @discardableResult
+    func importSTEP(from url: URL) async -> Bool {
+        let id = IDs.make()
+        guard let data = await loadSTEP(url, featureID: id) else { return false }
+        if sketchSession != nil { finishSketch() }
+        pendingTool = nil
+        let feature = Feature(id: id, name: document.nextName("Import"),
+                              .importBody(ImportFeature(fileName: url.lastPathComponent, data: data)))
+        mutate("Import \(url.lastPathComponent)") { doc in
+            if let r = doc.rollback, r < doc.features.count {
+                doc.features.insert(feature, at: r)
+                doc.rollback = r + 1
+            } else {
+                doc.features.append(feature)
+            }
+            doc.bodyNames[id] = url.deletingPathExtension().lastPathComponent
+        }
+        selection = []
+        selectedFeature = id
+        regenerate(fit: true)  // nothing left to build by then; it only brings the new body into view
+        return true
+    }
+
+    /// Asks for a new version of an imported file. Its faces keep their names as long as the
+    /// file lists them in the same order, so features after the import usually hold on.
+    func replaceImport(_ id: FeatureID) {
+        guard let url = Self.chooseSTEP("Replace") else { return }
+        Task { await replaceImport(id, from: url) }
+    }
+
+    @discardableResult
+    func replaceImport(_ id: FeatureID, from url: URL) async -> Bool {
+        guard let data = await loadSTEP(url, featureID: id) else { return false }
+        updateFeature(id, "Replace \(url.lastPathComponent)") { f in
+            guard case .importBody(var i) = f.kind else { return }
+            i.fileName = url.lastPathComponent
+            i.data = data
+            f.kind = .importBody(i)
+        }
+        return true
+    }
+
+    private static func chooseSTEP(_ prompt: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = ["step", "stp"].compactMap { UTType(filenameExtension: $0) }
+        panel.prompt = prompt
+        panel.message = "Choose a STEP file (.step or .stp)."
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    /// Reads a STEP file and checks that the kernel can make a body of it, off the main thread.
+    /// The body is kept for the rebuild that follows, so the file is read only once.
+    private func loadSTEP(_ url: URL, featureID: FeatureID) async -> Data? {
+        isImporting = true
+        defer { isImporting = false }
+        let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Data, any Error> in
+            Result {
+                let data = try Data(contentsOf: url)
+                _ = try Regenerator.importedBody(data, featureID: featureID)
+                return data
+            }
+        }.value
+        switch outcome {
+        case .success(let data):
+            return data
+        case .failure(let error):
+            // Kernel errors read "STEP import: the file has no solids"; make that a sentence.
+            var reason = error.localizedDescription
+            if let e = error as? KernelError {
+                let text = e.message.replacingOccurrences(of: "STEP import: ", with: "")
+                reason = text.prefix(1).uppercased() + String(text.dropFirst()) + "."
+            }
+            alert = AlertInfo(title: "\(url.lastPathComponent) couldn't be imported", message: reason)
+            return nil
+        }
+    }
 
     func export(stl: Bool) {
         guard let bodies = result?.bodies.map(\.body), !bodies.isEmpty else {

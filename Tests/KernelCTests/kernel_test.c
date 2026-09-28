@@ -113,6 +113,19 @@ static Result build(Params p) {
   return res;
 }
 
+/// A whole file in memory (NULL if it can't be read); free() it.
+static char *read_file(const char *path, size_t *size) {
+  FILE *f = fopen(path, "rb");
+  if (!f) return NULL;
+  fseek(f, 0, SEEK_END);
+  long n = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  char *buf = n > 0 ? malloc((size_t)n) : NULL;
+  *size = buf ? fread(buf, 1, (size_t)n, f) : 0;
+  fclose(f);
+  return buf;
+}
+
 static void print_names(SKHandle b) {
   printf("  faces (%d):", sk_body_face_count(b));
   for (int i = 0; i < sk_body_face_count(b); i++) printf(" %s", sk_body_face_name(b, i));
@@ -203,6 +216,50 @@ int main(void) {
   const char *e0[] = {sk_body_edge_name(j, 0)};
   CHECK(sk_fillet(j, e0, 1, 50, "F9") == 0, "oversized fillet must fail cleanly\n");
   printf("  oversized fillet error: %s\n", sk_last_error());
+
+  printf("== STEP import\n");
+  {
+    size_t size = 0;
+    char *step = read_file("/tmp/simplcad_test.step", &size);
+    CHECK(step && size > 100, "read back the exported STEP file\n");
+    SKHandle imp = sk_import_step(step, size, "imp");
+    CHECK(imp && sk_body_is_valid(imp), "import\n");
+    CHECK(NEAR(sk_body_volume(imp), sk_body_volume(b.finalBody), 1e-6), "same volume (%f vs %f)\n", sk_body_volume(imp),
+          sk_body_volume(b.finalBody));
+    CHECK(sk_body_face_count(imp) == sk_body_face_count(b.finalBody), "same faces (%d vs %d)\n", sk_body_face_count(imp),
+          sk_body_face_count(b.finalBody));
+    CHECK(strcmp(sk_body_face_name(imp, 0), "imp.face1") == 0, "faces named by their place: %s\n", sk_body_face_name(imp, 0));
+    // Reading it again names every face and edge the same, so features after an import hold on.
+    SKHandle again = sk_import_step(step, size, "imp");
+    CHECK(again && sk_body_edge_count(again) == sk_body_edge_count(imp), "same edges\n");
+    for (int i = 0; again && i < sk_body_edge_count(imp); i++)
+      CHECK(strcmp(sk_body_edge_name(imp, i), sk_body_edge_name(again, i)) == 0, "edge %d renamed\n", i);
+    // An imported body can be filleted like any other. (A box: the plate's edges along its
+    // rounded corners join tangent faces, which can't take a fillet whether imported or not.)
+    SKHandle box = sk_primitive(SK_BOX, XY, 20, 10, 5, 0, "B");
+    CHECK(sk_export_step(&box, 1, "/tmp/simplcad_box.step"), "export a box\n");
+    size_t boxSize = 0;
+    char *boxStep = read_file("/tmp/simplcad_box.step", &boxSize);
+    SKHandle importedBox = boxStep ? sk_import_step(boxStep, boxSize, "imp3") : 0;
+    const char *e0[] = {importedBox ? sk_body_edge_name(importedBox, 0) : ""};
+    SKHandle rounded = importedBox ? sk_fillet(importedBox, e0, 1, 0.5, "F") : 0;
+    CHECK(rounded && sk_body_volume(rounded) < 1000 && sk_body_volume(rounded) > 990, "fillet an imported edge\n");
+    free(boxStep);
+    CHECK(sk_import_step("not a step file", 15, "bad") == 0, "garbage is rejected\n");
+    CHECK(sk_import_step(NULL, 0, "bad") == 0 && strstr(sk_last_error(), "empty"), "empty is rejected\n");
+    free(step);
+    SKHandle tmp[] = {imp, again, box, importedBox, rounded};
+    for (int i = 0; i < 5; i++) sk_release(tmp[i]);
+
+    // Several bodies in one file come back as one body with all of them.
+    SKHandle two[] = {b.finalBody, sym};
+    CHECK(sk_export_step(two, 2, "/tmp/simplcad_test2.step"), "export two bodies\n");
+    step = read_file("/tmp/simplcad_test2.step", &size);
+    SKHandle both = step ? sk_import_step(step, size, "imp2") : 0;
+    CHECK(both && NEAR(sk_body_volume(both), sk_body_volume(b.finalBody) + sk_body_volume(sym), 1e-6), "two solids\n");
+    free(step);
+    sk_release(both);
+  }
 
   printf(failures ? "\n%d FAILURE(S)\n" : "\nALL KERNEL TESTS PASSED\n", failures);
   return failures ? 1 : 0;

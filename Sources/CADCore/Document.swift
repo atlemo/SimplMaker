@@ -378,6 +378,16 @@ public struct EdgeFeature: Codable, Hashable, Sendable {
     }
 }
 
+/// A body read from a STEP file. The file's contents are kept in the document, so the part
+/// rebuilds without the original file. Its faces are named by their place in the file.
+public struct ImportFeature: Codable, Hashable, Sendable {
+    /// The name of the file it came from, for showing only.
+    public var fileName: String
+    /// The STEP file's contents.
+    public var data: Data
+    public init(fileName: String, data: Data) { self.fileName = fileName; self.data = data }
+}
+
 public struct Feature: Codable, Hashable, Sendable, Identifiable {
     public enum Kind: Codable, Hashable, Sendable {
         case sketch(SketchFeature)
@@ -398,6 +408,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case mirror(MirrorFeature)
         case pattern(PatternFeature)
         case shell(ShellFeature)
+        case importBody(ImportFeature)
     }
     public var id: FeatureID
     public var name: String
@@ -428,13 +439,15 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .mirror: return "Mirror"
         case .pattern(let p): return p.kind == .linear ? "Pattern" : "Circular Pattern"
         case .shell: return "Shell"
+        case .importBody: return "Import"
         }
     }
 
     /// Sketches this feature is built from (they are hidden once used, as in other CAD tools).
     public var sketchesUsed: [FeatureID] {
         switch kind {
-        case .sketch, .fillet, .chamfer, .hole, .primitive, .move, .rotate, .combine, .plane, .mirror, .pattern, .shell: return []
+        case .sketch, .fillet, .chamfer, .hole, .primitive, .move, .rotate, .combine, .plane, .mirror, .pattern, .shell,
+             .importBody: return []
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
         case .sweep(let s): return [s.sketch, s.path.sketch]
@@ -455,6 +468,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .pipe(let p): return p.operation == .newBody
         case .mirror(let m): return m.operation == .newBody
         case .pattern(let p): return p.operation == .newBody
+        case .importBody: return true
         case .sketch, .fillet, .chamfer, .rib, .hole, .move, .rotate, .combine, .plane, .shell: return false
         }
     }

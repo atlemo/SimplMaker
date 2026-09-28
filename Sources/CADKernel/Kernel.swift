@@ -336,6 +336,14 @@ public final class KBody: @unchecked Sendable {
         return Mesh(m.pointee, faceNames: faceNames, edgeNames: edgeNames)
     }
 
+    /// Reads a STEP file's contents into one body with all its solids. Faces are named
+    /// "<featureID>.face<n>" by their place in the file.
+    public static func importSTEP(_ data: Data, featureID: String) throws -> KBody {
+        try data.withUnsafeBytes { buf in
+            try wrap(sk_import_step(buf.baseAddress?.assumingMemoryBound(to: CChar.self), buf.count, featureID), "STEP import")
+        }
+    }
+
     public static func exportSTEP(_ bodies: [KBody], to url: URL) throws {
         let hs = bodies.map(\.handle)
         guard sk_export_step(hs, Int32(hs.count), url.path) else { throw KernelError.last("STEP export") }

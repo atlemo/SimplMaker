@@ -48,6 +48,7 @@ struct InspectorView: View {
                 case .mirror(let f): MirrorInspector(model: model, id: id, mirror: f)
                 case .pattern(let f): PatternInspector(model: model, id: id, pattern: f)
                 case .shell(let f): ShellInspector(model: model, id: id, shell: f)
+                case .importBody(let f): ImportInspector(model: model, id: id, imported: f)
                 }
                 Section {
                     Button("Delete Feature", role: .destructive) { model.deleteFeature(id) }
@@ -946,6 +947,23 @@ struct ShellInspector: View {
                 }
             }
             BodiesRow(model: model, ids: [shell.body])
+        }
+    }
+}
+
+struct ImportInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let imported: ImportFeature
+
+    var body: some View {
+        Section("Import") {
+            LabeledContent("File", value: imported.fileName)
+            LabeledContent("Size", value: imported.data.count.formatted(.byteCount(style: .file)))
+            Button("Replace File…") { model.replaceImport(id) }
+                .disabled(model.isImporting)
+            Text("The file is kept in the part, so it rebuilds without the original. Move or Rotate places it.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }

@@ -85,6 +85,25 @@ public final class RegenCache: @unchecked Sendable {
     }
 }
 
+/// Bodies read from STEP files, so a rebuild (after any parameter change, say) doesn't read the
+/// same file again. Kernel bodies never change once built, so sharing them is safe.
+final class ImportCache: @unchecked Sendable {
+    static let shared = ImportCache()
+    private let lock = NSLock()
+    private var bodies: [FeatureID: (data: Data, body: KBody)] = [:]
+
+    func body(_ data: Data, featureID: FeatureID) throws -> KBody {
+        lock.lock()
+        if let hit = bodies[featureID], hit.data == data { lock.unlock(); return hit.body }
+        lock.unlock()
+        let body = try KBody.importSTEP(data, featureID: featureID)
+        lock.lock(); defer { lock.unlock() }
+        if bodies.count >= 16 { bodies.removeAll() }  // many imports (several open parts): start over
+        bodies[featureID] = (data, body)
+        return body
+    }
+}
+
 public enum Regenerator {
     public static func regenerate(_ doc: CADDocument, cache: RegenCache? = nil) -> RegenResult {
         let start = Date()
@@ -134,6 +153,7 @@ public enum Regenerator {
                 case .mirror(let f): try mirror(f, feature, &r)
                 case .pattern(let f): try pattern(f, feature, &r)
                 case .shell(let f): try shell(f, feature, &r)
+                case .importBody(let f): try importBody(f, feature, &r)
                 }
             } catch {
                 r.errors[feature.id] = "\(error)"
@@ -252,6 +272,17 @@ public enum Regenerator {
             throw KernelError(message: "shell failed (is the wall thicker than the body allows?)")
         }
         r.bodies[i].body = shelled
+    }
+
+    /// Reads a STEP file's contents into a body, the way an Import feature does, and keeps it
+    /// for the rebuild that follows (so a file can be checked before it's added).
+    public static func importedBody(_ data: Data, featureID: FeatureID) throws -> KBody {
+        try ImportCache.shared.body(data, featureID: featureID)
+    }
+
+    static func importBody(_ f: ImportFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let body = try importedBody(f.data, featureID: feature.id)
+        r.bodies.append(BodyResult(id: feature.id, name: r.bodyNames[feature.id] ?? "Body\(r.bodies.count + 1)", body: body))
     }
 
     static func sketch(_ f: SketchFeature, _ r: RegenResult) throws -> SketchResult {

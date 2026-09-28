@@ -16,6 +16,7 @@
 #define SIMPL_KERNEL_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -166,6 +167,12 @@ void sk_mesh_free(SKMesh *mesh);
 
 /// Triangulates sketch region i for display (faces only; segments are empty).
 SKMesh *sk_sketch_region_tessellate(SKHandle sketch, int i, double linearDeflection);
+
+// ------------------------------------------------------------------ import ---
+/// Reads the contents of a STEP file (`size` bytes) into one body holding all its solids, in mm.
+/// Faces without solids are sewn into solids where they close up. Faces are named
+/// "<featureId>.face<n>" (n from 1, in the file's order), so a rebuild names them the same.
+SKHandle sk_import_step(const char *data, size_t size, const char *featureId);
 
 // ------------------------------------------------------------------ export ---
 bool sk_export_step(const SKHandle *bodies, int count, const char *path);

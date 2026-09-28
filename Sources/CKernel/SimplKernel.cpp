@@ -9,6 +9,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -25,6 +26,8 @@
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepFeat_MakeLinearForm.hxx>
 #include <BRepLib.hxx>
@@ -71,7 +74,9 @@
 #include <Message_Messenger.hxx>
 #include <Message_PrinterOStream.hxx>
 #include <Poly_Triangulation.hxx>
+#include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
+#include <ShapeFix_Shape.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_Failure.hxx>
 #include <StlAPI_Writer.hxx>
@@ -85,6 +90,8 @@
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Shell.hxx>
+#include <TopoDS_Solid.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Circ.hxx>
@@ -1714,6 +1721,83 @@ void sk_mesh_free(SKMesh *m) {
   std::free(m);
 }
 
+// ------------------------------------------------------------------ import ---
+
+/// OCCT's data-exchange code prints statistics to stdout; this turns that off once.
+static void quietDataExchange() {
+  static const bool quiet = [] {
+    Message::DefaultMessenger()->RemovePrinters(STANDARD_TYPE(Message_PrinterOStream));
+    return true;
+  }();
+  (void)quiet;
+}
+
+SKHandle sk_import_step(const char *data, size_t size, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "import");
+  if (!data || size == 0) {
+    setError("the STEP file is empty");
+    return 0;
+  }
+  quietDataExchange();
+  std::istringstream in(std::string(data, size));
+  STEPControl_Reader reader;
+  if (reader.ReadStream("import.step", in) != IFSelect_RetDone) {
+    setError("this isn't a STEP file SimplCAD can read");
+    return 0;
+  }
+  reader.SetSystemLengthUnit(1.0);  // millimetres, whatever unit the file uses
+  if (reader.TransferRoots() == 0) {
+    setError("the STEP file has no shapes in it");
+    return 0;
+  }
+  const TopoDS_Shape all = reader.OneShape();
+
+  std::vector<TopoDS_Shape> solids;
+  for (TopExp_Explorer ex(all, TopAbs_SOLID); ex.More(); ex.Next()) solids.push_back(ex.Current());
+  if (solids.empty()) {
+    // A surface model: sew its faces, and make a solid of every shell that closes up.
+    BRepBuilderAPI_Sewing sew(1e-3);
+    for (TopExp_Explorer ex(all, TopAbs_FACE); ex.More(); ex.Next()) sew.Add(ex.Current());
+    sew.Perform();
+    for (TopExp_Explorer ex(sew.SewedShape(), TopAbs_SHELL); ex.More(); ex.Next()) {
+      const TopoDS_Shell &shell = TopoDS::Shell(ex.Current());
+      if (!BRep_Tool::IsClosed(shell)) continue;
+      BRepBuilderAPI_MakeSolid mk(shell);
+      if (!mk.IsDone()) continue;
+      TopoDS_Solid solid = mk.Solid();
+      BRepLib::OrientClosedSolid(solid);
+      solids.push_back(solid);
+    }
+  }
+  if (solids.empty()) {
+    setError("the STEP file has no solids (only open surfaces, curves or points)");
+    return 0;
+  }
+
+  TopoDS_Shape shape = solids[0];
+  if (solids.size() > 1) {
+    TopoDS_Compound comp;
+    BRep_Builder bb;
+    bb.MakeCompound(comp);
+    for (const TopoDS_Shape &s : solids) bb.Add(comp, s);
+    shape = comp;
+  }
+  if (!BRepCheck_Analyzer(shape).IsValid()) {  // try to repair it; if that fails, keep it as it is
+    ShapeFix_Shape fix(shape);
+    fix.Perform();
+    if (BRepCheck_Analyzer(fix.Shape()).IsValid()) shape = fix.Shape();
+  }
+
+  // A file has no feature history: faces are named by their place in it, which a rebuild repeats.
+  std::vector<Named> names;
+  ShapeIndexedMap faces;
+  TopExp::MapShapes(shape, TopAbs_FACE, faces);
+  for (int i = 1; i <= faces.Extent(); ++i) names.push_back({faces(i), feat + ".face" + std::to_string(i)});
+  return store(makeBody(shape, names, feat));
+  SK_CATCH(0)
+}
+
 // ------------------------------------------------------------------ export ---
 
 static bool compoundOf(const SKHandle *bodies, int count, TopoDS_Compound &out) {
@@ -1732,11 +1816,7 @@ bool sk_export_step(const SKHandle *bodies, int count, const char *path) {
   SK_TRY
   TopoDS_Compound comp;
   if (!compoundOf(bodies, count, comp)) return false;
-  static const bool quiet = [] {  // OCCT's data-exchange code prints statistics to stdout
-    Message::DefaultMessenger()->RemovePrinters(STANDARD_TYPE(Message_PrinterOStream));
-    return true;
-  }();
-  (void)quiet;
+  quietDataExchange();
   STEPControl_Writer w;
   if (w.Transfer(comp, STEPControl_AsIs) != IFSelect_RetDone || w.Write(path) != IFSelect_RetDone) {
     setError(std::string("STEP export failed: ") + path);
