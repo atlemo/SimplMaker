@@ -222,6 +222,17 @@ public enum SketchSolver {
                 guard case let (a, b)? = me.lines[l] else { return }
                 add { me.p(pt, $0).x - (me.p(a, $0).x + me.p(b, $0).x) / 2 }
                 add { me.p(pt, $0).y - (me.p(a, $0).y + me.p(b, $0).y) / 2 }
+            case .symmetric(let a, let b, let l):
+                // The middle of a–b on the line, and a–b square to it.
+                guard case let (l0, _)? = me.lines[l] else { return }
+                add {
+                    let d = me.dir(l, $0), m = (me.p(a, $0) + me.p(b, $0)) / 2
+                    return vcross(d, m - me.p(l0, $0)) / max(vlen(d), 1e-12)
+                }
+                add {
+                    let d = me.dir(l, $0)
+                    return vdot(d, me.p(b, $0) - me.p(a, $0)) / max(vlen(d), 1e-12)
+                }
             case .fix(let pt, let fx, let fy):
                 add { me.p(pt, $0).x - fx }
                 add { me.p(pt, $0).y - fy }

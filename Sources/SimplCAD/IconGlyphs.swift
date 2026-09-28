@@ -182,6 +182,11 @@ enum IconGlyphs {
     // SimplCAD's own, drawn in the same style: two sketch lines meeting in a rounded corner, with a
     // dot where the sharp corner was (the sketch tool that rounds a corner).
 "bezier": "<path d=\"M3 19C6 6 18 6 21 19\" /><path d=\"M3 19 6.5 7\" /><path d=\"M21 19 17.5 7\" /><circle cx=\"6.5\" cy=\"6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"17.5\" cy=\"6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",
+    "plane": "<path d=\"M3 17 8 7h13l-5 10Z\" />",
+    "pattern": "<rect width=\"5\" height=\"5\" x=\"2\" y=\"9.5\" rx=\"1\" /><rect width=\"5\" height=\"5\" x=\"9.5\" y=\"9.5\" rx=\"1\" /><rect width=\"5\" height=\"5\" x=\"17\" y=\"9.5\" rx=\"1\" />",
+    "shell": "<path d=\"M3 7v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7\" /><path d=\"M7 7v9h10V7\" />",
+    "square-center": "<rect width=\"18\" height=\"14\" x=\"3\" y=\"5\" rx=\"1\" /><circle cx=\"12\" cy=\"12\" r=\"1.4\" fill=\"currentColor\" stroke=\"none\" />",
+    "arc-3-point": "<path d=\"M4 18A9 9 0 0 1 20 18\" /><circle cx=\"4\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"12\" cy=\"9.6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"20\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",
     "corner-round": "<path d=\"M4 20v-8a8 8 0 0 1 8-8h8\" /><circle cx=\"4\" cy=\"4\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\" />",
     ]
 }

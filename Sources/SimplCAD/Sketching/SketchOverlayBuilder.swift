@@ -45,6 +45,7 @@ enum SketchOverlayBuilder {
         case .pointOnCurve: return ("⊙", "Point on curve")
         case .midpoint: return ("M", "Midpoint")
         case .fix: return ("⌖", "Fixed")
+        case .symmetric: return ("⇆", "Symmetric")
         }
     }
 

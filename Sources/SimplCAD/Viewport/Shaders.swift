@@ -16,6 +16,8 @@ enum Shaders {
         float4 faceHoverColor;
         float4 faceSelectedColor;
         float4 regionColor;     // rgb + base alpha
+        uint wholeBodies;       // a tool is picking bodies: hover and selection cover the whole body
+        uint pad0, pad1, pad2;
     };
 
     struct FaceVertex { packed_float3 position; packed_float3 normal; uint id; };
@@ -75,8 +77,13 @@ enum Shaders {
         float diffuse = max(dot(n, key), 0.0);
         float spec = pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
         float3 base = u.faceColor.rgb;
-        if (in.id == u.hovered) base = u.faceHoverColor.rgb;
-        if (isSelected(in.id, sel, u.selectedCount)) base = u.faceSelectedColor.rgb;
+        // Face and edge ids carry their body in bits 20-29; "(body) | 0xFFFFF" stands for the whole body.
+        uint bodyBits = in.id & 0x3FF00000u;
+        bool hoverBody = u.wholeBodies != 0 && u.hovered != 0 && (u.hovered & 0x40000000u) == 0
+                         && (u.hovered & 0x3FF00000u) == bodyBits;
+        if (in.id == u.hovered || hoverBody) base = u.faceHoverColor.rgb;
+        if (isSelected(in.id, sel, u.selectedCount) || isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount))
+            base = u.faceSelectedColor.rgb;
         FragOut o;
         o.color = float4(base * (0.32 + 0.68 * diffuse) + spec, 1.0);
         o.id = in.id;

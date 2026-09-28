@@ -33,6 +33,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var handleField: ValueField?
     /// The feature whose size the handle's field shows, and the size it showed.
     private var handleFieldFeature: (id: FeatureID, text: String)?
+    private var seenHandleFieldReset = 0
     private var seenHandleFocusRequest = 0
     private var handlePreviewTask: Task<Void, Never>?
     /// Where Text tool input is typed, at the clicked spot.
@@ -40,7 +41,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// The text the typing box is changing (nil: a new text), to refill it when that changes.
     private var textEntryFor: EntityID?
     /// Options for the selected feature (Join/Cut, Flip, OK, Cancel), below the size field.
-    private var featureHUD: NSHostingView<FeatureHUD>?
+    private var featureHUD: SelfSizingHostingView<FeatureHUD>?
     /// Typed values for the sketch step in progress (a line's length and angle, ...), beside the cursor.
     private var sketchPanel: NSStackView?
     private var sketchFields: [SketchInput: ValueField] = [:]
@@ -415,8 +416,18 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }
         if handleDrag, let renderer {
             let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
+            // How long 1 mm along the arrow looks here, so the size can go in round steps.
+            var pointsPerMM: Double?
+            if let h = model?.dragHandle {
+                let a = h.base, b = h.base + h.direction
+                if let pa = renderer.camera.project(SIMD3(Float(a.x), Float(a.y), Float(a.z)), viewSize: bounds.size),
+                   let pb = renderer.camera.project(SIMD3(Float(b.x), Float(b.y), Float(b.z)), viewSize: bounds.size) {
+                    pointsPerMM = Double(hypot(pb.x - pa.x, pb.y - pa.y))
+                }
+            }
             model?.dragHandle(rayOrigin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
-                              direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)))
+                              direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)),
+                              pointsPerMM: pointsPerMM)
             refreshOverlay()
             return
         }
@@ -574,6 +585,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         guard let renderer, let model else { return }
         renderer.setOverlay(model.sketchOverlay())
         renderer.selected = model.highlighted
+        renderer.wholeBodies = model.picksWholeBodies
         needsDisplay = true
     }
 
@@ -716,7 +728,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if let handleField {
             field = handleField
         } else {
-            let hud = NSHostingView(rootView: FeatureHUD(model: model))
+            let hud = SelfSizingHostingView(rootView: FeatureHUD(model: model))
             addSubview(hud)
             featureHUD = hud
             field = ValueField(frame: .zero)
@@ -724,6 +736,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             field.toolTip = "Type a size or an expression, then press Return · Esc cancels"
             addSubview(field)
             handleField = field
+        }
+        if model.handleFieldReset != seenHandleFieldReset {
+            // An option beside the field changed the feature; what was typed is stored already.
+            seenHandleFieldReset = model.handleFieldReset
+            handleFieldFeature = (h.featureID, text)
+            field.stringValue = text
+            if field.currentEditor() != nil { window?.makeFirstResponder(self) }  // ends editing with nothing left to store
         }
         if field.currentEditor() == nil { field.stringValue = text }
         if field.currentEditor() == nil || handleFieldFeature?.id != h.featureID { handleFieldFeature = (h.featureID, text) }
@@ -858,6 +877,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         guard let field = note.object as? ValueField else { return }
         if field === handleField {
             field.textColor = .labelColor
+            model?.handleDraft = field.stringValue
             scheduleHandlePreview(field.stringValue)
         } else if let input = field.input, let session = model?.sketchSession {
             session.setTyped(input, field.stringValue)
@@ -1218,6 +1238,7 @@ struct ViewportView: NSViewRepresentable {
         }
         renderer.setOverlay(model.sketchOverlay())
         renderer.selected = highlighted
+        renderer.wholeBodies = model.picksWholeBodies
         view.needsDisplay = true
     }
 }
@@ -1268,5 +1289,19 @@ final class OriginMarkerView: NSView {
         NSColor.secondaryLabelColor.setStroke()
         disc.lineWidth = 1.2
         disc.stroke()
+    }
+}
+
+/// A SwiftUI panel placed by frame that keeps its frame the size of its contents, growing down
+/// from its top edge: when a message appears in it later, it gets taller instead of squeezing
+/// the message and the buttons into the old height.
+final class SelfSizingHostingView<Content: View>: NSHostingView<Content> {
+    override func invalidateIntrinsicContentSize() {
+        super.invalidateIntrinsicContentSize()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.superview != nil else { return }
+            let size = self.fittingSize
+            if size != self.frame.size { self.setFrameSize(size) }  // the viewport is flipped: the top stays put
+        }
     }
 }

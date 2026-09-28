@@ -74,6 +74,20 @@ extension SketchOverlayBuilder {
         }
     }
 
+    /// A construction plane: a translucent, pickable square centred on its origin.
+    static func constructionPlane(_ f: Frame, size s: Double, id: UInt32, into o: inout SketchOverlay) {
+        let n = SIMD3<Float>(Float(f.normal.x), Float(f.normal.y), Float(f.normal.z))
+        let h = s / 2
+        let corners = [SIMD2(-h, -h), SIMD2(h, -h), SIMD2(h, h), SIMD2(-h, h)].map { world(f, $0) }
+        let base = UInt32(o.planeVertices.count)
+        for c in corners { o.planeVertices.append(FaceVertex(px: c.x, py: c.y, pz: c.z, nx: n.x, ny: n.y, nz: n.z, id: id)) }
+        o.planeIndices += [0, 1, 2, 0, 2, 3].map { base + $0 }
+        for i in 0..<4 {
+            let a = corners[i], b = corners[(i + 1) % 4]
+            o.planeOutline.append(SegmentInstance(ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z, id: id))
+        }
+    }
+
     /// "XY", "XZ" and "YZ" labels at the centre of each plane square.
     static func originPlaneLabels(size s: Double) -> [DimensionLabel] {
         OriginPlane.allCases.map { plane in

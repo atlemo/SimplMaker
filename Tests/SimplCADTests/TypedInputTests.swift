@@ -125,6 +125,41 @@ import Testing
         #expect(simdLength(center - SIMD2(15, 10)) < 1e-6)
     }
 
+    @Test func centerRectangleStaysCentred() throws {
+        let c = session()
+        c.setTool(.centerRectangle)
+        click(c, 10, 10)
+        move(c, 15, 12)
+        #expect(c.liveValue(.width).map { abs($0 - 10) < 1e-6 } == true, "the whole width, twice the cursor's reach")
+        c.setTyped(.width, "30")
+        c.setTyped(.height, "20")
+        #expect(c.commitTyped() == "Rectangle")
+        let lines = c.sketch.curves.filter { !$0.construction }
+        #expect(lines.count == 4 && c.sketch.curves.filter(\.construction).count == 1, "four sides and the diagonal")
+        let xs = lines.compactMap { c.sketch.lineEnds($0.id) }.flatMap { [$0.0.x, $0.1.x] }
+        #expect(abs((xs.min() ?? 0) + (xs.max() ?? 0) - 20) < 1e-6 && abs((xs.max() ?? 0) - (xs.min() ?? 0) - 30) < 1e-6)
+        #expect(c.sketch.dimensions.map(\.expression).sorted() == ["20 mm", "30 mm"])
+        #expect(SketchTool.forKey("r", current: .rectangle) == .centerRectangle && SketchTool.forKey("r", current: .line) == .rectangle)
+    }
+
+    @Test func threePointArcPassesThroughAllThree() throws {
+        for (end, through) in [(SIMD2(20.0, 0), SIMD2(10.0, 10)), (SIMD2(20.0, 0), SIMD2(10.0, -10))] {
+            let c = session()
+            c.setTool(.arc3Point)
+            click(c, 0, 0)
+            click(c, end.x, end.y)
+            move(c, through.x, through.y)
+            #expect(c.previewPolylines().first.map { $0.count > 10 } == true)
+            click(c, through.x, through.y)
+            let arc = try #require(c.sketch.curves.first)
+            let g = try #require(c.sketch.geometry(of: arc.id))
+            let ends = [g.point(0), g.point(1)]
+            #expect(ends.contains { simdLength($0) < 1e-6 } && ends.contains { simdLength($0 - end) < 1e-6 })
+            #expect(simdLength(g.point(0.5) - through) < 1e-6, "the arc bends the way of the third click")
+        }
+        #expect(SketchTool.forKey("a", current: .arc) == .arc3Point)
+    }
+
     @Test func bezierToolTakesStartEndAndBend() throws {
         let c = session()
         c.setTool(.bezier)
@@ -174,6 +209,7 @@ import Testing
         switch e.extent {
         case .distance(let d), .twoSides(let d, _): #expect(d == "30 mm")
         case .symmetric(let d): #expect(d == "30 mm")
+        case .throughAll, .toFace: Issue.record("expected a distance")
         }
         // Let the last rebuild finish: a kernel call still running when the test process exits crashes it.
         for _ in 0..<500 where model.isRegenerating { try await Task.sleep(for: .milliseconds(10)) }

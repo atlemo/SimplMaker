@@ -42,6 +42,7 @@ public enum ConstraintTool: String, CaseIterable, Sendable {
     case equal = "Equal"
     case midpoint = "Midpoint"
     case concentric = "Concentric"
+    case symmetric = "Symmetric"
     case fix = "Fix"
 }
 
@@ -92,6 +93,7 @@ extension Sketch {
         case .pointOnCurve(let p, let c): return [p, c]
         case .midpoint(let p, let l): return [p, l]
         case .fix(let p, _, _): return [p]
+        case .symmetric(let a, let b, let l): return [a, b, l]
         }
     }
 
@@ -219,6 +221,42 @@ extension Sketch {
         attach(r.corners[0], to: s)
         attach(r.corners[2], to: e)
         return r.lines
+    }
+
+    /// Rectangle centred on `center` with a corner at `corner`. A construction diagonal keeps the
+    /// center point in its middle, so it stays centred as it's resized. Returns the lines
+    /// (bottom, right, top, left).
+    @discardableResult
+    public mutating func addCenterRectangle(center: SketchSnap, corner: SketchSnap) -> [EntityID] {
+        let c = center.point.flatMap { position($0) } ?? center.position
+        let r = addRectangle(2 * c.x - corner.position.x, 2 * c.y - corner.position.y, corner.position.x, corner.position.y)
+        attach(r.corners[2], to: corner)
+        let middle = resolve(center)
+        let diagonal = addLine(r.corners[0], r.corners[2], construction: true)
+        constrain(.midpoint(point: middle, line: diagonal))
+        return r.lines
+    }
+
+    /// Arc from `start` to `end` through `through`, with a new center point; nil if the three are
+    /// in a line.
+    @discardableResult
+    public mutating func addArc(from start: SketchSnap, to end: SketchSnap, through mid: SketchSnap) -> EntityID? {
+        let a = start.point.flatMap { position($0) } ?? start.position
+        let b = end.point.flatMap { position($0) } ?? end.position
+        let m = mid.position
+        // The circle through three points: where the perpendicular bisectors cross.
+        let d = 2 * vcross(b - a, m - a)
+        guard abs(d) > 1e-9 * max(vdot(b - a, b - a), 1e-12) else { return nil }
+        let ab = vdot(b - a, b - a), am = vdot(m - a, m - a)
+        let off = SIMD2((m - a).y * ab - (b - a).y * am, (b - a).x * am - (m - a).x * ab) / d
+        let center = a + off
+        // Arcs run counter-clockwise from start to end: swap them if the middle point is on the other side.
+        func angle(_ p: SIMD2<Double>) -> Double { atan2(p.y - center.y, p.x - center.x) }
+        func ccw(_ from: Double, _ to: Double) -> Double { var t = to - from; while t < 0 { t += 2 * .pi }; return t }
+        let throughFirst = ccw(angle(a), angle(m)) < ccw(angle(a), angle(b))
+        let c = addPoint(center.x, center.y)
+        return throughFirst ? addArc(center: SketchSnap(center, point: c), start: start, end: end)
+                            : addArc(center: SketchSnap(center, point: c), start: end, end: start)
     }
 
     @discardableResult
@@ -438,6 +476,15 @@ extension Sketch {
                 return nil
             }
             return [.coincident(a, b)]
+        case .symmetric:
+            // Two points (or the centres of two circles or arcs) mirrored across a line: the line
+            // picked last when there are two.
+            guard ids.count == 3, lines.count >= 1 else { return nil }
+            let axis = lines[lines.count - 1]
+            let others = ids.filter { $0 != axis }
+            let points = others.compactMap { id -> EntityID? in kind(of: id) == .point ? id : center(of: id) }
+            guard others.count == 2, points.count == 2, points[0] != points[1] else { return nil }
+            return [.symmetric(points[0], points[1], line: axis)]
         case .fix:
             guard pts.count == ids.count else { return nil }
             return pts.compactMap { p in position(p).map { .fix(p, x: $0.x, y: $0.y) } }

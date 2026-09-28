@@ -50,6 +50,7 @@ extension Feature.Kind {
             case .distance(let d): f.extent = .distance(change(d))
             case .symmetric(let d): f.extent = .symmetric(change(d))
             case .twoSides(let d, let b): f.extent = .twoSides(change(d), back: change(b))
+            case .throughAll, .toFace: break
             }
             self = .extrude(f)
         case .fillet(var f): f.size = change(f.size); self = .fillet(f)
@@ -70,6 +71,10 @@ extension Feature.Kind {
         case .pipe(var f): f.diameter = change(f.diameter); f.wall = f.wall.map(change); self = .pipe(f)
         case .move(var f): f.dx = change(f.dx); f.dy = change(f.dy); f.dz = change(f.dz); self = .move(f)
         case .rotate(var f): f.angle = change(f.angle); self = .rotate(f)
+        case .plane(var f): f.offset = change(f.offset); f.angle = change(f.angle); self = .plane(f)
+        case .mirror: break
+        case .pattern(var f): f.count = change(f.count); f.spacing = change(f.spacing); self = .pattern(f)
+        case .shell(var f): f.thickness = change(f.thickness); self = .shell(f)
         }
     }
 
@@ -108,5 +113,105 @@ extension CADDocument {
     /// The features whose expressions use a parameter.
     public func features(using parameter: String) -> [Feature] {
         features.filter { $0.kind.expressions.contains { Expressions.uses($0, parameter) } }
+    }
+}
+
+extension PlaneRef {
+    /// The feature this plane comes from: the body a face is on, or a construction plane.
+    var feature: FeatureID? {
+        switch self {
+        case .xy, .xz, .yz: return nil
+        case .face(let f): return f.body
+        case .plane(let id): return id
+        }
+    }
+}
+
+extension Feature {
+    /// The features this one is built from: its sketches and planes, and the bodies it changes or
+    /// reads (a body is named by the feature that made it).
+    public var references: Set<FeatureID> {
+        var out = Set<FeatureID>()
+        func add(_ id: FeatureID?) { if let id, !id.isEmpty { out.insert(id) } }
+        switch kind {
+        case .sketch(let f): add(f.plane.feature)
+        case .extrude(let f):
+            add(f.face == nil ? f.sketch : nil); add(f.face?.body); add(f.target)
+            if case .toFace(let face) = f.extent { add(face.body) }
+        case .revolve(let f): add(f.sketch); add(f.target)
+        case .sweep(let f): add(f.sketch); add(f.path.sketch); add(f.target)
+        case .loft(let f): f.sections.forEach { add($0.sketch) }; add(f.target)
+        case .rib(let f): add(f.path.sketch); add(f.target)
+        case .hole(let f): add(f.face.body)
+        case .primitive(let f): add(f.plane.feature); add(f.target)
+        case .pipe(let f): add(f.path.sketch); add(f.target)
+        case .fillet(let f), .chamfer(let f): f.edges.forEach { add($0.body) }; f.faces.forEach { add($0.body) }
+        case .move(let f): f.bodies.forEach { add($0) }; f.sketches.forEach { add($0) }
+        case .rotate(let f): f.bodies.forEach { add($0) }
+        case .combine(let f): add(f.target); f.tools.forEach { add($0) }
+        case .plane(let f): add(f.base.feature)
+        case .mirror(let f): f.bodies.forEach { add($0) }; add(f.plane.feature)
+        case .pattern(let f):
+            f.bodies.forEach { add($0) }
+            if case .edge(let e) = f.axis { add(e.body) }
+        case .shell(let f): add(f.body); f.faces.forEach { add($0.body) }
+        }
+        out.remove(id)
+        return out
+    }
+
+    /// The bodies this feature changes (not the ones it makes): joins, cuts, fillets, moves…
+    public var changedBodies: Set<FeatureID> {
+        var out = Set<FeatureID>()
+        func add(_ id: FeatureID?) { if let id { out.insert(id) } }
+        switch kind {
+        case .extrude(let f): if f.operation != .newBody { add(f.target); add(f.face?.body) }
+        case .revolve(let f): if f.operation != .newBody { add(f.target) }
+        case .sweep(let f): if f.operation != .newBody { add(f.target) }
+        case .loft(let f): if f.operation != .newBody { add(f.target) }
+        case .rib(let f): add(f.target)
+        case .hole(let f): out.insert(f.face.body)
+        case .primitive(let f): if f.operation != .newBody { add(f.target) }
+        case .pipe(let f): if f.operation != .newBody { add(f.target) }
+        case .fillet(let f), .chamfer(let f): f.edges.forEach { out.insert($0.body) }; f.faces.forEach { out.insert($0.body) }
+        case .move(let f): f.bodies.forEach { out.insert($0) }
+        case .rotate(let f): f.bodies.forEach { out.insert($0) }
+        case .combine(let f): out.insert(f.target)
+        case .mirror(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
+        case .pattern(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
+        case .shell(let f): out.insert(f.body)
+        case .sketch, .plane: break
+        }
+        return out
+    }
+}
+
+extension CADDocument {
+    /// Why the feature can't move to `index` (its place in the reordered timeline), or nil if it can:
+    /// it may not come before what it's built from, nor before a feature that changes a body it
+    /// uses; and what's built from it may not end up before it.
+    public func reorderProblem(_ id: FeatureID, to index: Int) -> String? {
+        guard let from = self.index(of: id) else { return "That feature is missing" }
+        var order = features
+        let f = order.remove(at: from)
+        let to = Swift.min(Swift.max(index, 0), order.count)
+        order.insert(f, at: to)
+        func name(_ id: FeatureID) -> String { features.first { $0.id == id }?.name ?? "a missing feature" }
+        for (i, g) in order.enumerated() {
+            let before = Set(order[..<i].map(\.id))
+            // What it's built from must come first…
+            if let missing = g.references.first(where: { r in !before.contains(r) && order.contains { $0.id == r } }) {
+                return g.id == id ? "\(g.name) is built from \(name(missing)), so it has to come after it"
+                                  : "\(g.name) is built from \(f.name), so \(f.name) has to come before it"
+            }
+            // …and so must whatever changes a body it uses before it did.
+            let usesBodies = g.references
+            for (j, h) in features.enumerated() where j < features.firstIndex(where: { $0.id == g.id })! {
+                guard !h.changedBodies.isDisjoint(with: usesBodies), !before.contains(h.id) else { continue }
+                return h.id == id ? "\(g.name) uses the body as \(h.name) leaves it, so \(h.name) has to stay before it"
+                                  : "\(g.name) uses the body as \(h.name) leaves it, so it has to stay after \(h.name)"
+            }
+        }
+        return nil
     }
 }

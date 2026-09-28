@@ -13,6 +13,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
     case fillet = "Fillet", chamfer = "Chamfer", move = "Move", rotate = "Rotate", combine = "Combine"
+    case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell"
 
     var id: String { rawValue }
 
@@ -20,7 +21,9 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// change an existing body.
     static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
-    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .move, .rotate, .combine]
+    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .shell, .move, .rotate, .combine]
+    /// Construction planes, and copies of bodies.
+    static let construct: [DesignTool] = [.plane, .mirror, .pattern]
 
     /// A glyph name from the macOS Design System's icon set (see IconGlyphs.swift), not an SF Symbol.
     var symbol: String {
@@ -42,6 +45,10 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .move: return "move"
         case .rotate: return "rotate-cw"
         case .combine: return "combine"
+        case .plane: return "plane"
+        case .mirror: return "flip-horizontal-2"
+        case .pattern: return "pattern"
+        case .shell: return "shell"
         }
     }
 
@@ -64,6 +71,10 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .rotate: return "Rotate: turn a body about an X, Y or Z axis"
         case .chamfer: return "Chamfer: bevel the selected edges, or every edge around a selected face"
         case .combine: return "Combine: join, cut or intersect bodies (e.g. cut text out of a plate)"
+        case .plane: return "Plane: a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
+        case .mirror: return "Mirror: copy bodies across a plane"
+        case .pattern: return "Pattern: copy bodies in a row or around an axis"
+        case .shell: return "Shell: hollow a body, leaving the picked faces open"
         }
     }
 
@@ -78,8 +89,11 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Placed by clicking a plane or a flat face.
-    var needsPlane: Bool { primitive != nil }
+    /// Placed by clicking a plane or a flat face (the origin planes show while it waits).
+    var needsPlane: Bool { primitive != nil || self == .plane }
+
+    /// Shows the origin planes while it waits, to pick one (mirror across a plane).
+    var showsPlanes: Bool { needsPlane || self == .mirror }
 
     /// What a click can pick while this tool waits.
     func accepts(_ kind: PickID.Kind) -> Bool {
@@ -93,6 +107,10 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .fillet, .chamfer: return kind == .edge || kind == .face  // a face: every edge around it
         case .move: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve
         case .rotate, .combine: return kind == .face || kind == .edge
+        case .plane: return kind == .plane || kind == .face
+        case .mirror: return kind == .face || kind == .edge || kind == .plane  // bodies, then the plane
+        case .pattern: return kind == .face || kind == .edge  // bodies (faces), and a straight edge for the direction
+        case .shell: return kind == .face  // the faces to leave open
         }
     }
 }
@@ -109,7 +127,7 @@ extension DocumentModel {
         pendingTool = nil
         if perform(tool) { return }
         pendingTool = tool
-        if tool.needsPlane { sketchPlaneSize = OriginPlane.displaySize(for: sceneBounds) }
+        if tool.showsPlanes { sketchPlaneSize = OriginPlane.displaySize(for: sceneBounds) }
         selection = selection.filter { tool.accepts($0.kind) && accepts($0) }
         overlayRevision += 1
     }
@@ -168,6 +186,15 @@ extension DocumentModel {
             return "Click a plane or flat face to place the \(tool.rawValue.lowercased())"
         case .move: return "Click the bodies or sketches to move"
         case .rotate: return "Click the body to rotate"
+        case .plane: return "Click an origin plane, a construction plane or a flat face to start the new plane from"
+        case .mirror:
+            return pickedBodies.isEmpty ? "Click the bodies to mirror" : "Click more bodies, or the plane to mirror across (\(pickedBodies.count) picked)"
+        case .pattern:
+            let n = faceBodies.count
+            return n == 0 ? "Click the bodies to copy" : "Click more bodies, or a straight edge for the direction · Return makes the pattern (\(n) picked)"
+        case .shell:
+            let n = selection.filter(\.isFace).count
+            return n == 0 ? "Click the faces to leave open" : "Click more faces, or press Return to shell (\(n) open)"
         case .combine:
             let n = pickedBodies.count
             return n == 0 ? "Click the body to cut from, join to or intersect with"
@@ -249,6 +276,28 @@ extension DocumentModel {
             let bodies = pickedBodies
             guard !bodies.isEmpty else { return false }
             add(Feature(name: document.nextName(tool.rawValue), .rotate(RotateFeature(bodies: bodies))))
+        case .plane:
+            guard selection.count == 1, let pick = selection.first else { return false }
+            return place(tool, on: pick)
+        case .mirror:
+            // Bodies from face and edge picks; the plane from a plane pick.
+            let bodies = pickedBodies
+            guard !bodies.isEmpty, let plane = selection.lazy.filter({ $0.kind == .plane }).compactMap({ self.planeRef(of: $0) }).first
+            else { return false }
+            add(Feature(name: document.nextName("Mirror"), .mirror(MirrorFeature(bodies: bodies, plane: plane))))
+        case .pattern:
+            let bodies = faceBodies
+            guard !bodies.isEmpty, !waiting else { return false }
+            let edge = selection.first(where: \.isEdge).flatMap { pick -> EdgeRef? in
+                guard let m = meshes[safe: pick.body], let name = self.name(of: pick) else { return nil }
+                return EdgeRef(body: m.id, edge: name)
+            }
+            add(Feature(name: document.nextName("Pattern"), .pattern(PatternFeature(kind: .linear, bodies: bodies,
+                                                                                    axis: edge.map { .edge($0) } ?? .x))))
+        case .shell:
+            let faces = selection.compactMap { faceRef($0) }
+            guard let body = faces.first?.body, !waiting else { return false }
+            add(Feature(name: document.nextName("Shell"), .shell(ShellFeature(body: body, faces: faces.filter { $0.body == body }))))
         case .combine:
             // The first body picked is the target; the rest are the tools. Return combines them.
             let bodies = pickedBodies
@@ -329,11 +378,17 @@ extension DocumentModel {
         let plane: PlaneRef, frame: Frame, target: FeatureID?
         if let origin = OriginPlane(pick: pick) {
             plane = origin.planeRef; frame = origin.frame; target = nil
+        } else if let id = constructionPlane(of: pick), let f = result?.planes[id] {
+            plane = .plane(id); frame = f; target = nil
         } else if let ref = faceRef(pick), let body = result?.body(ref.body), let f = try? body.faceFrame(ref.face) {
             plane = .face(ref); frame = f; target = ref.body
         } else {
             if pick.isFace { alert = AlertInfo(title: "That face isn't flat", message: "Pick a flat face or one of the origin planes.") }
             return false
+        }
+        if tool == .plane {
+            add(Feature(name: document.nextName("Plane"), .plane(PlaneFeature(base: plane))))
+            return true
         }
         let uv = clickPoint(on: frame) ?? faceCenter(pick, on: frame) ?? .zero
         let u = formatDimension(uv.x, kind: .length), v = formatDimension(uv.y, kind: .length)
@@ -357,6 +412,15 @@ extension DocumentModel {
     }
 
     // MARK: helpers
+
+    /// Bodies with a picked face, in the order they were picked (edges are left for other uses).
+    var faceBodies: [FeatureID] {
+        var bodies: [FeatureID] = []
+        for pick in selection where pick.isFace {
+            if let id = meshes[safe: pick.body]?.id, !bodies.contains(id) { bodies.append(id) }
+        }
+        return bodies
+    }
 
     /// Bodies with a picked face or edge, in the order they were picked.
     var pickedBodies: [FeatureID] {

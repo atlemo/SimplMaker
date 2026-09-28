@@ -26,6 +26,8 @@ struct PickID: Hashable, Sendable {
     init(sketchCurve i: Int, slot: Int = 0) { raw = 0x5000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
     init(region i: Int, slot: Int = 0) { raw = 0x6000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
     init(plane i: Int) { raw = 0x7000_0000 | PickID.planeFlag | UInt32(i) }
+    /// Stands for every face of a body in the selection highlight (no real face has this index).
+    init(wholeBody i: Int) { raw = UInt32(i + 1) << 20 | 0xFFFFF }
     static let handle = PickID(raw: 0x7000_0000)
 
     var kind: Kind {
@@ -92,6 +94,8 @@ struct Uniforms {
     var faceHoverColor: SIMD4<Float>
     var faceSelectedColor: SIMD4<Float>
     var regionColor: SIMD4<Float>
+    var wholeBodies: UInt32 = 0
+    var pad0: UInt32 = 0, pad1: UInt32 = 0, pad2: UInt32 = 0
 }
 
 /// The grid drawn in the plane of the sketch being edited: minor and major lines over the visible
@@ -248,6 +252,8 @@ final class Renderer {
     /// The red, green and blue X, Y and Z axes through the origin.
     var showAxes = true
     var hovered: UInt32 = 0
+    /// A tool is picking bodies: hovering and selecting a face lights up its whole body.
+    var wholeBodies = false
     var selected: [UInt32] = []
     /// Pixel (in drawable coordinates, origin top-left) to read from the ID buffer on the next frame.
     var pickRequest: SIMD2<Int>?
@@ -448,7 +454,8 @@ final class Renderer {
                                 eye: SIMD4(camera.eye, 1), viewport: SIMD2(Float(size.width), Float(size.height)),
                                 hovered: hovered, selectedCount: UInt32(min(selected.count, 256)),
                                 faceColor: palette.face, faceHoverColor: palette.faceHover,
-                                faceSelectedColor: palette.faceSelected, regionColor: palette.region)
+                                faceSelectedColor: palette.faceSelected, regionColor: palette.region,
+                                wholeBodies: wholeBodies ? 1 : 0)
         var sel = Array(selected.prefix(256))
         if sel.isEmpty { sel = [0] }
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale

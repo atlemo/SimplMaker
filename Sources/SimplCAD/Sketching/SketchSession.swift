@@ -7,13 +7,14 @@ import Foundation
 import Observation
 
 enum SketchTool: String, CaseIterable, Identifiable {
-    case select = "Select", line = "Line", rectangle = "Rectangle", circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", bezier = "Bézier Curve"
+    case select = "Select", line = "Line", rectangle = "Rectangle", centerRectangle = "Center Rectangle"
+    case circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", arc3Point = "3-Point Arc", bezier = "Bézier Curve"
     case point = "Point", text = "Text", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
 
     var id: String { rawValue }
 
     /// Toolbar groups: drawing, changing curves, and dimensions (Select stands alone).
-    static let draw: [SketchTool] = [.line, .rectangle, .circle, .circle2Point, .arc, .bezier, .point, .text]
+    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .circle, .circle2Point, .arc, .arc3Point, .bezier, .point, .text]
     static let modify: [SketchTool] = [.fillet, .trim, .extend]
 
     /// The name under the icon in the toolbar (menus use the full `rawValue`).
@@ -21,6 +22,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         switch self {
         case .fillet: return "Corner"
         case .circle2Point: return "Circle"
+        case .centerRectangle: return "Rectangle"
+        case .arc3Point: return "Arc"
         case .bezier: return "Curve"
         default: return rawValue
         }
@@ -29,18 +32,41 @@ enum SketchTool: String, CaseIterable, Identifiable {
     /// Tools whose clicks place points (and so snap to shape centers).
     var placesPoints: Bool {
         switch self {
-        case .line, .rectangle, .circle, .circle2Point, .arc, .bezier, .point, .text: return true
+        case .line, .rectangle, .centerRectangle, .circle, .circle2Point, .arc, .arc3Point, .bezier, .point, .text: return true
         case .select, .fillet, .trim, .extend, .dimension: return false
         }
     }
 
-    /// The circle tools share a toolbar button (and the C key), each a way to draw a circle.
-    var isCircle: Bool { self == .circle || self == .circle2Point }
+    /// Tools that share a toolbar button and a key: the ways to draw one kind of shape.
+    var family: [SketchTool] {
+        switch self {
+        case .rectangle, .centerRectangle: return [.rectangle, .centerRectangle]
+        case .circle, .circle2Point: return [.circle, .circle2Point]
+        case .arc, .arc3Point: return [.arc, .arc3Point]
+        default: return [self]
+        }
+    }
 
-    /// The tool for a key press: pressing C again while drawing circles switches between the two ways.
+    /// Its name among the others in its family, in the toolbar's chooser.
+    var modeTitle: String {
+        switch self {
+        case .rectangle: return "2-Point"
+        case .centerRectangle: return "Center"
+        case .circle: return "Center"
+        case .circle2Point: return "2-Point"
+        case .arc: return "Center"
+        case .arc3Point: return "3-Point"
+        default: return shortTitle
+        }
+    }
+
+    var isCircle: Bool { family.contains(.circle) }
+
+    /// The tool for a key press: pressing the key again switches to the next way of drawing that shape.
     static func forKey(_ key: Character, current: SketchTool) -> SketchTool? {
         guard let tool = allCases.first(where: { $0.key == key }) else { return nil }
-        if tool.isCircle, current.isCircle { return current == .circle ? .circle2Point : .circle }
+        let family = tool.family
+        if family.count > 1, let i = family.firstIndex(of: current) { return family[(i + 1) % family.count] }
         return tool
     }
 
@@ -58,6 +84,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .select: return "mouse-pointer-2"
         case .line: return "minus"
         case .rectangle: return "square"
+        case .centerRectangle: return "square-center"
+        case .arc3Point: return "arc-3-point"
         case .circle: return "circle"
         case .circle2Point: return "diameter"
         case .arc: return "spline"
@@ -75,9 +103,9 @@ enum SketchTool: String, CaseIterable, Identifiable {
         switch self {
         case .select: return "s"
         case .line: return "l"
-        case .rectangle: return "r"
+        case .rectangle, .centerRectangle: return "r"
         case .circle, .circle2Point: return "c"
-        case .arc: return "a"
+        case .arc, .arc3Point: return "a"
         case .bezier: return "b"
         case .point: return "p"
         case .text: return "x"
@@ -91,10 +119,12 @@ enum SketchTool: String, CaseIterable, Identifiable {
         switch self {
         case .select: return "Click to select, double-click for all joined curves, drag to move, ⌫ deletes"
         case .line: return "Click points to draw connected lines · Esc ends the chain"
-        case .rectangle: return "Click two opposite corners"
+        case .rectangle: return "Click two opposite corners · R again for a center rectangle"
+        case .centerRectangle: return "Click the center, then a corner · R again for two corners"
         case .circle: return "Click the center, then a point on the circle · C again for 2-point"
         case .circle2Point: return "Click two points on opposite sides of the circle · C again for center"
-        case .arc: return "Click the center, the start, then the end (counter-clockwise)"
+        case .arc: return "Click the center, the start, then the end (counter-clockwise) · A again for 3-point"
+        case .arc3Point: return "Click the start, the end, then a point the arc passes through · A again for center"
         case .bezier: return "Click the start and the end, then where the curve bends · drag its handles to shape it"
         case .point: return "Click to place a point"
         case .text: return "Click where the text starts, type it, and press Return · click a text (or double-click it) to change its words"
@@ -164,11 +194,13 @@ final class SketchSession {
 
     func setTool(_ t: SketchTool) {
         tool = t
-        if t.isCircle { circleMode = t }
+        if t.family.count > 1 { lastInFamily[t.family[0]] = t }
         resetToolState()
     }
-    /// The way of drawing circles the toolbar's Circle button picks: the one used last.
-    private(set) var circleMode: SketchTool = .circle
+    /// The way of drawing each kind of shape that its toolbar button picks: the one used last.
+    private var lastInFamily: [SketchTool: SketchTool] = [:]
+    func mode(of tool: SketchTool) -> SketchTool { lastInFamily[tool.family[0]] ?? tool.family[0] }
+    var circleMode: SketchTool { mode(of: .circle) }
     var selection: [EntityID] = []
     private(set) var hover: EntityID?
     /// Set by the Offset command to ask the toolbar to show the offset distance popover.
@@ -458,6 +490,23 @@ final class SketchSession {
             let lines = sketch.addRectangle(from: clicks[0], to: s)  // bottom, right, top, left
             addPendingDimensions([.width: .length(lines[0]), .height: .length(lines[1])])
             return finish("Rectangle")
+        case .centerRectangle:
+            guard clicks.count == 2 else { return nil }
+            defer { clicks = [] }
+            let c = clicks[0].position, p = s.position
+            guard abs(p.x - c.x) > 1e-6, abs(p.y - c.y) > 1e-6 else { pendingDimensions = []; return nil }
+            let lines = sketch.addCenterRectangle(center: clicks[0], corner: s)
+            addPendingDimensions([.width: .length(lines[0]), .height: .length(lines[1])])
+            return finish("Rectangle")
+        case .arc3Point:
+            if clicks.count == 2, distance(clicks[0], s) <= 1e-6 { clicks.removeLast(); return nil }
+            guard clicks.count == 3 else { return nil }
+            defer { clicks = [] }
+            guard sketch.addArc(from: clicks[0], to: clicks[1], through: s) != nil else {
+                message = "Those three points are in a line: an arc needs a bend"
+                return nil
+            }
+            return finish("Arc")
         case .circle, .circle2Point:
             guard clicks.count == 2 else { return nil }
             defer { clicks = [] }
@@ -502,7 +551,7 @@ final class SketchSession {
     var inputFields: [SketchInput] {
         switch (tool, clicks.count) {
         case (.line, 1): return [.length, .angle]
-        case (.rectangle, 1): return [.width, .height]
+        case (.rectangle, 1), (.centerRectangle, 1): return [.width, .height]
         case (.circle, 1), (.circle2Point, 1): return [.diameter]
         case (.arc, 1): return [.radius]
         case (.arc, 2): return [.sweep]
@@ -545,6 +594,10 @@ final class SketchSession {
         case .rectangle:
             let w = typedValue(.width) ?? abs(d.x), h = typedValue(.height) ?? abs(d.y)
             return SketchSnap(a + SIMD2(d.x < 0 ? -w : w, d.y < 0 ? -h : h))
+        case .centerRectangle:
+            // Typed sizes are the whole rectangle's; the corner is half of them from the center.
+            let w = typedValue(.width).map { $0 / 2 } ?? abs(d.x), h = typedValue(.height).map { $0 / 2 } ?? abs(d.y)
+            return SketchSnap(a + SIMD2(d.x < 0 ? -w : w, d.y < 0 ? -h : h))
         case .circle:
             return SketchSnap(a + dir * ((typedValue(.diameter) ?? 2 * len) / 2))
         case .circle2Point:
@@ -569,8 +622,8 @@ final class SketchSession {
         switch field {
         case .length, .radius: return simdLength(d)
         case .diameter: return tool == .circle2Point ? simdLength(d) : 2 * simdLength(d)
-        case .width: return abs(d.x)
-        case .height: return abs(d.y)
+        case .width: return tool == .centerRectangle ? 2 * abs(d.x) : abs(d.x)
+        case .height: return tool == .centerRectangle ? 2 * abs(d.y) : abs(d.y)
         case .angle:
             let angle = atan2(d.y, d.x)
             return angle < 0 ? angle + 2 * .pi : angle
@@ -893,6 +946,16 @@ final class SketchSession {
         switch tool {
         case .line: return [[a, c]]
         case .rectangle: return [[a, SIMD2(c.x, a.y), c, SIMD2(a.x, c.y), a]]
+        case .centerRectangle:
+            let o = 2 * a - c
+            return [[o, SIMD2(c.x, o.y), c, SIMD2(o.x, c.y), o], [o, c]]
+        case .arc3Point:
+            guard clicks.count > 1 else { return [[a, c]] }
+            // The arc from start to end through the cursor, as it would be drawn.
+            var trial = Sketch()
+            guard let id = trial.addArc(from: SketchSnap(a), to: SketchSnap(clicks[1].position), through: SketchSnap(c)),
+                  let g = trial.geometry(of: id) else { return [[a, clicks[1].position]] }
+            return [(0...48).map { g.point(Double($0) / 48) }]
         case .circle:
             let r = simdLength(c - a)
             return [circle(a, r, 0, 2 * .pi)]

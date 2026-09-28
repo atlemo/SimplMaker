@@ -75,6 +75,11 @@ public final class KSketch: @unchecked Sendable {
         public var sample: SIMD2<Double>
     }
 
+    /// Whether a sketch point lies inside a region (not on its edge, not in a hole in it).
+    public func regionContains(_ index: Int, _ p: SIMD2<Double>) -> Bool {
+        sk_sketch_region_contains(handle, Int32(index), p.x, p.y)
+    }
+
     /// Splits the plane by the curves; returns the closed regions.
     public func buildRegions() throws -> [Region] {
         let n = sk_sketch_build_regions(handle)
@@ -210,6 +215,32 @@ public final class KBody: @unchecked Sendable {
 
     public func rotated(about origin: SIMD3<Double>, axis a: SIMD3<Double>, angle: Double) throws -> KBody {
         try KBody.wrap(sk_rotate(handle, origin.x, origin.y, origin.z, a.x, a.y, a.z, angle), "rotate")
+    }
+
+    /// Copies for mirror and pattern features, with every face name prefixed so the copies' faces
+    /// stay distinct from the original's when they're joined.
+    public func translatedCopy(_ d: SIMD3<Double>, prefix: String) throws -> KBody {
+        try KBody.wrap(sk_translate_copy(handle, d.x, d.y, d.z, prefix), "pattern")
+    }
+
+    public func rotatedCopy(about origin: SIMD3<Double>, axis a: SIMD3<Double>, angle: Double, prefix: String) throws -> KBody {
+        try KBody.wrap(sk_rotate_copy(handle, origin.x, origin.y, origin.z, a.x, a.y, a.z, angle, prefix), "pattern")
+    }
+
+    public func mirroredCopy(through origin: SIMD3<Double>, normal n: SIMD3<Double>, prefix: String) throws -> KBody {
+        try KBody.wrap(sk_mirror_copy(handle, origin.x, origin.y, origin.z, n.x, n.y, n.z, prefix), "mirror")
+    }
+
+    /// Hollows the body: the faces are removed and the rest becomes walls `thickness` thick.
+    public func shell(removing faces: [String], thickness: Double, inside: Bool, featureID: String) throws -> KBody {
+        try withCStrings(faces) { try KBody.wrap(sk_shell(handle, $0, Int32(faces.count), thickness, inside, featureID), "shell") }
+    }
+
+    /// A straight edge's line (a point on it and its direction); throws for a curved edge.
+    public func edgeLine(_ edge: String) throws -> (origin: SIMD3<Double>, direction: SIMD3<Double>) {
+        var o = [Double](repeating: 0, count: 6)
+        guard sk_body_edge_line(handle, edge, &o) else { throw KernelError.last("edge direction") }
+        return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]))
     }
 
     public func boolean(_ tool: KBody, _ op: SKBooleanOp) throws -> KBody {

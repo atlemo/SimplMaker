@@ -9,6 +9,8 @@ public typealias FeatureID = String
 public enum PlaneRef: Codable, Hashable, Sendable {
     case xy, xz, yz
     case face(FaceRef)
+    /// A construction plane, by the id of its Plane feature.
+    case plane(FeatureID)
 }
 
 /// A face of a body, by persistent name ("plate.end"). `body` is the id of the feature that created the body.
@@ -47,6 +49,10 @@ public enum ExtrudeExtent: Codable, Hashable, Sendable {
     case distance(String)                      // one side
     case symmetric(String)                     // total length, centred on the sketch plane
     case twoSides(String, back: String)
+    /// Far enough to go through every body there is (for cuts, mostly).
+    case throughAll
+    /// Up to a flat face parallel to the sketch, wherever that face ends up.
+    case toFace(FaceRef)
 }
 
 public enum BodyOperation: String, Codable, Hashable, Sendable, CaseIterable {
@@ -258,6 +264,72 @@ public struct MoveFeature: Codable, Hashable, Sendable {
     }
 }
 
+/// Which of a plane's own axes (through its origin) a construction plane turns about.
+public enum PlaneAxis: String, Codable, Hashable, Sendable, CaseIterable {
+    case horizontal = "Horizontal", vertical = "Vertical"
+}
+
+/// A construction plane: another plane (an origin plane, a flat face or another construction
+/// plane) turned about one of its axes, then moved along its normal.
+public struct PlaneFeature: Codable, Hashable, Sendable {
+    public var base: PlaneRef
+    public var offset: String
+    public var angle: String
+    public var axis: PlaneAxis
+    public init(base: PlaneRef, offset: String = "10 mm", angle: String = "0 deg", axis: PlaneAxis = .horizontal) {
+        self.base = base; self.offset = offset; self.angle = angle; self.axis = axis
+    }
+}
+
+/// Mirrors bodies across a plane. Join adds each mirrored copy to its body; New Body keeps the
+/// copies as a body of their own.
+public struct MirrorFeature: Codable, Hashable, Sendable {
+    public var bodies: [FeatureID]
+    public var plane: PlaneRef
+    public var operation: BodyOperation
+    public init(bodies: [FeatureID], plane: PlaneRef, operation: BodyOperation = .join) {
+        self.bodies = bodies; self.plane = plane; self.operation = operation
+    }
+}
+
+/// A direction or axis for patterns: an origin axis, or a straight edge of a body.
+public enum PatternAxis: Codable, Hashable, Sendable {
+    case x, y, z
+    case edge(EdgeRef)
+}
+
+public enum PatternKind: String, Codable, Hashable, Sendable, CaseIterable {
+    case linear = "Linear", circular = "Circular"
+}
+
+/// Copies bodies in a row (linear: `spacing` apart along `axis`) or around an axis (circular:
+/// spread over `spacing` degrees, 360 = all the way round). `count` includes the original.
+public struct PatternFeature: Codable, Hashable, Sendable {
+    public var kind: PatternKind
+    public var bodies: [FeatureID]
+    public var axis: PatternAxis
+    public var count: String
+    public var spacing: String
+    public var operation: BodyOperation
+    public init(kind: PatternKind, bodies: [FeatureID], axis: PatternAxis = .x, count: String = "3",
+                spacing: String? = nil, operation: BodyOperation = .join) {
+        self.kind = kind; self.bodies = bodies; self.axis = axis; self.count = count
+        self.spacing = spacing ?? (kind == .linear ? "20 mm" : "360 deg"); self.operation = operation
+    }
+}
+
+/// Hollows a body: the picked faces are removed (left open) and the rest becomes walls.
+public struct ShellFeature: Codable, Hashable, Sendable {
+    public var body: FeatureID
+    public var faces: [FaceRef]
+    public var thickness: String
+    /// Walls grow into the body (true) or out of it.
+    public var inside: Bool
+    public init(body: FeatureID, faces: [FaceRef], thickness: String = "2 mm", inside: Bool = true) {
+        self.body = body; self.faces = faces; self.thickness = thickness; self.inside = inside
+    }
+}
+
 /// Combines bodies: joins the tool bodies to the target, cuts them out of it, or keeps only where
 /// they overlap. The tool bodies are used up unless `keepTools` is set.
 public struct CombineFeature: Codable, Hashable, Sendable {
@@ -322,6 +394,10 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case move(MoveFeature)
         case rotate(RotateFeature)
         case combine(CombineFeature)
+        case plane(PlaneFeature)
+        case mirror(MirrorFeature)
+        case pattern(PatternFeature)
+        case shell(ShellFeature)
     }
     public var id: FeatureID
     public var name: String
@@ -348,13 +424,17 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .move: return "Move"
         case .rotate: return "Rotate"
         case .combine: return "Combine"
+        case .plane: return "Plane"
+        case .mirror: return "Mirror"
+        case .pattern(let p): return p.kind == .linear ? "Pattern" : "Circular Pattern"
+        case .shell: return "Shell"
         }
     }
 
     /// Sketches this feature is built from (they are hidden once used, as in other CAD tools).
     public var sketchesUsed: [FeatureID] {
         switch kind {
-        case .sketch, .fillet, .chamfer, .hole, .primitive, .move, .rotate, .combine: return []
+        case .sketch, .fillet, .chamfer, .hole, .primitive, .move, .rotate, .combine, .plane, .mirror, .pattern, .shell: return []
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
         case .sweep(let s): return [s.sketch, s.path.sketch]
@@ -373,7 +453,9 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .loft(let l): return l.operation == .newBody
         case .primitive(let p): return p.operation == .newBody
         case .pipe(let p): return p.operation == .newBody
-        case .sketch, .fillet, .chamfer, .rib, .hole, .move, .rotate, .combine: return false
+        case .mirror(let m): return m.operation == .newBody
+        case .pattern(let p): return p.operation == .newBody
+        case .sketch, .fillet, .chamfer, .rib, .hole, .move, .rotate, .combine, .plane, .shell: return false
         }
     }
 }

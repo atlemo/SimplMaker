@@ -78,3 +78,20 @@ import Testing
         #expect(model.renameParameter("nope", to: "x") != nil)
     }
 }
+
+/// A parameter can be a length, an angle or a plain number.
+@Suite @MainActor struct ParameterUnitTests {
+    @Test func switchingUnitsMovesPlainValues() async throws {
+        var d = CADDocument(parameters: [Parameter("tilt", "10 mm"), Parameter("twice", "tilt * 2")])
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy)))]
+        let model = DocumentModel(document: d)
+        model.setParameterUnit("tilt", .angle)
+        #expect(model.document.parameters[0].unit == .angle && model.document.parameters[0].expression == "10 deg")
+        model.setParameterUnit("twice", .angle)
+        #expect(model.document.parameters[1].expression == "tilt * 2", "an expression stays as it is")
+        model.setParameterUnit("tilt", .none)
+        #expect(model.document.parameters[0].expression == "10")
+        let values = ParameterEvaluator.evaluate([Parameter("n", "12,5", unit: .none)])
+        #expect(values.values["n"]?.value == 12.5)
+    }
+}

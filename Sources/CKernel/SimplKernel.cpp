@@ -44,6 +44,8 @@
 #include <Geom_Plane.hxx>
 #include <TopoDS_Wire.hxx>
 #include <BRepBndLib.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepClass_FaceClassifier.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -765,6 +767,19 @@ double sk_sketch_region_area(SKHandle sketch, int i) {
   return r ? r->area : 0;
 }
 
+bool sk_sketch_region_contains(SKHandle sketch, int i, double u, double v) {
+  SK_TRY
+  std::shared_ptr<Object> keep;
+  auto r = region(sketch, i, keep);
+  if (!r) return false;
+  Sketch *s;
+  auto keepSketch = lookup(sketch, s);
+  if (!s) return false;
+  BRepClass_FaceClassifier classifier(r->face, frameToWorld(s->frame, u, v), 1e-7);
+  return classifier.State() == TopAbs_IN;
+  SK_CATCH(false)
+}
+
 bool sk_sketch_region_sample(SKHandle sketch, int i, double *u, double *v) {
   std::shared_ptr<Object> keep;
   auto r = region(sketch, i, keep);
@@ -1187,7 +1202,7 @@ SKHandle sk_primitive(SKPrimitive kind, SKFrame frame, double a, double b, doubl
   SK_CATCH(0)
 }
 
-static SKHandle transformed(SKHandle body, const gp_Trsf &t) {
+static SKHandle transformed(SKHandle body, const gp_Trsf &t, const char *prefix = nullptr) {
   Body *b;
   auto keep = lookup(body, b);
   if (!b) return 0;
@@ -1196,9 +1211,95 @@ static SKHandle transformed(SKHandle body, const gp_Trsf &t) {
     setError("could not move the body");
     return 0;
   }
+  const std::string pre = prefix ? prefix : "";
   std::vector<Named> names;
-  for (const Named &n : namedFaces(*b)) names.push_back({tr.ModifiedShape(n.shape), n.name});
-  return store(makeBody(tr.Shape(), names, "moved"));
+  for (const Named &n : namedFaces(*b)) names.push_back({tr.ModifiedShape(n.shape), pre + n.name});
+  return store(makeBody(tr.Shape(), names, pre + "moved"));
+}
+
+SKHandle sk_translate_copy(SKHandle body, double dx, double dy, double dz, const char *prefix) {
+  SK_TRY
+  gp_Trsf t;
+  t.SetTranslation(gp_Vec(dx, dy, dz));
+  return transformed(body, t, prefix);
+  SK_CATCH(0)
+}
+
+SKHandle sk_rotate_copy(SKHandle body, double ox, double oy, double oz, double ax, double ay, double az, double angle,
+                        const char *prefix) {
+  SK_TRY
+  gp_Trsf t;
+  t.SetRotation(gp_Ax1(gp_Pnt(ox, oy, oz), gp_Dir(ax, ay, az)), angle);
+  return transformed(body, t, prefix);
+  SK_CATCH(0)
+}
+
+SKHandle sk_mirror_copy(SKHandle body, double ox, double oy, double oz, double nx, double ny, double nz, const char *prefix) {
+  SK_TRY
+  gp_Trsf t;
+  t.SetMirror(gp_Ax2(gp_Pnt(ox, oy, oz), gp_Dir(nx, ny, nz)));
+  return transformed(body, t, prefix);
+  SK_CATCH(0)
+}
+
+SKHandle sk_shell(SKHandle body, const char *const *faceNames, int count, double thickness, bool inside, const char *featureId) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  if (thickness <= Precision::Confusion()) {
+    setError("the wall thickness must be positive");
+    return 0;
+  }
+  ShapeList removed;
+  for (int k = 0; k < count; ++k) {
+    auto it = b->faceIndex.find(faceNames[k]);
+    if (it == b->faceIndex.end()) {
+      setError(std::string("face not found: ") + faceNames[k]);
+      return 0;
+    }
+    removed.Append(b->faces(it->second + 1));
+  }
+  BRepOffsetAPI_MakeThickSolid mk;
+  mk.MakeThickSolidByJoin(b->shape, removed, inside ? -thickness : thickness, 1e-3);
+  mk.Build();
+  if (!mk.IsDone()) {
+    setError("shell failed (is the wall thicker than the body allows?)");
+    return 0;
+  }
+  const std::string feat = featureOrDefault(featureId, "shell");
+  std::vector<Named> names;
+  carry(mk, namedFaces(*b), names);
+  Body out = makeBody(mk.Shape(), names, feat + ".shell");
+  if (!BRepCheck_Analyzer(out.shape).IsValid()) {
+    setError("shell failed (is the wall thicker than the body allows?)");
+    return 0;
+  }
+  return store(std::move(out));
+  SK_CATCH(0)
+}
+
+bool sk_body_edge_line(SKHandle body, const char *edgeName, double out[6]) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->edgeIndex.find(edgeName);
+  if (it == b->edgeIndex.end()) {
+    setError(std::string("edge not found: ") + edgeName);
+    return false;
+  }
+  BRepAdaptor_Curve c(TopoDS::Edge(b->edges(it->second + 1)));
+  if (c.GetType() != GeomAbs_Line) {
+    setError("that edge isn't straight");
+    return false;
+  }
+  gp_Lin line = c.Line();
+  gp_Pnt p = c.Value(c.FirstParameter());
+  out[0] = p.X(); out[1] = p.Y(); out[2] = p.Z();
+  out[3] = line.Direction().X(); out[4] = line.Direction().Y(); out[5] = line.Direction().Z();
+  return true;
+  SK_CATCH(false)
 }
 
 SKHandle sk_translate(SKHandle body, double dx, double dy, double dz) {

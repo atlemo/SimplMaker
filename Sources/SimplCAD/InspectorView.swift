@@ -44,6 +44,10 @@ struct InspectorView: View {
                 case .move(let f): MoveInspector(model: model, id: id, move: f)
                 case .rotate(let f): RotateInspector(model: model, id: id, rotate: f)
                 case .combine(let f): CombineInspector(model: model, id: id, combine: f)
+                case .plane(let f): PlaneInspector(model: model, id: id, plane: f)
+                case .mirror(let f): MirrorInspector(model: model, id: id, mirror: f)
+                case .pattern(let f): PatternInspector(model: model, id: id, pattern: f)
+                case .shell(let f): ShellInspector(model: model, id: id, shell: f)
                 }
                 Section {
                     Button("Delete Feature", role: .destructive) { model.deleteFeature(id) }
@@ -62,14 +66,7 @@ struct SketchInspector: View {
     let id: FeatureID
     let sketch: SketchFeature
 
-    var planeName: String {
-        switch sketch.plane {
-        case .xy: return "XY plane"
-        case .xz: return "XZ plane"
-        case .yz: return "YZ plane"
-        case .face(let f): return "Face \(f.face)"
-        }
-    }
+    var planeName: String { model.planeName(sketch.plane) }
 
     var session: SketchSession? { model.sketchSession?.featureID == id ? model.sketchSession : nil }
 
@@ -173,6 +170,7 @@ struct SketchInspector: View {
         case .pointOnCurve: return "Point on curve"
         case .midpoint: return "Midpoint"
         case .fix: return "Fixed"
+        case .symmetric: return "Symmetric"
         }
     }
 
@@ -208,8 +206,52 @@ struct ExtrudeInspector: View {
         }
     }
 
+    private enum ExtentKind: String, CaseIterable {
+        case distance = "Distance", symmetric = "Symmetric", twoSides = "Two sides", throughAll = "Through all", toFace = "To face"
+    }
+
+    private var extentKind: ExtentKind {
+        switch extrude.extent {
+        case .distance: return .distance
+        case .symmetric: return .symmetric
+        case .twoSides: return .twoSides
+        case .throughAll: return .throughAll
+        case .toFace: return .toFace
+        }
+    }
+
+    /// The size typed so far, kept when switching between the kinds that have one.
+    private var size: String {
+        switch extrude.extent {
+        case .distance(let d), .symmetric(let d), .twoSides(let d, _): return d
+        case .throughAll, .toFace: return "10 mm"
+        }
+    }
+
+    /// A flat face selected in the viewport, to extrude up to.
+    private var selectedFace: FaceRef? {
+        guard model.selection.count == 1, let pick = model.selection.first else { return nil }
+        return model.faceRef(pick)
+    }
+
     var body: some View {
         Section("Extrude") {
+            Picker("Extent", selection: Binding(get: { extentKind }, set: { k in
+                update("Change Extent") { e in
+                    switch k {
+                    case .distance: e.extent = .distance(size)
+                    case .symmetric: e.extent = .symmetric(size)
+                    case .twoSides: e.extent = .twoSides(size, back: "0 mm")
+                    case .throughAll: e.extent = .throughAll
+                    case .toFace: if let f = selectedFace { e.extent = .toFace(f) }
+                    }
+                }
+                if k == .toFace { model.clearSelection() }
+            })) {
+                ForEach(ExtentKind.allCases, id: \.self) { k in
+                    if k != .toFace || selectedFace != nil || extentKind == .toFace { Text(k.rawValue).tag(k) }
+                }
+            }
             switch extrude.extent {
             case .distance(let d):
                 LabeledContent("Distance") {
@@ -226,6 +268,17 @@ struct ExtrudeInspector: View {
             case .twoSides(let d, let b):
                 LabeledContent("Side 1") { ExpressionField(text: d) { v in update("Edit Distance") { $0.extent = .twoSides(v, back: b) } } }
                 LabeledContent("Side 2") { ExpressionField(text: b) { v in update("Edit Distance") { $0.extent = .twoSides(d, back: v) } } }
+            case .throughAll:
+                Text("Goes through every body in its direction.").font(.caption).foregroundStyle(.secondary)
+            case .toFace(let f):
+                LabeledContent("Up to", value: f.face)
+                if let face = selectedFace, face != f {
+                    Button("Use the Selected Face") { update("Change Face") { $0.extent = .toFace(face) }; model.clearSelection() }
+                }
+            }
+            if selectedFace == nil, extentKind != .toFace {
+                Text("To extrude up to a face, select a flat face parallel to the sketch, then choose To face.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Picker("Operation", selection: Binding(get: { extrude.operation },
                                                    set: { op in update("Change Operation") { $0.operation = op } })) {
@@ -367,6 +420,17 @@ struct FeatureEdit<T> {
 
 extension DocumentModel {
     func featureName(_ id: FeatureID) -> String { document.features.first { $0.id == id }?.name ?? "missing" }
+
+    /// "XY plane", "Plane1" (a construction plane) or "Face e.end".
+    func planeName(_ plane: PlaneRef) -> String {
+        switch plane {
+        case .xy: return "XY plane"
+        case .xz: return "XZ plane"
+        case .yz: return "YZ plane"
+        case .face(let f): return "Face \(f.face)"
+        case .plane(let id): return featureName(id)
+        }
+    }
 }
 
 /// Where a path comes from, with a button to replace it with the curves selected in the viewport.
@@ -571,14 +635,7 @@ struct PrimitiveInspector: View {
         FeatureEdit(model: model, id: id, get: { if case .primitive(let p) = $0 { p } else { nil } }, wrap: { .primitive($0) })
     }
 
-    var planeName: String {
-        switch primitive.plane {
-        case .xy: return "XY plane"
-        case .xz: return "XZ plane"
-        case .yz: return "YZ plane"
-        case .face(let f): return f.face
-        }
-    }
+    var planeName: String { model.planeName(primitive.plane) }
 
     var body: some View {
         Section(primitive.kind.rawValue) {
@@ -722,6 +779,155 @@ struct RotateInspector: View {
             }
             Text("Turns about an axis through the middle of the body.").font(.caption).foregroundStyle(.secondary)
             BodiesRow(model: model, ids: rotate.bodies)
+        }
+    }
+}
+
+// MARK: - Planes, mirror, pattern, shell
+
+struct PlaneInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let plane: PlaneFeature
+
+    var edit: FeatureEdit<PlaneFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .plane(let p) = $0 { p } else { nil } }, wrap: { .plane($0) })
+    }
+
+    var body: some View {
+        Section("Plane") {
+            LabeledContent("From", value: model.planeName(plane.base))
+            edit.row("Offset", plane.offset, "Edit Offset") { $0.offset = $1 }
+            edit.row("Angle", plane.angle, "Edit Angle") { $0.angle = $1 }
+            Picker("Turned about", selection: Binding(get: { plane.axis }, set: { a in edit.update("Change Axis") { $0.axis = a } })) {
+                ForEach(PlaneAxis.allCases, id: \.self) { Text("\($0.rawValue) axis").tag($0) }
+            }
+            Button("New Sketch on This Plane") { model.beginSketch(on: .plane(id)) }
+        }
+    }
+}
+
+/// Join puts copies into their bodies; New Body keeps them apart (Cut and Intersect don't apply).
+private struct CopyOperationPicker: View {
+    let value: BodyOperation
+    let set: @MainActor (BodyOperation) -> Void
+    var body: some View {
+        Picker("Copies", selection: Binding(get: { value == .newBody ? .newBody : .join }, set: { set($0) })) {
+            Text("Join to the body").tag(BodyOperation.join)
+            Text("New body").tag(BodyOperation.newBody)
+        }
+    }
+}
+
+struct MirrorInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let mirror: MirrorFeature
+
+    var edit: FeatureEdit<MirrorFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .mirror(let m) = $0 { m } else { nil } }, wrap: { .mirror($0) })
+    }
+
+    var body: some View {
+        Section("Mirror") {
+            LabeledContent("Across", value: model.planeName(mirror.plane))
+            CopyOperationPicker(value: mirror.operation) { op in edit.update("Change Operation") { $0.operation = op } }
+            BodiesRow(model: model, ids: mirror.bodies)
+        }
+    }
+}
+
+struct PatternInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let pattern: PatternFeature
+
+    var edit: FeatureEdit<PatternFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .pattern(let p) = $0 { p } else { nil } }, wrap: { .pattern($0) })
+    }
+
+    /// X, Y, Z, or the picked edge.
+    private var axisChoice: Binding<String> {
+        Binding(get: {
+            switch pattern.axis {
+            case .x: return "X"
+            case .y: return "Y"
+            case .z: return "Z"
+            case .edge: return "Edge"
+            }
+        }, set: { v in
+            edit.update("Change Direction") { p in
+                switch v {
+                case "X": p.axis = .x
+                case "Y": p.axis = .y
+                case "Z": p.axis = .z
+                default: break
+                }
+            }
+        })
+    }
+
+    var body: some View {
+        Section("Pattern") {
+            Picker("Kind", selection: Binding(get: { pattern.kind }, set: { k in
+                edit.update("Change Pattern") { p in
+                    guard p.kind != k else { return }
+                    p.kind = k
+                    p.spacing = k == .linear ? "20 mm" : "360 deg"
+                }
+            })) {
+                ForEach(PatternKind.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            edit.row("Count", pattern.count, "Edit Count") { $0.count = $1 }
+            if pattern.kind == .linear {
+                edit.row("Spacing", pattern.spacing, "Edit Spacing") { $0.spacing = $1 }
+            } else {
+                edit.row("Angle", pattern.spacing, "Edit Angle") { $0.spacing = $1 }
+            }
+            Picker(pattern.kind == .linear ? "Along" : "Around", selection: axisChoice) {
+                Text("X axis").tag("X")
+                Text("Y axis").tag("Y")
+                Text("Z axis").tag("Z")
+                if case .edge(let e) = pattern.axis { Text("Edge \(e.edge)").tag("Edge") }
+            }
+            if model.selectedEdgeCount == 1, let pick = model.selection.first(where: \.isEdge),
+               let m = model.meshes[safe: pick.body], let name = model.name(of: pick) {
+                Button("Use the Selected Edge") {
+                    edit.update("Change Direction") { $0.axis = .edge(EdgeRef(body: m.id, edge: name)) }
+                    model.clearSelection()
+                }
+            }
+            Text(pattern.kind == .linear ? "Count includes the original." : "Count includes the original; 360° spreads them all the way round.")
+                .font(.caption).foregroundStyle(.secondary)
+            CopyOperationPicker(value: pattern.operation) { op in edit.update("Change Operation") { $0.operation = op } }
+            BodiesRow(model: model, ids: pattern.bodies)
+        }
+    }
+}
+
+struct ShellInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let shell: ShellFeature
+
+    var edit: FeatureEdit<ShellFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .shell(let s) = $0 { s } else { nil } }, wrap: { .shell($0) })
+    }
+
+    var body: some View {
+        Section("Shell") {
+            edit.row("Thickness", shell.thickness, "Edit Thickness") { $0.thickness = $1 }
+            Toggle("Walls inside the body", isOn: Binding(get: { shell.inside }, set: { v in edit.update("Change Side") { $0.inside = v } }))
+            LabeledContent("Open faces", value: "\(shell.faces.count)")
+            let picked = model.selection.compactMap { model.faceRef($0) }.filter { $0.body == shell.body }
+            if !picked.isEmpty {
+                Button("Open the \(picked.count) Selected Face(s) Too") {
+                    edit.update("Add Faces") { s in s.faces += picked.filter { !s.faces.contains($0) } }
+                    model.clearSelection()
+                }
+            }
+            BodiesRow(model: model, ids: [shell.body])
         }
     }
 }

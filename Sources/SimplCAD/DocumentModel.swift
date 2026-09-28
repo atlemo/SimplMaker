@@ -205,10 +205,40 @@ final class DocumentModel {
 
     /// Sketch features for the browser.
     var sketches: [Feature] { document.features.filter { if case .sketch = $0.kind { true } else { false } } }
+    /// Construction planes in document order. A plane's position here, plus 3 (after the origin
+    /// planes), is its index in plane pick IDs.
+    var planeFeatures: [Feature] { document.features.filter { if case .plane = $0.kind { true } else { false } } }
+
+    /// The construction plane a plane pick points at (nil for the origin planes).
+    func constructionPlane(of pick: PickID) -> FeatureID? {
+        guard pick.kind == .plane, pick.element >= OriginPlane.allCases.count else { return nil }
+        return planeFeatures[safe: pick.element - OriginPlane.allCases.count]?.id
+    }
+
+    /// The plane a pick means: an origin plane, a construction plane, or a flat face.
+    func planeRef(of pick: PickID) -> PlaneRef? {
+        if let origin = OriginPlane(pick: pick) { return origin.planeRef }
+        if let id = constructionPlane(of: pick) { return .plane(id) }
+        return faceRef(pick).map { .face($0) }
+    }
 
     func setParameter(_ name: String, expression: String) {
         mutate("Change \(name)") { doc in
             if let i = doc.parameters.firstIndex(where: { $0.name == name }) { doc.parameters[i].expression = expression }
+        }
+    }
+
+    /// Makes a parameter a length, an angle or a plain number. A plain value ("10 mm") moves to
+    /// the new unit ("10 deg", "10"); an expression stays as it is.
+    func setParameterUnit(_ name: String, _ unit: UnitKind) {
+        mutate("Change \(name)") { doc in
+            guard let i = doc.parameters.firstIndex(where: { $0.name == name }), doc.parameters[i].unit != unit else { return }
+            doc.parameters[i].unit = unit
+            let text = doc.parameters[i].expression.trimmingCharacters(in: .whitespaces)
+            if let match = text.wholeMatch(of: /(-?[0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|m|in|deg|rad|°)?/) {
+                let suffix = unit == .length ? " mm" : unit == .angle ? " deg" : ""
+                doc.parameters[i].expression = String(match.1) + suffix
+            }
         }
     }
 
@@ -249,6 +279,22 @@ final class DocumentModel {
     func updateFeature(_ id: FeatureID, _ actionName: String, _ change: (inout Feature) -> Void) {
         mutate(actionName) { doc in
             if let i = doc.index(of: id) { change(&doc.features[i]) }
+        }
+    }
+
+    /// Moves a feature to another place in the timeline (`index` is its new position), unless it
+    /// would then come before what it's built from; the reason shows in an alert.
+    func moveFeature(_ id: FeatureID, to index: Int) {
+        guard let from = document.index(of: id) else { return }
+        let to = min(max(index, 0), document.features.count - 1)
+        guard to != from else { return }
+        if let problem = document.reorderProblem(id, to: to) {
+            alert = AlertInfo(title: "\(featureName(id)) can't go there", message: problem)
+            return
+        }
+        mutate("Move \(featureName(id))") { doc in
+            let f = doc.features.remove(at: from)
+            doc.features.insert(f, at: to)
         }
     }
 
@@ -384,6 +430,7 @@ final class DocumentModel {
     // MARK: selection
 
     func name(of pick: PickID) -> String? {
+        if let id = constructionPlane(of: pick) { return featureName(id) }
         guard pick.isFace || pick.isEdge, pick.body >= 0, pick.body < meshes.count else { return nil }
         let m = meshes[pick.body].mesh
         let names = pick.isEdge ? m.edgeNames : m.faceNames
@@ -398,6 +445,8 @@ final class DocumentModel {
             guard let pick else { return }
             if let plane = OriginPlane(pick: pick) {
                 beginSketch(on: plane.planeRef)
+            } else if let id = constructionPlane(of: pick) {
+                beginSketch(on: .plane(id))
             } else if let ref = faceRef(pick) {
                 beginSketch(on: .face(ref))
             }
@@ -405,6 +454,11 @@ final class DocumentModel {
         }
         if let tool = pendingTool {
             toolClick(tool, pick)
+            return
+        }
+        if let pick, let id = constructionPlane(of: pick) {  // a construction plane: select it, with its offset handle
+            selection = []
+            selectedFeature = id
             return
         }
         guard let pick, accepts(pick) else {
@@ -432,6 +486,7 @@ final class DocumentModel {
     func accepts(_ pick: PickID) -> Bool {
         switch pick.kind {
         case .face, .edge: return true
+        case .plane: return OriginPlane(pick: pick) != nil || constructionPlane(of: pick) != nil
         case .region: return profile(of: pick) != nil
         case .sketchCurve: return curve(of: pick) != nil
         default: return false
@@ -450,6 +505,11 @@ final class DocumentModel {
 
     /// The single selected planar face, as a sketch plane.
     var selectedFacePlane: PlaneRef? {
+        // A selected construction plane counts too.
+        if selection.isEmpty, let id = selectedFeature, case .plane? = document.features.first(where: { $0.id == id })?.kind,
+           result?.planes[id] != nil {
+            return .plane(id)
+        }
         guard selection.count == 1, let pick = selection.first, let ref = faceRef(pick),
               let body = result?.body(ref.body), (try? body.faceFrame(ref.face)) != nil else { return nil }
         return .face(ref)
@@ -481,19 +541,12 @@ final class DocumentModel {
     var cursorPrompt: String? { isPickingSketchPlane ? "Select a plane or planar face" : toolPrompt }
 
     /// The origin planes are offered while choosing where to sketch or where to put a primitive.
-    var showsOriginPlanes: Bool { isPickingSketchPlane || pendingTool?.needsPlane == true }
+    var showsOriginPlanes: Bool { isPickingSketchPlane || pendingTool?.showsPlanes == true }
 
     func beginSketch(on plane: PlaneRef) {
         let frame: Frame
         do {
-            switch plane {
-            case .xy: frame = .xy
-            case .xz: frame = .xz
-            case .yz: frame = .yz
-            case .face(let ref):
-                guard let body = result?.body(ref.body) else { return }
-                frame = try body.faceFrame(ref.face)
-            }
+            frame = try Regenerator.resolvePlane(plane, result ?? RegenResult())
         } catch {
             alert = AlertInfo(title: "You can't sketch on that face",
                               message: "Choose a flat face or one of the origin planes. (\(error))")
@@ -520,8 +573,8 @@ final class DocumentModel {
             case .xy: frame = .xy
             case .xz: frame = .xz
             case .yz: frame = .yz
-            case .face:
-                alert = AlertInfo(title: "This sketch's face is missing",
+            case .face, .plane:
+                alert = AlertInfo(title: "This sketch's face or plane is missing",
                                   message: "Fix the features before this sketch first, then edit it again.")
                 return
             }
@@ -671,6 +724,12 @@ final class DocumentModel {
             return o
         }
         if showsOriginPlanes { SketchOverlayBuilder.originPlanes(size: sketchPlaneSize, into: &o) }
+        // Construction planes, always (unless hidden), pickable to sketch on or to select.
+        let planeSize = OriginPlane.displaySize(for: sceneBounds)
+        for (slot, f) in planeFeatures.enumerated() where !document.hidden.contains(f.id) {
+            guard let frame = result?.planes[f.id] else { continue }
+            SketchOverlayBuilder.constructionPlane(frame, size: planeSize, id: PickID(plane: OriginPlane.allCases.count + slot).raw, into: &o)
+        }
         if let h = dragHandle {
             let a = h.base, b = h.base + h.direction * h.value
             let fa = SIMD3<Float>(Float(a.x), Float(a.y), Float(a.z)), fb = SIMD3<Float>(Float(b.x), Float(b.y), Float(b.z))
@@ -698,7 +757,24 @@ final class DocumentModel {
         if let session = sketchSession {
             return (session.selection + session.dimensionPicks).compactMap { session.pickID(for: $0)?.raw }
         }
-        return selection.map(\.raw)
+        guard picksWholeBodies else { return selection.map(\.raw) }
+        // A face or edge picked for a body tool stands for its whole body.
+        var out: [UInt32] = []
+        for pick in selection {
+            let whole = pick.isFace || (pick.isEdge && pendingTool != .pattern)  // Pattern's edges are directions
+            let raw = whole ? PickID(wholeBody: pick.body).raw : pick.raw
+            if !out.contains(raw) { out.append(raw) }
+        }
+        return out
+    }
+
+    /// The waiting tool works on whole bodies (a click on any face picks its body), so hover and
+    /// selection light up whole bodies. Pattern's edges pick a direction, so only its faces do.
+    var picksWholeBodies: Bool {
+        switch pendingTool {
+        case .move?, .rotate?, .combine?, .mirror?, .pattern?: return true
+        default: return false
+        }
     }
 
     // MARK: drag handles
@@ -747,6 +823,18 @@ final class DocumentModel {
     private(set) var previewInvalid = false
     /// Why the size typed in the handle's field can't be used, shown under the field.
     private(set) var handleProblem: String?
+    /// What's typed in the handle's field and not stored yet (the viewport keeps this up to date).
+    @ObservationIgnored var handleDraft: String?
+    /// Bumped when the field should drop its typing and show the stored size again.
+    private(set) var handleFieldReset = 0
+
+    /// Before an option beside the field changes the feature (another axis, Join/Cut, flip): store
+    /// what's typed on the feature as it is now, then let the field show the new state's size.
+    func storeTypedSize() {
+        defer { handleDraft = nil; handleFieldReset += 1 }
+        guard let draft = handleDraft, draft != handleFieldText else { return }
+        commitHandle(draft)
+    }
     var unlinkPrompt: UnlinkPrompt?
     /// Bumped when a new feature wants its size typed right away: the viewport focuses the handle's field.
     var handleFocusRequest = 0
@@ -792,6 +880,7 @@ final class DocumentModel {
             case .distance(let d): return handle("Distance", base, n, d, negative: true)
             case .symmetric(let d): return handle("Distance", base, n, d, per: 0.5)
             case .twoSides(let d, _): return handle("Distance", base, n, d, negative: true)
+            case .throughAll, .toFace: return nil  // the length comes from the model, not a size
             }
         case .fillet(let ef), .chamfer(let ef):
             // On the first edge, or the first edge around the first face.
@@ -850,7 +939,19 @@ final class DocumentModel {
             var h = handle("Angle", center + r * radial, simd_cross(axis, radial), rf.angle, unit: .angle, per: r, max: 2 * .pi)
             h.allowsNegative = true
             return h
-        case .sketch, .sweep, .loft, .combine:
+        case .plane(let pf):
+            // From where the plane is with no offset, along its normal. Worked out from the plane it
+            // starts from (not from the plane as last built), so it holds still while being dragged.
+            var unmoved = pf
+            unmoved.offset = "0 mm"
+            guard let start = try? Regenerator.plane(unmoved, result) else { return nil }
+            return handle("Offset", start.origin, start.normal, pf.offset, negative: true)
+        case .pattern(let pf) where pf.kind == .linear:
+            // From the middle of the bodies to where the first copy's middle lands.
+            let bodies = Array((result.featureInputs[id] ?? [:]).values)
+            guard let center = Regenerator.center(of: bodies), let axis = try? Regenerator.line(pf.axis, result) else { return nil }
+            return handle("Spacing", center, axis.direction, pf.spacing, negative: true)
+        case .sketch, .sweep, .loft, .combine, .mirror, .pattern, .shell:
             return nil
         }
     }
@@ -887,13 +988,24 @@ final class DocumentModel {
     @ObservationIgnored private var handleStartValue: Double?
 
     /// Moves the handle to the point on its axis closest to the mouse ray, and previews the result.
-    func dragHandle(rayOrigin o: SIMD3<Double>, direction d: SIMD3<Double>) {
+    /// `pointsPerMM`: how long 1 mm along the arrow looks on screen. The size then goes in round
+    /// steps (1, 2 or 5 × 10ⁿ mm or degrees) of about 6 points, not in whatever fraction the pointer lands on.
+    func dragHandle(rayOrigin o: SIMD3<Double>, direction d: SIMD3<Double>, pointsPerMM: Double? = nil) {
         guard let start = handleDragStart, let h = dragHandle else { return }
         let a = h.direction, w = h.base - o
         let b = simd_dot(a, d)
         guard 1 - b * b > 1e-6 else { return }  // looking straight down the handle
         let s = (b * simd_dot(d, w) - simd_dot(a, w)) / (1 - b * b)
         var length = h.allowsNegative ? (abs(s) < 0.01 ? (s < 0 ? -0.01 : 0.01) : s) : max(s, 0.01)
+        if let ppm = pointsPerMM, ppm > 1e-9, h.lengthPerUnit > 1e-12 {
+            // In the feature's own units: mm, or degrees for angles (radians underneath).
+            let degrees = h.unit == .angle ? 180 / Double.pi : 1
+            let perPoint = degrees / (ppm * h.lengthPerUnit)
+            let step = ViewportMTKView.niceStep(6 * perPoint) / degrees
+            let value = (length / h.lengthPerUnit / step).rounded() * step
+            if value != 0 || h.allowsNegative == false { length = value * h.lengthPerUnit }
+            if !h.allowsNegative { length = max(length, step * h.lengthPerUnit) }
+        }
         if let m = h.maxValue { length = min(length, m * h.lengthPerUnit) }
         handlePreviewValue = length
         var preview = start
@@ -1012,6 +1124,7 @@ final class DocumentModel {
             return false
         }
         handleProblem = nil
+        handleDraft = nil
         handlePreviewValue = nil
         let old = (try? parameterValues.value(of: h.expression, kind: h.unit)) ?? 0
         if size.expression == h.expression { regenerate() } else { commitHandle(h.featureID, h.label, size.expression, from: old, to: size.value) }
@@ -1022,6 +1135,7 @@ final class DocumentModel {
     /// Esc in the handle's field: drop the preview and show the stored size again.
     func cancelHandleEdit() {
         handleProblem = nil
+        handleDraft = nil
         guard handleDragStart == nil, handlePreviewValue != nil || previewInvalid else { return }
         handlePreviewValue = nil
         previewInvalid = false
@@ -1042,6 +1156,7 @@ final class DocumentModel {
             case .distance: e.extent = .distance(text)
             case .symmetric: e.extent = .symmetric(text)
             case .twoSides(_, let back): e.extent = .twoSides(text, back: back)
+            case .throughAll, .toFace: break
             }
             doc.features[i].kind = .extrude(e)
         case .fillet(var ef):
@@ -1079,7 +1194,13 @@ final class DocumentModel {
         case .rotate(var r):
             r.angle = text
             doc.features[i].kind = .rotate(r)
-        case .sketch, .sweep, .loft, .combine:
+        case .plane(var p):
+            p.offset = text
+            doc.features[i].kind = .plane(p)
+        case .pattern(var p):
+            p.spacing = text
+            doc.features[i].kind = .pattern(p)
+        case .sketch, .sweep, .loft, .combine, .mirror, .shell:
             break
         }
     }

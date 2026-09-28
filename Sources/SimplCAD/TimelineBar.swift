@@ -21,6 +21,10 @@ extension Feature {
         case .move: return DesignTool.move.symbol
         case .rotate: return DesignTool.rotate.symbol
         case .combine: return DesignTool.combine.symbol
+        case .plane: return DesignTool.plane.symbol
+        case .mirror: return DesignTool.mirror.symbol
+        case .pattern: return DesignTool.pattern.symbol
+        case .shell: return DesignTool.shell.symbol
         case .primitive(let p):
             switch p.kind {
             case .box: return DesignTool.box.symbol
@@ -37,6 +41,8 @@ struct TimelineBar: View {
     let model: DocumentModel
     /// Where the marker is while it's being dragged.
     @State private var dragPosition: Int?
+    /// A feature being dragged to another place in the timeline, and how far it has moved.
+    @State private var moving: (id: FeatureID, dx: CGFloat)?
 
     nonisolated static let height: CGFloat = 44
     private static let item: CGFloat = 30
@@ -100,6 +106,7 @@ struct TimelineBar: View {
         let selected = model.selectedFeature == f.id
         let error = model.result?.errors[f.id]
         let rolledBack = index >= marker
+        let dx = moving?.id == f.id ? moving?.dx ?? 0 : 0
         return Icon(f.iconName, size: 17)
             .frame(width: Self.item, height: Self.item)
             .background(selected ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.05),
@@ -114,9 +121,20 @@ struct TimelineBar: View {
             }
             .opacity(rolledBack ? 0.35 : f.suppressed ? 0.5 : 1)
             .contentShape(Rectangle())
-            .help(error.map { "\(f.name): \($0)" } ?? "\(f.name)\(f.suppressed ? " (suppressed)" : "") · double-click to edit")
+            .offset(x: dx)
+            .zIndex(dx == 0 ? 0 : 1)
+            .shadow(color: .black.opacity(dx == 0 ? 0 : 0.25), radius: 4, y: 2)
+            .help(error.map { "\(f.name): \($0)" } ?? "\(f.name)\(f.suppressed ? " (suppressed)" : "") · double-click to edit · drag to reorder")
             .onTapGesture(count: 2) { model.editFeature(f.id) }
             .onTapGesture { model.selection = []; model.selectedFeature = f.id }
+            // Drag sideways to move it earlier or later in the timeline.
+            .gesture(DragGesture(minimumDistance: 6)
+                .onChanged { g in moving = (f.id, g.translation.width) }
+                .onEnded { g in
+                    moving = nil
+                    let steps = Int((g.translation.width / Self.step).rounded())
+                    if steps != 0 { model.moveFeature(f.id, to: index + steps) }
+                })
             .contextMenu {
                 Button("Edit \(f.name)") { model.editFeature(f.id) }
                 if model.profileSource(f.id) != nil {
@@ -126,6 +144,11 @@ struct TimelineBar: View {
                     model.updateFeature(f.id, f.suppressed ? "Unsuppress" : "Suppress") { $0.suppressed.toggle() }
                 }
                 Button("Roll Back to Here") { model.setMarker(index) }
+                Divider()
+                Button("Move Earlier") { model.moveFeature(f.id, to: index - 1) }
+                    .disabled(index == 0 || model.document.reorderProblem(f.id, to: index - 1) != nil)
+                Button("Move Later") { model.moveFeature(f.id, to: index + 1) }
+                    .disabled(index + 1 >= model.document.features.count || model.document.reorderProblem(f.id, to: index + 1) != nil)
                 Divider()
                 Button("Delete \(f.name)", role: .destructive) { model.deleteFeature(f.id) }
             }

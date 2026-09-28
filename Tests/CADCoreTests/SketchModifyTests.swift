@@ -185,3 +185,29 @@ func approxLine(_ g: CurveGeometry?, _ a: SIMD2<Double>, _ b: SIMD2<Double>) -> 
         #expect(abs((s.position(r.corners[2])?.x ?? 0) - 55) < 1e-6 && abs((s.position(r.corners[2])?.y ?? 0) - 20) < 1e-6)
     }
 }
+
+/// Two points (or circle centres) mirrored across a line.
+@Suite struct SymmetricConstraintTests {
+    @Test func pointsAndCirclesMirrorAcrossALine() throws {
+        var s = Sketch()
+        let axis = s.addLine(s.addPoint(0, -10), s.addPoint(0, 10))
+        s.constrain(.vertical(axis))
+        let a = s.addPoint(-7, 3), b = s.addPoint(4, 6)
+        let kinds = try #require(s.constraints(.symmetric, for: [a, b, axis]))
+        #expect(kinds == [.symmetric(a, b, line: axis)])
+        let applied = s.applyConstraints(kinds, values: [:])
+        #expect(applied)
+        let pa = try #require(s.position(a)), pb = try #require(s.position(b))
+        let x = try #require(s.lineEnds(axis)).0.x  // the line may move too
+        #expect(abs(pa.x + pb.x - 2 * x) < 1e-6 && abs(pa.y - pb.y) < 1e-6, "\(pa) \(pb) about x = \(x)")
+
+        let c1 = s.addCircle(center: s.addPoint(-5, -5), radius: 2), c2 = s.addCircle(center: s.addPoint(8, -4), radius: 2)
+        let circles = try #require(s.constraints(.symmetric, for: [c1, c2, axis]))
+        let appliedCircles = s.applyConstraints(circles, values: [:])
+        #expect(appliedCircles)
+        let q1 = try #require(s.center(of: c1).flatMap { s.position($0) }), q2 = try #require(s.center(of: c2).flatMap { s.position($0) })
+        let x2 = try #require(s.lineEnds(axis)).0.x
+        #expect(abs(q1.x + q2.x - 2 * x2) < 1e-6 && abs(q1.y - q2.y) < 1e-6)
+        #expect(s.constraints(.symmetric, for: [a, b]) == nil, "needs a line")
+    }
+}

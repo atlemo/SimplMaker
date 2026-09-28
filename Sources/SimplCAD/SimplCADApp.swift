@@ -136,10 +136,15 @@ struct SimplCADCommands: Commands {
             Divider()
             ForEach(DesignTool.primitives) { tool in Button(tool.rawValue) { model?.run(tool) } }
             Divider()
+            Button("Construction Plane") { model?.run(.plane) }
+            Divider()
             Button("Rebuild") { model?.regenerate() }
         }
         CommandMenu("Modify") {
             ForEach(DesignTool.modifiers) { tool in Button(tool.rawValue) { model?.run(tool) } }
+            Divider()
+            Button("Mirror") { model?.run(.mirror) }
+            Button("Pattern") { model?.run(.pattern) }
         }
     }
 }

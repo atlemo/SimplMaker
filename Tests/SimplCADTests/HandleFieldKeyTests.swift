@@ -121,3 +121,46 @@ import Testing
         #expect(v2 < v1 - 1e-6, "a bigger fillet takes more material off: \(v1) → \(v2)")
     }
 }
+
+/// Typing a Move or Rotate size, previewing it, and switching axis without losing it.
+@Suite @MainActor struct TransformTypingTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    private func model() async throws -> DocumentModel {
+        var d = CADDocument()
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20", length: "10", height: "5")))]
+        let m = DocumentModel(document: d)
+        try await settle(m)
+        return m
+    }
+
+    @Test func rotatePreviewsWhileTyping() async throws {
+        let m = try await model()
+        m.run(.rotate)
+        #expect(m.picksWholeBodies)
+        m.click(PickID(body: 0, face: 0), additive: false)
+        try await settle(m)
+        let before = try #require(m.result?.body("b")?.bounds)
+        m.handleDraft = "90"
+        #expect(m.previewHandle("90"))
+        try await settle(m)
+        let turned = try #require(m.result?.body("b")?.bounds)
+        #expect(abs((turned.max.x - turned.min.x) - (before.max.y - before.min.y)) < 1e-6, "the preview shows it turned")
+    }
+
+    @Test func switchingAxisKeepsWhatWasTyped() async throws {
+        let m = try await model()
+        m.run(.move)
+        m.click(PickID(body: 0, face: 0), additive: false)
+        try await settle(m)
+        let id = try #require(m.selectedFeature)
+        m.handleDraft = "15"  // typed in the field, not stored yet
+        m.setTransformAxis(.y, of: id)
+        guard case .move(let mf)? = m.document.features.last?.kind else { Issue.record("expected a move"); return }
+        #expect(mf.dx == "15 mm" && mf.dy == "0 mm" && mf.arrow == .y)
+        #expect(m.handleDraft == nil && m.dragHandle?.label == "Move Y")
+    }
+}

@@ -36,6 +36,7 @@ extension DocumentModel {
         case .edge: return edgeItems(pick)
         case .region: return profileItems(pick)
         case .sketchCurve: return curveItems(pick)
+        case .plane: return planeItems(pick)
         default: return backgroundItems()
         }
     }
@@ -113,6 +114,20 @@ extension DocumentModel {
         let bodyName = bodies.first { $0.id == body }?.name ?? "Body"
         items.append(.action("Hide \(bodyName)", symbol: "eye.slash") { self.setHidden([body], true) })
         return items
+    }
+
+    private func planeItems(_ pick: PickID) -> [ContextItem] {
+        guard let id = constructionPlane(of: pick) else { return backgroundItems() }
+        let name = featureName(id)
+        return [
+            .action("Sketch on \(name)", symbol: "pencil.and.outline") { self.beginSketch(on: .plane(id)) },
+            .action("New Plane from \(name)", symbol: DesignTool.plane.symbol) {
+                self.add(Feature(name: self.document.nextName("Plane"), .plane(PlaneFeature(base: .plane(id)))))
+            },
+            .separator,
+            .action("Edit \(name)", symbol: "pencil") { self.editFeature(id) },
+            .action("Hide \(name)", symbol: "eye.slash") { self.setHidden([id], true) },
+        ]
     }
 
     private func backgroundItems() -> [ContextItem] {
@@ -240,6 +255,7 @@ extension DocumentModel {
 
     func setOperation(_ op: BodyOperation, of id: FeatureID) {
         guard operation(of: id) != op else { return }
+        storeTypedSize()
         updateFeature(id, "Change Operation") { f in
             switch f.kind {
             case .extrude(var e): e.operation = op; f.kind = .extrude(e)
@@ -264,6 +280,7 @@ extension DocumentModel {
 
     func setTransformAxis(_ a: Axis3, of id: FeatureID) {
         guard transformAxis(id) != a else { return }
+        storeTypedSize()  // what was typed for X stays with X
         updateFeature(id, "Change Axis") { f in
             switch f.kind {
             case .move(var m): m.arrow = a; f.kind = .move(m)
@@ -280,6 +297,7 @@ extension DocumentModel {
     }
 
     func toggleFlip(_ id: FeatureID) {
+        storeTypedSize()
         updateFeature(id, "Flip") { f in
             if case .extrude(var e) = f.kind { e.flipped.toggle(); f.kind = .extrude(e) }
         }

@@ -156,3 +156,86 @@ import simd
         #expect(model.reselecting == nil && model.document == before)
     }
 }
+
+/// The Plane, Mirror, Pattern and Shell tools, driven the way the viewport does.
+@Suite @MainActor struct ConstructToolTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    private func boxModel() async throws -> DocumentModel {
+        var d = CADDocument()
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "20 mm", v: "0 mm",
+                                                                                width: "10", length: "10", height: "10")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        return model
+    }
+
+    private func face(_ model: DocumentModel, _ name: String) throws -> PickID {
+        let m = try #require(model.meshes.first)
+        return PickID(body: 0, face: try #require(m.mesh.faceNames.firstIndex(of: name)))
+    }
+
+    @Test func aPlaneOffsetFromXYToSketchOn() async throws {
+        let model = try await boxModel()
+        model.run(.plane)
+        #expect(model.pendingTool == .plane && model.showsOriginPlanes)
+        model.toolClick(.plane, OriginPlane.xy.pickID)
+        guard case .plane(let p)? = model.document.features.last?.kind, let id = model.document.features.last?.id else {
+            Issue.record("expected a plane"); return
+        }
+        #expect(p.base == .xy)
+        try await settle(model)
+        #expect(model.dragHandle?.label == "Offset")
+        #expect(model.commitHandle("25"))
+        try await settle(model)
+        #expect(abs((model.result?.planes[id]?.origin.z ?? 0) - 25) < 1e-9)
+
+        // It shows and picks as plane 3 (after XY, XZ, YZ): a click selects it, and it takes sketches.
+        model.finishFeatureEdit()
+        let pick = PickID(plane: 3)
+        #expect(model.constructionPlane(of: pick) == id && model.name(of: pick) == "Plane1")
+        model.click(pick, additive: false)
+        #expect(model.selectedFeature == id)
+        model.startSketch()  // with the plane selected, the Sketch button sketches on it
+        guard case .sketch(let sf)? = model.document.features.last?.kind else { Issue.record("expected a sketch"); return }
+        #expect(sf.plane == .plane(id) && abs((model.sketchSession?.frame.origin.z ?? 0) - 25) < 1e-9)
+    }
+
+    @Test func mirrorPatternAndShell() async throws {
+        let model = try await boxModel()
+        let one = try #require(model.result?.body("b")).volume
+
+        model.run(.mirror)
+        model.toolClick(.mirror, try face(model, "b.top"))
+        #expect(model.pendingTool == .mirror, "waits for the plane")
+        model.toolClick(.mirror, OriginPlane.yz.pickID)
+        guard case .mirror(let m)? = model.document.features.last?.kind else { Issue.record("expected a mirror"); return }
+        #expect(m.bodies == ["b"] && m.plane == .yz)
+        try await settle(model)
+        #expect(abs((model.result?.body("b")?.volume ?? 0) - 2 * one) < 1e-6)
+        model.deleteFeature(try #require(model.document.features.last?.id))
+        try await settle(model)
+
+        model.run(.pattern)
+        model.toolClick(.pattern, try face(model, "b.top"))
+        model.confirmTool()
+        guard case .pattern(let p)? = model.document.features.last?.kind else { Issue.record("expected a pattern"); return }
+        #expect(p.kind == .linear && p.bodies == ["b"] && p.axis == .x)
+        try await settle(model)
+        #expect(model.dragHandle?.label == "Spacing" && abs((model.result?.body("b")?.volume ?? 0) - 3 * one) < 1e-6)
+        model.deleteFeature(try #require(model.document.features.last?.id))
+        try await settle(model)
+
+        model.run(.shell)
+        model.toolClick(.shell, try face(model, "b.top"))
+        model.confirmTool()
+        guard case .shell(let s)? = model.document.features.last?.kind else { Issue.record("expected a shell"); return }
+        #expect(s.body == "b" && s.faces == [FaceRef(body: "b", face: "b.top")])
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        #expect(abs((model.result?.body("b")?.volume ?? 0) - (1000 - 6 * 6 * 8)) < 1e-3)
+    }
+}

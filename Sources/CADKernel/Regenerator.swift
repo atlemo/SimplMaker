@@ -54,9 +54,13 @@ public struct RegenResult: Sendable {
     public var sketchInputs: [FeatureID: [FeatureID: SketchResult]] = [:]
     /// Names given to bodies (the rest are "Body1", "Body2"…).
     public var bodyNames: [FeatureID: String] = [:]
+    /// Construction planes, by the id of their Plane feature.
+    public var planes: [FeatureID: Frame] = [:]
     public var duration: TimeInterval = 0
 
     public func body(_ id: FeatureID) -> KBody? { bodies.first { $0.id == id }?.body }
+
+    public init() {}
 }
 
 /// What a rebuild had after each feature, keyed by everything that led up to it, so the next
@@ -126,6 +130,10 @@ public enum Regenerator {
                 case .move(let f): try move(f, feature, &r)
                 case .rotate(let f): try rotate(f, feature, &r)
                 case .combine(let f): try combine(f, feature, &r)
+                case .plane(let f): r.planes[feature.id] = try plane(f, r)
+                case .mirror(let f): try mirror(f, feature, &r)
+                case .pattern(let f): try pattern(f, feature, &r)
+                case .shell(let f): try shell(f, feature, &r)
                 }
             } catch {
                 r.errors[feature.id] = "\(error)"
@@ -138,7 +146,7 @@ public enum Regenerator {
 
     // MARK: features
 
-    static func resolvePlane(_ plane: PlaneRef, _ r: RegenResult) throws -> Frame {
+    public static func resolvePlane(_ plane: PlaneRef, _ r: RegenResult) throws -> Frame {
         switch plane {
         case .xy: return .xy
         case .xz: return .xz
@@ -146,7 +154,104 @@ public enum Regenerator {
         case .face(let ref):
             guard let body = r.body(ref.body) else { throw KernelError(message: "the body this sketch is on is missing") }
             return try body.faceFrame(ref.face)
+        case .plane(let id):
+            guard let frame = r.planes[id] else { throw KernelError(message: "the construction plane failed or is missing") }
+            return frame
         }
+    }
+
+    // MARK: construction planes, mirror, pattern, shell
+
+    /// `v` turned by `angle` about the unit axis `k` (Rodrigues).
+    static func turned(_ v: SIMD3<Double>, about k: SIMD3<Double>, by angle: Double) -> SIMD3<Double> {
+        v * cos(angle) + simd_cross(k, v) * sin(angle) + k * simd_dot(k, v) * (1 - cos(angle))
+    }
+
+    public static func plane(_ f: PlaneFeature, _ r: RegenResult) throws -> Frame {
+        let base = try resolvePlane(f.base, r)
+        let angle = try r.parameters.value(of: f.angle, kind: .angle)
+        let offset = try r.parameters.value(of: f.offset, kind: .length)
+        let k = simd_normalize(f.axis == .horizontal ? base.xAxis : base.yAxis)
+        let normal = simd_normalize(turned(base.normal, about: k, by: angle))
+        let x = simd_normalize(turned(base.xAxis, about: k, by: angle))
+        return Frame(origin: base.origin + offset * normal, normal: normal, xAxis: x)
+    }
+
+    /// A pattern's direction or axis: a point on it and its unit direction.
+    public static func line(_ axis: PatternAxis, _ r: RegenResult) throws -> (origin: SIMD3<Double>, direction: SIMD3<Double>) {
+        switch axis {
+        case .x: return (.zero, SIMD3(1, 0, 0))
+        case .y: return (.zero, SIMD3(0, 1, 0))
+        case .z: return (.zero, SIMD3(0, 0, 1))
+        case .edge(let e):
+            guard let body = r.body(e.body) else { throw KernelError(message: "the body with the axis edge is missing") }
+            let l = try body.edgeLine(e.edge)
+            return (l.origin, simd_normalize(l.direction))
+        }
+    }
+
+    /// Adds copies to their bodies (Join), or gathers them into one new body.
+    static func place(_ copies: [(index: Int, copy: KBody)], _ operation: BodyOperation, _ feature: Feature,
+                      _ r: inout RegenResult) throws {
+        if operation == .newBody {
+            guard var all = copies.first?.copy else { return }
+            for c in copies.dropFirst() { all = try all.boolean(c.copy, SK_FUSE) }
+            r.bodies.append(BodyResult(id: feature.id, name: r.bodyNames[feature.id] ?? "Body\(r.bodies.count + 1)", body: all))
+        } else {
+            for c in copies { r.bodies[c.index].body = try r.bodies[c.index].body.boolean(c.copy, SK_FUSE) }
+        }
+    }
+
+    static func mirror(_ f: MirrorFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let frame = try resolvePlane(f.plane, r)
+        let indices = try transformInputs(f.bodies, feature, &r)
+        let copies = try indices.map { i in
+            (i, try r.bodies[i].body.mirroredCopy(through: frame.origin, normal: frame.normal, prefix: "\(feature.id)."))
+        }
+        try place(copies, f.operation, feature, &r)
+    }
+
+    static func pattern(_ f: PatternFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let p = r.parameters
+        let n = Int(try p.value(of: f.count, kind: .none).rounded())
+        guard n >= 1, n <= 500 else { throw KernelError(message: "the number of copies must be between 1 and 500") }
+        let axis = try line(f.axis, r)
+        let indices = try transformInputs(f.bodies, feature, &r)
+        var copies: [(Int, KBody)] = []
+        if f.kind == .linear {
+            let spacing = try p.value(of: f.spacing, kind: .length)
+            for k in 1..<max(n, 1) {
+                for i in indices {
+                    copies.append((i, try r.bodies[i].body.translatedCopy(axis.direction * spacing * Double(k), prefix: "\(feature.id).\(k).")))
+                }
+            }
+        } else {
+            let total = try p.value(of: f.spacing, kind: .angle)
+            // All the way round: n equal steps; less: the last copy lands at the end of the angle.
+            let step = abs(abs(total) - 2 * .pi) < 1e-9 ? total / Double(n) : total / Double(max(n - 1, 1))
+            for k in 1..<max(n, 1) {
+                for i in indices {
+                    copies.append((i, try r.bodies[i].body.rotatedCopy(about: axis.origin, axis: axis.direction, angle: step * Double(k),
+                                                                        prefix: "\(feature.id).\(k).")))
+                }
+            }
+        }
+        try place(copies.map { (index: $0.0, copy: $0.1) }, f.operation, feature, &r)
+    }
+
+    static func shell(_ f: ShellFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        guard let i = r.bodies.firstIndex(where: { $0.id == f.body }) else { throw KernelError(message: "the body to shell is missing") }
+        r.featureInputs[feature.id, default: [:]][f.body] = r.bodies[i].body
+        let thickness = try r.parameters.value(of: f.thickness, kind: .length)
+        let faces = f.faces.filter { $0.body == f.body }.map(\.face)
+        let before = r.bodies[i].body.volume
+        let shelled = try r.bodies[i].body.shell(removing: faces, thickness: thickness, inside: f.inside, featureID: feature.id)
+        // Walls too thick for the body can come back as the unchanged body instead of an error.
+        let after = shelled.volume
+        guard f.inside ? after < before - 1e-6 && after > 1e-6 : after > before + 1e-6 else {
+            throw KernelError(message: "shell failed (is the wall thicker than the body allows?)")
+        }
+        r.bodies[i].body = shelled
     }
 
     static func sketch(_ f: SketchFeature, _ r: RegenResult) throws -> SketchResult {
@@ -189,17 +294,34 @@ public enum Regenerator {
     }
 
     /// The region a profile reference points at: same bounding curves, nearest to its hint.
+    /// The region a profile reference means, as the sketch is now. Sketch edits change the curves
+    /// around a region all the time (rounding a corner adds an arc, trimming splits a line,
+    /// redrawing gives new ids), so an exact match comes first, then the region that contains the
+    /// point that was picked, then the one sharing most of its curves; nil if nothing is close.
     public static func region(_ ref: ProfileRef, in sk: SketchResult) -> KSketch.Region? {
-        sk.regions.filter { $0.tags == ref.tagString }.min(by: {
-            vlength($0.sample - SIMD2(ref.hintU, ref.hintV)) < vlength($1.sample - SIMD2(ref.hintU, ref.hintV))
-        })
+        let hint = SIMD2(ref.hintU, ref.hintV)
+        if let exact = sk.regions.filter({ $0.tags == ref.tagString }).min(by: { vlength($0.sample - hint) < vlength($1.sample - hint) }) {
+            return exact
+        }
+        // Regions never overlap, so at most one contains the picked point.
+        if let around = sk.regions.first(where: { sk.kernelSketch.regionContains($0.index, hint) }) { return around }
+        let wanted = Set(ref.curves)
+        func overlap(_ r: KSketch.Region) -> Double {
+            let tags = Set(r.tags.split(separator: ",").map(String.init))
+            let union = tags.union(wanted).count
+            return union == 0 ? 0 : Double(tags.intersection(wanted).count) / Double(union)
+        }
+        guard let best = sk.regions.max(by: { overlap($0) < overlap($1) }), overlap(best) >= 1.0 / 3 else { return nil }
+        return best
     }
 
     static func profiles(_ refs: [ProfileRef], in sk: SketchResult) throws -> [KProfile] {
-        try refs.map { ref in
+        var used = Set<Int>()  // two old profiles can now be one region (the line between them was deleted)
+        return try refs.compactMap { ref in
             guard let region = region(ref, in: sk) else {
                 throw KernelError(message: "a profile it used no longer exists · double-click it in the timeline to pick again")
             }
+            guard used.insert(region.index).inserted else { return nil }
             return try sk.kernelSketch.profile(region.index)
         }
     }
@@ -265,26 +387,49 @@ public enum Regenerator {
     }
 
     static func extrude(_ f: ExtrudeFeature, _ feature: Feature, _ r: inout RegenResult) throws {
-        let profiles: [KProfile], normal: SIMD3<Double>
+        let profiles: [KProfile], normal: SIMD3<Double>, planeOrigin: SIMD3<Double>
         if let face = f.face {
             guard let body = r.body(face.body) else { throw KernelError(message: "the body with that face is missing") }
             r.featureInputs[feature.id] = [face.body: body]  // the face moves once extruded; its handle stays on the input
             profiles = [try body.faceProfile(face.face)]
-            normal = try body.faceFrame(face.face).normal
+            let frame = try body.faceFrame(face.face)
+            normal = frame.normal; planeOrigin = frame.origin
         } else {
             let sk = try sketchResult(f.sketch, r)
             profiles = try Self.profiles(f.profiles, in: sk)
-            normal = sk.frame.normal
+            normal = sk.frame.normal; planeOrigin = sk.frame.origin
         }
 
         let p = r.parameters
+        let dir = f.flipped ? -normal : normal
         var distance: Double, back: Double
         switch f.extent {
         case .distance(let d): distance = try p.value(of: d, kind: .length); back = 0
         case .symmetric(let d): distance = try p.value(of: d, kind: .length) / 2; back = distance
         case .twoSides(let d, let b): distance = try p.value(of: d, kind: .length); back = try p.value(of: b, kind: .length)
+        case .throughAll:
+            // Past the farthest corner of any body, measured along the direction.
+            let boxes = r.bodies.compactMap { $0.body.bounds }
+            guard !boxes.isEmpty else { throw KernelError(message: "there's no body to go through") }
+            var far = 0.0
+            for b in boxes {
+                for c in 0..<8 {
+                    let corner = SIMD3(c & 1 == 0 ? b.min.x : b.max.x, c & 2 == 0 ? b.min.y : b.max.y, c & 4 == 0 ? b.min.z : b.max.z)
+                    far = max(far, simd_dot(corner - planeOrigin, dir))
+                }
+            }
+            guard far > 1e-4 else { throw KernelError(message: "every body is behind the sketch · flip the direction") }  // boxes carry a hair of tolerance
+            distance = far + 1; back = 0
+        case .toFace(let ref):
+            guard let body = r.body(ref.body) else { throw KernelError(message: "the body with the face to extrude to is missing") }
+            let face: Frame
+            do { face = try body.faceFrame(ref.face) } catch { throw KernelError(message: "the face to extrude to is gone or isn't flat") }
+            guard abs(simd_dot(face.normal, normal)) > 0.9999 else {
+                throw KernelError(message: "the face to extrude to isn't parallel to the sketch")
+            }
+            distance = simd_dot(face.origin - planeOrigin, dir); back = 0
+            guard distance > 1e-9 else { throw KernelError(message: "the face is behind the sketch · flip the direction") }
         }
-        let dir = f.flipped ? -normal : normal
         let tool = try KBody.extrude(profiles, direction: dir, distance: distance, back: back, featureID: feature.id)
         try combine(tool, f.operation, target: f.target, feature, &r)
     }

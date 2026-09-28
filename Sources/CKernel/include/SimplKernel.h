@@ -53,6 +53,8 @@ int sk_sketch_build_regions(SKHandle sketch);
 const char *sk_sketch_region_tags(SKHandle sketch, int i);
 double sk_sketch_region_area(SKHandle sketch, int i);
 /// A point strictly inside region i, in frame (u, v) coordinates.
+// Whether sketch point (u, v) lies inside region i (not on its boundary or in a hole).
+bool sk_sketch_region_contains(SKHandle sketch, int i, double u, double v);
 bool sk_sketch_region_sample(SKHandle sketch, int i, double *u, double *v);
 /// A profile handle for region i, usable by sk_extrude.
 SKHandle sk_sketch_region_profile(SKHandle sketch, int i);
@@ -97,6 +99,17 @@ SKHandle sk_primitive(SKPrimitive kind, SKFrame frame, double a, double b, doubl
 /// (ox, oy, oz) along (ax, ay, az). Face and edge names are kept.
 SKHandle sk_translate(SKHandle body, double dx, double dy, double dz);
 SKHandle sk_rotate(SKHandle body, double ox, double oy, double oz, double ax, double ay, double az, double angle);
+// Copies for mirror and pattern features: moved, turned or mirrored, every face name prefixed
+// with `prefix` so the copy's faces stay distinct from the original's once joined.
+SKHandle sk_translate_copy(SKHandle body, double dx, double dy, double dz, const char *prefix);
+SKHandle sk_rotate_copy(SKHandle body, double ox, double oy, double oz, double ax, double ay, double az, double angle,
+                        const char *prefix);
+SKHandle sk_mirror_copy(SKHandle body, double ox, double oy, double oz, double nx, double ny, double nz, const char *prefix);
+// Hollows a body: removes the named faces and keeps walls `thickness` thick (inside the body when
+// `inside`, else outside it). New wall faces are named "<featureId>.shell…".
+SKHandle sk_shell(SKHandle body, const char *const *faceNames, int count, double thickness, bool inside, const char *featureId);
+// A straight edge's line: a point on it and its direction (out[0..2], out[3..5]); false if it's curved.
+bool sk_body_edge_line(SKHandle body, const char *edgeName, double out[6]);
 
 /// Boolean between two bodies; names from both operands are carried through.
 SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op);

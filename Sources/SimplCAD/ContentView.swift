@@ -26,8 +26,8 @@ struct DocumentWindow: View {
     /// The window's width: below these, the toolbar tools drop their titles so the row still fits
     /// (otherwise macOS folds the whole row into the toolbar's overflow menu).
     @State private var windowWidth: CGFloat = 1200
-    static let titledDesignWidth: CGFloat = 1470
-    static let titledSketchWidth: CGFloat = 1500
+    static let titledDesignWidth: CGFloat = 1720
+    static let titledSketchWidth: CGFloat = 1540
 
     private var unlinkTitle: String {
         guard let p = model.unlinkPrompt else { return "" }
@@ -254,6 +254,7 @@ struct Sidebar: View {
     @State private var bodiesOpen = true
     @State private var sketchesOpen = true
     @State private var parametersOpen = true
+    @State private var planesOpen = true
     /// The body or sketch whose name is being edited in place.
     @State private var renaming: FeatureID?
 
@@ -287,6 +288,20 @@ struct Sidebar: View {
                     }
                 } label: {
                     FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model)
+                }
+                if !model.planeFeatures.isEmpty {
+                    DisclosureGroup(isExpanded: $planesOpen) {
+                        ForEach(model.planeFeatures) { f in
+                            BrowserRow(name: f.name, hidden: model.isHidden(f.id),
+                                       toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
+                                       renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
+                                Icon("plane", size: 14)
+                            }
+                            .tag(f.id)
+                        }
+                    } label: {
+                        FolderRow(title: "Planes", ids: model.planeFeatures.map(\.id), model: model)
+                    }
                 }
             }
             // A plain section with its own chevron: the sidebar's built-in one only shows on hover.
@@ -346,6 +361,10 @@ struct Sidebar: View {
                 Button(model.isHidden(id) ? "Show Sketch" : "Hide Sketch") { model.setHidden([id], !model.isHidden(id)) }
                 Button("Move Sketch") { model.move(sketches: [id]) }
                 Button("Rename Sketch") { renaming = id }
+            } else if case .plane = f.kind {
+                Button("New Sketch on Plane") { model.beginSketch(on: .plane(id)) }
+                Button(model.isHidden(id) ? "Show Plane" : "Hide Plane") { model.setHidden([id], !model.isHidden(id)) }
+                Button("Rename Plane") { renaming = id }
             } else if model.bodies.contains(where: { $0.id == id }) {
                 Button(model.isHidden(id) ? "Show Body" : "Hide Body") { model.setHidden([id], !model.isHidden(id)) }
                 Button("Move Body") { model.move(bodies: [id]) }
@@ -538,6 +557,23 @@ struct ParameterRow: View {
                 } else if let q = model.result?.parameters.values[parameter.name] {
                     Text(parameter.unit.format(q.value)).foregroundStyle(.secondary).font(.caption)
                 }
+                // Length, angle or plain number.
+                Menu {
+                    ForEach([(UnitKind.length, "Length (mm)"), (.angle, "Angle (deg)"), (.none, "Number")], id: \.0) { unit, title in
+                        Button {
+                            model.setParameterUnit(parameter.name, unit)
+                        } label: {
+                            if parameter.unit == unit { Label(title, systemImage: "checkmark") } else { Text(title) }
+                        }
+                    }
+                } label: {
+                    Text(parameter.unit == .length ? "mm" : parameter.unit == .angle ? "deg" : "#")
+                        .font(.caption.monospaced())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Length, angle or plain number")
             }
             if let renameError {
                 Text(renameError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
@@ -670,7 +706,8 @@ struct SketchToolbar: View {
     let model: DocumentModel
     let session: SketchSession
     @State private var constrainOpen = false
-    @State private var circleModesOpen = false
+    /// The shape whose ways of drawing are showing (rectangle, circle, arc).
+    @State private var modesOpen: SketchTool?
     @Environment(\.toolTitles) private var showsTitles
     @Environment(\.controlActiveState) private var activeState
 
@@ -713,9 +750,10 @@ struct SketchToolbar: View {
     }
 
     private func tools(_ list: [SketchTool]) -> some View {
-        ForEach(list.filter { $0 != .circle2Point }) { tool in
-            if tool == .circle {
-                circleTool
+        // Tools in a family (rectangle, circle, arc) share one button: only the first shows.
+        ForEach(list.filter { $0.family.first == $0 }) { tool in
+            if tool.family.count > 1 {
+                modeTool(tool)
             } else {
                 ToolButton(title: tool.shortTitle, icon: tool.symbol, active: session.tool == tool, help: tool.help) {
                     model.setSketchTool(tool)
@@ -724,29 +762,29 @@ struct SketchToolbar: View {
         }
     }
 
-    /// The circle tools share one button, which draws circles the way used last, and a small
-    /// arrow beside it to choose the way: from the center, or from two points across it.
-    private var circleTool: some View {
-        let mode = session.circleMode
+    /// A shape with several ways to draw it: one button, which draws it the way used last, and a
+    /// small arrow beside it to choose the way (the tool's key switches too).
+    private func modeTool(_ head: SketchTool) -> some View {
+        let mode = session.mode(of: head)
         return HStack(spacing: 0) {
-            ToolButton(title: mode.shortTitle, icon: mode.symbol, active: session.tool.isCircle, help: mode.help) {
+            ToolButton(title: mode.shortTitle, icon: mode.symbol, active: head.family.contains(session.tool), help: mode.help) {
                 model.setSketchTool(mode)
             }
-            Button { circleModesOpen = true } label: {
+            Button { modesOpen = head } label: {
                 Icon("chevron-down", size: 10)
                     .frame(width: 12, height: 30)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(activeState != .inactive ? Color.white : Color.primary)
-            .help("Choose how to draw circles")
-            .accessibilityLabel("Circle options")
-            .popover(isPresented: $circleModesOpen, arrowEdge: .bottom) {
+            .help("Choose how to draw the \(head.shortTitle.lowercased())")
+            .accessibilityLabel("\(head.shortTitle) options")
+            .popover(isPresented: Binding(get: { modesOpen == head }, set: { if !$0, modesOpen == head { modesOpen = nil } }),
+                     arrowEdge: .bottom) {
                 HStack(spacing: DS.Spacing.space1) {
-                    ForEach([SketchTool.circle, .circle2Point]) { tool in
-                        ToolButton(title: tool == .circle ? "Center" : "2-Point", icon: tool.symbol,
-                                   active: session.tool == tool, help: tool.help) {
-                            circleModesOpen = false
+                    ForEach(head.family) { tool in
+                        ToolButton(title: tool.modeTitle, icon: tool.symbol, active: session.tool == tool, help: tool.help) {
+                            modesOpen = nil
                             model.setSketchTool(tool)
                         }
                     }
@@ -821,6 +859,8 @@ struct DesignToolbar: View {
             }
             ToolDivider()
             group(DesignTool.modifiers)
+            ToolDivider()
+            group(DesignTool.construct)
         }
         .padding(.horizontal, Self.edgePadding)  // room at the ends of the toolbar's capsule
         .fixedSize()

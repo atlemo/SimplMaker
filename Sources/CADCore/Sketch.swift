@@ -60,6 +60,7 @@ public struct SketchConstraint: Codable, Hashable, Sendable, Identifiable {
         case pointOnCurve(point: EntityID, curve: EntityID)
         case midpoint(point: EntityID, line: EntityID)
         case fix(EntityID, x: Double, y: Double)      // point
+        case symmetric(EntityID, EntityID, line: EntityID)  // point, point: mirror images across the line
     }
     public var id: EntityID
     public var kind: Kind
