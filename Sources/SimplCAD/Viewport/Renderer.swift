@@ -216,6 +216,9 @@ final class Renderer {
         var segmentCount = 0
     }
     private var bodies: [GPUBody] = []
+    /// Each body's own colour, in the order of setScene's meshes; nil = the palette's face colour.
+    /// Set apart from the meshes, so a colour change doesn't upload them again.
+    var bodyColors: [SIMD4<Float>?] = []
     private var grid: MTLBuffer?
     private var gridCount = 0
     private var axes: [(MTLBuffer, SIMD4<Float>)] = []
@@ -470,8 +473,12 @@ final class Renderer {
 
         enc.setRenderPipelineState(facePipeline)
         enc.setCullMode(.none)
-        for b in bodies {
+        for (i, b) in bodies.enumerated() {
             guard let faces = b.faces, let indices = b.indices else { continue }
+            // A body's own colour; alpha 0 tells the shader to use the palette's.
+            let color = bodyColors[safe: i].flatMap { $0 } ?? .zero
+            var params = DrawParams(color: color, hoverColor: color, selectColor: color, thickness: 0, depthBias: 0, pickable: 1)
+            enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.setVertexBuffer(faces, offset: 0, index: 0)
             enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
                                       indexBuffer: indices, indexBufferOffset: 0)

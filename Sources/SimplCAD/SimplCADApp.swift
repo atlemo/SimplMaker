@@ -107,6 +107,10 @@ struct SimplCADCommands: Commands {
                 .keyboardShortcut("t", modifiers: [.command, .option])
             Button((model?.showInspector ?? true) ? "Hide Inspector" : "Show Inspector") { model?.showInspector.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
+            // Also the A key in the viewport or the browser (not a menu shortcut: a plain A here
+            // would take the letter from text fields and from the sketch's Arc tool).
+            Button((model?.showAppearance ?? false) ? "Hide Appearance" : "Show Appearance") { model?.showAppearance.toggle() }
+                .disabled(model == nil)
             Divider()
         }
         CommandMenu("Sketch") {

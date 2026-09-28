@@ -93,6 +93,10 @@ final class DocumentModel {
     var showTimeline = true
     /// The browser (bodies, sketches, timeline, parameters) on the left.
     var showSidebar = true
+    /// The Appearance panel, for giving bodies colours (A, or View ▸ Show Appearance).
+    var showAppearance = false
+    /// A colour shown on bodies while it is being picked, before it is kept (see previewBodyColor).
+    private(set) var colorPreview: (bodies: [FeatureID], color: BodyColor)?
     var orthographic = false
     var fileURL: URL?
     var alert: AlertInfo?
@@ -187,7 +191,8 @@ final class DocumentModel {
 
     /// A body clicked in the browser: selected whole, with no tool or handle, the way a click on it
     /// in the viewport would. While a tool waits for bodies, it picks the body for the tool instead.
-    func selectBody(_ id: FeatureID) {
+    /// `additive` (⇧-click) adds the body to the selection, or takes it out again.
+    func selectBody(_ id: FeatureID, additive: Bool = false) {
         guard let index = meshes.firstIndex(where: { $0.id == id }) else { return }
         let pick = PickID(wholeBody: index)
         if let tool = pendingTool {
@@ -196,7 +201,11 @@ final class DocumentModel {
         }
         if sketchSession != nil { finishSketch() }
         selectedFeature = nil
-        selection = [pick]
+        if additive {
+            if let i = selection.firstIndex(of: pick) { selection.remove(at: i) } else { selection.append(pick) }
+        } else {
+            selection = [pick]
+        }
     }
 
     var browserHighlights: Set<FeatureID> {
@@ -292,6 +301,49 @@ final class DocumentModel {
     func renameBody(_ id: FeatureID, to name: String) {
         let n = name.trimmingCharacters(in: .whitespaces)
         mutate("Rename Body") { doc in doc.bodyNames[id] = n.isEmpty ? nil : n }
+    }
+
+    // MARK: appearance
+
+    /// Bodies the Appearance panel colours: those selected whole, or owning a selected face or edge.
+    var appearanceTargets: [FeatureID] {
+        let ids = Set(selection.compactMap { $0.isFace || $0.isEdge ? meshes[safe: $0.body]?.id : nil })
+        return bodies.map(\.id).filter(ids.contains)
+    }
+
+    /// The colour a body is drawn in: the one being picked for it, else its own; nil = the default.
+    func displayColor(of id: FeatureID) -> BodyColor? {
+        if let p = colorPreview, p.bodies.contains(id) { return p.color }
+        return document.bodyColors[id]
+    }
+
+    /// Gives bodies a colour (nil goes back to the default), as one undo step. Needs no rebuild.
+    func setBodyColor(_ color: BodyColor?, of ids: [FeatureID]) {
+        colorPreview = nil
+        overlayRevision += 1  // redraw, in case the preview was all that changed
+        guard !ids.isEmpty else { return }
+        let noun = ids.count == 1 ? "Colour" : "Colours"
+        mutate(color == nil ? "Reset \(noun)" : "Change \(noun)") { doc in
+            for id in ids { doc.bodyColors[id] = color }
+        }
+    }
+
+    /// Shows a colour on bodies while it's being picked, without changing the document.
+    func previewBodyColor(_ color: BodyColor, of ids: [FeatureID]) {
+        colorPreview = ids.isEmpty ? nil : (ids, color)
+        overlayRevision += 1
+    }
+
+    /// The A key: shows or hides the Appearance panel (outside sketch mode, where A draws an arc).
+    func toggleAppearance() {
+        guard sketchSession == nil else { return }
+        showAppearance.toggle()
+    }
+
+    /// "Appearance…" on a body: selects it whole and opens the panel for it.
+    func openAppearance(for body: FeatureID) {
+        if !appearanceTargets.contains(body) { selectBody(body) }
+        showAppearance = true
     }
 
     func removeParameter(_ name: String) {

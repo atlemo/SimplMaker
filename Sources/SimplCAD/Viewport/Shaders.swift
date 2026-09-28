@@ -69,14 +69,16 @@ enum Shaders {
 
     fragment FragOut faceFragment(FaceOut in [[stage_in]],
                                   constant Uniforms& u [[buffer(1)]],
-                                  constant uint* sel [[buffer(2)]]) {
+                                  constant uint* sel [[buffer(2)]],
+                                  constant DrawParams& p [[buffer(3)]]) {
         float3 n = normalize(in.normal);
         float3 v = normalize(u.eye.xyz - in.world);
         if (dot(n, v) < 0.0) n = -n;
         float3 key = normalize(v + float3(0.25, 0.15, 0.6));
         float diffuse = max(dot(n, key), 0.0);
         float spec = pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
-        float3 base = u.faceColor.rgb;
+        // The body's own colour (Appearance panel) if it has one (alpha > 0), else the palette's.
+        float3 base = p.color.a > 0.0 ? p.color.rgb : u.faceColor.rgb;
         // Face and edge ids carry their body in bits 20-29; "(body) | 0xFFFFF" stands for the whole body.
         uint bodyBits = in.id & 0x3FF00000u;
         bool hoverBody = u.wholeBodies != 0 && u.hovered != 0 && (u.hovered & 0x40000000u) == 0

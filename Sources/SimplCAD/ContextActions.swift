@@ -112,6 +112,7 @@ extension DocumentModel {
         var items: [ContextItem] = [.separator]
         if let feature { items.append(.action("Edit \(featureName(feature))", symbol: "pencil") { self.editFeature(feature) }) }
         let bodyName = bodies.first { $0.id == body }?.name ?? "Body"
+        items.append(.action("Appearance…", symbol: "paintpalette") { self.openAppearance(for: body) })
         items.append(.action("Hide \(bodyName)", symbol: "eye.slash") { self.setHidden([body], true) })
         return items
     }

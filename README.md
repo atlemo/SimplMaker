@@ -65,7 +65,8 @@ SimplCAD is a normal Mac document app, with New, Open Recent, autosave, versions
   - Trackpad: two-finger scroll pans, ⇧ + scroll orbits, pinch zooms, rotate spins the view. You can swap pan and orbit in **Settings** (⌘,).
   - Mouse: drag on empty space orbits, right- or middle-drag pans, the wheel zooms.
   - The **View** menu has Fit All (⌘0), Top/Front/Right/Home views (⌘1–⌘4), Orthographic Projection (⌥⌘O) and Show/Hide Inspector (⌥⌘I). Esc clears the selection.
-- **Appearance:** the viewport follows light and dark mode, and draws thicker lines when Increase Contrast is on.
+- **Body colours:** press **A** (or **View → Show Appearance**) to open the Appearance panel. Select bodies in the view (a face or edge counts for its body) or in the panel's body list (⇧-click to add more), then click a colour, or choose any colour with **Custom Colour**. **Default** puts the standard colour back. Right-click a body → **Appearance…** opens the panel for it. Colours are saved in the file, can be undone, and need no rebuild.
+- **Light and dark:** the viewport follows light and dark mode, and draws thicker lines when Increase Contrast is on.
 - **Files:** documents are `.simplcad` files (JSON). They store only parameters and features; geometry is always rebuilt. **File → Export STEP…/Export STL…** export the bodies.
 - **Import STEP:** **File → Import STEP…** (⇧⌘I) adds a `.step`/`.stp` file to the timeline as an **Import** feature: one body with all the file's solids, named after the file, in millimetres whatever unit the file uses. The file's contents are stored in the part, so it rebuilds without the original. Fillet, cut, shell, move or rotate it like any other body. **Replace File…** in the inspector swaps in a new version; features after the import keep their edges and faces as long as the new file lists its faces in the same order.
 

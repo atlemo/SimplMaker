@@ -1,5 +1,6 @@
 // Main window: timeline + parameters on the left, viewport in the middle, inspector on the right.
 // SPDX-License-Identifier: GPL-3.0-or-later
+import AppKit
 import CADCore
 import CADKernel
 import SwiftUI
@@ -80,6 +81,16 @@ struct DocumentWindow: View {
                     .transition(.opacity)
             }
         }
+        // The Appearance panel floats at the top, beside the inspector.
+        .overlay(alignment: .topTrailing) {
+            if model.showAppearance, model.sketchSession == nil {
+                AppearancePanel(model: model)
+                    .padding(.top, Panel.inset)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.showAppearance)
         // The status bar floats at the bottom, between the panels.
         .overlay(alignment: .bottom) {
             StatusBar(model: model)
@@ -345,6 +356,14 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+        // A opens the Appearance panel here too (after clicking a body in the list, say), unless
+        // a name or expression is being typed.
+        .onKeyPress(keys: ["a"], phases: .down) { press in
+            guard press.modifiers.isDisjoint(with: [.command, .control, .option]),
+                  !(NSApp.keyWindow?.firstResponder is NSText), model.sketchSession == nil else { return .ignored }
+            model.toggleAppearance()
+            return .handled
+        }
         .contextMenu(forSelectionType: FeatureID.self) { ids in
             menu(for: Set(ids.map(featureID)))
         } primaryAction: { ids in
@@ -385,6 +404,7 @@ struct Sidebar: View {
                 Button(model.isHidden(id) ? "Show Body" : "Hide Body") { model.setHidden([id], !model.isHidden(id)) }
                 Button("Move Body") { model.move(bodies: [id]) }
                 Button("Rename Body") { renaming = id }
+                Button("Appearance…") { model.openAppearance(for: id) }
             }
             Divider()
             Button(f.suppressed ? "Unsuppress" : "Suppress") {

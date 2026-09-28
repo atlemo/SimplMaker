@@ -562,6 +562,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             model.run(.extrude)
             refreshOverlay()
             return
+        } else if plainKey, event.charactersIgnoringModifiers?.lowercased() == "a" {
+            model.toggleAppearance()
+            return
         }
         super.keyDown(with: event)
     }
@@ -1213,6 +1216,13 @@ struct ViewportView: NSViewRepresentable {
             c.sceneRevision = sceneRevision
             renderer.setScene(model.visibleMeshes)
             renderer.hovered = 0
+        }
+        // Every update: a colour being picked changes nothing else.
+        renderer.bodyColors = model.visibleMeshes.map { m in
+            model.displayColor(of: m.id).map { c -> SIMD4<Float> in
+                let (r, g, b) = c.components
+                return SIMD4(Float(r), Float(g), Float(b), 1)
+            }
         }
         if c.fitRevision != fitRevision, let b = model.sceneBounds {
             c.fitRevision = fitRevision

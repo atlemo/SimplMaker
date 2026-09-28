@@ -474,6 +474,53 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// A body's colour in the viewport: 8-bit sRGB, saved as "#RRGGBB" so files stay readable.
+public struct BodyColor: Codable, Hashable, Sendable {
+    public var red: UInt8
+    public var green: UInt8
+    public var blue: UInt8
+
+    public init(red: UInt8, green: UInt8, blue: UInt8) { self.red = red; self.green = green; self.blue = blue }
+
+    /// From components in 0...1 (clamped).
+    public init(red: Double, green: Double, blue: Double) {
+        func byte(_ v: Double) -> UInt8 { UInt8((min(max(v, 0), 1) * 255).rounded()) }
+        self.init(red: byte(red), green: byte(green), blue: byte(blue))
+    }
+
+    /// From "#RRGGBB" or "RRGGBB"; nil if it isn't one.
+    public init?(hex: String) {
+        let digits = hex.hasPrefix("#") ? hex.dropFirst() : Substring(hex)
+        guard digits.count == 6, digits.allSatisfy(\.isHexDigit), let v = UInt32(digits, radix: 16) else { return nil }
+        self.init(red: UInt8(v >> 16 & 0xFF), green: UInt8(v >> 8 & 0xFF), blue: UInt8(v & 0xFF))
+    }
+
+    public var hex: String {
+        "#" + [red, green, blue].map { b in
+            let s = String(b, radix: 16, uppercase: true)
+            return s.count < 2 ? "0" + s : s
+        }.joined()
+    }
+
+    /// Components in 0...1.
+    public var components: (red: Double, green: Double, blue: Double) {
+        (Double(red) / 255, Double(green) / 255, Double(blue) / 255)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        guard let c = BodyColor(hex: text) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "not a #RRGGBB colour: \(text)"))
+        }
+        self = c
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(hex)
+    }
+}
+
 public struct CADDocument: Codable, Hashable, Sendable {
     public static let formatVersion = 1
     public var version: Int = CADDocument.formatVersion
@@ -485,12 +532,14 @@ public struct CADDocument: Codable, Hashable, Sendable {
     public var hidden: Set<FeatureID> = []
     /// Names given to bodies, by the id of the feature that made them (others are "Body1", "Body2"…).
     public var bodyNames: [FeatureID: String] = [:]
+    /// Colours given to bodies, by the id of the feature that made them (others use the default).
+    public var bodyColors: [FeatureID: BodyColor] = [:]
 
     public init(parameters: [Parameter] = [], features: [Feature] = []) {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, bodyNames }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, bodyNames, bodyColors }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -500,6 +549,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         rollback = try c.decodeIfPresent(Int.self, forKey: .rollback)
         hidden = try c.decodeIfPresent(Set<FeatureID>.self, forKey: .hidden) ?? []  // older files have none
         bodyNames = try c.decodeIfPresent([FeatureID: String].self, forKey: .bodyNames) ?? [:]
+        bodyColors = try c.decodeIfPresent([FeatureID: BodyColor].self, forKey: .bodyColors) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -510,13 +560,15 @@ public struct CADDocument: Codable, Hashable, Sendable {
         try c.encodeIfPresent(rollback, forKey: .rollback)
         if !hidden.isEmpty { try c.encode(hidden.sorted(), forKey: .hidden) }  // sorted: stable files
         if !bodyNames.isEmpty { try c.encode(bodyNames, forKey: .bodyNames) }  // sorted keys when encoded()
+        if !bodyColors.isEmpty { try c.encode(bodyColors, forKey: .bodyColors) }
     }
 
-    /// The same design with visibility and names ignored: changing those needs no rebuild.
+    /// The same design with visibility, names and colours ignored: changing those needs no rebuild.
     public var ignoringPresentation: CADDocument {
         var d = self
         d.hidden = []
         d.bodyNames = [:]
+        d.bodyColors = [:]
         for i in d.features.indices { d.features[i].name = "" }
         return d
     }
