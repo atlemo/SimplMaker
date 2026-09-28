@@ -84,3 +84,37 @@ import Testing
         try await settle(model)
     }
 }
+
+/// A text's words can be changed where it is: double-click its dot or letters, or click it with Text.
+@Suite @MainActor struct EditTextInPlaceTests {
+    private func sessionWithText() -> (SketchSession, anchor: EntityID) {
+        var s = Sketch()
+        let p = s.addPoint(10, 10)
+        s.texts = [SketchText(text: "Hello", position: p, height: "5 mm")]
+        return (SketchSession(featureID: IDs.make(), frame: .xy, sketch: s, parameters: ParameterEvaluator.evaluate([])), p)
+    }
+
+    @Test func doubleClickEditsTheWords() {
+        let (session, anchor) = sessionWithText()
+        session.setTool(.select)
+        #expect(session.beginEditingText(anchoredAt: anchor))
+        #expect(session.textEntryInitial == "Hello" && session.pendingText?.point == anchor)
+        #expect(session.placeText("Hello there") == "Edit Text")
+        #expect(session.sketch.texts.map(\.text) == ["Hello there"], "the same text, not a second one")
+        #expect(session.editingText == nil && session.pendingText == nil)
+        #expect(!session.beginEditingText(anchoredAt: "origin"), "no text starts at the origin")
+    }
+
+    @Test func theTextToolClickedOnATextEditsIt() {
+        let (session, anchor) = sessionWithText()
+        session.setTool(.text)
+        _ = session.handle(SketchMouse(phase: .moved, uv: SIMD2(10, 10), pick: nil, tolerance: 0.5))
+        _ = session.handle(SketchMouse(phase: .down, uv: SIMD2(10, 10), pick: nil, tolerance: 0.5))
+        #expect(session.editingText == session.sketch.texts.first?.id && session.pendingText?.point == anchor)
+        session.cancelText()
+        #expect(session.editingText == nil && session.sketch.texts.map(\.text) == ["Hello"], "Esc leaves it as it was")
+        _ = session.handle(SketchMouse(phase: .moved, uv: SIMD2(40, 40), pick: nil, tolerance: 0.5))
+        _ = session.handle(SketchMouse(phase: .down, uv: SIMD2(40, 40), pick: nil, tolerance: 0.5))
+        #expect(session.editingText == nil && session.pendingText != nil, "elsewhere starts a new text")
+    }
+}

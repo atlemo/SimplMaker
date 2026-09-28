@@ -37,6 +37,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var handlePreviewTask: Task<Void, Never>?
     /// Where Text tool input is typed, at the clicked spot.
     private var textEntryField: ValueField?
+    /// The text the typing box is changing (nil: a new text), to refill it when that changes.
+    private var textEntryFor: EntityID?
     /// Options for the selected feature (Join/Cut, Flip, OK, Cancel), below the size field.
     private var featureHUD: NSHostingView<FeatureHUD>?
     /// Typed values for the sketch step in progress (a line's length and angle, ...), beside the cursor.
@@ -234,6 +236,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             model?.doubleClick(renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered),
                                viewDirection: SIMD3(Double(f.x), Double(f.y), Double(f.z)), additive: additive)
             refreshOverlay()
+            return
+        }
+        if event.clickCount == 2, let session = model?.sketchSession, session.tool == .select || session.tool == .text,
+           let h = session.hover, session.beginEditingText(anchoredAt: h) {
+            refreshOverlay()  // a text's dot or letters: change its words in place
             return
         }
         if event.clickCount == 2, let session = model?.sketchSession, session.tool == .select, session.hover.flatMap({ session.sketch.curve($0) }) != nil {
@@ -518,19 +525,26 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let field: ValueField
         if let textEntryField {
             field = textEntryField
+            if textEntryFor != session.editingText {  // now editing another text: show its words
+                field.stringValue = session.textEntryInitial
+                field.currentEditor()?.selectAll(nil)
+            }
         } else {
             field = ValueField(frame: .zero)
             field.alignment = .left
             field.font = .systemFont(ofSize: 13)
             field.placeholderString = "Type the text, then Return"
+            field.stringValue = session.textEntryInitial  // editing: the words as they are
             field.delegate = self
             addSubview(field)
             textEntryField = field
             DispatchQueue.main.async { [weak self, weak field] in
                 guard let field, field.superview != nil else { return }
                 self?.window?.makeFirstResponder(field)
+                field.selectText(nil)
             }
         }
+        textEntryFor = session.editingText
         let w = session.frame.point(at.x, at.y)
         guard let p = renderer.camera.project(SIMD3(Float(w.x), Float(w.y), Float(w.z)), viewSize: bounds.size) else { return }
         let size = NSSize(width: 220, height: 24)

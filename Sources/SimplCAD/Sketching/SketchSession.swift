@@ -97,7 +97,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .arc: return "Click the center, the start, then the end (counter-clockwise)"
         case .bezier: return "Click the start and the end, then where the curve bends · drag its handles to shape it"
         case .point: return "Click to place a point"
-        case .text: return "Click where the text starts, type it, and press Return"
+        case .text: return "Click where the text starts, type it, and press Return · click a text (or double-click it) to change its words"
         case .fillet: return "Click the corner point where two lines meet to round it with an arc"
         case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
         case .extend: return "Click near the end of a line or arc to extend it to the next curve"
@@ -177,6 +177,10 @@ final class SketchSession {
     private(set) var clicks: [SketchSnap] = []
     /// Where the Text tool was clicked: waiting for the text to be typed.
     private(set) var pendingText: SketchSnap?
+    /// The text whose words are being changed in place (the typing box starts with them).
+    private(set) var editingText: EntityID?
+    /// What the typing box starts with: the words of the text being edited, or nothing for a new one.
+    var textEntryInitial: String { editingText.flatMap { id in sketch.texts.first { $0.id == id }?.text } ?? "" }
     private var chainPoint: EntityID?
     /// Values typed for the current drawing step, as entered. Cleared when the step completes.
     private(set) var typed: [SketchInput: String] = [:]
@@ -229,6 +233,7 @@ final class SketchSession {
     private func resetToolState() {
         clicks = []
         pendingText = nil
+        editingText = nil
         chainPoint = nil
         typed = [:]
         pendingDimensions = []
@@ -481,6 +486,8 @@ final class SketchSession {
             return finish("Point")
         case .text:
             clicks = []
+            // On an existing text (its dot or its letters): change it rather than start another.
+            if let anchor = s.point ?? hover, beginEditingText(anchoredAt: anchor) { return nil }
             pendingText = s
             return nil
         case .select, .dimension, .fillet, .trim, .extend:
@@ -686,10 +693,27 @@ final class SketchSession {
 
     // MARK: text
 
-    /// Return in the text field: the text starts at the clicked point (or the point it snapped to).
+    /// Opens the typing box on the text anchored at a point (its dot; its letters pick the dot too),
+    /// starting with its words. False if no text starts there.
+    @discardableResult
+    func beginEditingText(anchoredAt point: EntityID) -> Bool {
+        guard let t = sketch.texts.first(where: { $0.position == point }), let at = sketch.position(point) else { return false }
+        editingText = t.id
+        pendingText = SketchSnap(at, point: point)
+        selection = [point]
+        dragEntity = nil
+        return true
+    }
+
+    /// Return in the text field: the text starts at the clicked point (or the point it snapped to);
+    /// when editing, the text's words change instead.
     func placeText(_ string: String) -> String? {
-        defer { pendingText = nil }
+        defer { pendingText = nil; editingText = nil }
         let text = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let id = editingText {
+            guard !text.isEmpty else { message = "A text needs some letters"; return nil }
+            return updateText(id) { $0.text = text }
+        }
         guard let at = pendingText, !text.isEmpty else { return nil }
         let p = sketch.resolve(at)
         let t = SketchText(text: text, position: p)
@@ -698,7 +722,7 @@ final class SketchSession {
         return finish("Text")
     }
 
-    func cancelText() { pendingText = nil }
+    func cancelText() { pendingText = nil; editingText = nil }
 
     /// Changes a text's words, height or font from the inspector.
     func updateText(_ id: EntityID, _ change: (inout SketchText) -> Void) -> String? {
