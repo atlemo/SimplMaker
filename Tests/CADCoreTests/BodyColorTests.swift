@@ -13,7 +13,7 @@ import Testing
             #expect(BodyColor(hex: bad) == nil, "\(bad) isn't a colour")
         }
         let clamped = BodyColor(red: 1.5, green: -1, blue: 0.5)
-        #expect(clamped == BodyColor(red: 255, green: 0, blue: 128))
+        #expect(clamped.hex == "#FF0080")
     }
 
     @Test func colorsAreSavedAndNeedNoRebuild() throws {
