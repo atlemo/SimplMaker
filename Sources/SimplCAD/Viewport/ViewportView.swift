@@ -48,8 +48,38 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var sketchPanel: NSStackView?
     private var sketchFields: [SketchInput: ValueField] = [:]
     private var sketchFieldOrder: [SketchInput] = []
+    /// Holds the controls typed into or clicked (the handle's field and options, the sketch fields,
+    /// the Text tool's box) above the floating panels, which cover the viewport's own subviews.
+    private let controlsLayer = ControlsLayer()
 
     override var acceptsFirstResponder: Bool { true }
+
+    /// The layer for controls, on top of the window's content. Its controls are placed in the
+    /// viewport's coordinates (see fitControls). Called before each placement, so it stays on top
+    /// as panels come and go.
+    @discardableResult
+    private func raiseControls() -> NSView {
+        guard let content = window?.contentView else { return self }
+        if controlsLayer.superview !== content || content.subviews.last !== controlsLayer {
+            content.addSubview(controlsLayer, positioned: .above, relativeTo: nil)
+        }
+        return controlsLayer
+    }
+
+    /// Shrinks the layer to just around its controls, so it covers nothing else (a click beside them
+    /// must reach the viewport or a panel). Its bounds start where they do, so they keep the
+    /// viewport's coordinates.
+    private func fitControls() {
+        let shown = controlsLayer.subviews.filter { !$0.isHidden }
+        guard let content = controlsLayer.superview, let first = shown.first else {
+            controlsLayer.frame = .zero
+            return
+        }
+        let area = shown.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+        let frame = convert(area, to: content)
+        if controlsLayer.frame != frame { controlsLayer.frame = frame }
+        if controlsLayer.bounds.origin != area.origin { controlsLayer.setBoundsOrigin(area.origin) }
+    }
 
     // MARK: appearance
 
@@ -70,6 +100,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if window == nil { controlsLayer.removeFromSuperview() } else if !controlsLayer.subviews.isEmpty { raiseControls() }
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(displayOptionsChanged),
@@ -702,6 +733,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         syncHandleField()
         syncSketchFields()
         syncTextEntry()
+        fitControls()
     }
 
     /// The Text tool's field: appears where the tool was clicked, focused, until Return or Esc.
@@ -728,7 +760,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             field.placeholderString = "Type the text, then Return"
             field.stringValue = session.textEntryInitial  // editing: the words as they are
             field.delegate = self
-            addSubview(field)
+            raiseControls().addSubview(field)
             textEntryField = field
             DispatchQueue.main.async { [weak self, weak field] in
                 guard let field, field.superview != nil else { return }
@@ -737,6 +769,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             }
         }
         textEntryFor = session.editingText
+        raiseControls()
         let w = session.frame.point(at.x, at.y)
         guard let p = renderer.camera.project(SIMD3(Float(w.x), Float(w.y), Float(w.z)), viewSize: bounds.size) else { return }
         let size = NSSize(width: 220, height: 24)
@@ -764,14 +797,16 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             field = handleField
         } else {
             let hud = SelfSizingHostingView(rootView: FeatureHUD(model: model))
-            addSubview(hud)
+            let layer = raiseControls()
+            layer.addSubview(hud)
             featureHUD = hud
             field = ValueField(frame: .zero)
             field.delegate = self
             field.toolTip = "Type a size or an expression, then press Return · Esc cancels"
-            addSubview(field)
+            layer.addSubview(field)
             handleField = field
         }
+        raiseControls()
         if model.handleFieldReset != seenHandleFieldReset {
             // An option beside the field changed the feature; what was typed is stored already.
             seenHandleFieldReset = model.handleFieldReset
@@ -829,6 +864,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let inputs = session.inputFields
         if inputs != sketchFieldOrder { buildSketchFields(inputs) }
         guard let panel = sketchPanel else { return }
+        raiseControls()
         for input in inputs {
             guard let f = sketchFields[input] else { continue }
             if f.currentEditor() == nil {
@@ -876,7 +912,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         // Start at the size the fields need: added at zero width, its frame would fight the fields'
         // fixed widths the first time it's measured (a "conflicting constraints" log).
         panel.setFrameSize(panel.fittingSize)
-        addSubview(panel)
+        raiseControls().addSubview(panel)
         sketchPanel = panel
         sketchFieldOrder = inputs
     }
@@ -894,6 +930,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private func focusSketchField(_ input: SketchInput, typing text: String?) {
         guard let session = model?.sketchSession else { return }
         syncSketchFields()
+        fitControls()
         guard let field = sketchFields[input] else { return }
         if let text {
             session.setTyped(input, text)
@@ -1199,6 +1236,12 @@ final class ValueField: NSTextField {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+}
+
+/// A see-through layer for the viewport's controls, over the floating panels, just the size of
+/// the controls in it.
+final class ControlsLayer: NSView {
+    override var isFlipped: Bool { true }  // the viewport's coordinates
 }
 
 /// SwiftUI wrapper. The revision numbers are passed in so SwiftUI calls updateNSView exactly

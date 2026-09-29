@@ -21,6 +21,8 @@ import Testing
         }
     }
 
+    private func allSubviews(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + allSubviews(of: $0) } }
+
     @Test func returnCommitsTheSizeAndFinishesTheFeature() async throws {
         let model = DocumentModel(document: CADDocument())
         try await settle(model)
@@ -38,7 +40,8 @@ import Testing
         window.contentView = view
         view.draw(view.bounds)  // lays out the handle field
         try await Task.sleep(for: .milliseconds(100))  // lets the new feature focus its field (queued on the main queue)
-        let field = try #require(view.subviews.compactMap { $0 as? ValueField }.first { $0.input == nil })
+        // The field sits in the controls layer on top of the window's content (here, the viewport itself).
+        let field = try #require(allSubviews(of: view).compactMap { $0 as? ValueField }.first { $0.input == nil })
         #expect(field.currentEditor() != nil, "a new feature's size field has the focus")
 
         key(window, "3", code: 20)
