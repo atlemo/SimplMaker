@@ -107,10 +107,11 @@ struct SimplCADCommands: Commands {
                 .keyboardShortcut("t", modifiers: [.command, .option])
             Button((model?.showInspector ?? true) ? "Hide Inspector" : "Show Inspector") { model?.showInspector.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
-            // Also the A key in the viewport or the browser (not a menu shortcut: a plain A here
-            // would take the letter from text fields and from the sketch's Arc tool).
-            Button((model?.showAppearance ?? false) ? "Hide Appearance" : "Show Appearance") { model?.showAppearance.toggle() }
-                .disabled(model == nil)
+            Button((model?.showAppearance ?? false) ? "Hide Appearance" : "Show Appearance") {
+                LetterShortcut.perform(model) { model?.toggleAppearance() }
+            }
+            .keyboardShortcut("a", modifiers: [])
+            .disabled(model == nil || model?.sketchSession != nil)  // sketching, A draws an arc
             Divider()
         }
         CommandMenu("Sketch") {
@@ -137,22 +138,45 @@ struct SimplCADCommands: Commands {
             }
         }
         CommandMenu("Create") {
-            ForEach(DesignTool.shapes) { tool in
-                Button(tool.rawValue) { model?.run(tool) }
-                    .keyboardShortcut(tool == .extrude ? KeyboardShortcut("e", modifiers: [.command, .shift]) : nil)
-            }
+            ForEach(DesignTool.shapes) { tool in toolItem(tool) }
             Divider()
-            ForEach(DesignTool.primitives) { tool in Button(tool.rawValue) { model?.run(tool) } }
+            ForEach(DesignTool.primitives) { tool in toolItem(tool) }
             Divider()
-            Button("Construction Plane") { model?.run(.plane) }
+            toolItem(.plane, title: "Construction Plane")
             Divider()
             Button("Rebuild") { model?.regenerate() }
+                .keyboardShortcut("r", modifiers: [.command])
+                .disabled(model == nil)
         }
         CommandMenu("Modify") {
-            ForEach(DesignTool.modifiers) { tool in Button(tool.rawValue) { model?.run(tool) } }
+            ForEach(DesignTool.modifiers) { tool in toolItem(tool) }
             Divider()
-            Button("Mirror") { model?.run(.mirror) }
-            Button("Pattern") { model?.run(.pattern) }
+            toolItem(.mirror)
+            toolItem(.pattern)
         }
+    }
+
+    /// A Create or Modify tool, with its single-letter shortcut (E for Extrude, F for Fillet...).
+    private func toolItem(_ tool: DesignTool, title: String? = nil) -> some View {
+        Button(title ?? tool.rawValue) { LetterShortcut.perform(model) { model?.run(tool) } }
+            .keyboardShortcut(KeyEquivalent(tool.key), modifiers: [])
+            .disabled(model == nil)
+    }
+}
+
+/// Menu items with single-letter shortcuts, the way CAD tools work (E extrude, A appearance).
+/// A menu shortcut sees the key before the view with focus does, so the letter is handed back
+/// where it belongs instead: to a text field being typed in, to a sheet or alert, and while
+/// sketching to the sketch, whose tools use the same letters (A arc, E extend, F round corner).
+@MainActor
+enum LetterShortcut {
+    static func perform(_ model: DocumentModel?, _ action: () -> Void) {
+        if let event = NSApp.currentEvent, event.type == .keyDown,
+           let window = NSApp.keyWindow, let responder = window.firstResponder,
+           responder is NSText || model?.sketchSession != nil || window.sheetParent != nil || window.attachedSheet != nil {
+            responder.keyDown(with: event)
+            return
+        }
+        action()
     }
 }

@@ -70,3 +70,16 @@ import Testing
         try await settle(model)
     }
 }
+
+/// Every Create and Modify tool has its own letter in the menus, apart from A (Appearance).
+@Suite struct MenuLetterTests {
+    @Test func toolLettersAreUnique() {
+        let keys = DesignTool.allCases.map(\.key)
+        #expect(Set(keys).count == keys.count, "two tools share a letter")
+        #expect(!keys.contains("a"), "A opens the Appearance panel")
+        #expect(keys.allSatisfy { $0.isLowercase && $0.isLetter })
+        for tool in DesignTool.allCases {
+            #expect(tool.help.hasPrefix("\(tool.rawValue) (\(String(tool.key).uppercased())):"), "the tooltip names the key")
+        }
+    }
+}

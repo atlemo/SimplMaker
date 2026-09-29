@@ -52,29 +52,57 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The single-letter shortcut in the Create and Modify menus (as in Fusion: E extrude, F fillet,
+    /// H hole, M move). While sketching, the letters pick sketch tools instead.
+    var key: Character {
+        switch self {
+        case .extrude: return "e"
+        case .revolve: return "r"
+        case .sweep: return "w"
+        case .loft: return "l"
+        case .rib: return "b"
+        case .pipe: return "p"
+        case .box: return "x"
+        case .cylinder: return "y"
+        case .sphere: return "g"
+        case .torus: return "u"
+        case .coil: return "k"
+        case .fillet: return "f"
+        case .chamfer: return "c"
+        case .hole: return "h"
+        case .shell: return "s"
+        case .move: return "m"
+        case .rotate: return "o"
+        case .combine: return "j"
+        case .plane: return "n"
+        case .mirror: return "i"
+        case .pattern: return "t"
+        }
+    }
+
     var help: String {
         switch self {
         case .extrude: return "Extrude (E): push a profile into a solid"
-        case .revolve: return "Revolve: turn a profile around an axis"
-        case .sweep: return "Sweep: move a profile along a path"
-        case .loft: return "Loft: blend between two or more profiles"
-        case .rib: return "Rib: a thin wall from an open sketch line to the body"
-        case .hole: return "Hole: drill a hole in a flat face"
-        case .box: return "Box: place a box on a plane or face"
-        case .cylinder: return "Cylinder: place a cylinder on a plane or face"
-        case .sphere: return "Sphere: place a sphere on a plane or face"
-        case .torus: return "Torus: place a torus on a plane or face"
-        case .coil: return "Coil: place a coil spring on a plane or face"
-        case .pipe: return "Pipe: a round tube along sketch curves"
-        case .fillet: return "Fillet: round the selected edges, or every edge around a selected face"
-        case .move: return "Move: slide bodies or sketches along X, Y or Z"
-        case .rotate: return "Rotate: turn a body about an X, Y or Z axis"
-        case .chamfer: return "Chamfer: bevel the selected edges, or every edge around a selected face"
-        case .combine: return "Combine: join, cut or intersect bodies (e.g. cut text out of a plate)"
-        case .plane: return "Plane: a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
-        case .mirror: return "Mirror: copy bodies across a plane"
-        case .pattern: return "Pattern: copy bodies in a row or around an axis"
-        case .shell: return "Shell: hollow a body, leaving the picked faces open"
+        case .revolve: return "Revolve (R): turn a profile around an axis"
+        case .sweep: return "Sweep (W): move a profile along a path"
+        case .loft: return "Loft (L): blend between two or more profiles"
+        case .rib: return "Rib (B): a thin wall from an open sketch line to the body"
+        case .hole: return "Hole (H): drill a hole in a flat face"
+        case .box: return "Box (X): place a box on a plane or face"
+        case .cylinder: return "Cylinder (Y): place a cylinder on a plane or face"
+        case .sphere: return "Sphere (G): place a sphere on a plane or face"
+        case .torus: return "Torus (U): place a torus on a plane or face"
+        case .coil: return "Coil (K): place a coil spring on a plane or face"
+        case .pipe: return "Pipe (P): a round tube along sketch curves"
+        case .fillet: return "Fillet (F): round the selected edges, or every edge around a selected face"
+        case .move: return "Move (M): slide bodies or sketches along X, Y or Z"
+        case .rotate: return "Rotate (O): turn a body about an X, Y or Z axis"
+        case .chamfer: return "Chamfer (C): bevel the selected edges, or every edge around a selected face"
+        case .combine: return "Combine (J): join, cut or intersect bodies (e.g. cut text out of a plate)"
+        case .plane: return "Plane (N): a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
+        case .mirror: return "Mirror (I): copy bodies across a plane"
+        case .pattern: return "Pattern (T): copy bodies in a row or around an axis"
+        case .shell: return "Shell (S): hollow a body, leaving the picked faces open"
         }
     }
 

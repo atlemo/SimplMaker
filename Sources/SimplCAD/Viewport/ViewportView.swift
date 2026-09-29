@@ -562,9 +562,6 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             model.run(.extrude)
             refreshOverlay()
             return
-        } else if plainKey, event.charactersIgnoringModifiers?.lowercased() == "a" {
-            model.toggleAppearance()
-            return
         }
         super.keyDown(with: event)
     }
