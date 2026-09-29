@@ -1179,6 +1179,8 @@ struct ViewportView: NSViewRepresentable {
     let showGrid: Bool
     var showAxes = true
     let showConstraints: Bool
+    /// The Appearance panel is open: bodies selected whole show by their edges, so their colour shows.
+    var outlineBodies = false
     /// Widths covered by the floating panels, so the camera centres on what's left.
     var panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
 
@@ -1246,6 +1248,7 @@ struct ViewportView: NSViewRepresentable {
         renderer.setOverlay(model.sketchOverlay())
         renderer.selected = highlighted
         renderer.wholeBodies = model.picksWholeBodies
+        renderer.outlineBodies = outlineBodies
         view.needsDisplay = true
     }
 }

@@ -97,7 +97,8 @@ struct Uniforms {
     var faceSelectedColor: SIMD4<Float>
     var regionColor: SIMD4<Float>
     var wholeBodies: UInt32 = 0
-    var pad0: UInt32 = 0, pad1: UInt32 = 0, pad2: UInt32 = 0
+    var outlineBodies: UInt32 = 0
+    var pad1: UInt32 = 0, pad2: UInt32 = 0
 }
 
 /// The grid drawn in the plane of the sketch being edited: minor and major lines over the visible
@@ -259,6 +260,9 @@ final class Renderer {
     var hovered: UInt32 = 0
     /// A tool is picking bodies: hovering and selecting a face lights up its whole body.
     var wholeBodies = false
+    /// A body selected whole shows by its edges instead of a filled highlight, so its own colour
+    /// stays visible (while the Appearance panel is open).
+    var outlineBodies = false
     var selected: [UInt32] = []
     /// Pixel (in drawable coordinates, origin top-left) to read from the ID buffer on the next frame.
     var pickRequest: SIMD2<Int>?
@@ -460,7 +464,7 @@ final class Renderer {
                                 hovered: hovered, selectedCount: UInt32(min(selected.count, 256)),
                                 faceColor: palette.face, faceHoverColor: palette.faceHover,
                                 faceSelectedColor: palette.faceSelected, regionColor: palette.region,
-                                wholeBodies: wholeBodies ? 1 : 0)
+                                wholeBodies: wholeBodies ? 1 : 0, outlineBodies: outlineBodies ? 1 : 0)
         var sel = Array(selected.prefix(256))
         if sel.isEmpty { sel = [0] }
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale

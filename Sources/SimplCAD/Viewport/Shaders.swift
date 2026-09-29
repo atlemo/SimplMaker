@@ -17,7 +17,8 @@ enum Shaders {
         float4 faceSelectedColor;
         float4 regionColor;     // rgb + base alpha
         uint wholeBodies;       // a tool is picking bodies: hover and selection cover the whole body
-        uint pad0, pad1, pad2;
+        uint outlineBodies;     // a body selected whole shows by its edges, not a fill (Appearance panel)
+        uint pad1, pad2;
     };
 
     struct FaceVertex { packed_float3 position; packed_float3 normal; uint id; };
@@ -84,7 +85,8 @@ enum Shaders {
         bool hoverBody = u.wholeBodies != 0 && u.hovered != 0 && (u.hovered & 0x40000000u) == 0
                          && (u.hovered & 0x3FF00000u) == bodyBits;
         if (in.id == u.hovered || hoverBody) base = u.faceHoverColor.rgb;
-        if (isSelected(in.id, sel, u.selectedCount) || isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount))
+        bool bodySelected = u.outlineBodies == 0 && isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount);
+        if (isSelected(in.id, sel, u.selectedCount) || bodySelected)
             base = u.faceSelectedColor.rgb;
         FragOut o;
         o.color = float4(base * (0.32 + 0.68 * diffuse) + spec, 1.0);
@@ -159,6 +161,9 @@ enum Shaders {
         if (p.pickable != 0) {
             if (in.id == u.hovered) c = p.hoverColor;
             if (isSelected(in.id, sel, u.selectedCount)) c = p.selectColor;
+            // A body's edges (top bit set) light up when the body is selected whole and outlined.
+            if (u.outlineBodies != 0 && (in.id & 0x80000000u) != 0
+                && isSelected((in.id & 0x3FF00000u) | 0xFFFFFu, sel, u.selectedCount)) c = p.selectColor;
         }
         FragOut o;
         o.color = c;
