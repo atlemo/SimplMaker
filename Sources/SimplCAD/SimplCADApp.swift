@@ -65,6 +65,9 @@ struct SimplCADCommands: Commands {
     @AppStorage(Preferences.showAxes) private var showAxes = true
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About SimplCAD") { AboutPanel.show() }
+        }
         CommandGroup(after: .newItem) {
             Button("New Demo Part") { newDocument { CADFile(document: .demo()) } }
                 .keyboardShortcut("n", modifiers: [.command, .option])

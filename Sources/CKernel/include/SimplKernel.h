@@ -36,6 +36,8 @@ typedef enum SKBooleanOp { SK_FUSE = 0, SK_CUT = 1, SK_COMMON = 2 } SKBooleanOp;
 
 /// Last error message for the calling thread ("" if none).
 const char *sk_last_error(void);
+/// Version of the linked OpenCASCADE Technology, e.g. "8.0.1" (for the About panel).
+const char *sk_occt_version(void);
 void sk_release(SKHandle h);
 
 // ---------------------------------------------------------------- sketches ---

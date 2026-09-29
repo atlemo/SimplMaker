@@ -12,6 +12,9 @@ public struct KernelError: Error, CustomStringConvertible, Sendable {
     }
 }
 
+/// Version of the OpenCASCADE Technology the kernel is built on, e.g. "8.0.1".
+public let occtVersion = String(cString: sk_occt_version())
+
 /// A plane frame in world space (mm).
 public struct Frame: Sendable, Equatable {
     public var origin: SIMD3<Double>

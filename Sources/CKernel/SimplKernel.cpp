@@ -79,6 +79,7 @@
 #include <ShapeFix_Shape.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_Failure.hxx>
+#include <Standard_Version.hxx>
 #include <StlAPI_Writer.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
@@ -572,6 +573,7 @@ bool sweepCircle(const TopoDS_Wire &spine, double radius, bool frenet, const std
 extern "C" {
 
 const char *sk_last_error(void) { return g_error.c_str(); }
+const char *sk_occt_version(void) { return OCC_VERSION_COMPLETE; }
 
 void sk_release(SKHandle h) {
   std::lock_guard<std::mutex> lock(g_mutex);
