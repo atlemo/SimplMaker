@@ -40,6 +40,18 @@ import Testing
         #expect(model.displayColor(of: "a") == nil && model.displayColor(of: "b") == copper, "back to the default")
     }
 
+    @Test func withThePanelOpenSelectedBodiesAreOutlinedNotFilled() async throws {
+        let model = DocumentModel(document: twoBoxes())
+        try await settle(model)
+        model.click(PickID(body: 1, face: 0), additive: false)
+        #expect(model.highlighted == [PickID(body: 1, face: 0).raw], "panel closed: the face lights up")
+        model.showAppearance = true
+        #expect(model.outlinesSelectedBodies)
+        #expect(model.highlighted == [PickID(wholeBody: 1).raw], "panel open: the body, so its colour shows")
+        model.selectBody("a")
+        #expect(model.highlighted == [PickID(wholeBody: 0).raw])
+    }
+
     @Test func aColourBeingPickedShowsWithoutChangingTheDocument() async throws {
         let model = DocumentModel(document: twoBoxes())
         try await settle(model)

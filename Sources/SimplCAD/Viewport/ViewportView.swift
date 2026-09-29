@@ -586,6 +586,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         renderer.setOverlay(model.sketchOverlay())
         renderer.selected = model.highlighted
         renderer.wholeBodies = model.picksWholeBodies
+        renderer.outlineBodies = model.outlinesSelectedBodies
         needsDisplay = true
     }
 
