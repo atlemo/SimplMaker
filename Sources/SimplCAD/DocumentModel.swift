@@ -334,10 +334,6 @@ final class DocumentModel {
         overlayRevision += 1
     }
 
-    /// The Appearance panel is in use: selected bodies show their own colour, with only their
-    /// edges in the selection colour (see `highlighted`).
-    var outlinesSelectedBodies: Bool { showAppearance && sketchSession == nil }
-
     /// The A key: shows or hides the Appearance panel (outside sketch mode, where A draws an arc).
     func toggleAppearance() {
         guard sketchSession == nil else { return }
@@ -836,11 +832,6 @@ final class DocumentModel {
     var highlighted: [UInt32] {
         if let session = sketchSession {
             return (session.selection + session.dimensionPicks).compactMap { session.pickID(for: $0)?.raw }
-        }
-        // With the Appearance panel open, a selection only says which bodies to colour: only their
-        // edges light up (never their faces), so the colour they get isn't hidden.
-        if outlinesSelectedBodies {
-            return appearanceTargets.compactMap { id in meshes.firstIndex { $0.id == id }.map { PickID(bodyOutline: $0).raw } }
         }
         guard picksWholeBodies else { return selection.map(\.raw) }
         // A face or edge picked for a body tool stands for its whole body.

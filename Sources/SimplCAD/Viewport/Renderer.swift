@@ -30,9 +30,6 @@ struct PickID: Hashable, Sendable {
     /// the body for tools that pick bodies, and the highlight covers every face.
     init(wholeBody i: Int) { raw = UInt32(i + 1) << 20 | 0xFFFFF }
     var isWholeBody: Bool { isFace && raw & 0xFFFFF == 0xFFFFF }
-    /// Highlight only: every edge of a body, and none of its faces (the Appearance panel's
-    /// selection, so the body's own colour shows). Never a pick.
-    init(bodyOutline i: Int) { raw = PickID.edgeFlag | UInt32(i + 1) << 20 | 0xFFFFF }
     static let handle = PickID(raw: 0x7000_0000)
 
     var kind: Kind {
@@ -100,8 +97,7 @@ struct Uniforms {
     var faceSelectedColor: SIMD4<Float>
     var regionColor: SIMD4<Float>
     var wholeBodies: UInt32 = 0
-    var outlineBodies: UInt32 = 0
-    var pad1: UInt32 = 0, pad2: UInt32 = 0
+    var pad0: UInt32 = 0, pad1: UInt32 = 0, pad2: UInt32 = 0
 }
 
 /// The grid drawn in the plane of the sketch being edited: minor and major lines over the visible
@@ -266,9 +262,6 @@ final class Renderer {
     var hovered: UInt32 = 0
     /// A tool is picking bodies: hovering and selecting a face lights up its whole body.
     var wholeBodies = false
-    /// The Appearance panel is open: hovering lights up a body's edges instead of filling the face,
-    /// so the colours show. (Selected bodies come as `PickID(bodyOutline:)` highlights.)
-    var outlineBodies = false
     var selected: [UInt32] = []
     /// Pixel (in drawable coordinates, origin top-left) to read from the ID buffer on the next frame.
     var pickRequest: SIMD2<Int>?
@@ -450,6 +443,31 @@ final class Renderer {
 
     // MARK: drawing
 
+    /// The colours a body is drawn in, and its hover and selection highlights.
+    struct BodyTint: Equatable {
+        var face, faceHover, faceSelected, edgeHover, edgeSelected: SIMD4<Float>
+    }
+
+    /// Highlights made from the body's own colour, as Fusion does: a red body lights up in lighter
+    /// red, with red borders, rather than turning blue. A very light colour (white, aluminium)
+    /// darkens instead, since lightening it would show nothing. Without a colour of its own, a body
+    /// uses the palette: grey, highlighted in blue.
+    static func tint(_ own: SIMD4<Float>?, palette p: ViewportPalette) -> BodyTint {
+        guard let c = own else {
+            return BodyTint(face: p.face, faceHover: p.faceHover, faceSelected: p.faceSelected,
+                            edgeHover: p.hover, edgeSelected: p.selection)
+        }
+        let white = SIMD4<Float>(1, 1, 1, 1), black = SIMD4<Float>(0, 0, 0, 1)
+        func mix(_ a: SIMD4<Float>, _ b: SIMD4<Float>, _ t: Float) -> SIMD4<Float> { a + (b - a) * t }
+        let luminance = 0.3 * c.x + 0.59 * c.y + 0.11 * c.z
+        if luminance > 0.75 {
+            return BodyTint(face: c, faceHover: mix(c, black, 0.1), faceSelected: mix(c, black, 0.2),
+                            edgeHover: mix(c, black, 0.35), edgeSelected: mix(c, black, 0.5))
+        }
+        return BodyTint(face: c, faceHover: mix(c, white, 0.25), faceSelected: mix(c, white, 0.45),
+                        edgeHover: c, edgeSelected: c)
+    }
+
     func draw(in view: MTKView) {
         let size = view.drawableSize
         guard size.width >= 1, size.height >= 1,
@@ -474,7 +492,7 @@ final class Renderer {
                                 hovered: hovered, selectedCount: UInt32(min(selected.count, 256)),
                                 faceColor: palette.face, faceHoverColor: palette.faceHover,
                                 faceSelectedColor: palette.faceSelected, regionColor: palette.region,
-                                wholeBodies: wholeBodies ? 1 : 0, outlineBodies: outlineBodies ? 1 : 0)
+                                wholeBodies: wholeBodies ? 1 : 0)
         var sel = Array(selected.prefix(256))
         if sel.isEmpty { sel = [0] }
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
@@ -488,11 +506,12 @@ final class Renderer {
 
         enc.setRenderPipelineState(facePipeline)
         enc.setCullMode(.none)
+        let tints = bodies.indices.map { Self.tint(bodyColors[safe: $0].flatMap { $0 }, palette: palette) }
         for (i, b) in bodies.enumerated() {
             guard let faces = b.faces, let indices = b.indices else { continue }
-            // A body's own colour; alpha 0 tells the shader to use the palette's.
-            let color = bodyColors[safe: i].flatMap { $0 } ?? .zero
-            var params = DrawParams(color: color, hoverColor: color, selectColor: color, thickness: 0, depthBias: 0, pickable: 1)
+            let t = tints[i]
+            var params = DrawParams(color: t.face, hoverColor: t.faceHover, selectColor: t.faceSelected,
+                                    thickness: 0, depthBias: 0, pickable: 1)
             enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.setVertexBuffer(faces, offset: 0, index: 0)
             enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
@@ -573,10 +592,10 @@ final class Renderer {
                                 depthBias: 0.0004, pickable: 1), pipeline: pickBandPipeline)
         }
         enc.setDepthStencilState(depthState)
-        for b in bodies {
+        for (i, b) in bodies.enumerated() {
             segments(b.segments, b.segmentCount,
-                     DrawParams(color: p.edge, hoverColor: p.hover, selectColor: p.selection, thickness: 1.6 * scale,
-                                depthBias: 0.0004, pickable: 1))
+                     DrawParams(color: p.edge, hoverColor: tints[i].edgeHover, selectColor: tints[i].edgeSelected,
+                                thickness: 1.6 * scale, depthBias: 0.0004, pickable: 1))
         }
         // Sketch overlay, drawn last with increasing depth bias so it sits on top of faces it lies on.
         let hover = p.hover, select = p.selection

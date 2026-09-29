@@ -40,19 +40,6 @@ import Testing
         #expect(model.displayColor(of: "a") == nil && model.displayColor(of: "b") == copper, "back to the default")
     }
 
-    @Test func withThePanelOpenSelectedBodiesAreOutlinedNotFilled() async throws {
-        let model = DocumentModel(document: twoBoxes())
-        try await settle(model)
-        model.click(PickID(body: 1, face: 0), additive: false)
-        #expect(model.highlighted == [PickID(body: 1, face: 0).raw], "panel closed: the face lights up")
-        model.showAppearance = true
-        #expect(model.outlinesSelectedBodies)
-        #expect(model.highlighted == [PickID(bodyOutline: 1).raw], "panel open: the body's edges, so its colour shows")
-        model.selectBody("a")
-        #expect(model.highlighted == [PickID(bodyOutline: 0).raw])
-        #expect(!model.highlighted.contains(PickID(wholeBody: 0).raw), "never the filled whole-body highlight")
-    }
-
     @Test func openingThePanelCancelsAWaitingTool() async throws {
         let model = DocumentModel(document: twoBoxes())
         try await settle(model)
@@ -90,6 +77,25 @@ import Testing
         #expect(!model.showAppearance, "in a sketch, A draws an arc")
         model.finishSketch()
         try await settle(model)
+    }
+}
+
+/// Highlights are made from the body's own colour, as in Fusion.
+@Suite @MainActor struct BodyTintTests {
+    @Test func highlightsFollowTheBodysColour() {
+        let palette = ViewportPalette.make(dark: false, increaseContrast: false)
+        let plain = Renderer.tint(nil, palette: palette)
+        #expect(plain.faceSelected == palette.faceSelected && plain.edgeSelected == palette.selection, "no colour: blue as before")
+
+        let red = SIMD4<Float>(0.82, 0.23, 0.19, 1)
+        let r = Renderer.tint(red, palette: palette)
+        #expect(r.face == red && r.edgeSelected == red, "red borders")
+        #expect(r.faceSelected.x > red.x && r.faceSelected.x > r.faceSelected.z, "lighter, and still red")
+        #expect(r.faceHover.x < r.faceSelected.x, "hover is lighter than the colour, less than selection")
+
+        let white = SIMD4<Float>(0.95, 0.95, 0.94, 1)
+        let w = Renderer.tint(white, palette: palette)
+        #expect(w.faceSelected.x < white.x && w.edgeSelected.x < w.faceSelected.x, "a light colour darkens instead")
     }
 }
 

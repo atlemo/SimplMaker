@@ -17,8 +17,7 @@ enum Shaders {
         float4 faceSelectedColor;
         float4 regionColor;     // rgb + base alpha
         uint wholeBodies;       // a tool is picking bodies: hover and selection cover the whole body
-        uint outlineBodies;     // Appearance panel: hover lights a body's edges, not a face
-        uint pad1, pad2;
+        uint pad0, pad1, pad2;
     };
 
     struct FaceVertex { packed_float3 position; packed_float3 normal; uint id; };
@@ -53,16 +52,10 @@ enum Shaders {
         return false;
     }
 
-    // A body edge (top bit set) is lit when it, or its whole body's outline, is selected.
+    // A body edge (top bit set) is lit when it is selected, or its whole body is (a border).
     static bool edgeSelected(uint id, constant uint* sel, uint n) {
         return (id & 0x80000000u) != 0
-            && (isSelected(id, sel, n) || isSelected((id & 0xBFF00000u) | 0xFFFFFu, sel, n));
-    }
-
-    // Appearance panel: the hovered face or edge lights up its body's edges.
-    static bool edgeHovered(uint id, constant Uniforms& u) {
-        return u.outlineBodies != 0 && (id & 0x80000000u) != 0 && u.hovered != 0
-            && (u.hovered & 0x40000000u) == 0 && (u.hovered & 0x3FF00000u) == (id & 0x3FF00000u);
+            && (isSelected(id, sel, n) || isSelected((id & 0x3FF00000u) | 0xFFFFFu, sel, n));
     }
 
     static FaceOut transformFace(FaceVertex v, constant Uniforms& u) {
@@ -90,25 +83,16 @@ enum Shaders {
         float3 key = normalize(v + float3(0.25, 0.15, 0.6));
         float diffuse = max(dot(n, key), 0.0);
         float spec = pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
-        // The body's own colour (Appearance panel) if it has one (alpha > 0), else the palette's.
-        float3 base = p.color.a > 0.0 ? p.color.rgb : u.faceColor.rgb;
+        // The body's colour (its own from the Appearance panel, or the palette's), with hover and
+        // selection colours made from it (see Renderer.tint).
+        float3 base = p.color.rgb;
         // Face and edge ids carry their body in bits 20-29; "(body) | 0xFFFFF" stands for the whole body.
         uint bodyBits = in.id & 0x3FF00000u;
         bool hoverBody = u.wholeBodies != 0 && u.hovered != 0 && (u.hovered & 0x40000000u) == 0
                          && (u.hovered & 0x3FF00000u) == bodyBits;
-        // A body with its own colour highlights in that colour, lightened (as Fusion does), so a
-        // selected red body stays red; a very light one (white, aluminium) tints toward the
-        // selection blue instead. Bodies in the default colour highlight in blue as before.
-        bool own = p.color.a > 0.0;
-        bool light = dot(p.color.rgb, float3(0.3, 0.59, 0.11)) > 0.75;
-        float3 hoverColor = !own ? u.faceHoverColor.rgb
-                          : light ? mix(p.color.rgb, u.faceSelectedColor.rgb, 0.2) : mix(p.color.rgb, float3(1.0), 0.25);
-        float3 selectedColor = !own ? u.faceSelectedColor.rgb
-                             : light ? mix(p.color.rgb, u.faceSelectedColor.rgb, 0.4) : mix(p.color.rgb, float3(1.0), 0.45);
-        if ((in.id == u.hovered && u.outlineBodies == 0) || hoverBody) base = hoverColor;
-        // A body outline highlight (edge flag | body | 0xFFFFF) matches none of these: faces keep their colour.
+        if (in.id == u.hovered || hoverBody) base = p.hoverColor.rgb;
         if (isSelected(in.id, sel, u.selectedCount) || isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount))
-            base = selectedColor;
+            base = p.selectColor.rgb;
         FragOut o;
         o.color = float4(base * (0.32 + 0.68 * diffuse) + spec, 1.0);
         o.id = in.id;
@@ -185,7 +169,7 @@ enum Shaders {
                                      constant DrawParams& p [[buffer(3)]]) {
         float4 c = p.color;
         if (p.pickable != 0) {
-            if (in.id == u.hovered || edgeHovered(in.id, u)) c = p.hoverColor;
+            if (in.id == u.hovered) c = p.hoverColor;
             if (isSelected(in.id, sel, u.selectedCount) || edgeSelected(in.id, sel, u.selectedCount)) c = p.selectColor;
         }
         FragOut o;

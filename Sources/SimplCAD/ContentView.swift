@@ -42,7 +42,6 @@ struct DocumentWindow: View {
                          highlighted: model.highlighted, fitRevision: model.fitRevision,
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
                          showGrid: showGrid, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
-                         outlineBodies: model.outlinesSelectedBodies,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                        Panel.bottomInset(timeline: model.showTimeline)))
