@@ -96,10 +96,19 @@ enum Shaders {
         uint bodyBits = in.id & 0x3FF00000u;
         bool hoverBody = u.wholeBodies != 0 && u.hovered != 0 && (u.hovered & 0x40000000u) == 0
                          && (u.hovered & 0x3FF00000u) == bodyBits;
-        if ((in.id == u.hovered && u.outlineBodies == 0) || hoverBody) base = u.faceHoverColor.rgb;
+        // A body with its own colour highlights in that colour, lightened (as Fusion does), so a
+        // selected red body stays red; a very light one (white, aluminium) tints toward the
+        // selection blue instead. Bodies in the default colour highlight in blue as before.
+        bool own = p.color.a > 0.0;
+        bool light = dot(p.color.rgb, float3(0.3, 0.59, 0.11)) > 0.75;
+        float3 hoverColor = !own ? u.faceHoverColor.rgb
+                          : light ? mix(p.color.rgb, u.faceSelectedColor.rgb, 0.2) : mix(p.color.rgb, float3(1.0), 0.25);
+        float3 selectedColor = !own ? u.faceSelectedColor.rgb
+                             : light ? mix(p.color.rgb, u.faceSelectedColor.rgb, 0.4) : mix(p.color.rgb, float3(1.0), 0.45);
+        if ((in.id == u.hovered && u.outlineBodies == 0) || hoverBody) base = hoverColor;
         // A body outline highlight (edge flag | body | 0xFFFFF) matches none of these: faces keep their colour.
         if (isSelected(in.id, sel, u.selectedCount) || isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount))
-            base = u.faceSelectedColor.rgb;
+            base = selectedColor;
         FragOut o;
         o.color = float4(base * (0.32 + 0.68 * diffuse) + spec, 1.0);
         o.id = in.id;
