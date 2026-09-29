@@ -97,7 +97,8 @@ final class DocumentModel {
     var showAppearance = false
     /// A colour shown on bodies while it is being picked, before it is kept (see previewBodyColor).
     private(set) var colorPreview: (bodies: [FeatureID], color: BodyColor)?
-    var orthographic = false
+    /// Orthographic projection (View menu), on by default: sizes and alignments read truer than in perspective.
+    var orthographic = true
     var fileURL: URL?
     var alert: AlertInfo?
 

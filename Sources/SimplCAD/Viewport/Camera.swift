@@ -37,7 +37,7 @@ struct Camera {
     var yaw: Float = -.pi / 3        // around Z
     var pitch: Float = 0.55          // above the XY plane
     var fovY: Float = 35 * .pi / 180
-    var orthographic = false
+    var orthographic = true
     /// Where the middle of the uncovered part of the view is, in normalized device coordinates
     /// (floating panels cover the sides). The image is shifted so the camera looks at that spot.
     var centerShift = SIMD2<Float>(0, 0)
