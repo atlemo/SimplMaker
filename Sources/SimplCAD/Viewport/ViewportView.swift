@@ -1211,6 +1211,7 @@ struct ViewportView: NSViewRepresentable {
     let fitRevision: Int
     let cameraRevision: Int
     let orthographic: Bool
+    var visualStyle = VisualStyle.standard
     let showGrid: Bool
     var showAxes = true
     let showConstraints: Bool
@@ -1262,6 +1263,7 @@ struct ViewportView: NSViewRepresentable {
             renderer.camera.fit(min: b.min, max: b.max, aspect: view.viewAspect)
         }
         renderer.camera.orthographic = orthographic
+        renderer.visualStyle = visualStyle
         renderer.showGrid = showGrid
         renderer.showAxes = showAxes
         view.showConstraints = showConstraints

@@ -30,6 +30,7 @@ enum Shaders {
         float depthBias;
         uint pickable;
         float selectedThickness; // pixels; a selected body edge's width when set (see segmentFragment)
+        uint style;            // DrawStyle bits: 1 only when hovered or selected, 2 dashed, 4 flat (unlit)
     };
 
     struct FaceOut {
@@ -41,6 +42,7 @@ enum Shaders {
     struct LineOut {
         float4 position [[position]];
         float across;          // -1 to 1 from one side of the line to the other
+        float2 dir [[flat]];   // the line's direction on screen, in framebuffer pixels (y down), for dashes
         uint id [[flat]];
     };
     struct FragOut {
@@ -95,7 +97,7 @@ enum Shaders {
         if (isSelected(in.id, sel, u.selectedCount) || isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount))
             base = p.selectColor.rgb;
         FragOut o;
-        o.color = float4(base * (0.32 + 0.68 * diffuse) + spec, 1.0);
+        o.color = (p.style & 4u) != 0 ? float4(base, 1.0) : float4(base * (0.32 + 0.68 * diffuse) + spec, 1.0);
         o.id = in.id;
         return o;
     }
@@ -162,6 +164,7 @@ enum Shaders {
         LineOut o;
         o.position = c;
         o.across = side;
+        o.dir = float2(d.x, -d.y);
         o.id = s.id;
         return o;
     }
@@ -170,6 +173,15 @@ enum Shaders {
                                      constant Uniforms& u [[buffer(1)]],
                                      constant uint* sel [[buffer(2)]],
                                      constant DrawParams& p [[buffer(3)]]) {
+        // Dashes, measured along the line on screen (so a curve made of short pieces still dashes evenly).
+        if ((p.style & 2u) != 0) {
+            float period = max(p.thickness, 1.0) * 5.0;
+            float t = dot(in.position.xy, in.dir);
+            if (t - period * floor(t / period) > period * 0.55) discard_fragment();
+        }
+        // Edges that show only while hovered or selected (the Shaded style), still there to pick.
+        if ((p.style & 1u) != 0 && in.id != u.hovered && !isSelected(in.id, sel, u.selectedCount)
+            && !edgeSelected(in.id, sel, u.selectedCount)) discard_fragment();
         float4 c = p.color;
         if (p.pickable != 0) {
             if (in.id == u.hovered) c = p.hoverColor;

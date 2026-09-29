@@ -128,6 +128,8 @@ struct ViewportPalette: Equatable {
     var axes: (x: SIMD4<Float>, y: SIMD4<Float>, z: SIMD4<Float>)
     var face, faceHover, faceSelected: SIMD4<Float>
     var edge, hover, selection: SIMD4<Float>
+    /// Edges in the wireframe styles, where they're drawn over the background instead of a face.
+    var wireEdge: SIMD4<Float>
     var sketch, sketchConstrained, construction, preview, point, inactiveSketch, handle, invalid: SIMD4<Float>
     var region: SIMD4<Float>
     /// Origin planes offered when choosing where to sketch (rgb + fill alpha; outlines are opaque).
@@ -148,6 +150,7 @@ struct ViewportPalette: Equatable {
                 axes: (SIMD4(0.9, 0.35, 0.35, 1), SIMD4(0.4, 0.8, 0.45, 1), SIMD4(0.4, 0.55, 1, 1)),
                 face: SIMD4(0.56, 0.59, 0.64, 1), faceHover: SIMD4(0.52, 0.66, 0.88, 1), faceSelected: SIMD4(0.25, 0.52, 1, 1),
                 edge: SIMD4(0.04, 0.04, 0.05, 1), hover: SIMD4(0.45, 0.72, 1, 1), selection: SIMD4(0.2, 0.55, 1, 1),
+                wireEdge: SIMD4(0.8, 0.82, 0.86, 1),
                 sketch: SIMD4(0.45, 0.68, 1, 1), sketchConstrained: SIMD4(0.93, 0.93, 0.95, 1),
                 construction: SIMD4(1, 0.62, 0.25, 1), preview: SIMD4(0.65, 0.65, 0.7, 1), point: SIMD4(0.85, 0.87, 0.92, 1),
                 inactiveSketch: SIMD4(0.5, 0.6, 0.85, 1), handle: SIMD4(1, 0.58, 0.1, 1), invalid: SIMD4(1, 0.3, 0.3, 1),
@@ -159,6 +162,7 @@ struct ViewportPalette: Equatable {
                 axes: (SIMD4(0.85, 0.25, 0.25, 1), SIMD4(0.25, 0.7, 0.3, 1), SIMD4(0.3, 0.45, 0.9, 1)),
                 face: SIMD4(0.64, 0.67, 0.72, 1), faceHover: SIMD4(0.55, 0.72, 0.95, 1), faceSelected: SIMD4(0.3, 0.56, 1, 1),
                 edge: SIMD4(0.12, 0.13, 0.16, 1), hover: SIMD4(0.1, 0.55, 1, 1), selection: SIMD4(0, 0.4, 1, 1),
+                wireEdge: SIMD4(0.12, 0.13, 0.16, 1),
                 sketch: SIMD4(0.1, 0.3, 0.85, 1), sketchConstrained: SIMD4(0.08, 0.08, 0.1, 1),
                 construction: SIMD4(0.9, 0.55, 0.15, 1), preview: SIMD4(0.45, 0.45, 0.5, 1), point: SIMD4(0.15, 0.2, 0.35, 1),
                 inactiveSketch: SIMD4(0.35, 0.45, 0.7, 1), handle: SIMD4(0.95, 0.5, 0.05, 1), invalid: SIMD4(0.9, 0.12, 0.12, 1),
@@ -169,6 +173,7 @@ struct ViewportPalette: Equatable {
             p.grid = dark ? SIMD4(0.4, 0.42, 0.46, 1) : SIMD4(0.6, 0.62, 0.66, 1)
             p.gridMinor = dark ? SIMD4(0.28, 0.29, 0.32, 1) : SIMD4(0.75, 0.77, 0.8, 1)
             p.edge = dark ? SIMD4(0, 0, 0, 1) : SIMD4(0, 0, 0, 1)
+            p.wireEdge = dark ? SIMD4(0.96, 0.96, 0.98, 1) : SIMD4(0, 0, 0, 1)
             p.region.w = 0.3
             p.plane.w = 0.35
         }
@@ -197,6 +202,41 @@ struct DrawParams {
     var pickable: UInt32
     /// A selected body edge's width, in pixels; 0 for everything else.
     var selectedThickness: Float = 0
+    /// How to draw (DrawStyle bits).
+    var style: UInt32 = 0
+}
+
+/// Ways of drawing, as DrawParams.style bits.
+enum DrawStyle {
+    /// A line shows only while hovered or selected.
+    static let highlightedOnly: UInt32 = 1
+    static let dashed: UInt32 = 2
+    /// A face in its plain colour, without lighting.
+    static let flat: UInt32 = 4
+}
+
+/// How bodies are drawn (View ▸ Visual Style), as in Fusion.
+enum VisualStyle: String, CaseIterable, Identifiable, Sendable {
+    case shaded, shadedWithHiddenEdges, shadedWithVisibleEdges, wireframe, wireframeWithHiddenEdges, wireframeWithVisibleEdges
+
+    var id: String { rawValue }
+    static let standard = VisualStyle.shadedWithVisibleEdges
+
+    var title: String {
+        switch self {
+        case .shaded: return "Shaded"
+        case .shadedWithHiddenEdges: return "Shaded with Hidden Edges"
+        case .shadedWithVisibleEdges: return "Shaded with Visible Edges Only"
+        case .wireframe: return "Wireframe"
+        case .wireframeWithHiddenEdges: return "Wireframe with Hidden Edges"
+        case .wireframeWithVisibleEdges: return "Wireframe with Visible Edges Only"
+        }
+    }
+
+    /// Faces are shaded (otherwise the edges are what show).
+    var isShaded: Bool { self == .shaded || self == .shadedWithHiddenEdges || self == .shadedWithVisibleEdges }
+    /// Edges behind faces show too, dashed.
+    var showsHiddenEdges: Bool { self == .shadedWithHiddenEdges || self == .wireframeWithHiddenEdges }
 }
 
 @MainActor
@@ -204,6 +244,8 @@ final class Renderer {
     let device: MTLDevice
     private let queue: MTLCommandQueue
     private let facePipeline: MTLRenderPipelineState
+    /// Faces in the ID buffer and depth only (the Wireframe style: faces can be picked but don't show).
+    private let faceIDPipeline: MTLRenderPipelineState
     private let segmentPipeline: MTLRenderPipelineState
     /// Lines drawn only to be seen (grid, axes, previews, the snap marker): they write colour but
     /// leave the ID buffer alone, so they never hide what's picked beneath them.
@@ -273,6 +315,7 @@ final class Renderer {
     var showGrid = true
     /// The red, green and blue X, Y and Z axes through the origin.
     var showAxes = true
+    var visualStyle = VisualStyle.standard
     var hovered: UInt32 = 0
     /// A tool is picking bodies: hovering and selecting a face lights up its whole body.
     var wholeBodies = false
@@ -316,6 +359,7 @@ final class Renderer {
                 return try device.makeRenderPipelineState(descriptor: d)
             }
             facePipeline = try pipeline("faceVertex", "faceFragment")
+            faceIDPipeline = try pipeline("faceVertex", "faceFragment", writesColor: false)
             segmentPipeline = try pipeline("segmentVertex", "segmentFragment")
             decorationPipeline = try pipeline("segmentVertex", "segmentFragment", writesID: false)
             pickBandPipeline = try pipeline("segmentVertex", "segmentFragment", writesColor: false)
@@ -533,19 +577,30 @@ final class Renderer {
         enc.setVertexBytes(&sel, length: MemoryLayout<UInt32>.stride * sel.count, index: 2)  // selected edges draw thicker
         enc.setFragmentBytes(&sel, length: MemoryLayout<UInt32>.stride * sel.count, index: 2)
 
-        enc.setRenderPipelineState(facePipeline)
         enc.setCullMode(.none)
+        let style = visualStyle
         let tints = bodies.indices.map { Self.tint(bodyColors[safe: $0].flatMap { $0 }, palette: palette) }
-        for (i, b) in bodies.enumerated() {
-            guard let faces = b.faces, let indices = b.indices else { continue }
-            let t = tints[i]
-            var params = DrawParams(color: t.face, hoverColor: t.faceHover, selectColor: t.faceSelected,
-                                    thickness: 0, depthBias: 0, pickable: 1)
-            enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
-            enc.setVertexBuffer(faces, offset: 0, index: 0)
-            enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
-                                      indexBuffer: indices, indexBufferOffset: 0)
+        /// Faces: shaded, or in the wireframe styles flat in the background colour (hiding what's
+        /// behind them) with hover and selection as a light wash. Wireframe draws them later, unseen.
+        func drawFaces(_ pipeline: MTLRenderPipelineState, wireframe: Bool) {
+            enc.setRenderPipelineState(pipeline)
+            let bg = palette.background
+            for (i, b) in bodies.enumerated() {
+                guard let faces = b.faces, let indices = b.indices else { continue }
+                let t = tints[i]
+                var params = wireframe
+                    ? DrawParams(color: bg, hoverColor: simd_mix(bg, t.faceHover, SIMD4(repeating: 0.3)),
+                                 selectColor: simd_mix(bg, t.faceSelected, SIMD4(repeating: 0.45)),
+                                 thickness: 0, depthBias: 0, pickable: 1, style: DrawStyle.flat)
+                    : DrawParams(color: t.face, hoverColor: t.faceHover, selectColor: t.faceSelected,
+                                 thickness: 0, depthBias: 0, pickable: 1)
+                enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
+                enc.setVertexBuffer(faces, offset: 0, index: 0)
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
+                                          indexBuffer: indices, indexBufferOffset: 0)
+            }
         }
+        if style != .wireframe { drawFaces(facePipeline, wireframe: !style.isShaded) }
 
         // Depth bias per layer, as a fraction of the view depth (0.001 ≈ 0.2 mm at the default zoom).
         let biasScale = camera.depthBiasScale * 2.5
@@ -627,6 +682,9 @@ final class Renderer {
             segments(buffer, 1, DrawParams(color: color, hoverColor: color, selectColor: color,
                                            thickness: 1.5 * scale, depthBias: 0.0001, pickable: 0))
         }
+        // Wireframe: the faces now, in the ID buffer and depth only, so they can still be picked
+        // without hiding the grid or the planes drawn above. The edges then draw over everything.
+        if style == .wireframe { drawFaces(faceIDPipeline, wireframe: true) }
         // First an unseen, wider band around each edge, in the ID buffer only (no depth either, so
         // it hides nothing): a click or hover a few pixels off an edge still finds it.
         enc.setDepthStencilState(noWriteDepthState)
@@ -635,13 +693,26 @@ final class Renderer {
                      DrawParams(color: p.edge, hoverColor: p.hover, selectColor: p.selection, thickness: Self.edgePickWidth * scale,
                                 depthBias: 0.0004, pickable: 1), pipeline: pickBandPipeline)
         }
-        enc.setDepthStencilState(depthState)
+        let edgeColor = style.isShaded ? p.edge : p.wireEdge
+        // Edges behind faces, dashed and softened toward what they're seen through.
+        if style.showsHiddenEdges {
+            enc.setDepthStencilState(hiddenDepthState)
+            let hidden = simd_mix(edgeColor, style.isShaded ? p.face : p.background, SIMD4(repeating: 0.4))
+            for b in bodies {
+                segments(b.segments, b.segmentCount,
+                         DrawParams(color: hidden, hoverColor: hidden, selectColor: hidden, thickness: 1.2 * scale,
+                                    depthBias: 0.0004, pickable: 0, style: DrawStyle.dashed))
+            }
+        }
+        enc.setDepthStencilState(style == .wireframe ? overEverythingDepthState : depthState)
         for (i, b) in bodies.enumerated() {
             segments(b.segments, b.segmentCount,
-                     DrawParams(color: p.edge, hoverColor: tints[i].edgeHover, selectColor: tints[i].edgeSelected,
+                     DrawParams(color: edgeColor, hoverColor: tints[i].edgeHover, selectColor: tints[i].edgeSelected,
                                 thickness: 1.6 * scale, depthBias: 0.0004, pickable: 1,
-                                selectedThickness: Self.selectedEdgeWidth * scale))
+                                selectedThickness: Self.selectedEdgeWidth * scale,
+                                style: style == .shaded ? DrawStyle.highlightedOnly : 0))
         }
+        enc.setDepthStencilState(depthState)
         // Sketch overlay, drawn last with increasing depth bias so it sits on top of faces it lies on.
         let hover = p.hover, select = p.selection
         let planeLine = SIMD4(p.plane.x, p.plane.y, p.plane.z, 1)

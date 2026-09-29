@@ -101,6 +101,8 @@ final class DocumentModel {
     private(set) var colorPreview: (bodies: [FeatureID], color: BodyColor)?
     /// Orthographic projection (View menu), on by default: sizes and alignments read truer than in perspective.
     var orthographic = true
+    /// How bodies are drawn: shaded or wireframe, with or without edges (View ▸ Visual Style).
+    var visualStyle = VisualStyle.standard
     var fileURL: URL?
     var alert: AlertInfo?
 

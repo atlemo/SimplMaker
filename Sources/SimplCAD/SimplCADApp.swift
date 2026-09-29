@@ -95,6 +95,14 @@ struct SimplCADCommands: Commands {
             Toggle("Orthographic Projection", isOn: Binding(get: { model?.orthographic ?? false },
                                                             set: { model?.orthographic = $0 }))
                 .keyboardShortcut("o", modifiers: [.command, .option])
+            Picker("Visual Style", selection: Binding(get: { model?.visualStyle ?? .standard },
+                                                      set: { model?.visualStyle = $0 })) {
+                ForEach(VisualStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                    if style == .shadedWithVisibleEdges { Divider() }  // shaded styles, then wireframe ones
+                }
+            }
+            .disabled(model == nil)
             Divider()
             Toggle("Show Grid", isOn: $showGrid)
                 .keyboardShortcut("g", modifiers: [.command, .option])
