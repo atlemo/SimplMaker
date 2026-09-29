@@ -286,8 +286,15 @@ public enum Regenerator {
         r.bodies.append(BodyResult(id: feature.id, name: r.bodyNames[feature.id] ?? "Body\(r.bodies.count + 1)", body: body))
     }
 
-    static func sketch(_ f: SketchFeature, _ r: RegenResult) throws -> SketchResult {
+    /// Where a sketch lies: its plane, with upright axes unless it's from before they were (see
+    /// SketchFeature.uprightAxes).
+    public static func sketchFrame(_ f: SketchFeature, _ r: RegenResult) throws -> Frame {
         let frame = try resolvePlane(f.plane, r)
+        return f.plane.isFaceOrPlane && f.uprightAxes == true ? frame.upright : frame
+    }
+
+    static func sketch(_ f: SketchFeature, _ r: RegenResult) throws -> SketchResult {
+        let frame = try sketchFrame(f, r)
         var values: [EntityID: Double] = [:]
         for d in f.sketch.dimensions {
             do { values[d.id] = try r.parameters.value(of: d.expression, kind: d.unitKind) }

@@ -153,7 +153,8 @@ import Testing
         model.setHidden(model.sketches.map(\.id), true)
         #expect(model.sketchOverlay().regionIndices.isEmpty && model.sketchOverlay().inactive.isEmpty)
         model.selectedFeature = "base"
-        #expect(!model.sketchOverlay().regionIndices.isEmpty, "the selected sketch shows even when hidden")
+        #expect(model.sketchOverlay().regionIndices.isEmpty && model.sketchOverlay().inactive.isEmpty,
+                "a hidden sketch stays hidden when selected")
         try await settle(model)
     }
 

@@ -11,6 +11,14 @@ public enum PlaneRef: Codable, Hashable, Sendable {
     case face(FaceRef)
     /// A construction plane, by the id of its Plane feature.
     case plane(FeatureID)
+
+    /// A face or a construction plane, whose axes can point any way (not an origin plane).
+    public var isFaceOrPlane: Bool {
+        switch self {
+        case .face, .plane: return true
+        case .xy, .xz, .yz: return false
+        }
+    }
 }
 
 /// A face of a body, by persistent name ("plate.end"). `body` is the id of the feature that created the body.
@@ -42,7 +50,14 @@ public struct ProfileRef: Codable, Hashable, Sendable {
 public struct SketchFeature: Codable, Hashable, Sendable {
     public var plane: PlaneRef
     public var sketch: Sketch
-    public init(plane: PlaneRef, sketch: Sketch) { self.plane = plane; self.sketch = sketch }
+    /// On a face or construction plane: the sketch's x axis runs level and its y axis upward, as the
+    /// view shows the plane (true: every new sketch), or the kernel's own axes for the face, which
+    /// can point any way (nil: sketches from before; Straighten Axes in the inspector turns one
+    /// upright). The origin planes' axes are upright already.
+    public var uprightAxes: Bool?
+    public init(plane: PlaneRef, sketch: Sketch, uprightAxes: Bool? = true) {
+        self.plane = plane; self.sketch = sketch; self.uprightAxes = uprightAxes
+    }
 }
 
 public enum ExtrudeExtent: Codable, Hashable, Sendable {

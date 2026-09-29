@@ -29,6 +29,16 @@ public struct Frame: Sendable, Equatable {
     }
     public func point(_ u: Double, _ v: Double) -> SIMD3<Double> { origin + u * xAxis + v * yAxis }
 
+    /// The same plane with its x axis level and its y axis upward, as the view (Z up) shows it; a
+    /// level plane keeps x along world X. The origin planes are already this way.
+    public var upright: Frame {
+        func unit(_ v: SIMD3<Double>) -> SIMD3<Double> { v / (v * v).sum().squareRoot() }
+        let n = unit(normal)
+        var x = SIMD3(-n.y, n.x, 0)  // Z × n: level, square to the normal
+        if (x * x).sum() < 1e-12 { x = SIMD3(1, 0, 0) - n.x * n }  // a level plane: world X, kept in the plane
+        return Frame(origin: origin, normal: n, xAxis: unit(x))
+    }
+
     public static let xy = Frame(origin: .zero, normal: SIMD3(0, 0, 1), xAxis: SIMD3(1, 0, 0))
     public static let xz = Frame(origin: .zero, normal: SIMD3(0, -1, 0), xAxis: SIMD3(1, 0, 0))
     public static let yz = Frame(origin: .zero, normal: SIMD3(1, 0, 0), xAxis: SIMD3(0, 1, 0))

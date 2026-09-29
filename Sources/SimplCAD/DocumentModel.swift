@@ -627,7 +627,7 @@ final class DocumentModel {
     func beginSketch(on plane: PlaneRef) {
         let frame: Frame
         do {
-            frame = try Regenerator.resolvePlane(plane, result ?? RegenResult())
+            frame = try Regenerator.sketchFrame(SketchFeature(plane: plane, sketch: Sketch()), result ?? RegenResult())
         } catch {
             alert = AlertInfo(title: "You can't sketch on that face",
                               message: "Choose a flat face or one of the origin planes. (\(error))")
@@ -644,6 +644,17 @@ final class DocumentModel {
             doc.hidden.remove(feature.id)
         }
         lookAt(frame)
+    }
+
+    /// Turns a sketch from before upright axes to them: everything in it turns with its axes, so
+    /// text and shapes drawn level in Sketch mode lie level on the model.
+    func straightenAxes(of id: FeatureID) {
+        guard sketchSession?.featureID != id else { return }
+        mutate("Straighten Sketch Axes") { doc in
+            guard let i = doc.index(of: id), case .sketch(var sf) = doc.features[i].kind else { return }
+            sf.uprightAxes = true
+            doc.features[i].kind = .sketch(sf)
+        }
     }
 
     func editSketch(_ id: FeatureID) {
@@ -769,7 +780,8 @@ final class DocumentModel {
     /// A sketch is drawn unless hidden, suppressed or rolled back; the selected sketch always shows.
     func isSketchShown(_ id: FeatureID) -> Bool {
         guard document.activeFeatures.contains(where: { $0.id == id && !$0.suppressed }) else { return false }
-        return !document.hidden.contains(id) || selectedFeature == id || reselecting.flatMap { profileSource($0)?.sketch } == id
+        // A hidden sketch stays hidden when selected; it shows only while its profiles are being picked again.
+        return !document.hidden.contains(id) || reselecting.flatMap { profileSource($0)?.sketch } == id
     }
 
     /// The sketch, region and profile reference a profile pick points at.

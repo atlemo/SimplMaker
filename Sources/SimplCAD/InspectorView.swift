@@ -97,6 +97,12 @@ struct SketchInspector: View {
                 Button("Finish Sketch") { model.finishSketch() }
             }
             LabeledContent("Plane", value: planeName)
+            if sketch.uprightAxes != true, session == nil, sketch.plane.isFaceOrPlane {
+                LabeledContent("Axes") {
+                    Button("Straighten") { model.straightenAxes(of: id) }
+                        .help("Turn this sketch so its x axis runs level and y points up, like new sketches. Everything in it turns with it.")
+                }
+            }
             if let solve = model.result?.sketches[id]?.solve {
                 LabeledContent("Status", value: solve.status == .solved
                                ? (solve.degreesOfFreedom == 0 ? "Fully constrained" : "\(solve.degreesOfFreedom) degrees of freedom")
