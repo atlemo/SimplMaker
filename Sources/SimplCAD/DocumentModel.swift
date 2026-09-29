@@ -799,7 +799,10 @@ final class DocumentModel {
             if let r = result?.sketches[session.featureID] { SketchOverlayBuilder.regions(r, slot: 0, into: &o) }
             return o
         }
-        if showsOriginPlanes { SketchOverlayBuilder.originPlanes(size: sketchPlaneSize, into: &o) }
+        if showsOriginPlanes {
+            SketchOverlayBuilder.originPlanes(size: sketchPlaneSize, into: &o)
+            o.planesSeeThrough = true
+        }
         // Construction planes, always (unless hidden), pickable to sketch on or to select.
         let planeSize = OriginPlane.displaySize(for: sceneBounds)
         for (slot, f) in planeFeatures.enumerated() where !document.hidden.contains(f.id) {

@@ -75,6 +75,9 @@ struct SketchOverlay {
     var planeVertices: [FaceVertex] = []
     var planeIndices: [UInt32] = []
     var planeOutline: [SegmentInstance] = []
+    /// A plane is being asked for: planes show through bodies, and their borders pick through them,
+    /// so one that lies under or inside a body (the floor, under a part sitting on it) can still be chosen.
+    var planesSeeThrough = false
     var curves: [SegmentInstance] = []
     var construction: [SegmentInstance] = []
     var inactive: [SegmentInstance] = []   // finished sketches: thin, pickable as paths and axes
@@ -189,7 +192,8 @@ struct DrawParams {
     var thickness: Float
     var depthBias: Float
     var pickable: UInt32
-    var pad: UInt32 = 0
+    /// A selected body edge's width, in pixels; 0 for everything else.
+    var selectedThickness: Float = 0
 }
 
 @MainActor
@@ -204,12 +208,17 @@ final class Renderer {
     /// Lines written to the ID buffer only: an unseen band around each body edge, so a click
     /// just beside an edge still picks it.
     private let pickBandPipeline: MTLRenderPipelineState
+    private let hiddenPlanePipeline: MTLRenderPipelineState
     private let regionPipeline: MTLRenderPipelineState
     private let planePipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
     private let onTopDepthState: MTLDepthStencilState
     /// Depth-tested but not depth-writing: translucent planes hide nothing drawn after them.
     private let noWriteDepthState: MTLDepthStencilState
+    /// Only where something nearer is already drawn (the hidden part of a plane), without writing depth.
+    private let hiddenDepthState: MTLDepthStencilState
+    /// Over everything, without writing depth.
+    private let overEverythingDepthState: MTLDepthStencilState
 
     private struct GPUBody {
         var faces: MTLBuffer?
@@ -239,6 +248,7 @@ final class Renderer {
         /// One centre per plane (6 indices each), to draw them back to front.
         var planeCenters: [SIMD3<Float>] = []
         var planeOutline: MTLBuffer?, planeOutlineCount = 0
+        var planesSeeThrough = false
         var curves: MTLBuffer?, curveCount = 0
         var construction: MTLBuffer?, constructionCount = 0
         var inactive: MTLBuffer?, inactiveCount = 0
@@ -270,6 +280,8 @@ final class Renderer {
     static let colorFormat = MTLPixelFormat.bgra8Unorm
     /// How wide (in points) a body edge is for clicking and hovering; it is drawn 1.6 wide.
     static let edgePickWidth: Float = 5
+    /// A selected body edge: 1 pt black, 1 pt selection colour, 1 pt black.
+    static let selectedEdgeWidth: Float = 3
     static let depthFormat = MTLPixelFormat.depth32Float
 
     init?() {
@@ -305,6 +317,7 @@ final class Renderer {
             pickBandPipeline = try pipeline("segmentVertex", "segmentFragment", writesColor: false)
             regionPipeline = try pipeline("regionVertex", "regionFragment", blend: true)
             planePipeline = try pipeline("regionVertex", "planeFragment", blend: true)
+            hiddenPlanePipeline = try pipeline("regionVertex", "planeFragment", blend: true, writesID: false)
         } catch {
             print("SimplCAD: Metal setup failed: \(error)")
             return nil
@@ -318,12 +331,22 @@ final class Renderer {
         let noWrite = MTLDepthStencilDescriptor()
         noWrite.depthCompareFunction = .lessEqual
         noWrite.isDepthWriteEnabled = false
+        let behind = MTLDepthStencilDescriptor()
+        behind.depthCompareFunction = .greater
+        behind.isDepthWriteEnabled = false
+        let over = MTLDepthStencilDescriptor()
+        over.depthCompareFunction = .always
+        over.isDepthWriteEnabled = false
         guard let depthState = device.makeDepthStencilState(descriptor: ds),
               let onTop = device.makeDepthStencilState(descriptor: top),
-              let noWriteState = device.makeDepthStencilState(descriptor: noWrite) else { return nil }
+              let noWriteState = device.makeDepthStencilState(descriptor: noWrite),
+              let behindState = device.makeDepthStencilState(descriptor: behind),
+              let overState = device.makeDepthStencilState(descriptor: over) else { return nil }
         self.depthState = depthState
         self.onTopDepthState = onTop
         self.noWriteDepthState = noWriteState
+        self.hiddenDepthState = behindState
+        self.overEverythingDepthState = overState
         buildGrid(size: 200, step: 10)
     }
 
@@ -346,6 +369,7 @@ final class Renderer {
             return c / 4
         }
         g.planeOutline = makeBuffer(o.planeOutline); g.planeOutlineCount = o.planeOutline.count
+        g.planesSeeThrough = o.planesSeeThrough
         g.curves = makeBuffer(o.curves); g.curveCount = o.curves.count
         g.construction = makeBuffer(o.construction); g.constructionCount = o.construction.count
         g.inactive = makeBuffer(o.inactive); g.inactiveCount = o.inactive.count
@@ -575,6 +599,21 @@ final class Renderer {
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: 6, indexType: .uint32,
                                           indexBuffer: indices, indexBufferOffset: i * 6 * MemoryLayout<UInt32>.stride)
             }
+            // While a plane is being asked for, the parts hidden by a body show faintly through it
+            // (colour only: the body stays what's picked there; the border band below picks the plane).
+            if overlay.planesSeeThrough {
+                var hidden = planeParams
+                hidden.color.w *= 0.6
+                hidden.hoverColor.w *= 0.6
+                enc.setRenderPipelineState(hiddenPlanePipeline)
+                enc.setDepthStencilState(hiddenDepthState)
+                enc.setVertexBytes(&hidden, length: MemoryLayout<DrawParams>.stride, index: 3)
+                enc.setFragmentBytes(&hidden, length: MemoryLayout<DrawParams>.stride, index: 3)
+                for i in order {
+                    enc.drawIndexedPrimitives(type: .triangle, indexCount: 6, indexType: .uint32,
+                                              indexBuffer: indices, indexBufferOffset: i * 6 * MemoryLayout<UInt32>.stride)
+                }
+            }
             enc.setDepthStencilState(depthState)
         }
 
@@ -595,7 +634,8 @@ final class Renderer {
         for (i, b) in bodies.enumerated() {
             segments(b.segments, b.segmentCount,
                      DrawParams(color: p.edge, hoverColor: tints[i].edgeHover, selectColor: tints[i].edgeSelected,
-                                thickness: 1.6 * scale, depthBias: 0.0004, pickable: 1))
+                                thickness: 1.6 * scale, depthBias: 0.0004, pickable: 1,
+                                selectedThickness: Self.selectedEdgeWidth * scale))
         }
         // Sketch overlay, drawn last with increasing depth bias so it sits on top of faces it lies on.
         let hover = p.hover, select = p.selection
@@ -603,6 +643,15 @@ final class Renderer {
         segments(overlay.planeOutline, overlay.planeOutlineCount,
                  DrawParams(color: planeLine, hoverColor: planeLine, selectColor: planeLine,
                             thickness: 1.2 * scale, depthBias: 0.0005, pickable: 1))
+        if overlay.planesSeeThrough {
+            // An unseen band along each plane's border, in the ID buffer over everything: a plane
+            // covered by a body (the floor under a part) is still picked by clicking its border.
+            enc.setDepthStencilState(overEverythingDepthState)
+            segments(overlay.planeOutline, overlay.planeOutlineCount,
+                     DrawParams(color: planeLine, hoverColor: planeLine, selectColor: planeLine,
+                                thickness: Self.edgePickWidth * scale, depthBias: 0, pickable: 1), pipeline: pickBandPipeline)
+            enc.setDepthStencilState(depthState)
+        }
         segments(overlay.inactive, overlay.inactiveCount,
                  DrawParams(color: p.inactiveSketch, hoverColor: hover, selectColor: select,
                             thickness: 1.6 * scale, depthBias: 0.0006, pickable: 1))

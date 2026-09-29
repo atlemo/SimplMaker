@@ -29,7 +29,7 @@ enum Shaders {
         float thickness;       // pixels
         float depthBias;
         uint pickable;
-        uint pad;
+        float selectedThickness; // pixels; a selected body edge's width when set (see segmentFragment)
     };
 
     struct FaceOut {
@@ -40,6 +40,7 @@ enum Shaders {
     };
     struct LineOut {
         float4 position [[position]];
+        float across;          // -1 to 1 from one side of the line to the other
         uint id [[flat]];
     };
     struct FragOut {
@@ -139,10 +140,11 @@ enum Shaders {
                                  constant uint* sel [[buffer(2)]],
                                  constant DrawParams& p [[buffer(3)]]) {
         Segment s = segs[iid];
-        // A selected body edge (top bit set) draws thicker, and so does every edge of a body
-        // outlined as selected (Appearance panel), so the selection is easy to see.
+        // A selected body edge (top bit set) draws wider, and so does every edge of a selected body's
+        // border, to make room for its black-colour-black stripes.
         float thickness = p.thickness;
-        if (p.pickable != 0 && edgeSelected(s.id, sel, u.selectedCount)) thickness *= 2.0;
+        if (p.pickable != 0 && p.selectedThickness > 0.0 && edgeSelected(s.id, sel, u.selectedCount))
+            thickness = p.selectedThickness;
         float4 ca = u.viewProj * float4(float3(s.a), 1.0);
         float4 cb = u.viewProj * float4(float3(s.b), 1.0);
         float2 halfSize = u.viewport * 0.5;
@@ -159,6 +161,7 @@ enum Shaders {
         c.z -= p.depthBias;  // constant in clip space: a fixed fraction of the view depth (see Camera.depthBiasScale)
         LineOut o;
         o.position = c;
+        o.across = side;
         o.id = s.id;
         return o;
     }
@@ -171,6 +174,10 @@ enum Shaders {
         if (p.pickable != 0) {
             if (in.id == u.hovered) c = p.hoverColor;
             if (isSelected(in.id, sel, u.selectedCount) || edgeSelected(in.id, sel, u.selectedCount)) c = p.selectColor;
+            // A selected body edge: the selection colour down the middle third, black on either side,
+            // so it shows against a face of the same colour.
+            if (p.selectedThickness > 0.0 && edgeSelected(in.id, sel, u.selectedCount) && abs(in.across) > 1.0 / 3.0)
+                c = float4(0.0, 0.0, 0.0, 1.0);
         }
         FragOut o;
         o.color = c;
