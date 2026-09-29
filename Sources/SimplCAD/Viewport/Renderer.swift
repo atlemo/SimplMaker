@@ -202,6 +202,9 @@ final class Renderer {
     /// Lines drawn only to be seen (grid, axes, previews, the snap marker): they write colour but
     /// leave the ID buffer alone, so they never hide what's picked beneath them.
     private let decorationPipeline: MTLRenderPipelineState
+    /// Lines written to the ID buffer only: an unseen band around each body edge, so a click
+    /// just beside an edge still picks it.
+    private let pickBandPipeline: MTLRenderPipelineState
     private let regionPipeline: MTLRenderPipelineState
     private let planePipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
@@ -269,6 +272,8 @@ final class Renderer {
     var onPick: (@MainActor @Sendable (UInt32) -> Void)?
 
     static let colorFormat = MTLPixelFormat.bgra8Unorm
+    /// How wide (in points) a body edge is for clicking and hovering; it is drawn 1.6 wide.
+    static let edgePickWidth: Float = 5
     static let depthFormat = MTLPixelFormat.depth32Float
 
     init?() {
@@ -280,7 +285,7 @@ final class Renderer {
         do {
             let library = try device.makeLibrary(source: Shaders.source, options: nil)
             func pipeline(_ vertex: String, _ fragment: String, blend: Bool = false,
-                          writesID: Bool = true) throws -> MTLRenderPipelineState {
+                          writesID: Bool = true, writesColor: Bool = true) throws -> MTLRenderPipelineState {
                 let d = MTLRenderPipelineDescriptor()
                 d.vertexFunction = library.makeFunction(name: vertex)
                 d.fragmentFunction = library.makeFunction(name: fragment)
@@ -292,6 +297,7 @@ final class Renderer {
                     d.colorAttachments[0].sourceAlphaBlendFactor = .one
                     d.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
                 }
+                if !writesColor { d.colorAttachments[0].writeMask = [] }
                 d.colorAttachments[1].pixelFormat = .r32Uint
                 if !writesID { d.colorAttachments[1].writeMask = [] }
                 d.depthAttachmentPixelFormat = Renderer.depthFormat
@@ -300,6 +306,7 @@ final class Renderer {
             facePipeline = try pipeline("faceVertex", "faceFragment")
             segmentPipeline = try pipeline("segmentVertex", "segmentFragment")
             decorationPipeline = try pipeline("segmentVertex", "segmentFragment", writesID: false)
+            pickBandPipeline = try pipeline("segmentVertex", "segmentFragment", writesColor: false)
             regionPipeline = try pipeline("regionVertex", "regionFragment", blend: true)
             planePipeline = try pipeline("regionVertex", "planeFragment", blend: true)
         } catch {
@@ -473,6 +480,7 @@ final class Renderer {
         enc.setDepthStencilState(depthState)
         enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
         enc.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+        enc.setVertexBytes(&sel, length: MemoryLayout<UInt32>.stride * sel.count, index: 2)  // selected edges draw thicker
         enc.setFragmentBytes(&sel, length: MemoryLayout<UInt32>.stride * sel.count, index: 2)
 
         enc.setRenderPipelineState(facePipeline)
@@ -490,11 +498,11 @@ final class Renderer {
 
         // Depth bias per layer, as a fraction of the view depth (0.001 ≈ 0.2 mm at the default zoom).
         let biasScale = camera.depthBiasScale * 2.5
-        func segments(_ buffer: MTLBuffer?, _ count: Int, _ params: DrawParams) {
+        func segments(_ buffer: MTLBuffer?, _ count: Int, _ params: DrawParams, pipeline: MTLRenderPipelineState? = nil) {
             guard let buffer, count > 0 else { return }
             var p = params
             p.depthBias *= biasScale
-            enc.setRenderPipelineState(p.pickable != 0 ? segmentPipeline : decorationPipeline)
+            enc.setRenderPipelineState(pipeline ?? (p.pickable != 0 ? segmentPipeline : decorationPipeline))
             enc.setVertexBuffer(buffer, offset: 0, index: 0)
             enc.setVertexBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.setFragmentBytes(&p, length: MemoryLayout<DrawParams>.stride, index: 3)
@@ -553,6 +561,15 @@ final class Renderer {
             segments(buffer, 1, DrawParams(color: color, hoverColor: color, selectColor: color,
                                            thickness: 1.5 * scale, depthBias: 0.0001, pickable: 0))
         }
+        // First an unseen, wider band around each edge, in the ID buffer only (no depth either, so
+        // it hides nothing): a click or hover a few pixels off an edge still finds it.
+        enc.setDepthStencilState(noWriteDepthState)
+        for b in bodies {
+            segments(b.segments, b.segmentCount,
+                     DrawParams(color: p.edge, hoverColor: p.hover, selectColor: p.selection, thickness: Self.edgePickWidth * scale,
+                                depthBias: 0.0004, pickable: 1), pipeline: pickBandPipeline)
+        }
+        enc.setDepthStencilState(depthState)
         for b in bodies {
             segments(b.segments, b.segmentCount,
                      DrawParams(color: p.edge, hoverColor: p.hover, selectColor: p.selection, thickness: 1.6 * scale,

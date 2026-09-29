@@ -131,8 +131,16 @@ enum Shaders {
     vertex LineOut segmentVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                                  device const Segment* segs [[buffer(0)]],
                                  constant Uniforms& u [[buffer(1)]],
+                                 constant uint* sel [[buffer(2)]],
                                  constant DrawParams& p [[buffer(3)]]) {
         Segment s = segs[iid];
+        // A selected body edge (top bit set) draws thicker, and so does every edge of a body
+        // outlined as selected (Appearance panel), so the selection is easy to see.
+        float thickness = p.thickness;
+        if (p.pickable != 0 && (s.id & 0x80000000u) != 0
+            && (isSelected(s.id, sel, u.selectedCount)
+                || (u.outlineBodies != 0 && isSelected((s.id & 0x3FF00000u) | 0xFFFFFu, sel, u.selectedCount))))
+            thickness *= 2.0;
         float4 ca = u.viewProj * float4(float3(s.a), 1.0);
         float4 cb = u.viewProj * float4(float3(s.b), 1.0);
         float2 halfSize = u.viewport * 0.5;
@@ -144,7 +152,7 @@ enum Shaders {
         bool atB = vid >= 2;
         float side = (vid % 2 == 0) ? -1.0 : 1.0;
         float4 c = atB ? cb : ca;
-        float2 offset = (nrm * side + d * (atB ? 1.0 : -1.0)) * p.thickness * 0.5;
+        float2 offset = (nrm * side + d * (atB ? 1.0 : -1.0)) * thickness * 0.5;
         c.xy += offset / halfSize * c.w;
         c.z -= p.depthBias;  // constant in clip space: a fixed fraction of the view depth (see Camera.depthBiasScale)
         LineOut o;
