@@ -17,7 +17,7 @@ enum Shaders {
         float4 faceSelectedColor;
         float4 regionColor;     // rgb + base alpha
         uint wholeBodies;       // a tool is picking bodies: hover and selection cover the whole body
-        uint outlineBodies;     // a body selected whole shows by its edges, not a fill (Appearance panel)
+        uint outlineBodies;     // Appearance panel: hover lights a body's edges, not a face
         uint pad1, pad2;
     };
 
@@ -53,6 +53,18 @@ enum Shaders {
         return false;
     }
 
+    // A body edge (top bit set) is lit when it, or its whole body's outline, is selected.
+    static bool edgeSelected(uint id, constant uint* sel, uint n) {
+        return (id & 0x80000000u) != 0
+            && (isSelected(id, sel, n) || isSelected((id & 0xBFF00000u) | 0xFFFFFu, sel, n));
+    }
+
+    // Appearance panel: the hovered face or edge lights up its body's edges.
+    static bool edgeHovered(uint id, constant Uniforms& u) {
+        return u.outlineBodies != 0 && (id & 0x80000000u) != 0 && u.hovered != 0
+            && (u.hovered & 0x40000000u) == 0 && (u.hovered & 0x3FF00000u) == (id & 0x3FF00000u);
+    }
+
     static FaceOut transformFace(FaceVertex v, constant Uniforms& u) {
         FaceOut o;
         o.world = float3(v.position);
@@ -84,9 +96,9 @@ enum Shaders {
         uint bodyBits = in.id & 0x3FF00000u;
         bool hoverBody = u.wholeBodies != 0 && u.hovered != 0 && (u.hovered & 0x40000000u) == 0
                          && (u.hovered & 0x3FF00000u) == bodyBits;
-        if (in.id == u.hovered || hoverBody) base = u.faceHoverColor.rgb;
-        bool bodySelected = u.outlineBodies == 0 && isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount);
-        if (isSelected(in.id, sel, u.selectedCount) || bodySelected)
+        if ((in.id == u.hovered && u.outlineBodies == 0) || hoverBody) base = u.faceHoverColor.rgb;
+        // A body outline highlight (edge flag | body | 0xFFFFF) matches none of these: faces keep their colour.
+        if (isSelected(in.id, sel, u.selectedCount) || isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount))
             base = u.faceSelectedColor.rgb;
         FragOut o;
         o.color = float4(base * (0.32 + 0.68 * diffuse) + spec, 1.0);
@@ -137,10 +149,7 @@ enum Shaders {
         // A selected body edge (top bit set) draws thicker, and so does every edge of a body
         // outlined as selected (Appearance panel), so the selection is easy to see.
         float thickness = p.thickness;
-        if (p.pickable != 0 && (s.id & 0x80000000u) != 0
-            && (isSelected(s.id, sel, u.selectedCount)
-                || (u.outlineBodies != 0 && isSelected((s.id & 0x3FF00000u) | 0xFFFFFu, sel, u.selectedCount))))
-            thickness *= 2.0;
+        if (p.pickable != 0 && edgeSelected(s.id, sel, u.selectedCount)) thickness *= 2.0;
         float4 ca = u.viewProj * float4(float3(s.a), 1.0);
         float4 cb = u.viewProj * float4(float3(s.b), 1.0);
         float2 halfSize = u.viewport * 0.5;
@@ -167,11 +176,8 @@ enum Shaders {
                                      constant DrawParams& p [[buffer(3)]]) {
         float4 c = p.color;
         if (p.pickable != 0) {
-            if (in.id == u.hovered) c = p.hoverColor;
-            if (isSelected(in.id, sel, u.selectedCount)) c = p.selectColor;
-            // A body's edges (top bit set) light up when the body is selected whole and outlined.
-            if (u.outlineBodies != 0 && (in.id & 0x80000000u) != 0
-                && isSelected((in.id & 0x3FF00000u) | 0xFFFFFu, sel, u.selectedCount)) c = p.selectColor;
+            if (in.id == u.hovered || edgeHovered(in.id, u)) c = p.hoverColor;
+            if (isSelected(in.id, sel, u.selectedCount) || edgeSelected(in.id, sel, u.selectedCount)) c = p.selectColor;
         }
         FragOut o;
         o.color = c;

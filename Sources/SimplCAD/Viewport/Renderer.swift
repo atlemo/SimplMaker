@@ -30,6 +30,9 @@ struct PickID: Hashable, Sendable {
     /// the body for tools that pick bodies, and the highlight covers every face.
     init(wholeBody i: Int) { raw = UInt32(i + 1) << 20 | 0xFFFFF }
     var isWholeBody: Bool { isFace && raw & 0xFFFFF == 0xFFFFF }
+    /// Highlight only: every edge of a body, and none of its faces (the Appearance panel's
+    /// selection, so the body's own colour shows). Never a pick.
+    init(bodyOutline i: Int) { raw = PickID.edgeFlag | UInt32(i + 1) << 20 | 0xFFFFF }
     static let handle = PickID(raw: 0x7000_0000)
 
     var kind: Kind {
@@ -263,8 +266,8 @@ final class Renderer {
     var hovered: UInt32 = 0
     /// A tool is picking bodies: hovering and selecting a face lights up its whole body.
     var wholeBodies = false
-    /// A body selected whole shows by its edges instead of a filled highlight, so its own colour
-    /// stays visible (while the Appearance panel is open).
+    /// The Appearance panel is open: hovering lights up a body's edges instead of filling the face,
+    /// so the colours show. (Selected bodies come as `PickID(bodyOutline:)` highlights.)
     var outlineBodies = false
     var selected: [UInt32] = []
     /// Pixel (in drawable coordinates, origin top-left) to read from the ID buffer on the next frame.

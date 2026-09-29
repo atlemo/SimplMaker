@@ -47,9 +47,19 @@ import Testing
         #expect(model.highlighted == [PickID(body: 1, face: 0).raw], "panel closed: the face lights up")
         model.showAppearance = true
         #expect(model.outlinesSelectedBodies)
-        #expect(model.highlighted == [PickID(wholeBody: 1).raw], "panel open: the body, so its colour shows")
+        #expect(model.highlighted == [PickID(bodyOutline: 1).raw], "panel open: the body's edges, so its colour shows")
         model.selectBody("a")
-        #expect(model.highlighted == [PickID(wholeBody: 0).raw])
+        #expect(model.highlighted == [PickID(bodyOutline: 0).raw])
+        #expect(!model.highlighted.contains(PickID(wholeBody: 0).raw), "never the filled whole-body highlight")
+    }
+
+    @Test func openingThePanelCancelsAWaitingTool() async throws {
+        let model = DocumentModel(document: twoBoxes())
+        try await settle(model)
+        model.run(.shell)
+        #expect(model.pendingTool == .shell)
+        model.toggleAppearance()
+        #expect(model.showAppearance && model.pendingTool == nil, "clicks now pick bodies to colour")
     }
 
     @Test func aColourBeingPickedShowsWithoutChangingTheDocument() async throws {
