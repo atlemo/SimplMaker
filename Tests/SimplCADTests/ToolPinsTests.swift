@@ -2,7 +2,7 @@
 import Testing
 @testable import SimplCAD
 
-/// Which tools a toolbar group shows: the defaults until changed, at most `ToolPins.limit`.
+/// Which tools a toolbar group shows: the defaults until changed, then any of them.
 @Suite struct ToolPinsTests {
     let tools = ["Extrude", "Revolve", "Sweep", "Loft", "Rib", "Pipe"]
 
@@ -21,19 +21,17 @@ import Testing
         #expect(pins.ids == ["Loft", "Rib"])
     }
 
-    @Test func aFullGroupTakesNoMoreUntilOneIsUnpinned() {
+    @Test func pinningAndUnpinningIsSavedAndReadBack() {
         var pins = ToolPins(stored: "Extrude,Revolve,Sweep,Loft", available: tools, defaults: [])
-        #expect(pins.isFull)
         pins.toggle("Rib")
-        #expect(!pins.contains("Rib"))
+        pins.toggle("Pipe")
         pins.toggle("Sweep")
-        pins.toggle("Rib")
-        #expect(pins.ids == ["Extrude", "Revolve", "Loft", "Rib"])
+        #expect(pins.ids == ["Extrude", "Revolve", "Loft", "Rib", "Pipe"])
         #expect(ToolPins(stored: pins.stored, available: tools, defaults: []) == pins)
     }
 
-    @Test func savesAreCappedAtTheLimit() {
+    @Test func everyToolCanBePinned() {
         let pins = ToolPins(stored: tools.joined(separator: ","), available: tools, defaults: [])
-        #expect(pins.ids.count == ToolPins.limit)
+        #expect(pins.ids == tools)
     }
 }

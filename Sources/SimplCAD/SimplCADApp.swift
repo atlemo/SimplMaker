@@ -17,7 +17,7 @@ struct SimplCADApp: App {
     var body: some Scene {
         DocumentGroup(newDocument: { CADFile() }) { configuration in
             ContentView(file: configuration.document, fileURL: configuration.fileURL)
-                .frame(minWidth: 1000, minHeight: 560)  // room for the toolbar row, even in sketch mode
+                .frame(minWidth: 1080, minHeight: 560)  // room for the default toolbar row (every Modify tool pinned)
         }
         .commands { SimplCADCommands() }
 

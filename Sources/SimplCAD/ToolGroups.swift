@@ -1,31 +1,28 @@
-// Toolbar tool groups: each group shows a few of its tools as buttons, with the group's name
+// Toolbar tool groups: each group shows the tools pinned to it as buttons, with the group's name
 // underneath. The name opens the whole group, where any tool can be run, and pinned to the
-// toolbar or unpinned, so the toolbar keeps its size as tools are added.
+// toolbar or unpinned, so the toolbar needn't grow as tools are added.
 // SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 
 /// Which of a group's tools show as toolbar buttons (the rest are in the group's list), saved per
 /// group as comma-separated tool ids. Nothing saved means the group's defaults.
 struct ToolPins: Equatable {
-    /// At most this many buttons per group.
-    static let limit = 4
     private(set) var ids: [String]
 
     /// The saved pins, keeping only tools the group still has.
     init(stored: String?, available: [String], defaults: [String]) {
         let saved = stored.map { $0.split(separator: ",").map(String.init) } ?? defaults
         var ids: [String] = []
-        for id in saved where available.contains(id) && !ids.contains(id) && ids.count < Self.limit { ids.append(id) }
+        for id in saved where available.contains(id) && !ids.contains(id) { ids.append(id) }
         self.ids = ids
     }
 
     var stored: String { ids.joined(separator: ",") }
-    var isFull: Bool { ids.count >= Self.limit }
     func contains(_ id: String) -> Bool { ids.contains(id) }
 
-    /// Pins the tool, or unpins it. A full group takes no more.
+    /// Pins the tool, or unpins it.
     mutating func toggle(_ id: String) {
-        if let i = ids.firstIndex(of: id) { ids.remove(at: i) } else if !isFull { ids.append(id) }
+        if let i = ids.firstIndex(of: id) { ids.remove(at: i) } else { ids.append(id) }
     }
 }
 
@@ -238,12 +235,11 @@ private struct ToolGroupList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(tools) { tool in
-                ToolGroupRow(tool: tool, pinned: pins.contains(tool.id), canPin: !pins.isFull,
-                             run: run, toggle: { toggle(tool.id) })
+                ToolGroupRow(tool: tool, pinned: pins.contains(tool.id), run: run, toggle: { toggle(tool.id) })
             }
             Divider().padding(.vertical, DS.Spacing.space3)
             HStack(alignment: .firstTextBaseline) {
-                Text(pins.isFull ? "Full: unpin a tool to pin another." : "Pin up to \(ToolPins.limit) tools to the toolbar.")
+                Text("Pinned tools show in the toolbar.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -266,7 +262,6 @@ private struct ToolGroupList: View {
 private struct ToolGroupRow: View {
     let tool: GroupTool
     let pinned: Bool
-    let canPin: Bool
     let run: (GroupTool) -> Void
     let toggle: () -> Void
     @State private var hovering = false
@@ -311,9 +306,7 @@ private struct ToolGroupRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!pinned && !canPin)
-            .opacity(!pinned && !canPin ? DS.opacityDisabled : 1)
-            .help(pinned ? "Remove from the toolbar" : canPin ? "Show in the toolbar" : "The toolbar group is full: unpin a tool first")
+            .help(pinned ? "Remove from the toolbar" : "Show in the toolbar")
             .accessibilityLabel(pinned ? "Unpin \(tool.title)" : "Pin \(tool.title)")
         }
         .padding(.horizontal, DS.Spacing.space3)
