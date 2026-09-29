@@ -11,6 +11,9 @@ enum Preferences {
     static let showWelcome = "showWelcome"
     static let snapToGrid = "snapToGrid"
 
+    /// The tools pinned to a toolbar group (see ToolGroups.swift), by the group's id.
+    static func toolbarPins(_ group: String) -> String { "toolbarPins.\(group)" }
+
     /// What a two-finger trackpad scroll does in the viewport; ⇧ switches to the other one.
     enum TrackpadScroll: String, CaseIterable, Identifiable {
         case pan, orbit

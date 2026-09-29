@@ -23,11 +23,10 @@ struct DocumentWindow: View {
     @AppStorage(Preferences.showGrid) private var showGrid = true
     @AppStorage(Preferences.showAxes) private var showAxes = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
-    /// The window's width: below these, the toolbar tools drop their titles so the row still fits
-    /// (otherwise macOS folds the whole row into the toolbar's overflow menu).
+    /// The window's width: below this, the Finish Sketch button drops its title so the sketch
+    /// tools still fit (otherwise macOS folds the whole row into the toolbar's overflow menu).
     @State private var windowWidth: CGFloat = 1200
-    static let titledDesignWidth: CGFloat = 1720
-    static let titledSketchWidth: CGFloat = 1540
+    static let titledSketchWidth: CGFloat = 1100
 
     private var unlinkTitle: String {
         guard let p = model.unlinkPrompt else { return "" }
@@ -109,8 +108,9 @@ struct DocumentWindow: View {
                         DesignToolbar(model: model)
                     }
                 }
-                .environment(\.toolTitles, windowWidth >= (model.sketchSession == nil ? Self.titledDesignWidth : Self.titledSketchWidth))
+                .environment(\.toolTitles, model.sketchSession == nil || windowWidth >= Self.titledSketchWidth)
             }
+            .sharedBackgroundVisibility(.hidden)  // the tools draw their own glass, shaped like the panels
             ToolbarItem(placement: .navigation) {
                 Button { model.showSidebar.toggle() } label: { Label("Browser", systemImage: "sidebar.left") }
                     .help("Show or hide the browser (⌃⌘S)")
@@ -691,9 +691,9 @@ struct ToolButton: View {
                         .fixedSize()
                 }
             }
-            .frame(minWidth: showsTitle ? 44 : 28, minHeight: showsTitle ? 0 : 28)
+            .frame(minWidth: showsTitle ? 44 : 28, minHeight: showsTitle ? 0 : 24)
             .padding(.horizontal, showsTitle ? DS.Spacing.space2 : DS.Spacing.space1)
-            .padding(.vertical, DS.Spacing.space1)
+            .padding(.vertical, showsTitle ? DS.Spacing.space1 : 0)
             .foregroundStyle(active && !onTint ? Color.accentColor : ink)
             .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
             .contentShape(Rectangle())
@@ -708,11 +708,24 @@ struct ToolButton: View {
 }
 
 extension EnvironmentValues {
-    /// Whether toolbar tools show their title under the icon (they don't when the window is too
-    /// narrow for the titled row; a setting can turn them off later).
+    /// Whether toolbar tools show their title under the icon (tools in a group don't: the group's
+    /// name is under them), and Finish Sketch its title (not when the window is narrow).
     @Entry var toolTitles = true
     /// Whether the tools sit on a tinted (accent-coloured) toolbar, as in Sketch mode, and so draw in white.
     @Entry var toolsOnTint = false
+}
+
+extension View {
+    /// The toolbar tools' glass background, with the floating panels' corner radius, and a gap
+    /// above it (the toolbar centres its items, so the padding is twice the gap).
+    func toolsPanel(tint: Color? = nil) -> some View {
+        padding(.horizontal, DS.Spacing.space5)
+            .padding(.top, DS.Spacing.space3)
+            .padding(.bottom, DS.Spacing.space2)
+            .fixedSize()
+            .glassEffect(tint.map { .regular.tint($0) } ?? .regular, in: .rect(cornerRadius: DS.Radius.window))
+            .padding(.top, DS.Spacing.space4)
+    }
 }
 
 /// Tool groups in the toolbar are separated by a thin line.
@@ -728,37 +741,27 @@ struct ToolDivider: View {
 }
 
 /// Sketch mode's tools, in the middle of the toolbar, in groups: Select · draw · change curves ·
-/// dimension and constrain · Finish.
+/// dimension and constrain · Finish. Each group shows the tools pinned to it; its name opens the rest.
 struct SketchToolbar: View {
     let model: DocumentModel
     let session: SketchSession
     @State private var constrainOpen = false
-    /// The shape whose ways of drawing are showing (rectangle, circle, arc).
-    @State private var modesOpen: SketchTool?
     @Environment(\.toolTitles) private var showsTitles
     @Environment(\.controlActiveState) private var activeState
 
     var body: some View {
         HStack(spacing: DS.Spacing.space1) {
-            tools([.select])
+            SoloTool(tool: tool(.select))
             ToolDivider()
-            tools(SketchTool.draw)
+            // Tools in a family (rectangle, circle, arc) share one button, under the first one's name.
+            ToolGroup("Draw", id: "sketch.draw", defaults: ["Line", "Rectangle", "Circle", "Arc"],
+                      tools: SketchTool.draw.filter { $0.family.first == $0 }.map(tool))
             ToolDivider()
-            tools(SketchTool.modify)
-            ToolButton(title: "Offset", icon: "expand", help: "Offset the selected curves by a distance") { session.beginOffset() }
-                .disabled(!session.canOffset)
-                .popover(isPresented: Binding(get: { session.offsetRequested }, set: { session.offsetRequested = $0 }),
-                         arrowEdge: .bottom) {
-                    OffsetPopover(model: model, session: session)
-                }
+            ToolGroup("Modify", id: "sketch.modify", defaults: ["Round Corner", "Trim", "Extend", "Offset"],
+                      tools: SketchTool.modify.map(tool) + [offset])
             ToolDivider()
-            tools([.dimension])
-            ToolButton(title: "Constrain", icon: "link", help: "Constrain the selected sketch entities") { constrainOpen = true }
-                .popover(isPresented: $constrainOpen, arrowEdge: .bottom) { constrainChoices }
-            ToolButton(title: "Construction", icon: "square-dashed", help: "Toggle construction geometry for the selected curves") {
-                model.sketchCommand { $0.toggleConstruction() }
-            }
-            .disabled(!session.canToggleConstruction)
+            ToolGroup("Constraints", id: "sketch.constraints", defaults: ["Dimension", "Constrain", "Construction"],
+                      tools: [tool(.dimension), constrain, construction])
             ToolDivider()
             Button { model.finishSketch() } label: {
                 if showsTitles {
@@ -770,56 +773,44 @@ struct SketchToolbar: View {
             .help("Finish the sketch (Return)")
             .buttonStyle(.borderedProminent)
         }
-        // The prominent Finish button tints the whole toolbar group while the window is active.
+        // Sketch mode tints the tools' glass while the window is active.
         .environment(\.toolsOnTint, activeState != .inactive)
-        .padding(.horizontal, DesignToolbar.edgePadding)
-        .fixedSize()
+        .toolsPanel(tint: activeState != .inactive ? .accentColor : nil)
     }
 
-    private func tools(_ list: [SketchTool]) -> some View {
-        // Tools in a family (rectangle, circle, arc) share one button: only the first shows.
-        ForEach(list.filter { $0.family.first == $0 }) { tool in
-            if tool.family.count > 1 {
-                modeTool(tool)
-            } else {
-                ToolButton(title: tool.shortTitle, icon: tool.symbol, active: session.tool == tool, help: tool.help) {
-                    model.setSketchTool(tool)
-                }
+    /// A sketch tool's button. A shape with several ways to draw it (rectangle, circle, arc) draws
+    /// it the way used last, and offers the others (the tool's key switches too).
+    private func tool(_ head: SketchTool) -> GroupTool {
+        let mode = session.mode(of: head)
+        let modes = head.family.count < 2 ? [] : head.family.map { t in
+            GroupTool(id: t.rawValue, title: t.modeTitle, icon: t.symbol, help: t.help, active: session.tool == t) {
+                model.setSketchTool(t)
             }
+        }
+        return GroupTool(id: head.rawValue, title: head.shortTitle, icon: mode.symbol, help: mode.help, shortcut: head.key,
+                         active: head.family.contains(session.tool), modes: modes) { model.setSketchTool(mode) }
+    }
+
+    private var offset: GroupTool {
+        GroupTool(id: "Offset", title: "Offset", icon: "expand", help: "Offset the selected curves by a distance",
+                  enabled: session.canOffset,
+                  popover: ToolPopover(isPresented: Binding(get: { session.offsetRequested }, set: { session.offsetRequested = $0 }),
+                                       content: AnyView(OffsetPopover(model: model, session: session)))) {
+            session.beginOffset()
         }
     }
 
-    /// A shape with several ways to draw it: one button, which draws it the way used last, and a
-    /// small arrow beside it to choose the way (the tool's key switches too).
-    private func modeTool(_ head: SketchTool) -> some View {
-        let mode = session.mode(of: head)
-        return HStack(spacing: 0) {
-            ToolButton(title: mode.shortTitle, icon: mode.symbol, active: head.family.contains(session.tool), help: mode.help) {
-                model.setSketchTool(mode)
-            }
-            Button { modesOpen = head } label: {
-                Icon("chevron-down", size: 10)
-                    .frame(width: 12, height: 30)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(activeState != .inactive ? Color.white : Color.primary)
-            .help("Choose how to draw the \(head.shortTitle.lowercased())")
-            .accessibilityLabel("\(head.shortTitle) options")
-            .popover(isPresented: Binding(get: { modesOpen == head }, set: { if !$0, modesOpen == head { modesOpen = nil } }),
-                     arrowEdge: .bottom) {
-                HStack(spacing: DS.Spacing.space1) {
-                    ForEach(head.family) { tool in
-                        ToolButton(title: tool.modeTitle, icon: tool.symbol, active: session.tool == tool, help: tool.help) {
-                            modesOpen = nil
-                            model.setSketchTool(tool)
-                        }
-                    }
-                }
-                .environment(\.toolTitles, true)
-                .environment(\.toolsOnTint, false)
-                .padding(DS.Spacing.space3)
-            }
+    private var constrain: GroupTool {
+        GroupTool(id: "Constrain", title: "Constrain", icon: "link", help: "Constrain the selected sketch entities",
+                  popover: ToolPopover(isPresented: $constrainOpen, content: AnyView(constrainChoices))) {
+            constrainOpen = true
+        }
+    }
+
+    private var construction: GroupTool {
+        GroupTool(id: "Construction", title: "Construction", icon: "square-dashed",
+                  help: "Toggle construction geometry for the selected curves", enabled: session.canToggleConstruction) {
+            model.sketchCommand { $0.toggleConstruction() }
         }
     }
 
@@ -844,61 +835,37 @@ struct SketchToolbar: View {
 }
 
 /// Design mode's tools, in the middle of the toolbar, in groups: Sketch · shapes from sketches ·
-/// primitives · tools that change a body. A tool that is waiting for picks is highlighted.
+/// primitives · tools that change a body · planes and copies. Each group shows the tools pinned to
+/// it; its name opens the rest. A tool that is waiting for picks is highlighted.
 struct DesignToolbar: View {
     let model: DocumentModel
-    @State private var shapesOpen = false
-    @Environment(\.toolTitles) private var showsTitles
-    /// Space inside the ends of the toolbar's capsule.
-    static let edgePadding: CGFloat = 10
 
     var body: some View {
         HStack(spacing: DS.Spacing.space1) {
             if model.isPickingSketchPlane {
-                ToolButton(title: "Cancel", icon: "circle-x", active: true, help: "Stop choosing a sketch plane (Esc)") {
-                    model.cancelSketchPlanePick()
-                }
+                SoloTool(tool: GroupTool(id: "Cancel", title: "Cancel", icon: "circle-x", help: "Stop choosing a sketch plane (Esc)",
+                                         active: true) { model.cancelSketchPlanePick() })
             } else {
-                ToolButton(title: "Sketch", icon: "pen-tool",
-                           help: "Create a sketch: then click an origin plane or a flat face in the viewport") { model.startSketch() }
+                SoloTool(tool: GroupTool(id: "Sketch", title: "Sketch", icon: "pen-tool",
+                                         help: "Create a sketch: then click an origin plane or a flat face in the viewport") { model.startSketch() })
             }
             ToolDivider()
-            group(DesignTool.shapes)
+            group("Create", id: "design.create", DesignTool.shapes, defaults: [.extrude, .revolve, .sweep, .loft])
             ToolDivider()
-            if showsTitles {
-                group(DesignTool.primitives)
-            } else {
-                // Narrow window: the primitives share one button that opens a palette of them.
-                ToolButton(title: "Shapes", icon: "cuboid", active: DesignTool.primitives.contains { model.pendingTool == $0 },
-                           help: "Box, cylinder, sphere, torus or coil") { shapesOpen = true }
-                    .popover(isPresented: $shapesOpen, arrowEdge: .bottom) {
-                        HStack(spacing: DS.Spacing.space1) {
-                            ForEach(DesignTool.primitives) { tool in
-                                ToolButton(title: tool.rawValue, icon: tool.symbol, help: tool.help) {
-                                    shapesOpen = false
-                                    model.run(tool)
-                                }
-                            }
-                        }
-                        .environment(\.toolTitles, true)
-                        .padding(DS.Spacing.space3)
-                    }
-            }
+            group("Shapes", id: "design.shapes", DesignTool.primitives, defaults: [.box, .cylinder, .sphere])
             ToolDivider()
-            group(DesignTool.modifiers)
+            group("Modify", id: "design.modify", DesignTool.modifiers, defaults: [.fillet, .chamfer, .move, .combine])
             ToolDivider()
-            group(DesignTool.construct)
+            group("Construct", id: "design.construct", DesignTool.construct, defaults: [.plane, .mirror, .pattern])
         }
-        .padding(.horizontal, Self.edgePadding)  // room at the ends of the toolbar's capsule
-        .fixedSize()
+        .toolsPanel()
     }
 
-    private func group(_ tools: [DesignTool]) -> some View {
-        ForEach(tools) { tool in
-            ToolButton(title: tool.rawValue, icon: tool.symbol, active: model.pendingTool == tool, help: tool.help) {
-                model.run(tool)
-            }
-        }
+    private func group(_ title: String, id: String, _ tools: [DesignTool], defaults: [DesignTool]) -> some View {
+        ToolGroup(title, id: id, defaults: defaults.map(\.rawValue), tools: tools.map { tool in
+            GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool.symbol, help: tool.help, shortcut: tool.key,
+                      active: model.pendingTool == tool) { model.run(tool) }
+        })
     }
 }
 
