@@ -427,9 +427,21 @@ extension DocumentModel {
             add(Feature(name: document.nextName("Plane"), .plane(PlaneFeature(base: plane))))
             return true
         }
-        let uv = clickPoint(on: frame) ?? faceCenter(pick, on: frame) ?? .zero
+        // The middle of a face's outline, or a plane's origin; a click within 10 points of it (or of a line through
+        // it) lands on it, and with no click the thing goes there.
+        let center = faceRef(pick).flatMap { ref in
+            (try? result?.body(ref.body)?.faceOutlineCenter(ref.face)).map { Self.uv(of: $0, on: frame) }
+        } ?? (pick.isFace ? faceCenter(pick, on: frame) : nil) ?? .zero
+        var uv = center
+        if let ray = clickRay, let hit = Self.intersect(ray: ray, with: frame) {
+            uv = hit
+            if let next = clickRayNext, let beside = Self.intersect(ray: next, with: frame) {
+                uv = Self.snap(hit, to: center, tolerance: 10 * simd_length(beside - hit))
+            }
+        }
         let u = formatDimension(uv.x, kind: .length), v = formatDimension(uv.y, kind: .length)
         clickRay = nil
+        clickRayNext = nil
         if tool == .hole {
             guard case .face(let ref) = plane else { return false }
             add(Feature(name: document.nextName("Hole"), .hole(HoleFeature(face: ref, u: u, v: v))))
@@ -479,15 +491,6 @@ extension DocumentModel {
     private func parse(_ text: String) -> Double { (try? parameterValues.value(of: text, kind: .length)) ?? 20 }
 
     /// Where the latest click's ray meets a plane, in the plane's (u, v).
-    private func clickPoint(on frame: Frame) -> SIMD2<Double>? {
-        guard let ray = clickRay else { return nil }
-        let denom = simd_dot(ray.direction, frame.normal)
-        guard abs(denom) > 1e-9 else { return nil }
-        let t = simd_dot(frame.origin - ray.origin, frame.normal) / denom
-        let p = ray.origin + t * ray.direction - frame.origin
-        return SIMD2(simd_dot(p, frame.xAxis), simd_dot(p, frame.yAxis))
-    }
-
     /// The centre of a face's triangles, in the plane's (u, v).
     private func faceCenter(_ pick: PickID, on frame: Frame) -> SIMD2<Double>? {
         guard pick.isFace, let m = meshes[safe: pick.body]?.mesh else { return nil }

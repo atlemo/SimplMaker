@@ -10,7 +10,7 @@ import simd
 ///   body edge  0x8000_0000 | (body+1) << 20 | edge
 ///   sketch     0x4000_0000 point, 0x5000_0000 curve, 0x6000_0000 profile region | slot << 16 | index
 ///              (slot 0 = the sketch being edited, n = the n-th sketch in the document)
-///   handle     0x7000_0000 (the extrude drag handle)
+///   handle     0x7000_0000 (the extrude drag handle), 0x7000_0001 (the dot that moves a hole)
 ///   plane      0x7100_0000 | index (an origin plane offered when choosing where to sketch)
 struct PickID: Hashable, Sendable {
     enum Kind: Sendable { case none, face, edge, sketchPoint, sketchCurve, region, handle, plane }
@@ -31,6 +31,8 @@ struct PickID: Hashable, Sendable {
     init(wholeBody i: Int) { raw = UInt32(i + 1) << 20 | 0xFFFFF }
     var isWholeBody: Bool { isFace && raw & 0xFFFFF == 0xFFFFF }
     static let handle = PickID(raw: 0x7000_0000)
+    /// The dot at a selected hole's centre, dragged to slide the hole over its face.
+    static let moveHandle = PickID(raw: 0x7000_0001)
 
     var kind: Kind {
         if raw == 0 { return .none }
@@ -84,6 +86,7 @@ struct SketchOverlay {
     var preview: [SegmentInstance] = []
     var points: [SegmentInstance] = []     // zero-length segments drawn as squares
     var handle: [SegmentInstance] = []     // drag handle: shaft + tip (zero-length)
+    var moveHandle: [SegmentInstance] = [] // a hole's move dot (zero-length)
     var snap: [SegmentInstance] = []       // where the cursor snapped: a zero-length marker
     var handleInvalid = false               // the previewed size can't be built
     var fullyConstrained = false
@@ -255,6 +258,7 @@ final class Renderer {
         var preview: MTLBuffer?, previewCount = 0
         var points: MTLBuffer?, pointCount = 0
         var handle: MTLBuffer?, handleCount = 0
+        var moveHandle: MTLBuffer?, moveHandleCount = 0
         var snap: MTLBuffer?, snapCount = 0
         var handleInvalid = false
         var fullyConstrained = false
@@ -376,6 +380,7 @@ final class Renderer {
         g.preview = makeBuffer(o.preview); g.previewCount = o.preview.count
         g.points = makeBuffer(o.points); g.pointCount = o.points.count
         g.handle = makeBuffer(o.handle); g.handleCount = o.handle.count
+        g.moveHandle = makeBuffer(o.moveHandle); g.moveHandleCount = o.moveHandle.count
         g.snap = makeBuffer(o.snap); g.snapCount = o.snap.count
         g.handleInvalid = o.handleInvalid
         g.fullyConstrained = o.fullyConstrained
@@ -685,6 +690,9 @@ final class Renderer {
             enc.setFragmentBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: 1)
         }
+        segments(overlay.moveHandle, overlay.moveHandleCount,
+                 DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: select,
+                            thickness: 12 * scale, depthBias: 0, pickable: 1))
         enc.endEncoding()
 
         if let pick = pickRequest, let idTexture,

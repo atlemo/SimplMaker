@@ -103,14 +103,15 @@ import Testing
     }
 
     @Test func holeOnTheSelectedFace() async throws {
+        // The front side: the middle of the top face is inside the plate's centre hole.
         let model = try await loaded(.demo())
-        let top = try #require(model.meshes.first?.mesh.faceNames.firstIndex(of: "plate.end"))
-        model.click(PickID(body: 0, face: top), additive: false)
+        let side = try #require(model.meshes.first?.mesh.faceNames.firstIndex(of: "plate.side.L0"))
+        model.click(PickID(body: 0, face: side), additive: false)
         let before = try #require(model.result?.body("plate")).volume
         model.run(.hole)
         #expect(model.pendingTool == nil, "a selected flat face is enough")
         guard case .hole(let h) = try lastFeature(model).kind else { Issue.record("expected a hole"); return }
-        #expect(h.face == FaceRef(body: "plate", face: "plate.end"))
+        #expect(h.face == FaceRef(body: "plate", face: "plate.side.L0"))
         try await settle(model)
         #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
         #expect(try #require(model.result?.body("plate")).volume < before)

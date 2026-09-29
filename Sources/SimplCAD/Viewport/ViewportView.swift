@@ -22,6 +22,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var dragged = false
     private var sketchDrag = false
     private var handleDrag = false
+    /// A hole's move dot is being dragged.
+    private var holeMoveDrag = false
     private var labels: [EntityID: DimensionLabelView] = [:]
     private var glyphViews: [String: ConstraintGlyphView] = [:]
     private var prompt: CursorPromptView?
@@ -281,7 +283,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             guard let h = model.hovered, tool.accepts(h.kind) else { return .arrow }
             return .pointingHand
         }
-        if model.hovered?.kind == .handle { return handleDrag ? .closedHand : .openHand }
+        if model.hovered?.kind == .handle { return handleDrag || holeMoveDrag ? .closedHand : .openHand }
         return .arrow
     }
 
@@ -400,6 +402,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if model?.sketchSession != nil {
             let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
             sketchDrag = sketchEvent(.down, at: p, additive: additive)
+        } else if let renderer, renderer.hovered == PickID.moveHandle.raw {
+            holeMoveDrag = true
+            model?.beginHoleMove()
+            updateCursor()
         } else if let renderer, PickID(raw: renderer.hovered).kind == .handle {
             handleDrag = true
             model?.beginHandleDrag()
@@ -412,6 +418,23 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             let p = location(event)
             lastPoint = p
             sketchEvent(.dragged, at: p, additive: false)
+            return
+        }
+        if holeMoveDrag, let renderer, let model {
+            let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
+            // How long 1 mm on the hole's face looks here, so the hole moves in round steps.
+            var pointsPerMM: Double?
+            if let (id, hole) = model.selectedHole, let face = model.holeFace(id, hole), let a = model.holeMoveDot {
+                let b = a + face.xAxis
+                if let pa = renderer.camera.project(SIMD3(Float(a.x), Float(a.y), Float(a.z)), viewSize: bounds.size),
+                   let pb = renderer.camera.project(SIMD3(Float(b.x), Float(b.y), Float(b.z)), viewSize: bounds.size) {
+                    pointsPerMM = Double(hypot(pb.x - pa.x, pb.y - pa.y))
+                }
+            }
+            model.moveHole(rayOrigin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                           direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)),
+                           pointsPerMM: pointsPerMM)
+            refreshOverlay()
             return
         }
         if handleDrag, let renderer {
@@ -435,7 +458,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { lastDrag = nil; sketchDrag = false; handleDrag = false; updateCursor() }
+        defer { lastDrag = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; updateCursor() }
+        if holeMoveDrag {
+            model?.endHoleMove()
+            refreshOverlay()
+            return
+        }
         if handleDrag {
             model?.endHandleDrag()
             refreshOverlay()
@@ -450,6 +478,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
         model.clickRay = (SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
                           SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)))
+        let next = renderer.camera.ray(at: CGPoint(x: location(event).x + 1, y: location(event).y), viewSize: bounds.size)
+        model.clickRayNext = (SIMD3(Double(next.origin.x), Double(next.origin.y), Double(next.origin.z)),
+                              SIMD3(Double(next.direction.x), Double(next.direction.y), Double(next.direction.z)))
         let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
         model.click(renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered), additive: additive)
         refreshOverlay()
@@ -469,6 +500,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let r = renderer.camera.ray(at: p, viewSize: bounds.size)
         let ray = (SIMD3(Double(r.origin.x), Double(r.origin.y), Double(r.origin.z)),
                    SIMD3(Double(r.direction.x), Double(r.direction.y), Double(r.direction.z)))
+        // For "Hole Here": how big a point is where the right-click lands (see clickRayNext).
+        let next = renderer.camera.ray(at: CGPoint(x: p.x + 1, y: p.y), viewSize: bounds.size)
+        model.clickRayNext = (SIMD3(Double(next.origin.x), Double(next.origin.y), Double(next.origin.z)),
+                              SIMD3(Double(next.direction.x), Double(next.direction.y), Double(next.direction.z)))
         let menu = ContextMenuBuilder.menu(model.contextItems(for: pick, ray: ray)) { [weak self] in self?.refreshOverlay() }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }

@@ -30,7 +30,7 @@ struct DocumentWindow: View {
 
     private var unlinkTitle: String {
         guard let p = model.unlinkPrompt else { return "" }
-        return "Replace \(p.expression) with \(formatDimension(p.value, kind: .length))?"
+        return "Replace \(p.expression) with \(p.valueText)?"
     }
 
     var body: some View {
@@ -138,7 +138,7 @@ struct DocumentWindow: View {
         .confirmationDialog(unlinkTitle, isPresented: Binding(get: { model.unlinkPrompt != nil },
                                                              set: { if !$0 { model.resolveUnlink(useValue: false) } }),
                             presenting: model.unlinkPrompt) { p in
-            Button("Use \(formatDimension(p.value, kind: .length))") { model.resolveUnlink(useValue: true) }
+            Button("Use \(p.valueText)") { model.resolveUnlink(useValue: true) }
             Button("Keep \(p.expression)", role: .cancel) { model.resolveUnlink(useValue: false) }
         } message: { p in
             Text("This size comes from the expression “\(p.expression)”. Using the dragged value replaces it with a fixed number, so it will no longer follow your parameters.")
@@ -242,9 +242,15 @@ struct StatusBar: View {
             Text("Select a plane or planar face to sketch on · Esc to cancel")
         } else if let tool = model.pendingTool, let prompt = model.toolPrompt {
             Text("\(tool.rawValue): \(prompt) · Esc to cancel")
+        } else if model.holeMoveStart != nil || model.hovered == .moveHandle {
+            Text(model.previewInvalid ? "The hole doesn't fit there — let go to keep it where it was"
+                                      : "Drag the orange dot to move the hole · it snaps to the face's centre lines")
+                .foregroundStyle(model.previewInvalid ? Color.red : Color.secondary)
         } else if let h = model.dragHandle, model.hovered == nil || model.hovered?.kind == .handle {
             Text(model.previewInvalid ? "That size doesn't fit — let go to keep the previous size"
-                                      : "Drag the orange arrow to change the \(h.label.lowercased()), or type it in the field next to it")
+                                      : model.selectedHole != nil
+                                        ? "Drag the orange dot to move the hole, or the arrow to change its depth"
+                                        : "Drag the orange arrow to change the \(h.label.lowercased()), or type it in the field next to it")
                 .foregroundStyle(model.previewInvalid ? Color.red : Color.secondary)
         } else if !model.selectedProfiles.isEmpty, model.hovered == nil {
             Text("Press E to extrude the selected profile\(model.selectedProfiles.count == 1 ? "" : "s"), or pick another tool")

@@ -48,7 +48,8 @@ public struct RegenResult: Sendable {
     /// For fillets/chamfers: the bodies as they were just before the feature (keyed by body id),
     /// so drag handles can sit on edges that the feature itself rounds away.
     public var edgeFeatureInputs: [FeatureID: [FeatureID: KBody]] = [:]
-    /// For face extrudes: the body as it was before, so the handle can sit on the original face.
+    /// For face extrudes and holes: the body as it was before, so the handle can sit on the original
+    /// face (and a hole finds that face's centre); for moves, rotates and patterns: the bodies they take.
     public var featureInputs: [FeatureID: [FeatureID: KBody]] = [:]
     /// For moves: the sketches as they were before, so the handle can sit where they were.
     public var sketchInputs: [FeatureID: [FeatureID: SketchResult]] = [:]
@@ -552,6 +553,8 @@ public enum Regenerator {
         let tip = f.depth == nil ? 0 : try p.value(of: f.tipAngle, kind: .angle)
         let tool = try KBody.hole(at: frame, kind, diameter: try p.value(of: f.diameter, kind: .length), depth: depth,
                                   tipAngle: tip, featureID: feature.id)
+        // The face as it was before the cut: its centre doesn't move with the hole (see the move dot).
+        r.featureInputs[feature.id] = [f.face.body: r.bodies[i].body]
         r.bodies[i].body = try r.bodies[i].body.boolean(tool, SK_CUT)
     }
 

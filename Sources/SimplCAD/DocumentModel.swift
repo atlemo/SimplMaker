@@ -82,6 +82,8 @@ final class DocumentModel {
     var reselecting: FeatureID?
     /// The pointer ray of the latest click in the viewport, for placing things where the user clicked.
     @ObservationIgnored var clickRay: (origin: SIMD3<Double>, direction: SIMD3<Double>)?
+    /// The ray one point to the right of the click: how big a point is where the click lands.
+    @ObservationIgnored var clickRayNext: (origin: SIMD3<Double>, direction: SIMD3<Double>)?
     /// Side length of the origin plane squares shown while picking, in mm.
     var sketchPlaneSize: Double = 25
     /// Bumped whenever the sketch overlay needs rebuilding.
@@ -818,6 +820,11 @@ final class DocumentModel {
                         SegmentInstance(ax: fb.x, ay: fb.y, az: fb.z, bx: fb.x, by: fb.y, bz: fb.z, id: id)]
             o.handleInvalid = previewInvalid
         }
+        if let p = holeMoveDot {
+            let f = SIMD3<Float>(Float(p.x), Float(p.y), Float(p.z)), id = PickID.moveHandle.raw
+            o.moveHandle = [SegmentInstance(ax: f.x, ay: f.y, az: f.z, bx: f.x, by: f.y, bz: f.z, id: id)]
+            o.handleInvalid = previewInvalid
+        }
         for (i, id) in sketchSlots.enumerated() where isSketchShown(id) {
             guard let r = result?.sketches[id] else { continue }
             SketchOverlayBuilder.finished(r, slot: i + 1, parameters: parameterValues, into: &o)
@@ -890,9 +897,20 @@ final class DocumentModel {
         var expression: String
         var value: Double
         var startValue: Double?
+        /// A hole dragged over its face (X and Y together), instead of one size.
+        var holePosition: SIMD2<Double>?
+
+        /// The dragged value, as the prompt shows it.
+        var valueText: String {
+            if let uv = holePosition { return "\(formatDimension(uv.x, kind: .length)), \(formatDimension(uv.y, kind: .length))" }
+            return formatDimension(value, kind: unit)
+        }
     }
 
     @ObservationIgnored private var handleDragStart: CADDocument?
+    /// The document when a hole's move dot was grabbed, and where the dot is being dragged (in the face's u, v).
+    @ObservationIgnored var holeMoveStart: CADDocument?
+    var holeMovePreview: SIMD2<Double>?
     private(set) var handlePreviewValue: Double?
     /// The latest preview failed (e.g. a fillet too big for its faces); the last good model stays visible.
     private(set) var previewInvalid = false
@@ -922,7 +940,7 @@ final class DocumentModel {
     }
 
     var dragHandle: DragHandle? {
-        guard sketchSession == nil, pendingTool == nil, let id = selectedFeature else { return nil }
+        guard sketchSession == nil, pendingTool == nil, holeMoveStart == nil, let id = selectedFeature else { return nil }
         return handle(for: id)
     }
 
@@ -1031,6 +1049,110 @@ final class DocumentModel {
         }
     }
 
+    // MARK: moving a hole
+
+    /// The selected hole, when its move dot shows (as with the drag handle: no sketch, no tool waiting).
+    var selectedHole: (id: FeatureID, hole: HoleFeature)? {
+        guard sketchSession == nil, pendingTool == nil, let id = selectedFeature,
+              let f = document.features.first(where: { $0.id == id }), !f.suppressed, case .hole(let hole) = f.kind else { return nil }
+        return (id, hole)
+    }
+
+    /// The plane of a hole's face; the hole's (u, v) are in it.
+    func holeFace(_ id: FeatureID, _ hole: HoleFeature) -> Frame? {
+        guard let result, let body = result.featureInputs[id]?[hole.face.body] ?? result.body(hole.face.body) else { return nil }
+        return try? body.faceFrame(hole.face.face)
+    }
+
+    /// The middle of a hole's face outline (as it was before the hole), in the face's (u, v).
+    func holeFaceCenter(_ id: FeatureID, _ hole: HoleFeature, on face: Frame) -> SIMD2<Double>? {
+        guard let body = result?.featureInputs[id]?[hole.face.body], let c = try? body.faceOutlineCenter(hole.face.face) else { return nil }
+        return Self.uv(of: c, on: face)
+    }
+
+    /// Where the selected hole's move dot is: the hole's centre, or where it's being dragged.
+    var holeMoveDot: SIMD3<Double>? {
+        guard let (id, hole) = selectedHole, let face = holeFace(id, hole) else { return nil }
+        if let uv = holeMovePreview { return face.point(uv.x, uv.y) }
+        guard let result, let frame = try? Regenerator.holeFrame(hole, result) else { return nil }
+        return frame.origin
+    }
+
+    func beginHoleMove() {
+        guard selectedHole != nil else { return }
+        holeMoveStart = document
+    }
+
+    /// Slides the hole to where the mouse ray meets its face, in round steps of about 6 points
+    /// (`pointsPerMM`: how long 1 mm on the face looks), and onto the face's centre lines when within
+    /// 10 points of them. Previews the result.
+    func moveHole(rayOrigin o: SIMD3<Double>, direction d: SIMD3<Double>, pointsPerMM: Double?) {
+        guard let start = holeMoveStart, let (id, hole) = selectedHole, let face = holeFace(id, hole),
+              let hit = Self.intersect(ray: (o, d), with: face) else { return }
+        var uv = hit
+        if let ppm = pointsPerMM, ppm > 1e-9 {
+            let center = holeFaceCenter(id, hole, on: face)
+            let c = center ?? .zero
+            let step = ViewportMTKView.niceStep(6 / ppm)
+            uv = c + ((uv - c) / step).rounded(.toNearestOrAwayFromZero) * step
+            if let center { uv = Self.snap(uv, to: center, tolerance: 10 / ppm) }
+        }
+        holeMovePreview = uv
+        var preview = start
+        Self.setHolePosition(uv, of: id, in: &preview)
+        regenerate(preview: preview, previewFeature: id)
+        overlayRevision += 1
+    }
+
+    func endHoleMove() {
+        guard holeMoveStart != nil else { return }
+        defer { holeMoveStart = nil; holeMovePreview = nil; overlayRevision += 1 }
+        guard let (id, hole) = selectedHole, let uv = holeMovePreview else { return }
+        if previewInvalid {
+            // Dropped where the hole can't be made: go back to where it was.
+            previewInvalid = false
+            regenerate()
+            return
+        }
+        if Self.isParametric(hole.u) || Self.isParametric(hole.v) {
+            unlinkPrompt = UnlinkPrompt(featureID: id, label: "Position", unit: .length, expression: "\(hole.u), \(hole.v)",
+                                        value: 0, holePosition: uv)
+            return  // the preview stays on screen until the user answers
+        }
+        commitHoleMove(id, to: uv)
+    }
+
+    func commitHoleMove(_ id: FeatureID, to uv: SIMD2<Double>) {
+        mutate("Move Hole") { Self.setHolePosition(uv, of: id, in: &$0) }
+    }
+
+    static func setHolePosition(_ uv: SIMD2<Double>, of id: FeatureID, in doc: inout CADDocument) {
+        guard let i = doc.index(of: id), case .hole(var h) = doc.features[i].kind else { return }
+        h.u = formatDimension(uv.x, kind: .length)
+        h.v = formatDimension(uv.y, kind: .length)
+        doc.features[i].kind = .hole(h)
+    }
+
+    /// Moves each coordinate onto the centre's when it's within `tolerance` of it: the point lands on
+    /// the centre, or on one of the lines through it.
+    static func snap(_ p: SIMD2<Double>, to center: SIMD2<Double>, tolerance: Double) -> SIMD2<Double> {
+        SIMD2(abs(p.x - center.x) <= tolerance ? center.x : p.x, abs(p.y - center.y) <= tolerance ? center.y : p.y)
+    }
+
+    /// A point in a plane's (u, v).
+    static func uv(of point: SIMD3<Double>, on frame: Frame) -> SIMD2<Double> {
+        let p = point - frame.origin
+        return SIMD2(simd_dot(p, frame.xAxis), simd_dot(p, frame.yAxis))
+    }
+
+    /// Where a ray meets a plane, in the plane's (u, v); nil when the ray runs along the plane.
+    static func intersect(ray: (origin: SIMD3<Double>, direction: SIMD3<Double>), with frame: Frame) -> SIMD2<Double>? {
+        let denom = simd_dot(ray.direction, frame.normal)
+        guard abs(denom) > 1e-9 else { return nil }
+        let t = simd_dot(frame.origin - ray.origin, frame.normal) / denom
+        return uv(of: ray.origin + t * ray.direction, on: frame)
+    }
+
     /// A move's distance along one axis, as stored.
     static func component(_ m: MoveFeature, _ a: Axis3) -> String {
         switch a {
@@ -1113,7 +1235,9 @@ final class DocumentModel {
     func resolveUnlink(useValue: Bool) {
         guard let p = unlinkPrompt else { return }
         unlinkPrompt = nil
-        if useValue {
+        if useValue, let uv = p.holePosition {
+            commitHoleMove(p.featureID, to: uv)
+        } else if useValue {
             commitHandle(p.featureID, p.label, formatDimension(p.value, kind: p.unit), from: p.startValue, to: p.value)
         } else {
             regenerate()

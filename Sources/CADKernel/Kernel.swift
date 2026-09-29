@@ -280,6 +280,14 @@ public final class KBody: @unchecked Sendable {
         return SIMD3(o[0], o[1], o[2])
     }
 
+    /// The middle of a face's outline: the centre of the area inside its outer edge, so holes
+    /// already in the face don't pull it aside.
+    public func faceOutlineCenter(_ name: String) throws -> SIMD3<Double> {
+        var o = [Double](repeating: 0, count: 3)
+        guard sk_body_face_outline_center(handle, name, &o) else { throw KernelError.last("face centre") }
+        return SIMD3(o[0], o[1], o[2])
+    }
+
     public func faceFrame(_ name: String) throws -> Frame {
         var f = SKFrame()
         guard sk_body_face_frame(handle, name, &f) else { throw KernelError.last("sketch plane") }

@@ -140,6 +140,8 @@ int sk_body_loop_edges(SKHandle body, const char *faceName, const char *edgeName
 SKHandle sk_body_face_profile(SKHandle body, const char *faceName);
 /// Centre of mass of a face.
 bool sk_body_face_center(SKHandle body, const char *faceName, double out[3]);
+/// Centre of the area inside a face's outer boundary (holes in the face ignored).
+bool sk_body_face_outline_center(SKHandle body, const char *faceName, double out[3]);
 /// Frame of a planar face (normal points out of the material). False if missing / not planar.
 bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out);
 /// Drag handle for a fillet/chamfer on an edge: out[0..2] = edge midpoint, out[3..5] = unit

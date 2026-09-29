@@ -1542,6 +1542,31 @@ bool sk_body_face_center(SKHandle body, const char *faceName, double out[3]) {
   SK_CATCH(false)
 }
 
+bool sk_body_face_outline_center(SKHandle body, const char *faceName, double out[3]) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->faceIndex.find(faceName);
+  if (it == b->faceIndex.end()) {
+    setError(std::string("face not found: ") + faceName);
+    return false;
+  }
+  // The centre of the area inside the face's outer boundary: holes in the face don't pull it aside.
+  const TopoDS_Face &f = TopoDS::Face(b->faces(it->second + 1));
+  TopoDS_Wire outer = BRepTools::OuterWire(f);
+  GProp_GProps props;
+  if (!outer.IsNull()) {
+    BRepBuilderAPI_MakeFace filled(BRep_Tool::Surface(f), outer, Standard_True);
+    if (filled.IsDone()) BRepGProp::SurfaceProperties(filled.Face(), props);
+  }
+  if (std::abs(props.Mass()) < 1e-12) BRepGProp::SurfaceProperties(f, props);  // no usable outline: the face itself
+  gp_Pnt c = props.CentreOfMass();
+  out[0] = c.X(); out[1] = c.Y(); out[2] = c.Z();
+  return true;
+  SK_CATCH(false)
+}
+
 bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out) {
   SK_TRY
   Body *b;
