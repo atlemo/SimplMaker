@@ -12,7 +12,7 @@ import simd
 enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
-    case fillet = "Fillet", chamfer = "Chamfer", move = "Move", rotate = "Rotate", combine = "Combine"
+    case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", rotate = "Rotate", combine = "Combine"
     case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell"
 
     var id: String { rawValue }
@@ -21,7 +21,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// change an existing body.
     static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
-    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .shell, .move, .rotate, .combine]
+    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .move, .rotate, .combine]
     /// Construction planes, and copies of bodies.
     static let construct: [DesignTool] = [.plane, .mirror, .pattern]
 
@@ -42,6 +42,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .pipe: return "waypoints"
         case .fillet: return "fillet"
         case .chamfer: return "chamfer"
+        case .thread: return "thread"
         case .move: return "move"
         case .rotate: return "rotate-cw"
         case .combine: return "combine"
@@ -69,6 +70,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .coil: return "k"
         case .fillet: return "f"
         case .chamfer: return "c"
+        case .thread: return "d"
         case .hole: return "h"
         case .shell: return "s"
         case .move: return "m"
@@ -98,6 +100,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .move: return "Move (M): slide bodies or sketches along X, Y or Z"
         case .rotate: return "Rotate (O): turn a body about an X, Y or Z axis"
         case .chamfer: return "Chamfer (C): bevel the selected edges, or every edge around a selected face"
+        case .thread: return "Thread (D): cut a metric or inch screw thread on a shaft or in a hole"
         case .combine: return "Combine (J): join, cut or intersect bodies (e.g. cut text out of a plate)"
         case .plane: return "Plane (N): a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
         case .mirror: return "Mirror (I): copy bodies across a plane"
@@ -138,7 +141,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .loft: return kind == .region
         case .revolve, .sweep: return kind == .region || kind == .sketchCurve
         case .rib, .pipe: return kind == .sketchCurve
-        case .hole: return kind == .face
+        case .hole, .thread: return kind == .face
         case .box, .cylinder, .sphere, .torus, .coil: return kind == .plane || kind == .face
         case .fillet, .chamfer: return kind == .edge || kind == .face  // a face: every edge around it
         case .move: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve
@@ -194,6 +197,11 @@ extension DocumentModel {
             if place(tool, on: pick) { pendingTool = nil }
             return
         }
+        if tool == .thread {
+            if addThread(on: pick) { pendingTool = nil } else { toolMissed = true }
+            overlayRevision += 1
+            return
+        }
         guard accepts(pick) else { return }
         if let i = selection.firstIndex(of: pick) { selection.remove(at: i) } else { selection.append(pick) }
         if perform(tool) { pendingTool = nil }
@@ -219,6 +227,9 @@ extension DocumentModel {
         case .rib: return "Select an open sketch curve for the rib"
         case .pipe: return "Select sketch curves for the pipe's path"
         case .hole: return "Click a flat face where the hole goes"
+        case .thread:
+            return toolMissed ? "That face isn't round · click the side of a shaft, the wall of a hole, or a face next to one"
+                : "Click the side of a shaft or the wall of a hole to thread"
         case .box, .cylinder, .sphere, .torus, .coil:
             return "Click a plane or flat face to place the \(tool.rawValue.lowercased())"
         case .move: return "Click the bodies or sketches to move"
@@ -300,6 +311,9 @@ extension DocumentModel {
             // With a flat face already selected, place it at the face's centre.
             guard selection.count == 1, let pick = selection.first, pick.isFace else { return false }
             return place(tool, on: pick)
+        case .thread:
+            guard selection.count == 1, let pick = selection.first, pick.isFace, roundFace(pick) != nil else { return false }
+            return addThread(on: pick)
         case .fillet, .chamfer:
             guard selectedEdgeCount + selection.filter(\.isFace).count > 0, !waiting else { return false }
             addEdgeFeature(fillet: tool == .fillet)
@@ -458,6 +472,70 @@ extension DocumentModel {
         if kind == .torus { p.tube = formatDimension(parse(size) / 4, kind: .length) }
         add(Feature(name: document.nextName(kind.rawValue), .primitive(p)))
         return true
+    }
+
+    /// Threads a picked round face, in the size that suits it (see ThreadSize.best). False if the
+    /// face isn't round and doesn't border a round face (see roundFace).
+    @discardableResult
+    func addThread(on pick: PickID) -> Bool {
+        defer { clickRay = nil; clickRayNext = nil }
+        guard let ref = roundFace(pick), let cyl = try? result?.body(ref.body)?.faceCylinder(ref.face),
+              let (standard, size) = ThreadSize.best(forDiameter: 2 * cyl.radius, hole: cyl.isHole) else { return false }
+        add(Feature(name: document.nextName("Thread"), .thread(ThreadFeature(face: ref, standard: standard, size: size.name))))
+        return true
+    }
+
+    /// The round face to thread for a picked face: the face itself, or for a flat face (a shaft's end,
+    /// a face with a hole in it) the round face next to it, the one nearest the pointer's `ray` (by
+    /// default the click's) when there are several.
+    func roundFace(_ pick: PickID, ray: (origin: SIMD3<Double>, direction: SIMD3<Double>)? = nil) -> FaceRef? {
+        guard let ref = faceRef(pick), let body = result?.body(ref.body) else { return nil }
+        let round: [(face: String, cylinder: KCylinder)]
+        if let known = roundNeighbors[ref] {
+            round = known
+        } else if let c = try? body.faceCylinder(ref.face) {
+            round = [(ref.face, c)]
+            roundNeighbors[ref] = round
+        } else {
+            var found: [(face: String, cylinder: KCylinder)] = []
+            for edge in (try? body.faceEdges(ref.face)) ?? [] {
+                for face in (try? body.edgeFaces(edge)) ?? [] where face != ref.face && !found.contains(where: { $0.face == face }) {
+                    if let c = try? body.faceCylinder(face) { found.append((face, c)) }
+                }
+            }
+            round = found
+            roundNeighbors[ref] = found
+        }
+        guard round.count > 1 else { return round.first.map { FaceRef(body: ref.body, face: $0.face) } }
+        // Several (a plate with holes): the one whose axis passes nearest the pointer on the face.
+        guard let ray = ray ?? clickRay, let frame = try? body.faceFrame(ref.face), let uv = Self.intersect(ray: ray, with: frame)
+        else { return nil }
+        let p = frame.point(uv.x, uv.y)
+        func distance(_ c: KCylinder) -> Double {
+            let d = p - c.start
+            return simd_length(d - simd_dot(d, c.direction) * c.direction)
+        }
+        return round.min { distance($0.cylinder) < distance($1.cylinder) }.map { FaceRef(body: ref.body, face: $0.face) }
+    }
+
+    /// What shows in blue for threading: while the Thread tool waits, the round face a click would
+    /// thread; while a Thread feature is selected, the section it threaded.
+    var threadHighlight: [UInt32] {
+        guard sketchSession == nil else { return [] }
+        if pendingTool == .thread {
+            guard let h = hovered, h.isFace, let ref = roundFace(h, ray: hoverRay) else { return [] }
+            return facePicks { $0.id == ref.body ? $1 == ref.face : false }
+        }
+        guard pendingTool == nil, let id = selectedFeature, let f = document.features.first(where: { $0.id == id }),
+              !f.suppressed, case .thread = f.kind else { return [] }
+        return facePicks { _, name in name.hasPrefix("\(id).thread") }
+    }
+
+    /// Pick IDs of the faces (on shown bodies) that pass the test.
+    private func facePicks(_ test: (BodyMesh, String) -> Bool) -> [UInt32] {
+        visibleMeshes.flatMap { m in
+            m.mesh.faceNames.enumerated().filter { test(m, $0.element) }.map { PickID(body: m.index, face: $0.offset).raw }
+        }
     }
 
     // MARK: helpers

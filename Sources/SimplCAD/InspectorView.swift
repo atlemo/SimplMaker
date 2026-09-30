@@ -39,6 +39,7 @@ struct InspectorView: View {
                 case .loft(let f): LoftInspector(model: model, id: id, loft: f)
                 case .rib(let f): RibInspector(model: model, id: id, rib: f)
                 case .hole(let f): HoleInspector(model: model, id: id, hole: f)
+                case .thread(let f): ThreadInspector(model: model, id: id, thread: f)
                 case .primitive(let f): PrimitiveInspector(model: model, id: id, primitive: f)
                 case .pipe(let f): PipeInspector(model: model, id: id, pipe: f)
                 case .move(let f): MoveInspector(model: model, id: id, move: f)
@@ -647,6 +648,72 @@ struct HoleInspector: View {
         Section("Position on \(hole.face.face)") {
             edit.row("X", hole.u, "Move Hole") { $0.u = $1 }
             edit.row("Y", hole.v, "Move Hole") { $0.v = $1 }
+        }
+    }
+}
+
+struct ThreadInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let thread: ThreadFeature
+
+    var edit: FeatureEdit<ThreadFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .thread(let t) = $0 { t } else { nil } }, wrap: { .thread($0) })
+    }
+
+    /// The face as it was before the thread.
+    private var cylinder: KCylinder? {
+        try? model.result?.featureInputs[id]?[thread.face.body]?.faceCylinder(thread.face.face, flipped: thread.flipped)
+    }
+
+    private var size: ThreadSize? { thread.standard.size(thread.size) }
+
+    private func mm(_ x: Double) -> String { formatDimension(x, kind: .length) }
+
+    var body: some View {
+        Section("Thread") {
+            if let cylinder {
+                LabeledContent("Kind", value: cylinder.isHole ? "Internal (in a hole)" : "External (on a shaft)")
+            }
+            Picker("Standard", selection: Binding(get: { thread.standard }, set: { standard in
+                // Keep about the same diameter in the new standard.
+                let d = size?.diameter ?? 6
+                let nearest = standard.sizes.min { abs($0.diameter - d) < abs($1.diameter - d) }
+                edit.update("Change Thread Standard") { $0.standard = standard; $0.size = nearest?.name ?? $0.size }
+            })) {
+                ForEach(ThreadStandard.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            Picker("Size", selection: Binding(get: { thread.size }, set: { name in
+                edit.update("Change Thread Size") { $0.size = name }
+            })) {
+                ForEach(thread.standard.sizes, id: \.name) { Text($0.label(thread.standard)).tag($0.name) }
+                if size == nil { Text(thread.size).tag(thread.size) }  // from a file with a size we don't list
+            }
+            if let size {
+                LabeledContent("Pitch", value: thread.standard.isInch
+                               ? "\(mm(size.pitch)) (\(Int((25.4 / size.pitch).rounded())) per inch)" : mm(size.pitch))
+                LabeledContent("Major Ø", value: mm(size.diameter))
+                LabeledContent("Minor Ø", value: mm(size.minorDiameter))
+                if cylinder?.isHole == true { LabeledContent("Tap drill", value: mm(size.tapDrill)) }
+            }
+            Picker("Length", selection: Binding(get: { thread.length == nil }, set: { full in
+                let half = cylinder.map { mm(($0.length / 2).rounded()) } ?? "10 mm"
+                edit.update("Change Thread Length") { $0.length = full ? nil : half }
+            })) {
+                Text("Full length").tag(true)
+                Text("Distance").tag(false)
+            }
+            if let length = thread.length {
+                edit.row("Distance", length, "Edit Thread Length") { $0.length = $1 }
+                Toggle("Start from the other end", isOn: Binding(get: { thread.flipped }, set: { v in
+                    edit.update("Flip Thread") { $0.flipped = v }
+                }))
+            }
+            Toggle("Left-handed", isOn: Binding(get: { thread.leftHanded }, set: { v in
+                edit.update(v ? "Make Thread Left-Handed" : "Make Thread Right-Handed") { $0.leftHanded = v }
+            }))
+            Text("A modeled thread with the basic 60° profile. The face is turned or bored to the thread's diameters first.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }

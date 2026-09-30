@@ -188,6 +188,8 @@ enum IconGlyphs {
     "square-center": "<rect width=\"18\" height=\"14\" x=\"3\" y=\"5\" rx=\"1\" /><circle cx=\"12\" cy=\"12\" r=\"1.4\" fill=\"currentColor\" stroke=\"none\" />",
     "arc-3-point": "<path d=\"M4 18A9 9 0 0 1 20 18\" /><circle cx=\"4\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"12\" cy=\"9.6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"20\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",
     "corner-round": "<path d=\"M4 20v-8a8 8 0 0 1 8-8h8\" /><circle cx=\"4\" cy=\"4\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\" />",
+    // A threaded shaft: its outline, with the thread's slanted crests across it.
+    "thread": "<rect width=\"12\" height=\"20\" x=\"6\" y=\"2\" rx=\"1.5\" /><path d=\"m6 8.75 12-3.5\" /><path d=\"m6 14 12-3.5\" /><path d=\"m6 19.25 12-3.5\" />",
     // A box with its front-right edge cut (chamfer) or rounded (fillet); the new face is shaded.
     "chamfer": "<path d=\"M10 8 15 3l6 6-5 5Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 21V8l5-5h7l6 6v7l-5 5Z\" /><path d=\"M3 8h7l6 6v7\" /><path d=\"m10 8 5-5\" /><path d=\"m16 14 5-5\" />",
     "fillet": "<path d=\"M10 8A6 6 0 0 1 16 14l5-5A6 6 0 0 0 15 3Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 21V8l5-5h7A6 6 0 0 1 21 9v7l-5 5Z\" /><path d=\"M3 8h7A6 6 0 0 1 16 14v7\" /><path d=\"m10 8 5-5\" /><path d=\"m16 14 5-5\" />",

@@ -118,6 +118,45 @@ import Testing
         #expect(model.dragHandle?.label == "Depth")
     }
 
+    @Test func threadWaitsForARoundFaceAndPicksTheSizeThatFits() async throws {
+        var doc = CADDocument()
+        doc.features = [Feature(id: "c", name: "Cylinder1", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy,
+                                                                                         height: "20 mm", diameter: "10 mm"))),
+                        Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "40 mm")))]
+        let model = try await loaded(doc)
+        let names = try #require(model.meshes.first?.mesh.faceNames)
+        let box = try #require(model.meshes.firstIndex { $0.id == "b" })
+        model.run(.thread)
+        #expect(model.pendingTool == .thread)
+        let boxTop = try #require(model.meshes[box].mesh.faceNames.firstIndex(of: "b.top"))
+        model.click(PickID(body: box, face: boxTop), additive: false)
+        #expect(model.pendingTool == .thread && model.alert == nil, "a face with nothing round by it is ignored")
+        #expect(model.cursorPrompt?.hasPrefix("That face isn't round") == true)
+        #expect(model.threadHighlight.isEmpty)
+        // The shaft's flat end borders its round side: that's the face to thread, and it lights up.
+        let top = PickID(body: 0, face: try #require(names.firstIndex(of: "c.top")))
+        model.hover(top)
+        #expect(model.highlighted == [PickID(body: 0, face: try #require(names.firstIndex(of: "c.side"))).raw])
+        model.click(top, additive: false)
+        #expect(model.pendingTool == nil)
+        guard case .thread(let t) = try lastFeature(model).kind else { Issue.record("expected a thread"); return }
+        #expect(t.standard == .metric && t.size == "M10x1.5" && t.length == nil)
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        #expect(model.dragHandle == nil, "a full-length thread has no length to drag")
+        // While it's selected, the threaded section shows.
+        let threaded = model.threadHighlight
+        #expect(!threaded.isEmpty && threaded.allSatisfy { raw in
+            model.meshes[0].mesh.faceNames[PickID(raw: raw).element].contains(".thread")
+        })
+        model.updateFeature(try lastFeature(model).id, "Length") { f in
+            if case .thread(var t) = f.kind { t.length = "8 mm"; f.kind = .thread(t) }
+        }
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        #expect(model.dragHandle?.label == "Length")
+    }
+
     @Test func pipeFollowsAChainOfCurves() async throws {
         var s = Sketch()
         let a = s.addPoint(0, 0), b = s.addPoint(0, 30), c = s.addPoint(20, 30), d = s.addPoint(50, 50)

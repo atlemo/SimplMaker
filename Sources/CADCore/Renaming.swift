@@ -63,6 +63,7 @@ extension Feature.Kind {
             f.tipAngle = change(f.tipAngle); f.headDiameter = change(f.headDiameter)
             f.headDepth = change(f.headDepth); f.headAngle = change(f.headAngle)
             self = .hole(f)
+        case .thread(var f): f.length = f.length.map(change); self = .thread(f)
         case .primitive(var f):
             f.u = change(f.u); f.v = change(f.v); f.width = change(f.width); f.length = change(f.length)
             f.height = change(f.height); f.diameter = change(f.diameter); f.tube = change(f.tube)
@@ -144,6 +145,7 @@ extension Feature {
         case .loft(let f): f.sections.forEach { add($0.sketch) }; add(f.target)
         case .rib(let f): add(f.path.sketch); add(f.target)
         case .hole(let f): add(f.face.body)
+        case .thread(let f): add(f.face.body)
         case .primitive(let f): add(f.plane.feature); add(f.target)
         case .pipe(let f): add(f.path.sketch); add(f.target)
         case .fillet(let f), .chamfer(let f): f.edges.forEach { add($0.body) }; f.faces.forEach { add($0.body) }
@@ -173,6 +175,7 @@ extension Feature {
         case .loft(let f): if f.operation != .newBody { add(f.target) }
         case .rib(let f): add(f.target)
         case .hole(let f): out.insert(f.face.body)
+        case .thread(let f): out.insert(f.face.body)
         case .primitive(let f): if f.operation != .newBody { add(f.target) }
         case .pipe(let f): if f.operation != .newBody { add(f.target) }
         case .fillet(let f), .chamfer(let f): f.edges.forEach { out.insert($0.body) }; f.faces.forEach { out.insert($0.body) }

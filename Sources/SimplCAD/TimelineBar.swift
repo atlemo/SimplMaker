@@ -17,6 +17,7 @@ extension Feature {
         case .loft: return DesignTool.loft.symbol
         case .rib: return DesignTool.rib.symbol
         case .hole: return DesignTool.hole.symbol
+        case .thread: return DesignTool.thread.symbol
         case .pipe: return DesignTool.pipe.symbol
         case .move: return DesignTool.move.symbol
         case .rotate: return DesignTool.rotate.symbol

@@ -145,6 +145,7 @@ public enum Regenerator {
                 case .loft(let f): try loft(f, feature, &r)
                 case .rib(let f): try rib(f, feature, &r)
                 case .hole(let f): try hole(f, feature, &r)
+                case .thread(let f): try thread(f, feature, &r)
                 case .primitive(let f): try primitive(f, feature, &r)
                 case .pipe(let f): try pipe(f, feature, &r)
                 case .move(let f): try move(f, feature, &r)
@@ -563,6 +564,20 @@ public enum Regenerator {
         // The face as it was before the cut: its centre doesn't move with the hole (see the move dot).
         r.featureInputs[feature.id] = [f.face.body: r.bodies[i].body]
         r.bodies[i].body = try r.bodies[i].body.boolean(tool, SK_CUT)
+    }
+
+    static func thread(_ f: ThreadFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        guard let i = r.bodies.firstIndex(where: { $0.id == f.face.body }) else {
+            throw KernelError(message: "the body with the thread's face is missing")
+        }
+        guard let size = f.standard.size(f.size) else { throw KernelError(message: "there is no \(f.standard.rawValue) size \(f.size)") }
+        let length = try f.length.map { try r.parameters.value(of: $0, kind: .length) }
+        if let length, length <= 0 { throw KernelError(message: "the thread length must be positive") }
+        // The body as it was: the face (and so the length handle) is found on it.
+        r.featureInputs[feature.id] = [f.face.body: r.bodies[i].body]
+        r.bodies[i].body = try r.bodies[i].body.thread(face: f.face.face, majorDiameter: size.diameter, pitch: size.pitch,
+                                                       length: length, flipped: f.flipped, leftHanded: f.leftHanded,
+                                                       featureID: feature.id)
     }
 
     /// The frame a primitive stands on: its plane, moved to (u, v).

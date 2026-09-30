@@ -22,7 +22,7 @@ import Testing
 
     @Test func toolbarIconsUsedInSimplCADAreDefined() {
         let used = ["cuboid", "cylinder", "globe", "torus", "orbit", "waypoints", "layers", "layers-2",
-                    "square-split-horizontal", "circle-dot", "rotate-3d", "spline", "fillet", "chamfer",
+                    "square-split-horizontal", "circle-dot", "rotate-3d", "spline", "fillet", "chamfer", "thread",
                     "pen-tool", "circle-x", "focus", "mouse-pointer-2", "minus", "square", "circle",
                     "dot", "scissors", "arrow-up-right", "ruler", "link", "expand", "square-dashed", "corner-round", "file-box"]
         for name in used {

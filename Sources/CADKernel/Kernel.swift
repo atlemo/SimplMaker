@@ -148,6 +148,16 @@ public enum KPrimitive: Sendable {
     case coil(diameter: Double, section: Double, pitch: Double, turns: Double)
 }
 
+/// A round face (see KBody.faceCylinder): the axis from the end a thread starts at, going along the face.
+public struct KCylinder: Sendable, Equatable {
+    public var start: SIMD3<Double>
+    public var direction: SIMD3<Double>
+    public var radius: Double
+    public var length: Double
+    /// The wall of a hole (material outside it), not the side of a shaft.
+    public var isHole: Bool
+}
+
 public enum KHole: Sendable {
     case simple
     case counterbore(diameter: Double, depth: Double)
@@ -256,6 +266,12 @@ public final class KBody: @unchecked Sendable {
         return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]))
     }
 
+    /// Cuts a thread into a round face (see sk_thread); `length` nil = the whole face.
+    public func thread(face: String, majorDiameter: Double, pitch: Double, length: Double?, flipped: Bool, leftHanded: Bool,
+                       featureID: String) throws -> KBody {
+        try KBody.wrap(sk_thread(handle, face, majorDiameter, pitch, length ?? 0, flipped, leftHanded, featureID), "thread")
+    }
+
     public func boolean(_ tool: KBody, _ op: SKBooleanOp) throws -> KBody {
         try KBody.wrap(sk_boolean(handle, tool.handle, op), "boolean")
     }
@@ -302,6 +318,14 @@ public final class KBody: @unchecked Sendable {
         var f = SKFrame()
         guard sk_body_face_frame(handle, name, &f) else { throw KernelError.last("sketch plane") }
         return Frame(f)
+    }
+
+    /// A round face: its axis from the end a thread starts at, radius, length, and whether it's a hole.
+    public func faceCylinder(_ name: String, flipped: Bool = false) throws -> KCylinder {
+        var o = [Double](repeating: 0, count: 9)
+        guard sk_body_face_cylinder(handle, name, flipped, &o) else { throw KernelError.last("round face") }
+        return KCylinder(start: SIMD3(o[0], o[1], o[2]), direction: SIMD3(o[3], o[4], o[5]), radius: o[6], length: o[7],
+                         isHole: o[8] > 0.5)
     }
 
     /// Names of the edges around a face (seams left out).

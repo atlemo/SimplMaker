@@ -98,6 +98,17 @@ typedef enum SKPrimitive { SK_BOX = 0, SK_CYLINDER = 1, SK_SPHERE = 2, SK_TORUS 
 /// Faces: "<featureId>.top|bottom|left|right|front|back|side|start|end".
 SKHandle sk_primitive(SKPrimitive kind, SKFrame frame, double a, double b, double c, double d, const char *featureId);
 
+/// A round face (the side of a shaft or the wall of a hole): out[0..2] = the point on its axis at the end a
+/// thread starts from (an end with air beyond it; `flipped` takes the other), out[3..5] = the unit axis
+/// direction from there along the face, out[6] = radius, out[7] = length, out[8] = 1 for a hole, else 0.
+bool sk_body_face_cylinder(SKHandle body, const char *faceName, bool flipped, double out[9]);
+/// Cuts a 60° thread (ISO metric or unified basic profile) into a round face: external on a shaft,
+/// internal in a hole. The face is turned down or bored out to the thread's diameters first (or
+/// filled out to them). length <= 0 = the whole face; the thread starts at the end
+/// sk_body_face_cylinder names. New faces: "<featureId>.thread", "<featureId>.thread.crest".
+SKHandle sk_thread(SKHandle body, const char *faceName, double majorDiameter, double pitch, double length, bool flipped,
+                   bool leftHanded, const char *featureId);
+
 /// A copy of a body moved by (dx, dy, dz), or turned by `angle` radians about the axis through
 /// (ox, oy, oz) along (ax, ay, az). Face and edge names are kept.
 SKHandle sk_translate(SKHandle body, double dx, double dy, double dz);

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -96,6 +97,7 @@
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Circ.hxx>
+#include <gp_Cylinder.hxx>
 #include <gp_Pln.hxx>
 #include <gp_Trsf.hxx>
 
@@ -563,6 +565,147 @@ bool sweepCircle(const TopoDS_Wire &spine, double radius, bool frenet, const std
   names.push_back({pipe.LastShape(), feat + ".end"});
   for (const TopoDS_Shape &g : pipe.Generated(circle))
     if (g.ShapeType() == TopAbs_FACE) names.push_back({g, feat + "." + surface});
+  return true;
+}
+
+
+/// A round face: the axis from the end a thread starts at (`start`, going along `dir`), its radius
+/// and length, whether it's a hole (material outside it), and whether there's air beyond each end.
+struct Cylinder {
+  gp_Pnt start;
+  gp_Dir dir;
+  gp_Dir radial;  // from the axis towards a point in the middle of the face
+  double radius = 0, length = 0;
+  bool internal = false, freeStart = false, freeEnd = false;
+};
+
+/// Works out a round face's Cylinder. A thread starts at an end with air beyond it (the tip of a
+/// shaft, the mouth of a hole), else at the end its axis points to; `flipped` takes the other end.
+bool cylinderOf(const Body &b, const TopoDS_Face &face, bool flipped, Cylinder &out) {
+  BRepAdaptor_Surface s(face);
+  if (s.GetType() != GeomAbs_Cylinder) {
+    setError("a thread needs a round face: the side of a shaft or the wall of a hole");
+    return false;
+  }
+  const gp_Cylinder cyl = s.Cylinder();
+  const gp_Pnt origin = cyl.Axis().Location();
+  gp_Dir d = cyl.Axis().Direction();
+  double u0, u1, v0, v1;
+  BRepTools::UVBounds(face, u0, u1, v0, v1);
+  if (u1 - u0 < M_PI - 1e-6) {  // a fillet along a straight edge, say
+    setError("a thread needs a face that goes round (a shaft or a hole), not part of one");
+    return false;
+  }
+  gp_Pnt p;
+  gp_Vec du, dv;
+  s.D1((u0 + u1) / 2, (v0 + v1) / 2, p, du, dv);
+  gp_Vec n = du.Crossed(dv);
+  if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+  const gp_Pnt mid = origin.Translated(gp_Vec(d) * ((v0 + v1) / 2));
+  const gp_Vec toFace(mid, p);
+  if (toFace.Magnitude() < Precision::Confusion()) {
+    setError("the round face is degenerate");
+    return false;
+  }
+  out.radial = gp_Dir(toFace);
+  out.radius = cyl.Radius();
+  out.length = std::abs(v1 - v0);
+  out.internal = n.Dot(toFace) < 0;  // the face looks towards the axis: a hole
+
+  gp_Pnt lo = origin.Translated(gp_Vec(d) * std::min(v0, v1)), hi = origin.Translated(gp_Vec(d) * std::max(v0, v1));
+  // The same end for the same face however the kernel happened to orient its axis.
+  const double c[3] = {d.X(), d.Y(), d.Z()};
+  int big = 0;
+  for (int k = 1; k < 3; ++k)
+    if (std::abs(c[k]) > std::abs(c[big]) + 1e-9) big = k;
+  if (c[big] < 0) {
+    d.Reverse();
+    std::swap(lo, hi);
+  }
+  // Air just beyond an end, at a radius inside the thread's reach: a hole's mouth, a shaft's tip.
+  const double probeRadius = out.radius * (out.internal ? 1.1 : 0.75);
+  auto isFree = [&](const gp_Pnt &end, const gp_Vec &outward) {
+    const gp_Pnt q = end.Translated(gp_Vec(out.radial) * probeRadius + outward * (0.1 * out.radius));
+    BRepClass3d_SolidClassifier probe(b.shape, q, 1e-7);
+    return probe.State() == TopAbs_OUT;
+  };
+  const bool freeHi = isFree(hi, gp_Vec(d)), freeLo = isFree(lo, -gp_Vec(d));
+  bool fromHi = freeHi || !freeLo;
+  if (flipped) fromHi = !fromHi;
+  out.start = fromHi ? hi : lo;
+  out.dir = fromHi ? d.Reversed() : d;
+  out.freeStart = fromHi ? freeHi : freeLo;
+  out.freeEnd = fromHi ? freeLo : freeHi;
+  return true;
+}
+
+/// A solid of revolution about the frame's normal from a closed (radius, height) outline.
+TopoDS_Shape revolved(const gp_Ax3 &f, const std::vector<std::pair<double, double>> &rz) {
+  BRepBuilderAPI_MakePolygon poly;
+  for (auto &[r, z] : rz) poly.Add(f.Location().Translated(gp_Vec(f.XDirection()) * r + gp_Vec(f.Direction()) * z));
+  poly.Close();
+  TopoDS_Face face = BRepBuilderAPI_MakeFace(poly.Wire(), true).Face();
+  return BRepPrimAPI_MakeRevol(face, gp_Ax1(f.Location(), f.Direction())).Shape();
+}
+
+/// A ring between two radii from height z0 to z1 (a solid cylinder when rIn is 0).
+TopoDS_Shape ring(const gp_Ax3 &f, double rIn, double rOut, double z0, double z1) {
+  return revolved(f, {{rIn, z0}, {rOut, z0}, {rOut, z1}, {rIn, z1}});
+}
+
+/// A boolean on a shape and its face names, carrying the names of both operands.
+bool namedBoolean(TopoDS_Shape &shape, std::vector<Named> &names, const TopoDS_Shape &tool, const std::string &toolName,
+                  SKBooleanOp op) {
+  std::unique_ptr<BRepAlgoAPI_BooleanOperation> bop;
+  switch (op) {
+    case SK_FUSE: bop = std::make_unique<BRepAlgoAPI_Fuse>(); break;
+    case SK_CUT: bop = std::make_unique<BRepAlgoAPI_Cut>(); break;
+    case SK_COMMON: bop = std::make_unique<BRepAlgoAPI_Common>(); break;
+  }
+  ShapeList args, tools;
+  args.Append(shape);
+  tools.Append(tool);
+  bop->SetArguments(args);
+  bop->SetTools(tools);
+  bop->SetRunParallel(true);
+  bop->Build();
+  if (!bop->IsDone() || bop->HasErrors()) return false;
+  std::vector<Named> toolNames, out;
+  for (TopExp_Explorer ex(tool, TopAbs_FACE); ex.More(); ex.Next()) toolNames.push_back({ex.Current(), toolName});
+  carry(*bop, names, out);  // the body's names first: they win on merged faces
+  carry(*bop, toolNames, out);
+  shape = bop->Shape();
+  names = std::move(out);
+  return true;
+}
+
+/// The solid swept by a thread's groove profile along a helix about the frame's normal, from
+/// height z0 to z1: one edge per turn (a single long helix edge approximates poorly).
+bool helicalSweep(const gp_Ax3 &f, double pitch, double z0, double z1, bool leftHanded,
+                  const std::vector<std::pair<double, double>> &profile, TopoDS_Shape &out) {
+  const double radius = profile.front().first;
+  const int turns = std::max(1, (int)std::ceil((z1 - z0) / pitch));
+  gp_Ax3 base(f.Location().Translated(gp_Vec(f.Direction()) * z0), f.Direction(), f.XDirection());
+  Handle(Geom_CylindricalSurface) cyl = new Geom_CylindricalSurface(base, radius);
+  Handle(Geom2d_Line) line = new Geom2d_Line(gp_Pnt2d(0, 0), gp_Dir2d(leftHanded ? -2 * M_PI : 2 * M_PI, pitch));
+  const double perTurn = std::hypot(2 * M_PI, pitch);
+  BRepBuilderAPI_MakeWire wire;
+  for (int k = 0; k < turns; ++k) {
+    TopoDS_Edge e = BRepBuilderAPI_MakeEdge(line, cyl, k * perTurn, (k + 1) * perTurn).Edge();
+    BRepLib::BuildCurves3d(e, 1e-6, GeomAbs_C1, 14, 50);
+    wire.Add(e);
+  }
+  if (!wire.IsDone()) return false;
+  // The profile in the plane through the axis and the helix's start (u = 0, height z0).
+  BRepBuilderAPI_MakePolygon poly;
+  for (auto &[r, z] : profile) poly.Add(base.Location().Translated(gp_Vec(base.XDirection()) * r + gp_Vec(base.Direction()) * z));
+  poly.Close();
+  BRepOffsetAPI_MakePipeShell pipe(wire.Wire());
+  pipe.SetMode(f.Direction());  // keep the profile in a plane through the axis all the way round
+  pipe.Add(poly.Wire());
+  pipe.Build();
+  if (!pipe.IsDone() || !pipe.MakeSolid()) return false;
+  out = pipe.Shape();
   return true;
 }
 
@@ -1208,6 +1351,149 @@ SKHandle sk_primitive(SKPrimitive kind, SKFrame frame, double a, double b, doubl
   }
   nameByDirection(shape, f, feat, names);
   return storeChecked(shape, names, feat, "the primitive is invalid");
+  SK_CATCH(0)
+}
+
+bool sk_body_face_cylinder(SKHandle body, const char *faceName, bool flipped, double out[9]) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->faceIndex.find(faceName);
+  if (it == b->faceIndex.end()) {
+    setError(std::string("face not found: ") + faceName);
+    return false;
+  }
+  Cylinder c;
+  if (!cylinderOf(*b, TopoDS::Face(b->faces(it->second + 1)), flipped, c)) return false;
+  const double v[9] = {c.start.X(), c.start.Y(), c.start.Z(), c.dir.X(), c.dir.Y(), c.dir.Z(),
+                       c.radius, c.length, c.internal ? 1.0 : 0.0};
+  std::copy(v, v + 9, out);
+  return true;
+  SK_CATCH(false)
+}
+
+SKHandle sk_thread(SKHandle body, const char *faceName, double majorDiameter, double pitch, double length, bool flipped,
+                   bool leftHanded, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "thread");
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  auto it = b->faceIndex.find(faceName);
+  if (it == b->faceIndex.end()) {
+    setError(std::string("face not found: ") + faceName);
+    return 0;
+  }
+  Cylinder c;
+  if (!cylinderOf(*b, TopoDS::Face(b->faces(it->second + 1)), flipped, c)) return 0;
+  const double P = pitch, rMajor = majorDiameter / 2;
+  const double rMinor = rMajor - 0.541265877365 * P;  // basic profile: 5/8 of the 60° triangle deep
+  if (!(P > Precision::Confusion()) || !(rMinor > Precision::Confusion())) {
+    setError("the thread's diameter and pitch must be positive, and the pitch small enough for the diameter");
+    return 0;
+  }
+  // The thread must suit the face: a bolt thread about as wide as the shaft, a nut thread about
+  // as wide as the hole (between its tap drill and its full size).
+  const double R = c.radius;
+  const bool fits = c.internal ? (R > rMinor * 0.8 && R < rMajor * 1.1) : (R > rMajor * 0.8 && R < rMajor * 1.25);
+  if (!fits) {
+    char msg[200];
+    std::snprintf(msg, sizeof msg, "a %.4g mm thread doesn't fit a %.4g mm %s; pick a size near it", majorDiameter, 2 * R,
+                  c.internal ? "hole" : "shaft");
+    setError(msg);
+    return 0;
+  }
+  const bool full = length <= 0 || length >= c.length - 1e-6;
+  const double L = full ? c.length : length;
+  if (length > c.length + 1e-6) {
+    char msg[120];
+    std::snprintf(msg, sizeof msg, "the thread is longer than the round face (%.4g mm)", c.length);
+    setError(msg);
+    return 0;
+  }
+  if (L < P) {
+    setError("the thread must be at least one pitch long");
+    return 0;
+  }
+  const gp_Ax3 f(c.start, c.dir, c.radial);
+  // Past an open end the thread runs out into the air; at a shoulder or a hole's floor it stops flat.
+  const double z0 = c.freeStart ? -P : 0, z1 = full && c.freeEnd ? L + P : L;
+  const double tol = 1e-4;
+  TopoDS_Shape shape = b->shape;
+  std::vector<Named> names = namedFaces(*b);
+  const std::string crest = feat + ".thread.crest";
+  bool ok = true;
+  // The groove between the teeth (ISO 68 basic profile: flats of P/8 at the major diameter and P/4 at
+  // the minor, 30° flanks), reaching past the crests so the cut is clean. The flanks run on a little
+  // past the crest diameter before the groove turns square: a groove edge lying exactly on the
+  // crest cylinder (where the rings below have their faces) makes OCCT's booleans quietly fail.
+  const double t30 = std::tan(M_PI / 6);
+  std::vector<std::pair<double, double>> groove;
+  if (c.internal) {
+    auto z = [&](double r) { return P / 16 + (rMajor - r) * t30; };  // half-width at radius r
+    const double r1 = rMinor - P / 20, r2 = rMinor - P / 4;
+    groove = {{r2, -z(r1)}, {r1, -z(r1)}, {rMajor, -z(rMajor)}, {rMajor, z(rMajor)}, {r1, z(r1)}, {r2, z(r1)}};
+  } else {
+    auto z = [&](double r) { return P / 8 + (r - rMinor) * t30; };
+    const double r1 = rMajor + P / 20, r2 = rMajor + P / 4;
+    groove = {{rMinor, -z(rMinor)}, {r1, -z(r1)}, {r2, -z(r1)}, {r2, z(r1)}, {r1, z(r1)}, {rMinor, z(rMinor)}};
+  }
+  TopoDS_Shape sweep;
+  std::vector<Named> none;
+  if (!helicalSweep(f, P, z0 - P, z1 + P, leftHanded, groove, sweep) ||
+      !namedBoolean(sweep, none, ring(f, 0, rMajor + P, z0, z1), "", SK_COMMON)) {
+    setError("could not build the thread's helix");
+    return 0;
+  }
+  auto volume = [](const TopoDS_Shape &sh) {
+    GProp_GProps g;
+    BRepGProp::VolumeProperties(sh, g);
+    return g.Mass();
+  };
+  // No face of the groove may lie on a face of the body (the original round face is often exactly at
+  // a crest or root diameter): OCCT's booleans can then quietly return the body unchanged, or empty.
+  TopoDS_Shape fill;
+  if (c.internal) {
+    // Bore the hole out past the major diameter, then put the whole thread zone back as a ring from
+    // the minor diameter out into the wall, with the groove taken out of it. The groove only ever
+    // meets that ring, whose faces are well clear of it.
+    const double rBore = std::max(R, rMajor) + P / 4;
+    ok = namedBoolean(shape, names, ring(f, 0, rBore, z0, z1), crest, SK_CUT);
+    fill = ring(f, rMinor, rBore + P / 4, 0, L);
+  } else {
+    // Turn a thicker shaft down to the major diameter and cut the groove; fill a thinner one out to it.
+    if (R > rMajor + tol) ok = namedBoolean(shape, names, ring(f, rMajor, R + P, z0, z1), crest, SK_CUT);
+    const double before = volume(shape);
+    ok = ok && namedBoolean(shape, names, sweep, feat + ".thread", SK_CUT) && volume(shape) < before - 1e-9;
+    if (R < rMajor - tol) fill = ring(f, R * 0.5, rMajor, 0, L);
+  }
+  if (!ok) {
+    setError("could not cut the thread");
+    return 0;
+  }
+  if (!fill.IsNull()) {
+    std::vector<Named> fillNames;
+    for (TopExp_Explorer ex(fill, TopAbs_FACE); ex.More(); ex.Next()) fillNames.push_back({ex.Current(), crest});
+    if (!namedBoolean(fill, fillNames, sweep, feat + ".thread", SK_CUT) || volume(fill) < 1e-9) {
+      setError("could not cut the thread");
+      return 0;
+    }
+    std::vector<Named> merged;
+    BRepAlgoAPI_Fuse fuse(shape, fill);
+    fuse.SetRunParallel(true);
+    fuse.Build();
+    if (!fuse.IsDone() || fuse.HasErrors() || volume(fuse.Shape()) < volume(shape) + 1e-9) {
+      setError("could not cut the thread");
+      return 0;
+    }
+    carry(fuse, names, merged);
+    carry(fuse, fillNames, merged);
+    shape = fuse.Shape();
+    names = std::move(merged);
+  }
+  TopoDS_Shape result = unify(shape, names);
+  return storeChecked(result, names, feat + ".thread", "the thread produced an invalid solid");
   SK_CATCH(0)
 }
 

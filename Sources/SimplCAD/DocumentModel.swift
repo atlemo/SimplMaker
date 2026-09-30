@@ -76,8 +76,17 @@ final class DocumentModel {
     @ObservationIgnored var documentBeforeNewFeature: CADDocument?
     /// A tool waiting for the user to pick what it needs (a profile, a path, a face...). See DesignTools.swift.
     var pendingTool: DesignTool? {
-        didSet { if pendingTool == nil { reselecting = nil } }  // cancelling the tool ends a re-pick too
+        didSet {
+            if pendingTool == nil { reselecting = nil }  // cancelling the tool ends a re-pick too
+            if pendingTool != oldValue { toolMissed = false }
+        }
     }
+    /// The waiting tool's last click was on something it can't use: its prompt says why.
+    var toolMissed = false
+    /// The pointer's ray while the Thread tool waits, so the face a click would thread lights up.
+    @ObservationIgnored var hoverRay: (origin: SIMD3<Double>, direction: SIMD3<Double>)?
+    /// Round faces next to each face, found once per rebuild (see roundFace).
+    @ObservationIgnored var roundNeighbors: [FaceRef: [(face: String, cylinder: KCylinder)]] = [:]
     /// An extrude, revolve or sweep whose profiles are being picked again (its tool waits for picks).
     var reselecting: FeatureID?
     /// The pointer ray of the latest click in the viewport, for placing things where the user clicked.
@@ -477,6 +486,7 @@ final class DocumentModel {
         previewInvalid = false
         handleProblem = nil
         result = r
+        roundNeighbors = [:]
         self.meshes = meshes
         selection = selection.filter { pick in
             switch pick.kind {
@@ -858,7 +868,7 @@ final class DocumentModel {
         if let session = sketchSession {
             return (session.selection + session.dimensionPicks).compactMap { session.pickID(for: $0)?.raw }
         }
-        guard picksWholeBodies else { return selection.map(\.raw) }
+        guard picksWholeBodies else { return selection.map(\.raw) + threadHighlight }
         // A face or edge picked for a body tool stands for its whole body.
         var out: [UInt32] = []
         for pick in selection {
@@ -1022,6 +1032,11 @@ final class DocumentModel {
         case .hole(let hf):
             guard let depth = hf.depth, let frame = try? Regenerator.holeFrame(hf, result) else { return nil }
             return handle("Depth", frame.origin, -frame.normal, depth)
+        case .thread(let tf):
+            // Along the axis from the end the thread starts at (on the face as it was before).
+            guard let length = tf.length, let body = result.featureInputs[id]?[tf.face.body],
+                  let cyl = try? body.faceCylinder(tf.face.face, flipped: tf.flipped) else { return nil }
+            return handle("Length", cyl.start, cyl.direction, length)
         case .pipe(let pf):
             guard let at = pathPoint(pf.path, result) else { return nil }
             return handle("Diameter", at.point, at.side, pf.diameter, per: 0.5)
@@ -1391,6 +1406,9 @@ final class DocumentModel {
         case .hole(var h):
             if h.depth != nil { h.depth = text }
             doc.features[i].kind = .hole(h)
+        case .thread(var t):
+            if t.length != nil { t.length = text }
+            doc.features[i].kind = .thread(t)
         case .pipe(var p):
             p.diameter = text
             doc.features[i].kind = .pipe(p)

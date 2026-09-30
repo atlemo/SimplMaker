@@ -414,6 +414,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case loft(LoftFeature)
         case rib(RibFeature)
         case hole(HoleFeature)
+        case thread(ThreadFeature)
         case primitive(PrimitiveFeature)
         case pipe(PipeFeature)
         case move(MoveFeature)
@@ -445,6 +446,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .loft: return "Loft"
         case .rib: return "Rib"
         case .hole: return "Hole"
+        case .thread: return "Thread"
         case .primitive(let p): return p.kind.rawValue
         case .pipe: return "Pipe"
         case .move: return "Move"
@@ -461,8 +463,8 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
     /// Sketches this feature is built from (they are hidden once used, as in other CAD tools).
     public var sketchesUsed: [FeatureID] {
         switch kind {
-        case .sketch, .fillet, .chamfer, .hole, .primitive, .move, .rotate, .combine, .plane, .mirror, .pattern, .shell,
-             .importBody: return []
+        case .sketch, .fillet, .chamfer, .hole, .thread, .primitive, .move, .rotate, .combine, .plane, .mirror, .pattern,
+             .shell, .importBody: return []
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
         case .sweep(let s): return [s.sketch, s.path.sketch]
@@ -484,7 +486,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .mirror(let m): return m.operation == .newBody
         case .pattern(let p): return p.operation == .newBody
         case .importBody: return true
-        case .sketch, .fillet, .chamfer, .rib, .hole, .move, .rotate, .combine, .plane, .shell: return false
+        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .combine, .plane, .shell: return false
         }
     }
 }

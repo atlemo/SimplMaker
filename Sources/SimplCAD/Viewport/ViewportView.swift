@@ -335,6 +335,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         guard let renderer, renderer.hovered != raw else { return }
         renderer.hovered = raw
         model?.hover(raw == 0 ? nil : PickID(raw: raw))
+        if let model, model.pendingTool == .thread { renderer.selected = model.highlighted }  // the face it would thread
         if model?.sketchSession != nil { sketchEvent(.moved, at: nil, additive: false) }
         updateCursor()
         needsDisplay = true
@@ -395,6 +396,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let p = location(event)
         lastPoint = p
         requestPick(at: p)
+        if let renderer, let model, model.pendingTool == .thread {
+            // The hole nearest the pointer lights up on a face with several.
+            let ray = renderer.camera.ray(at: p, viewSize: bounds.size)
+            model.hoverRay = (SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                              SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)))
+            renderer.selected = model.highlighted
+        }
         if model?.sketchSession != nil { sketchEvent(.moved, at: p, additive: false) }
     }
 

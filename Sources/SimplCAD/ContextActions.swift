@@ -44,6 +44,9 @@ extension DocumentModel {
     private func faceItems(_ pick: PickID, ray: (origin: SIMD3<Double>, direction: SIMD3<Double>)?) -> [ContextItem] {
         guard let ref = faceRef(pick) else { return backgroundItems() }
         let flat = (try? result?.body(ref.body)?.faceFrame(ref.face)) != nil
+        clickRay = ray
+        let round = roundFace(pick) != nil
+        clickRay = nil
         var items: [ContextItem] = [
             .action("Sketch on Face", symbol: "pencil.and.outline", enabled: flat) { self.beginSketch(on: .face(ref)) },
             .action("Extrude Face", symbol: DesignTool.extrude.symbol, enabled: flat) {
@@ -53,6 +56,10 @@ extension DocumentModel {
             .action("Hole Here", symbol: DesignTool.hole.symbol, enabled: flat) {
                 self.clickRay = ray
                 self.place(.hole, on: pick)
+            },
+            .action("Thread…", symbol: DesignTool.thread.symbol, enabled: round) {
+                self.clickRay = ray
+                self.addThread(on: pick)
             },
             .separator,
             .action("Fillet Face Edges", symbol: DesignTool.fillet.symbol) { self.selection = [pick]; self.run(.fillet) },
