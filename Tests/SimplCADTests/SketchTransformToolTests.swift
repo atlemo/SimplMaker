@@ -30,15 +30,91 @@ import Testing
         return nil
     }
 
+    /// Types a move, a turn or both into the manipulator's fields, as the viewport does, and presses Return.
+    private func type(_ model: DocumentModel, _ values: [SketchInput: String]) {
+        let session = model.sketchSession!
+        for (field, text) in values { session.setTyped(field, text) }
+        model.sketchCommand { $0.commitTyped() }
+    }
+
     @Test func moveSlidesTheWholeSketchWhenNothingIsSelected() async throws {
         let (model, session, _) = try await editing()
         #expect(session.canTransform && session.transformTargetDescription == "the whole sketch")
         session.beginTransform(.move)
-        #expect(session.transformRequested == .move)
-        model.sketchCommand { $0.moveSelection(x: "5", y: "-2 mm") }
-        #expect(session.transformRequested == nil && session.message == nil)
+        #expect(session.manipulating == .move && session.transformRequested == nil, "Move shows the manipulator, not a popover")
+        #expect(session.inputFields == [.moveX, .moveY])
+        type(model, [.moveX: "5", .moveY: "-2 mm"])
+        #expect(session.message == nil)
         let s = try #require(committed(model))
         #expect(s.points.contains { $0.position == SIMD2(25, 18) } && s.points.contains { $0.position == SIMD2(35, 22) })
+        #expect(session.manipulating == .move, "the manipulator stays for the next move")
+    }
+
+    @Test func draggingShowsTheMoveLiveAndKeepsItOnRelease() async throws {
+        let (model, session, _) = try await editing()
+        let before = try #require(committed(model))
+        let undo = UndoManager()
+        model.undoManager = undo
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        session.beginTransform(.move)
+        let middle = try #require(session.manipulatorMiddle)
+        #expect(middle == SIMD2(25, 22), "the middle of the rectangle")
+        #expect(session.beginManipulatorDrag())
+        var v = TransformValues()
+        v.move = SIMD3(5, 3, 0)
+        session.previewManipulator(v)
+        #expect(session.sketch.points.contains { $0.position == SIMD2(25, 23) }, "the sketch shows the move")
+        #expect(committed(model) == before, "but nothing is stored yet")
+        #expect(session.manipulatorMiddle == SIMD2(30, 25), "the manipulator rides along")
+        model.previewManipulator(v)
+        model.endManipulatorDrag()
+        undo.endUndoGrouping()
+        let s = try #require(committed(model))
+        #expect(s.points.contains { $0.position == SIMD2(25, 23) } && s.points.contains { $0.position == SIMD2(35, 27) })
+        #expect(session.manipulatorMiddle == SIMD2(30, 25), "it sits on the new middle, at rest")
+        undo.undo()
+        #expect(committed(model) == before, "one undo step")
+    }
+
+    @Test func letGoWithoutMovingChangesNothing() async throws {
+        let (model, session, _) = try await editing()
+        let before = try #require(committed(model))
+        session.beginTransform(.rotate)
+        #expect(session.beginManipulatorDrag())
+        model.endManipulatorDrag()
+        #expect(committed(model) == before && session.sketch == before)
+    }
+
+    @Test func aDragTheConstraintsForbidGoesBackWithAReason() async throws {
+        let (model, session, _) = try await editing()
+        let before = try #require(committed(model))
+        session.beginTransform(.rotate)
+        #expect(session.beginManipulatorDrag())
+        var v = TransformValues()
+        v.turn = SIMD3(0, 0, 0.5)  // a tilt the rectangle's horizontal and vertical lines forbid
+        session.previewManipulator(v)
+        model.previewManipulator(v)
+        model.endManipulatorDrag()
+        #expect(session.message?.contains("horizontal, vertical") == true)
+        #expect(committed(model) == before && session.sketch == before)
+        #expect(session.manipulatorMiddle == SIMD2(25, 22))
+    }
+
+    @Test func typingShowsThePreviewAndEscapeTakesItBack() async throws {
+        let (model, session, _) = try await editing()
+        let before = try #require(committed(model))
+        session.beginTransform(.move)
+        session.setTyped(.moveX, "10")
+        #expect(session.sketch.points.contains { $0.position == SIMD2(30, 20) }, "typed values show at once")
+        #expect(committed(model) == before)
+        session.setTyped(.moveX, "")
+        #expect(session.sketch == before)
+        session.setTyped(.moveY, "4")
+        session.clearTyped()
+        #expect(session.sketch == before)
+        session.escape()
+        #expect(session.manipulating == nil)
     }
 
     @Test func scaleAboutTheSelectionOrTheOrigin() async throws {
@@ -53,22 +129,28 @@ import Testing
         #expect(s.points.contains { $0.position == SIMD2(7.5, 9) })
     }
 
-    @Test func rotateQuarterTurnAboutTheOrigin() async throws {
-        let (model, _, _) = try await editing()
-        model.sketchCommand { $0.rotateSelection(angle: "90", about: .origin) }
+    @Test func rotateTurnsTheSelectionAboutItsMiddle() async throws {
+        let (model, session, lines) = try await editing()
+        session.selection = lines
+        session.beginTransform(.rotate)
+        #expect(session.inputFields == [.turn])
+        type(model, [.turn: "90"])  // a bare number is degrees
         let s = try #require(committed(model))
-        // (20, 20) → (-20, 20): a bare number is degrees.
-        #expect(s.points.contains { abs($0.x + 20) < 1e-9 && abs($0.y - 20) < 1e-9 })
+        // 10 × 4 about (25, 22) becomes 4 × 10 about the same middle.
+        let xs = s.points.filter { $0.id != "origin" }.map(\.x), ys = s.points.filter { $0.id != "origin" }.map(\.y)
+        #expect(abs((xs.max()! - xs.min()!) - 4) < 1e-9 && abs((ys.max()! - ys.min()!) - 10) < 1e-9)
+        #expect(abs((xs.max()! + xs.min()!) / 2 - 25) < 1e-9 && abs((ys.max()! + ys.min()!) / 2 - 22) < 1e-9)
     }
 
     @Test func aTiltThatTheRectanglesConstraintsForbidIsRefused() async throws {
         let (model, session, _) = try await editing()
         let before = try #require(committed(model))
-        model.sketchCommand { $0.rotateSelection(angle: "30", about: .selection) }
+        session.beginTransform(.rotate)
+        type(model, [.turn: "30"])
         #expect(session.message?.contains("horizontal, vertical") == true)
-        #expect(committed(model) == before)
+        #expect(committed(model) == before && session.sketch == before, "the preview is taken back")
         // A quarter turn is fine: horizontal and vertical trade places.
-        model.sketchCommand { $0.rotateSelection(angle: "90", about: .selection) }
+        type(model, [.turn: "90"])
         let s = try #require(committed(model))
         let xs = s.points.filter { $0.id != "origin" }.map(\.x), ys = s.points.filter { $0.id != "origin" }.map(\.y)
         #expect(abs((xs.max()! - xs.min()!) - 4) < 1e-9 && abs((ys.max()! - ys.min()!) - 10) < 1e-9)
@@ -81,9 +163,14 @@ import Testing
         #expect(session.message?.contains("more than zero") == true)
         model.sketchCommand { $0.scaleSelection(factor: "abc", about: .origin) }
         #expect(session.message != nil)
-        model.sketchCommand { $0.moveSelection(x: "0", y: "0") }
+        session.beginTransform(.move)
+        type(model, [.moveX: "abc"])
+        #expect(session.message != nil)
+        type(model, [.moveX: "0", .moveY: "0"])
         #expect(session.message?.contains("zero") == true)
-        model.sketchCommand { $0.rotateSelection(angle: "360", about: .origin) }
+        session.beginTransform(.move)  // off
+        session.beginTransform(.rotate)
+        type(model, [.turn: "360"])
         #expect(session.message?.contains("zero") == true)
         #expect(committed(model) == before, "nothing changed")
     }
@@ -91,11 +178,12 @@ import Testing
     @Test func aDimensionThatHoldsTheGeometryStopsTheMove() async throws {
         let (model, session, _) = try await editing(constrained: true)
         let before = try #require(committed(model))
-        model.sketchCommand { $0.moveSelection(x: "5", y: "0") }
+        session.beginTransform(.move)
+        type(model, [.moveX: "5", .moveY: "0"])
         #expect(session.message?.contains("Constraints or dimensions") == true)
         #expect(committed(model) == before)
         // Moving along the free direction works; the distance from the origin is only in x.
-        model.sketchCommand { $0.moveSelection(x: "0", y: "5") }
+        type(model, [.moveX: "0", .moveY: "5"])
         #expect(committed(model)?.points.contains { $0.position == SIMD2(20, 25) } == true)
     }
 
@@ -107,6 +195,11 @@ import Testing
         #expect(abs(s.dimensionValues(ParameterValues())["x"]! - 40) < 1e-9)
     }
 
+    @Test func aSketchOpensWithTheSelectTool() async throws {
+        let (_, session, _) = try await editing()
+        #expect(session.tool == .select)
+    }
+
     @Test func aSketchWithNothingInItCantBeTransformed() async throws {
         var d = CADDocument()
         d.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: Sketch())))]
@@ -116,6 +209,18 @@ import Testing
         let session = try #require(model.sketchSession)
         #expect(!session.canTransform)
         session.beginTransform(.move)
-        #expect(session.transformRequested == nil)
+        #expect(session.manipulating == nil && session.transformRequested == nil)
+    }
+
+    @Test func pressingTheToolAgainOrAnotherToolTurnsTheManipulatorOff() async throws {
+        let (_, session, _) = try await editing()
+        session.beginTransform(.move)
+        session.beginTransform(.move)
+        #expect(session.manipulating == nil)
+        session.beginTransform(.rotate)
+        session.setTool(.line)
+        #expect(session.manipulating == nil)
+        session.beginTransform(.scale)
+        #expect(session.transformRequested == .scale && session.manipulating == nil, "Scale still asks for a factor")
     }
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
+import CADKernel
 import CoreGraphics
 import Foundation
 import Testing
@@ -99,6 +100,49 @@ import simd
         let wopt = drag.values(at: try screen(far, c), camera: c, viewSize: size)
         let w = try #require(wopt)
         #expect(abs(w.turn.z - (5 * Double.pi / 4 - Double.pi / 4)) < 0.05 || abs(w.turn.z - .pi) < 0.05, "180° round: \(w.turn.z)")
+    }
+
+    /// A sketch on the front plane (x along X, y up Z, normal toward the viewer), seen from the front.
+    @Test func aSketchManipulatorLiesInTheSketchPlane() throws {
+        var c = Camera()
+        c.target = SIMD3(30, 0, 20)
+        c.distance = 200
+        c.setStandard(.front)
+        let frame = Frame(origin: .zero, normal: SIMD3(0, -1, 0), xAxis: SIMD3(1, 0, 0))  // y = n × x = (0, 0, 1)
+        #expect(frame.yAxis == SIMD3(0, 0, 1))
+        let middle = frame.point(30, 20)
+        let l = try #require(ManipulatorLayout(middle: middle, frame: ManipulatorFrame(sketch: frame), camera: c, viewSize: size))
+        #expect(Set(l.arrows.map(\.axis)) == [.x, .y] && l.squares.map(\.normal) == [.z] && l.rings.map(\.axis) == [.z], "arrows in the plane, one square, one ring")
+
+        // The first arrow follows the sketch's x: dragging it 50 mm along the screen's right moves x by 50.
+        let x = try #require(l.arrows.first { $0.axis == .x })
+        var drag = try #require(ManipulatorDrag(part: .axis(.x), at: x.tip, layout: l, start: TransformValues()))
+        let here = CGPoint(x: x.tip.x + 50 * l.pointsPerMM, y: x.tip.y)
+        let vopt = drag.values(at: here, camera: c, viewSize: size)
+        let v = try #require(vopt)
+        #expect(abs(v.move.x - 50) < 1 && v.move.y == 0 && v.move.z == 0, "\(v)")
+
+        // The second follows the sketch's y, which is up the screen here.
+        let y = try #require(l.arrows.first { $0.axis == .y })
+        var up = try #require(ManipulatorDrag(part: .axis(.y), at: y.tip, layout: l, start: TransformValues()))
+        let uvopt = up.values(at: CGPoint(x: y.tip.x, y: y.tip.y - 30 * l.pointsPerMM), camera: c, viewSize: size)
+        let uv = try #require(uvopt)
+        #expect(abs(uv.move.y - 30) < 1 && uv.move.x == 0, "\(uv)")
+
+        // The dot slides in the sketch plane, whatever the view.
+        var dot = try #require(ManipulatorDrag(part: .center, at: l.center, layout: l, start: TransformValues()))
+        let dvopt = dot.values(at: CGPoint(x: l.center.x + 10 * l.pointsPerMM, y: l.center.y - 5 * l.pointsPerMM), camera: c, viewSize: size)
+        let dv = try #require(dvopt)
+        #expect(abs(dv.move.x - 10) <= 1.5 && abs(dv.move.y - 5) <= 1.5 && dv.move.z == 0, "\(dv)")
+
+        // The ring turns counter-clockwise as the sketch sees it: from 45° to 135° is a quarter turn.
+        let ring = try #require(l.rings.first)
+        var turn = try #require(ManipulatorDrag(part: .ring(.z), at: ring.handle, layout: l, start: TransformValues()))
+        let radius = Double(ManipulatorLayout.ringRadius) / l.pointsPerMM
+        let target = frame.point(30 + radius * cos(3 * Double.pi / 4), 20 + radius * sin(3 * Double.pi / 4))
+        let tvopt = turn.values(at: try screen(target, c), camera: c, viewSize: size)
+        let tv = try #require(tvopt)
+        #expect(abs(tv.turn.z - .pi / 2) < 0.02 && tv.move == .zero, "\(tv)")
     }
 
     @Test func aRingSeenEdgeOnTurnsByTheMouseTravelAlongIt() throws {

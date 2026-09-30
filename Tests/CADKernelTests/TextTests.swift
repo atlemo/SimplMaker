@@ -28,6 +28,24 @@ import Testing
         #expect(bounds.allSatisfy { $0.y > -1 && $0.y < 11 }, "letters sit on the baseline, 10 mm tall")
     }
 
+    @Test func aTurnedTextTurnsItsLetters() throws {
+        var d = doc("HHHH")
+        func extent(_ d: CADDocument) throws -> (w: Double, h: Double) {
+            let sk = try #require(Regenerator.regenerate(d).sketches["sk"])
+            let pts = sk.regions.map(\.sample)
+            return (pts.map(\.x).max()! - pts.map(\.x).min()!, pts.map(\.y).max()! - pts.map(\.y).min()!)
+        }
+        let level = try extent(d)
+        #expect(level.w > level.h, "a word runs along x")
+        if case .sketch(var sf) = d.features[0].kind {
+            sf.sketch.texts[0].angle = .pi / 2
+            d.features[0].kind = .sketch(sf)
+        }
+        let turned = try extent(d)
+        #expect(turned.h > turned.w, "a quarter turn runs it up y: \(turned)")
+        #expect(abs(turned.h - level.w) < 0.5 && abs(turned.w - level.h) < 0.5)
+    }
+
     @Test func aLetterExtrudesAndFollowsItsHeight() throws {
         var d = doc("I")
         d.features.append(Feature(id: "e", name: "Extrude1", .extrude(ExtrudeFeature(

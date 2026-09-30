@@ -73,9 +73,27 @@ extension DocumentModel {
 
     var manipulatorMiddle: SIMD3<Double>? { manipulatedFeature.flatMap { manipulatorMiddle($0.id, $0.move) } }
 
+    /// Where the manipulator is drawn and how it is laid out: on the selected Move feature, or, in a
+    /// sketch, on what the Move or Rotate tool works on, in the sketch's plane.
+    var manipulatorPlacement: (middle: SIMD3<Double>, turn: SIMD3<Double>, frame: ManipulatorFrame)? {
+        if let session = sketchSession {
+            guard let m = session.manipulatorMiddle else { return nil }
+            return (session.frame.point(m.x, m.y), session.manipulatorValues.turn, ManipulatorFrame(sketch: session.frame))
+        }
+        guard let middle = manipulatorMiddle, let values = manipulatorValues else { return nil }
+        return (middle, values.turn, .world)
+    }
+
+    /// What dragging starts from: a Move feature's stored values, or nothing yet for a sketch.
+    var manipulatorDragStart: TransformValues? {
+        if let session = sketchSession { return session.manipulating == nil ? nil : TransformValues() }
+        return manipulatedFeature.map { transformValues($0.move) }
+    }
+
     /// The part the typed field is for.
     var manipulatorActivePart: ManipulatorPart? {
-        manipulatedFeature.map { $0.move.rotating ? .ring($0.move.arrow) : .axis($0.move.arrow) }
+        if let session = sketchSession { return session.manipulating == .rotate ? .ring(.z) : nil }
+        return manipulatedFeature.map { $0.move.rotating ? .ring($0.move.arrow) : .axis($0.move.arrow) }
     }
 
     /// Makes an arrow or ring the one the field types into. Not an undo step, and nothing to rebuild.
@@ -95,6 +113,7 @@ extension DocumentModel {
     /// The mouse went down on a part. Returns the values to drag from.
     @discardableResult
     func beginManipulatorDrag(_ part: ManipulatorPart) -> TransformValues? {
+        if let session = sketchSession { return session.beginManipulatorDrag() ? TransformValues() : nil }
         guard let (_, m) = manipulatedFeature else { return nil }
         activateManipulatorPart(part)
         let v = transformValues(m)
@@ -106,6 +125,11 @@ extension DocumentModel {
 
     /// Shows the feature with the dragged values, without storing them.
     func previewManipulator(_ v: TransformValues) {
+        if let session = sketchSession {
+            session.previewManipulator(v)
+            overlayRevision += 1
+            return
+        }
         guard let start = manipulatorStart, let base = manipulatorBase, let id = selectedFeature else { return }
         manipulatorLive = v
         var doc = start
@@ -133,6 +157,10 @@ extension DocumentModel {
     /// The mouse came up: keep what was dragged (one undo step), or go back if it can't be built. A
     /// value that comes from a parameter asks before it is replaced by a number.
     func endManipulatorDrag() {
+        if sketchSession != nil {
+            sketchCommand { $0.endManipulatorDrag() }
+            return
+        }
         guard manipulatorStart != nil else { return }
         let base = manipulatorBase, live = manipulatorLive
         manipulatorStart = nil

@@ -301,6 +301,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// Crosshair while drawing, hands over draggable geometry, arrow otherwise.
     private var currentCursor: NSCursor {
         guard let model else { return .arrow }
+        if manipulatorDrag != nil { return .closedHand }
+        if manipulatorHover != nil { return .openHand }
         if sketchDrag, model.sketchSession?.tool == .select { return .closedHand }
         if let session = model.sketchSession {
             switch session.tool {
@@ -315,8 +317,6 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             default: return .arrow
             }
         }
-        if manipulatorDrag != nil { return .closedHand }
-        if manipulatorHover != nil { return .openHand }
         if let tool = model.pendingTool {
             guard let h = model.hovered, tool.accepts(h.kind) else { return .arrow }
             return .pointingHand
@@ -433,9 +433,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         window?.makeFirstResponder(self)
         let p = location(event)
         let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
-        if let model, model.sketchSession == nil, let layout = manipulatorLayout, let part = layout.hit(p),
-           let (_, move) = model.manipulatedFeature,
-           let drag = ManipulatorDrag(part: part, at: p, layout: layout, start: model.transformValues(move)) {
+        if let model, let layout = manipulatorLayout, let part = layout.hit(p), let start = model.manipulatorDragStart,
+           let drag = ManipulatorDrag(part: part, at: p, layout: layout, start: start) {
             model.beginManipulatorDrag(part)
             manipulatorDrag = drag
             lastDrag = p
@@ -785,8 +784,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     /// Shows the Move/Rotate manipulator on the selected Move feature, or takes it away.
     private func syncManipulator() {
-        guard let renderer, let model, let middle = model.manipulatorMiddle, let values = model.manipulatorValues,
-              let layout = ManipulatorLayout(middle: middle, turn: values.turn, camera: renderer.camera, viewSize: bounds.size) else {
+        guard let renderer, let model, let place = model.manipulatorPlacement,
+              let layout = ManipulatorLayout(middle: place.middle, turn: place.turn, frame: place.frame, camera: renderer.camera, viewSize: bounds.size) else {
             manipulatorView?.removeFromSuperview()
             manipulatorView = nil
             manipulatorLayout = nil
@@ -935,7 +934,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// Shows the fields for the sketch step in progress next to where the next point will go.
     private func syncSketchFields() {
         guard let renderer, let model, let session = model.sketchSession, !session.inputFields.isEmpty,
-              let t = session.target()?.position else {
+              let t = session.manipulatorMiddle ?? session.target()?.position else {
             removeSketchFields()
             return
         }
@@ -957,8 +956,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }
         panel.isHidden = false
         let size = panel.fittingSize
-        let x = min(max(p.x + 20, 0), max(bounds.width - size.width, 0))
-        let y = min(max(p.y + 20, 0), max(bounds.height - size.height, 0))
+        // Beside the next point; under the ring when the manipulator is on.
+        let below = session.manipulatorMiddle != nil
+        let x = min(max(below ? p.x - size.width / 2 : p.x + 20, 0), max(bounds.width - size.width, 0))
+        var y = p.y + (below ? ManipulatorLayout.ringRadius + 12 : 20)
+        if below, y + size.height > bounds.height - 48 { y = p.y - ManipulatorLayout.ringRadius - 12 - size.height }  // no room: above the ring
+        y = min(max(y, 0), max(bounds.height - size.height, 0))
         panel.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
     }
 

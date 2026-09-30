@@ -62,6 +62,10 @@ extension Sketch {
             let q = map(points[i].position)
             points[i].x = q.x; points[i].y = q.y
         }
+        // A text turns with its anchor: its baseline turns about the anchor as well.
+        if case .rotate(let a, _) = t {
+            for i in texts.indices where moving.contains(texts[i].position) { texts[i].angle += a }
+        }
         for i in constraints.indices {
             if case .fix(let p, _, _) = constraints[i].kind, moving.contains(p), let now = point(p) {
                 constraints[i].kind = .fix(p, x: now.x, y: now.y)

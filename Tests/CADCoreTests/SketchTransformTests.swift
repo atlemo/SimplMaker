@@ -83,6 +83,35 @@ import Testing
         #expect(abs(s.dimensionValues(none)["d"]! - 10) < 1e-9, "left for the solver to object to")
     }
 
+    @Test func aTextTurnsWithItsAnchor() throws {
+        var s = Sketch()
+        let anchor = s.addPoint(10, 0)
+        s.texts.append(SketchText(text: "Hi", position: anchor, height: "8 mm"))
+        let ok1 = s.apply(.rotate(angle: .pi / 2, about: .zero), to: [], parameters: none)
+        #expect(ok1)
+        let p = try #require(s.point(anchor)?.position)
+        #expect(vlen(p - SIMD2(0, 10)) < 1e-12, "the anchor swings round")
+        #expect(abs(s.texts[0].angle - .pi / 2) < 1e-12, "and the baseline turns with it")
+        let ok2 = s.apply(.move(dx: 5, dy: 0), to: [], parameters: none)
+        #expect(ok2)
+        #expect(abs(s.texts[0].angle - .pi / 2) < 1e-12, "a move leaves the angle alone")
+        // Only texts that move turn.
+        var t = Sketch()
+        let a = t.addPoint(0, 0), b = t.addPoint(5, 5)
+        t.texts = [SketchText(text: "A", position: a), SketchText(text: "B", position: b)]
+        let ok3 = t.apply(.rotate(angle: 1, about: .zero), to: [b], parameters: none)
+        #expect(ok3)
+        #expect(t.texts[0].angle == 0 && t.texts[1].angle == 1)
+    }
+
+    @Test func aTextsAngleIsSavedOnlyWhenItIsTurned() throws {
+        let level = try JSONEncoder().encode(SketchText(text: "Hi", position: "p"))
+        #expect(!String(decoding: level, as: UTF8.self).contains("angle"), "files without turned text don't change")
+        #expect(try JSONDecoder().decode(SketchText.self, from: level).angle == 0)
+        let turned = try JSONEncoder().encode(SketchText(text: "Hi", position: "p", angle: 0.5))
+        #expect(try JSONDecoder().decode(SketchText.self, from: turned).angle == 0.5)
+    }
+
     @Test func textsScaleAndBeziersKeepTheirShape() {
         var s = Sketch()
         let anchor = s.addPoint(0, 0)

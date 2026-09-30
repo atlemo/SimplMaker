@@ -21,8 +21,8 @@ enum SketchTransformTool: String, CaseIterable, Identifiable {
 
     var help: String {
         switch self {
-        case .move: return "Move the selected curves (or the whole sketch) by a distance"
-        case .rotate: return "Turn the selected curves (or the whole sketch) by an angle"
+        case .move: return "Move the selected curves (or the whole sketch): drag the arrows or the square, or type a distance"
+        case .rotate: return "Turn the selected curves (or the whole sketch): drag the ring, or type an angle"
         case .scale: return "Make the selected curves (or the whole sketch) bigger or smaller"
         }
     }
@@ -168,14 +168,20 @@ enum SketchTool: String, CaseIterable, Identifiable {
 enum SketchInput: String, CaseIterable, Identifiable {
     case length = "Length", angle = "Angle", width = "Width", height = "Height"
     case diameter = "Diameter", radius = "Radius", sweep = "Sweep"
+    /// What Move and Rotate take, for the manipulator: how far along x and y, and how far to turn.
+    case moveX = "Move X", moveY = "Move Y", turn = "Rotate"
 
     var id: String { rawValue }
-    var unit: UnitKind { self == .angle || self == .sweep ? .angle : .length }
+    var unit: UnitKind { self == .angle || self == .sweep || self == .turn ? .angle : .length }
+    /// Whether zero and negative values mean something (a move back, a turn clockwise).
+    var isOffset: Bool { self == .moveX || self == .moveY || self == .turn }
     /// Short label shown in front of the field.
     var symbol: String {
         switch self {
         case .length: return "L"
-        case .angle, .sweep: return "∠"
+        case .angle, .sweep, .turn: return "∠"
+        case .moveX: return "X"
+        case .moveY: return "Y"
         case .width: return "W"
         case .height: return "H"
         case .diameter: return "⌀"
@@ -218,9 +224,10 @@ final class SketchSession {
     var frame: Frame
     private(set) var sketch: Sketch
     private(set) var solve: SolveResult?
-    private(set) var tool: SketchTool = .line
+    private(set) var tool: SketchTool = .select
 
     func setTool(_ t: SketchTool) {
+        if t != .select { stopManipulating() }
         tool = t
         if t.family.count > 1 { lastInFamily[t.family[0]] = t }
         resetToolState()
@@ -235,6 +242,13 @@ final class SketchSession {
     var offsetRequested = false
     /// Set by Move, Rotate and Scale to ask the toolbar to show that tool's popover.
     var transformRequested: SketchTransformTool?
+    /// Move or Rotate is on: the manipulator sits on the selection (or the whole sketch) for dragging it.
+    private(set) var manipulating: SketchTransformTool?
+    /// How far the manipulator has moved (x, y, mm) and turned (z, radians) the selection, while dragging or typing.
+    private(set) var manipulatorValues = TransformValues()
+    /// The sketch as it was when the drag or the typing began, and the middle the turn is about.
+    @ObservationIgnored private var manipulatorBase: Sketch?
+    @ObservationIgnored private var manipulatorPivot = SIMD2<Double>.zero
     private(set) var cursor: SIMD2<Double>?
     private(set) var clicks: [SketchSnap] = []
     /// Where the Text tool was clicked: waiting for the text to be typed.
@@ -418,6 +432,7 @@ final class SketchSession {
     /// Returns (handled, commit action name). Unhandled drags orbit the camera.
     func handle(_ m: SketchMouse) -> (handled: Bool, commit: String?) {
         if let t = m.tolerance { tolerance = t }
+        if m.phase == .down, manipulating != nil { cancelManipulatorPreview() }
         if m.phase == .moved || m.phase == .down {
             // What's exactly under the cursor, or else the nearest point or curve within a few
             // pixels: sketch lines are thin, and picking shouldn't need pixel precision.
@@ -579,6 +594,7 @@ final class SketchSession {
 
     /// The fields for the current drawing step.
     var inputFields: [SketchInput] {
+        if let manipulating { return manipulating == .rotate ? [.turn] : [.moveX, .moveY] }
         switch (tool, clicks.count) {
         case (.line, 1): return [.length, .angle]
         case (.rectangle, 1), (.centerRectangle, 1): return [.width, .height]
@@ -593,14 +609,18 @@ final class SketchSession {
     func setTyped(_ field: SketchInput, _ text: String) {
         let t = text.trimmingCharacters(in: .whitespaces)
         typed[field] = t.isEmpty ? nil : t
+        if manipulating != nil { previewTyped() }
     }
 
-    func clearTyped() { typed = [:] }
+    func clearTyped() {
+        typed = [:]
+        if manipulating != nil { cancelManipulatorPreview() }
+    }
 
     /// A typed value in base units (mm or radians); nil when nothing usable is typed.
     func typedValue(_ field: SketchInput) -> Double? {
         guard let text = typed[field], let v = try? parameters.value(of: text, kind: field.unit) else { return nil }
-        if field.unit == .length, v <= 1e-9 { return nil }
+        if field.unit == .length, !field.isOffset, v <= 1e-9 { return nil }
         if field == .sweep, abs(v) <= 1e-9 { return nil }
         return v
     }
@@ -647,6 +667,12 @@ final class SketchSession {
     /// The value a field shows: what the next click would give, in base units.
     func liveValue(_ field: SketchInput) -> Double? {
         if let v = typedValue(field) { return v }
+        switch field {
+        case .moveX: return manipulatorValues.move.x
+        case .moveY: return manipulatorValues.move.y
+        case .turn: return manipulatorValues.turn.z
+        default: break
+        }
         guard let t = target()?.position, let a = clicks.first?.position else { return nil }
         let d = t - a
         switch field {
@@ -663,11 +689,13 @@ final class SketchSession {
             var sweep = atan2(d.y, d.x) - atan2(s.y, s.x)
             while sweep <= 0 { sweep += 2 * .pi }
             return sweep
+        case .moveX, .moveY, .turn: return nil
         }
     }
 
     /// Return in a field: place the next point from the typed values, as a click would.
     func commitTyped() -> String? {
+        if manipulating != nil { return commitTypedTransform() }
         guard !inputFields.isEmpty, let t = target() else { return nil }
         message = nil
         return toolClick(t)
@@ -717,30 +745,121 @@ final class SketchSession {
     /// Whether there is anything to move: the selection, or with none, the whole sketch.
     var canTransform: Bool { sketch.points.contains { !$0.fixed } }
 
-    func beginTransform(_ tool: SketchTransformTool) { if canTransform { transformRequested = tool } }
+    /// The Move and Rotate buttons turn the manipulator on (or off, pressed again); Scale asks for a factor.
+    func beginTransform(_ tool: SketchTransformTool) {
+        guard canTransform else { return }
+        if tool == .scale { transformRequested = tool; return }
+        if manipulating == tool { stopManipulating(); return }
+        setTool(.select)
+        manipulating = tool
+        message = nil
+        lastSnap = nil
+    }
+
+    func stopManipulating() {
+        guard manipulating != nil || manipulatorBase != nil else { return }
+        cancelManipulatorPreview()
+        manipulating = nil
+    }
+
+    /// Where the manipulator sits, in sketch (u, v): the middle of what it works on, carried along by a drag.
+    var manipulatorMiddle: SIMD2<Double>? {
+        guard manipulating != nil else { return nil }
+        if manipulatorBase != nil { return manipulatorPivot + SIMD2(manipulatorValues.move.x, manipulatorValues.move.y) }
+        return sketch.transformCenter(selection)
+    }
+
+    /// Takes the sketch as it is as the one a drag or typing starts from. False if there is nothing to work on.
+    @discardableResult
+    private func captureManipulatorBase() -> Bool {
+        if manipulatorBase != nil { return true }
+        guard manipulating != nil, let middle = sketch.transformCenter(selection) else { return false }
+        manipulatorBase = sketch
+        manipulatorPivot = middle
+        manipulatorValues = TransformValues()
+        return true
+    }
+
+    /// Puts the sketch back as it was before the preview, and forgets what was typed.
+    private func cancelManipulatorPreview() {
+        if let base = manipulatorBase { sketch = base }
+        manipulatorBase = nil
+        manipulatorValues = TransformValues()
+        typed = [:]
+    }
+
+    /// The mouse went down on a part of the manipulator.
+    func beginManipulatorDrag() -> Bool {
+        cancelManipulatorPreview()
+        message = nil
+        return captureManipulatorBase()
+    }
+
+    /// Shows the selection moved and turned by the dragged values, without keeping it.
+    func previewManipulator(_ v: TransformValues) {
+        guard let base = manipulatorBase else { return }
+        manipulatorValues = v
+        if let shown = transformed(base, by: v) { sketch = shown }
+    }
+
+    /// The mouse came up: keep the move and turn if the constraints let them stand (one undo step).
+    func endManipulatorDrag() -> String? {
+        guard manipulatorBase != nil else { return nil }
+        let v = manipulatorValues
+        cancelManipulatorPreview()
+        guard !isIdentity(v) else { return nil }
+        return commitTransform(v)
+    }
+
+    /// Shows what is typed in the fields as the selection moved and turned.
+    private func previewTyped() {
+        guard captureManipulatorBase(), let base = manipulatorBase else { return }
+        let v = typedTransform
+        manipulatorValues = v
+        sketch = transformed(base, by: v) ?? base
+    }
+
+    private var typedTransform: TransformValues {
+        var v = TransformValues()
+        v.move = SIMD3(typedValue(.moveX) ?? 0, typedValue(.moveY) ?? 0, 0)
+        v.turn = SIMD3(0, 0, typedValue(.turn) ?? 0)
+        return v
+    }
+
+    /// Return in a Move or Rotate field: keep the typed move and turn.
+    private func commitTypedTransform() -> String? {
+        guard !inputFields.contains(where: typedIsInvalid) else { return failTransform("That isn't a distance or an angle") }
+        let v = typedTransform
+        cancelManipulatorPreview()
+        guard !isIdentity(v) else { return failTransform(manipulating == .rotate ? "The angle is zero" : "The move is zero") }
+        guard captureManipulatorBase() else { return nil }
+        manipulatorBase = nil
+        return commitTransform(v)
+    }
+
+    /// The sketch with the selection turned about the pivot, then moved.
+    private func transformed(_ base: Sketch, by v: TransformValues) -> Sketch? {
+        var t = base
+        if abs(v.turn.z) > 1e-12, !t.apply(.rotate(angle: v.turn.z, about: manipulatorPivot), to: selection, parameters: parameters) { return nil }
+        if hypot(v.move.x, v.move.y) > 1e-12, !t.apply(.move(dx: v.move.x, dy: v.move.y), to: selection, parameters: parameters) { return nil }
+        return t
+    }
+
+    /// Whether a move and turn change nothing: no distance, and no angle or whole turns only.
+    private func isIdentity(_ v: TransformValues) -> Bool {
+        hypot(v.move.x, v.move.y) <= 1e-9 && abs(v.turn.z.truncatingRemainder(dividingBy: 2 * .pi)) <= 1e-9
+    }
+
+    private func commitTransform(_ v: TransformValues) -> String? {
+        guard let trial = transformed(sketch, by: v) else { return failTransform("Nothing to move") }
+        let turns = abs(v.turn.z.truncatingRemainder(dividingBy: 2 * .pi)) > 1e-9, moves = hypot(v.move.x, v.move.y) > 1e-9
+        return adopt(trial, turns && moves ? "Move and Rotate" : turns ? "Rotate" : "Move")
+    }
 
     /// What Move, Rotate and Scale work on, for the popover: "3 selected" or "the whole sketch".
     var transformTargetDescription: String {
         let n = selection.filter { sketch.kind(of: $0) != nil }.count
         return n == 0 ? "the whole sketch" : "\(n) selected"
-    }
-
-    /// Slides the selection (or the whole sketch) by an offset, in sketch x and y.
-    func moveSelection(x: String, y: String) -> String? {
-        do {
-            let dx = try parameters.value(of: x, kind: .length), dy = try parameters.value(of: y, kind: .length)
-            guard hypot(dx, dy) > 1e-9 else { return failTransform("The move is zero") }
-            return transform(.move(dx: dx, dy: dy), "Move", "move")
-        } catch { return failTransform("\(error)") }
-    }
-
-    /// Turns the selection counter-clockwise about its middle or the sketch origin.
-    func rotateSelection(angle: String, about pivot: TransformPivot) -> String? {
-        do {
-            let a = try parameters.value(of: angle, kind: .angle)
-            guard abs(a.truncatingRemainder(dividingBy: 2 * .pi)) > 1e-9 else { return failTransform("The angle is zero") }
-            return transform(.rotate(angle: a, about: transformPivot(pivot)), "Rotate", "turn")
-        } catch { return failTransform("\(error)") }
     }
 
     /// Grows or shrinks the selection about its middle or the sketch origin.
@@ -768,6 +887,11 @@ final class SketchSession {
         transformRequested = nil
         var trial = sketch
         guard trial.apply(t, to: selection, parameters: parameters) else { return failTransform("Nothing to \(verb)") }
+        return adopt(trial, action)
+    }
+
+    /// Keeps a transformed sketch if the constraints and dimensions let it stand.
+    private func adopt(_ trial: Sketch, _ action: String) -> String? {
         let moved = trial.transformPoints(selection)
         var solved = trial
         let result = SketchSolver.solve(&solved, dimensionValues: trial.dimensionValues(parameters))
@@ -988,6 +1112,7 @@ final class SketchSession {
     func escape() {
         if editingDimension != nil { editingDimension = nil }
         else if !clicks.isEmpty || !dimensionPicks.isEmpty { resetToolState() }
+        else if manipulating != nil { stopManipulating() }
         else if tool != .select { setTool(.select) }
         else { selection = [] }
     }
@@ -1097,9 +1222,9 @@ final class SketchSession {
 
     var statusText: String {
         if let message { return message }
-        var s = tool.hint
+        var s = manipulating == nil ? tool.hint : "Drag an arrow, the square or the ring to \(manipulating == .rotate ? "turn" : "move") \(selection.isEmpty ? "the sketch" : "the selection") · or type the values · Esc to stop"
         if let snap = lastSnap { s = "Snap: \(snap.kind.rawValue)\(snap.kind == .grid ? " \(gridStep.map { formatDimension($0, kind: .length) } ?? "")" : "") · " + s }
-        if !inputFields.isEmpty {
+        if !inputFields.isEmpty, manipulating == nil {
             s = "Type a value, Tab for the next one, Return to place it · " + s
         }
         if let solve {

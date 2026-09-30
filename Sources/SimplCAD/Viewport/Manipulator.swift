@@ -3,6 +3,7 @@
 // click hits) and the drag math (what a mouse movement means); the drawing is in ManipulatorView.
 // SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
+import CADKernel
 import CoreGraphics
 import Foundation
 import simd
@@ -46,6 +47,32 @@ struct TransformValues: Equatable {
     var turn = SIMD3<Double>.zero
 }
 
+/// The directions the manipulator's X, Y and Z point, and which parts it shows. A Move feature's is
+/// the world's axes with everything; a sketch's is the sketch plane (its x, its y, its normal) with
+/// arrows along the plane, the square between them and the ring about the normal.
+struct ManipulatorFrame {
+    var basis: [SIMD3<Double>] = Axis3.allCases.map(\.vector)
+    var arrows = Axis3.allCases
+    var squares = Axis3.allCases
+    var rings = Axis3.allCases
+    /// Whether the dot in the middle slides in the plane of the screen (else in the plane of the Z ring).
+    var dotFollowsScreen = true
+
+    static let world = ManipulatorFrame()
+
+    init() {}
+
+    init(sketch f: Frame) {
+        basis = [f.xAxis, f.yAxis, f.normal]
+        arrows = [.x, .y]
+        squares = [.z]
+        rings = [.z]
+        dotFollowsScreen = false
+    }
+
+    func vector(_ axis: Axis3) -> SIMD3<Double> { basis[axis.index] }
+}
+
 // MARK: - where things are on screen
 
 struct ManipulatorLayout {
@@ -81,6 +108,7 @@ struct ManipulatorLayout {
 
     let camera: Camera
     let viewSize: CGSize
+    let frame: ManipulatorFrame
     /// The manipulator's middle in the model, and how much it has turned already (the handles ride round).
     let middle: SIMD3<Double>
     let turn: SIMD3<Double>
@@ -94,20 +122,21 @@ struct ManipulatorLayout {
         camera.project(SIMD3(Float(p.x), Float(p.y), Float(p.z)), viewSize: size)
     }
 
-    init?(middle: SIMD3<Double>, turn: SIMD3<Double> = .zero, camera: Camera, viewSize: CGSize) {
+    init?(middle: SIMD3<Double>, turn: SIMD3<Double> = .zero, frame: ManipulatorFrame = .world, camera: Camera, viewSize: CGSize) {
         guard viewSize.width > 1, viewSize.height > 1, let c = Self.project(middle, camera, viewSize) else { return nil }
         // How long a millimetre looks, across the screen, where the manipulator is.
         let right = SIMD3(Double(camera.right.x), Double(camera.right.y), Double(camera.right.z))
         guard let r = Self.project(middle + right * 10, camera, viewSize) else { return nil }
         let ppm = hypot(r.x - c.x, r.y - c.y) / 10
         guard ppm > 1e-9 else { return nil }
-        self.camera = camera; self.viewSize = viewSize; self.middle = middle; self.turn = turn; center = c; pointsPerMM = Double(ppm)
+        self.camera = camera; self.viewSize = viewSize; self.frame = frame; self.middle = middle; self.turn = turn; center = c; pointsPerMM = Double(ppm)
         func mm(_ points: CGFloat) -> Double { Double(points) / Double(ppm) }
         func at(_ p: SIMD3<Double>) -> CGPoint? { Self.project(p, camera, viewSize) }
 
         for axis in Axis3.allCases {
+            let vector = frame.vector(axis)
             // Arrow: as long as it looks (shorter when it points toward or away from the viewer).
-            if let end = at(middle + axis.vector * mm(Self.arrowReach)) {
+            if frame.arrows.contains(axis), let end = at(middle + vector * mm(Self.arrowReach)) {
                 let v = CGVector(dx: end.x - c.x, dy: end.y - c.y)
                 let len = hypot(v.dx, v.dy)
                 if len >= Self.arrowGap + 14 {
@@ -123,13 +152,15 @@ struct ManipulatorLayout {
             }
             // Square between the other two arrows.
             let (a, b) = axis.others
+            let (av, bv) = (frame.vector(a), frame.vector(b))
             let corners = [(Self.squareNear, Self.squareNear), (Self.squareFar, Self.squareNear),
                            (Self.squareFar, Self.squareFar), (Self.squareNear, Self.squareFar)]
-                .compactMap { at(middle + a.vector * mm($0.0) + b.vector * mm($0.1)) }
-            if corners.count == 4, Self.area(corners) > 90 { squares.append(Square(normal: axis, corners: corners)) }
+                .compactMap { at(middle + av * mm($0.0) + bv * mm($0.1)) }
+            if frame.squares.contains(axis), corners.count == 4, Self.area(corners) > 90 { squares.append(Square(normal: axis, corners: corners)) }
             // Ring about the axis, with its handle a little way round.
+            guard frame.rings.contains(axis) else { continue }
             let radius = mm(Self.ringRadius)
-            func onRing(_ t: Double) -> SIMD3<Double> { middle + radius * (cos(t) * a.vector + sin(t) * b.vector) }
+            func onRing(_ t: Double) -> SIMD3<Double> { middle + radius * (cos(t) * av + sin(t) * bv) }
             let outline = stride(from: 0.0, to: 2 * Double.pi, by: 2 * Double.pi / 120).compactMap { at(onRing($0)) }
             let t = Double.pi / 4 + turn[axis.index]
             if outline.count == 120, let h = at(onRing(t)), let before = at(onRing(t - 0.05)), let after = at(onRing(t + 0.05)) {
@@ -198,6 +229,7 @@ struct ManipulatorLayout {
 struct ManipulatorDrag {
     let part: ManipulatorPart
     let start: TransformValues
+    private let frame: ManipulatorFrame
     private let middle: SIMD3<Double>
     private let pointsPerMM: Double
     private let ringRadiusPoints: CGFloat
@@ -236,29 +268,30 @@ struct ManipulatorDrag {
     }
 
     /// Where a point is round a ring about `axis` through `middle`, counter-clockwise from the axis's first other axis.
-    static func angle(of p: SIMD3<Double>, about axis: Axis3, through middle: SIMD3<Double>) -> Double {
+    static func angle(of p: SIMD3<Double>, about axis: Axis3, through middle: SIMD3<Double>, in frame: ManipulatorFrame) -> Double {
         let (a, b) = axis.others
-        return atan2(simd_dot(p - middle, b.vector), simd_dot(p - middle, a.vector))
+        return atan2(simd_dot(p - middle, frame.vector(b)), simd_dot(p - middle, frame.vector(a)))
     }
 
-    init?(part: ManipulatorPart, at p: CGPoint, layout: ManipulatorLayout, start: TransformValues) {
+    init?(part grabbed: ManipulatorPart, at p: CGPoint, layout: ManipulatorLayout, start: TransformValues) {
+        let part: ManipulatorPart = grabbed == .center && !layout.frame.dotFollowsScreen ? .plane(.z) : grabbed
         self.part = part; self.start = start
-        middle = layout.middle; pointsPerMM = layout.pointsPerMM; ringRadiusPoints = ManipulatorLayout.ringRadius
+        frame = layout.frame; middle = layout.middle; pointsPerMM = layout.pointsPerMM; ringRadiusPoints = ManipulatorLayout.ringRadius
         let ray = Self.ray(p, layout.camera, layout.viewSize)
         switch part {
         case .axis(let a):
-            guard let s = Self.along(a.vector, from: middle, ray: ray) else { return nil }
+            guard let s = Self.along(frame.vector(a), from: middle, ray: ray) else { return nil }
             reference = .axis(along: s)
         case .plane(let n):
-            guard let h = Self.hit(ray, plane: middle, normal: n.vector) else { return nil }
+            guard let h = Self.hit(ray, plane: middle, normal: frame.vector(n)) else { return nil }
             reference = .plane(h)
         case .center:
             let f = layout.camera.forward
             guard let h = Self.hit(ray, plane: middle, normal: SIMD3(Double(f.x), Double(f.y), Double(f.z))) else { return nil }
             reference = .plane(h)
         case .ring(let a):
-            if abs(simd_dot(ray.direction, a.vector)) > 0.15, let h = Self.hit(ray, plane: middle, normal: a.vector) {
-                let t = Self.angle(of: h, about: a, through: middle)
+            if abs(simd_dot(ray.direction, frame.vector(a))) > 0.15, let h = Self.hit(ray, plane: middle, normal: frame.vector(a)) {
+                let t = Self.angle(of: h, about: a, through: middle, in: frame)
                 reference = .ring(angle: t)
                 lastAngle = t
             } else if let ring = layout.rings.first(where: { $0.axis == a }) {
@@ -285,20 +318,20 @@ struct ManipulatorDrag {
         var v = start
         switch (part, reference) {
         case (.axis(let a), .axis(let s0)):
-            guard let s = Self.along(a.vector, from: middle, ray: ray) else { return nil }
+            guard let s = Self.along(frame.vector(a), from: middle, ray: ray) else { return nil }
             v.move[a.index] = snap(start.move[a.index] + s - s0)
         case (.plane(let n), .plane(let h0)):
-            guard let h = Self.hit(ray, plane: middle, normal: n.vector) else { return nil }
+            guard let h = Self.hit(ray, plane: middle, normal: frame.vector(n)) else { return nil }
             let (a, b) = n.others
-            v.move[a.index] = snap(start.move[a.index] + simd_dot(h - h0, a.vector))
-            v.move[b.index] = snap(start.move[b.index] + simd_dot(h - h0, b.vector))
+            v.move[a.index] = snap(start.move[a.index] + simd_dot(h - h0, frame.vector(a)))
+            v.move[b.index] = snap(start.move[b.index] + simd_dot(h - h0, frame.vector(b)))
         case (.center, .plane(let h0)):
             let f = camera.forward
             guard let h = Self.hit(ray, plane: middle, normal: SIMD3(Double(f.x), Double(f.y), Double(f.z))) else { return nil }
             for i in 0..<3 { v.move[i] = snap(start.move[i] + (h - h0)[i]) }
         case (.ring(let a), .ring):
-            guard let h = Self.hit(ray, plane: middle, normal: a.vector) else { return nil }
-            let t = Self.angle(of: h, about: a, through: middle)
+            guard let h = Self.hit(ray, plane: middle, normal: frame.vector(a)) else { return nil }
+            let t = Self.angle(of: h, about: a, through: middle, in: frame)
             var d = t - lastAngle
             if d > .pi { d -= 2 * .pi } else if d < -.pi { d += 2 * .pi }
             accumulated += d

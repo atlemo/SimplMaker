@@ -805,11 +805,13 @@ struct SketchToolbar: View {
     }
 
     private func transform(_ tool: SketchTransformTool) -> GroupTool {
-        GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool.symbol, help: tool.help, enabled: session.canTransform,
-                  popover: ToolPopover(isPresented: Binding(get: { session.transformRequested == tool },
+        // Move and Rotate show the manipulator to drag (or type into); Scale asks for a factor.
+        GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool.symbol, help: tool.help,
+                  active: session.manipulating == tool, enabled: session.canTransform,
+                  popover: tool != .scale ? nil : ToolPopover(isPresented: Binding(get: { session.transformRequested == tool },
                                                             set: { if $0 { session.transformRequested = tool } else if session.transformRequested == tool { session.transformRequested = nil } }),
                                        content: AnyView(TransformPopover(model: model, session: session, tool: tool)))) {
-            session.beginTransform(tool)
+            model.beginSketchTransform(tool)
         }
     }
 
@@ -935,14 +937,12 @@ struct DimensionEditor: View {
     }
 }
 
-/// Asks for the values of Move, Rotate or Scale, and applies them to the selection (or the whole sketch).
+/// Asks for the factor of Scale, and applies it to the selection (or the whole sketch). Move and Rotate
+/// have the manipulator in the viewport instead.
 struct TransformPopover: View {
     let model: DocumentModel
     let session: SketchSession
     let tool: SketchTransformTool
-    @State private var x = "0 mm"
-    @State private var y = "0 mm"
-    @State private var angle = "90 deg"
     @State private var factor = "2"
     @State private var pivot = TransformPivot.selection
     @FocusState private var focused: Bool
@@ -950,17 +950,8 @@ struct TransformPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.labelGap) {
             Text(tool.rawValue).font(.headline)
-            switch tool {
-            case .move:
-                field("X", $x, focus: true)
-                field("Y", $y)
-            case .rotate:
-                field("Angle", $angle, focus: true)
-                pivotPicker
-            case .scale:
-                field("Factor", $factor, focus: true)
-                pivotPicker
-            }
+            field("Factor", $factor, focus: true)
+            pivotPicker
             HStack {
                 Text("Works on \(session.transformTargetDescription).").font(.caption).foregroundStyle(.secondary)
                 Spacer()
@@ -990,12 +981,8 @@ struct TransformPopover: View {
     }
 
     private func commit() {
-        let (x, y, angle, factor, pivot) = (x, y, angle, factor, pivot)
-        switch tool {
-        case .move: model.sketchCommand { $0.moveSelection(x: x, y: y) }
-        case .rotate: model.sketchCommand { $0.rotateSelection(angle: angle, about: pivot) }
-        case .scale: model.sketchCommand { $0.scaleSelection(factor: factor, about: pivot) }
-        }
+        let (factor, pivot) = (factor, pivot)
+        model.sketchCommand { $0.scaleSelection(factor: factor, about: pivot) }
     }
 }
 

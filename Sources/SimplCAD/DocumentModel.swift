@@ -788,6 +788,12 @@ final class DocumentModel {
         overlayRevision += 1
     }
 
+    /// Move and Rotate turn the manipulator on or off; Scale asks for a factor.
+    func beginSketchTransform(_ tool: SketchTransformTool) {
+        sketchSession?.beginTransform(tool)
+        overlayRevision += 1  // the viewport shows or hides the manipulator
+    }
+
     func setSketchTool(_ tool: SketchTool) {
         sketchSession?.setTool(tool)
         overlayRevision += 1
