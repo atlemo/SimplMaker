@@ -12,7 +12,7 @@ import simd
 enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
-    case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", rotate = "Rotate", combine = "Combine"
+    case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", rotate = "Rotate", scale = "Scale", combine = "Combine"
     case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell"
 
     var id: String { rawValue }
@@ -21,7 +21,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// change an existing body.
     static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
-    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .move, .rotate, .combine]
+    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .move, .rotate, .scale, .combine]
     /// Construction planes, and copies of bodies.
     static let construct: [DesignTool] = [.plane, .mirror, .pattern]
 
@@ -45,6 +45,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .thread: return "thread"
         case .move: return "move"
         case .rotate: return "rotate-cw"
+        case .scale: return "scaling"
         case .combine: return "combine"
         case .plane: return "plane"
         case .mirror: return "flip-horizontal-2"
@@ -75,6 +76,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .shell: return "s"
         case .move: return "m"
         case .rotate: return "o"
+        case .scale: return "z"
         case .combine: return "j"
         case .plane: return "n"
         case .mirror: return "i"
@@ -97,8 +99,9 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .coil: return "Coil (K): place a coil spring on a plane or face"
         case .pipe: return "Pipe (P): a round tube along sketch curves"
         case .fillet: return "Fillet (F): round the selected edges, or every edge around a selected face"
-        case .move: return "Move (M): slide bodies or sketches along X, Y or Z"
-        case .rotate: return "Rotate (O): turn a body about an X, Y or Z axis"
+        case .move: return "Move (M): slide or turn bodies and sketches with the arrows, squares and rings, or type a distance or angle"
+        case .rotate: return "Rotate (O): turn bodies and sketches about X, Y or Z with the rings, or type an angle"
+        case .scale: return "Scale (Z): make sketches bigger or smaller, about their origins"
         case .chamfer: return "Chamfer (C): bevel the selected edges, or every edge around a selected face"
         case .thread: return "Thread (D): cut a metric or inch screw thread on a shaft or in a hole"
         case .combine: return "Combine (J): join, cut or intersect bodies (e.g. cut text out of a plate)"
@@ -144,8 +147,9 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .hole, .thread: return kind == .face
         case .box, .cylinder, .sphere, .torus, .coil: return kind == .plane || kind == .face
         case .fillet, .chamfer: return kind == .edge || kind == .face  // a face: every edge around it
-        case .move: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve
-        case .rotate, .combine: return kind == .face || kind == .edge
+        case .move, .rotate: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve
+        case .combine: return kind == .face || kind == .edge
+        case .scale: return kind == .region || kind == .sketchCurve
         case .plane: return kind == .plane || kind == .face
         case .mirror: return kind == .face || kind == .edge || kind == .plane  // bodies, then the plane
         case .pattern: return kind == .face || kind == .edge  // bodies (faces), and a straight edge for the direction
@@ -233,7 +237,8 @@ extension DocumentModel {
         case .box, .cylinder, .sphere, .torus, .coil:
             return "Click a plane or flat face to place the \(tool.rawValue.lowercased())"
         case .move: return "Click the bodies or sketches to move"
-        case .rotate: return "Click the body to rotate"
+        case .rotate: return "Click the bodies or sketches to rotate"
+        case .scale: return "Click the sketches to scale"
         case .plane: return "Click an origin plane, a construction plane or a flat face to start the new plane from"
         case .mirror:
             return pickedBodies.isEmpty ? "Click the bodies to mirror" : "Click more bodies, or the plane to mirror across (\(pickedBodies.count) picked)"
@@ -317,16 +322,23 @@ extension DocumentModel {
         case .fillet, .chamfer:
             guard selectedEdgeCount + selection.filter(\.isFace).count > 0, !waiting else { return false }
             addEdgeFeature(fillet: tool == .fillet)
-        case .move:
+        case .move, .rotate:
+            // One manipulator does both; Rotate starts with its Z ring ready for a typed angle.
             var sketches: [FeatureID] = []
             for s in profiles.map(\.sketch) + curves.map(\.sketch) where !sketches.contains(s) { sketches.append(s) }
             let bodies = pickedBodies
             guard !bodies.isEmpty || !sketches.isEmpty else { return false }
-            add(Feature(name: document.nextName(tool.rawValue), .move(MoveFeature(bodies: bodies, sketches: sketches))))
-        case .rotate:
-            let bodies = pickedBodies
-            guard !bodies.isEmpty else { return false }
-            add(Feature(name: document.nextName(tool.rawValue), .rotate(RotateFeature(bodies: bodies))))
+            add(Feature(name: document.nextName(tool.rawValue), .move(MoveFeature(
+                bodies: bodies, sketches: sketches, arrow: tool == .rotate ? .z : .x, rotating: tool == .rotate))))
+        case .scale:
+            var sketches: [FeatureID] = []
+            for s in profiles.map(\.sketch) + curves.map(\.sketch) where !sketches.contains(s) { sketches.append(s) }
+            // A sketch selected in the browser counts too.
+            if sketches.isEmpty, let id = selectedFeature, case .sketch? = document.features.first(where: { $0.id == id })?.kind {
+                sketches = [id]
+            }
+            guard !sketches.isEmpty else { return false }
+            add(Feature(name: document.nextName(tool.rawValue), .scale(ScaleFeature(sketches: sketches))))
         case .plane:
             guard selection.count == 1, let pick = selection.first else { return false }
             return place(tool, on: pick)
@@ -415,11 +427,20 @@ extension DocumentModel {
     }
 
     /// Moves whole sketches or bodies (from the browser or a right-click), with a drag handle to set how far.
-    func move(sketches: [FeatureID] = [], bodies: [FeatureID] = []) {
+    func move(sketches: [FeatureID] = [], bodies: [FeatureID] = [], rotating: Bool = false) {
         guard !sketches.isEmpty || !bodies.isEmpty else { return }
         if sketchSession != nil { finishSketch() }
         pendingTool = nil
-        add(Feature(name: document.nextName(DesignTool.move.rawValue), .move(MoveFeature(bodies: bodies, sketches: sketches))))
+        add(Feature(name: document.nextName((rotating ? DesignTool.rotate : DesignTool.move).rawValue), .move(MoveFeature(
+            bodies: bodies, sketches: sketches, arrow: rotating ? .z : .x, rotating: rotating))))
+    }
+
+    /// Scales whole sketches (from the browser or a right-click), with a drag handle to set the factor.
+    func scale(sketches: [FeatureID]) {
+        guard !sketches.isEmpty else { return }
+        if sketchSession != nil { finishSketch() }
+        pendingTool = nil
+        add(Feature(name: document.nextName(DesignTool.scale.rawValue), .scale(ScaleFeature(sketches: sketches))))
     }
 
     /// Places a hole or primitive on a picked origin plane or flat face, where the user clicked

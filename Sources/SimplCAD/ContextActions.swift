@@ -111,6 +111,7 @@ extension DocumentModel {
         [.separator,
          .action("Edit \(featureName(sketch))", symbol: "pencil") { self.editSketch(sketch) },
          .action("Move \(featureName(sketch))", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.move(sketches: [sketch]) },
+         .action("Scale \(featureName(sketch))", symbol: "arrow.up.left.and.arrow.down.right") { self.scale(sketches: [sketch]) },
          .action("Hide \(featureName(sketch))", symbol: "eye.slash") { self.setHidden([sketch], true) }]
     }
 
@@ -289,13 +290,28 @@ extension DocumentModel {
     func setTransformAxis(_ a: Axis3, of id: FeatureID) {
         guard transformAxis(id) != a else { return }
         storeTypedSize()  // what was typed for X stays with X
+        if isMoveFeature(id) {
+            setPresentation(id) { f in if case .move(var m) = f.kind { m.arrow = a; f.kind = .move(m) } }  // no undo step: nothing changes
+            return
+        }
         updateFeature(id, "Change Axis") { f in
             switch f.kind {
-            case .move(var m): m.arrow = a; f.kind = .move(m)
             case .rotate(var r): r.axis = a; f.kind = .rotate(r)
             default: break
             }
         }
+    }
+
+    func isMoveFeature(_ id: FeatureID) -> Bool {
+        if case .move? = document.features.first(where: { $0.id == id })?.kind { return true }
+        return false
+    }
+
+    /// Makes the typed field of a Move feature set a turn (or a distance).
+    func setRotating(_ rotating: Bool, of id: FeatureID) {
+        guard isRotating(id) != rotating else { return }
+        storeTypedSize()
+        setPresentation(id) { f in if case .move(var m) = f.kind { m.rotating = rotating; f.kind = .move(m) } }
     }
 
     /// Whether an extrude goes against its sketch's (or face's) normal; nil for other features.
@@ -365,6 +381,16 @@ struct FeatureHUD: View {
                 .labelsHidden()
                 .fixedSize()
                 .help("Join adds to the body, Cut removes from it, New makes a separate body, Intersect keeps the overlap")
+            }
+            if model.isMoveFeature(id) {
+                Picker("Type", selection: Binding(get: { model.isRotating(id) }, set: { model.setRotating($0, of: id) })) {
+                    Text("Move").tag(false)
+                    Text("Rotate").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help("What the typed value sets: a distance to move, or an angle to turn")
             }
             if let axis = model.transformAxis(id) {
                 Picker("Axis", selection: Binding(get: { axis }, set: { model.setTransformAxis($0, of: id) })) {

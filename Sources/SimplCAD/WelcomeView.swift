@@ -25,6 +25,10 @@ struct WelcomeView: View {
     @AppStorage(Preferences.showWelcome) private var showWelcome = true
     @State private var recents: [URL] = []
     @State private var selected: URL?
+    /// The part being opened, which shows a spinner.
+    @State private var opening: URL?
+    /// The recent list has the keyboard from the start (for ↑ ↓ Return), not the first button.
+    @FocusState private var listFocused: Bool
     @State private var error: String?
 
     var body: some View {
@@ -105,27 +109,55 @@ struct WelcomeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            // The list's own double-click (and Return) opens a part. A tap gesture on the rows
-            // would fight the list's click handling, which made double-clicks slow to register.
-            List(recents, id: \.self, selection: $selected) { url in
-                RecentRow(url: url).tag(url)
-            }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .contextMenu(forSelectionType: URL.self) { urls in
-                if let url = urls.first {
-                    Button("Open") { open(url) }
-                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                    Divider()
-                    Button("Remove from Recent Parts") {
-                        RecentParts.remove(url)
-                        reloadRecents()
+            // Drawn here rather than with List: a List shows its selection in grey until it has
+            // keyboard focus, and its table doesn't take the click that brings the window forward,
+            // so a double-click could select without opening. Here a click selects at once, the
+            // second click of a double-click opens, and ↑ ↓ Return work as in a list.
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(recents, id: \.self) { url in
+                        RecentRow(url: url, selected: selected == url, opening: opening == url)
+                            .onTapGesture { click(url) }
+                            .contextMenu {
+                                Button("Open") { open(url) }
+                                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                                Divider()
+                                Button("Remove from Recent Parts") {
+                                    RecentParts.remove(url)
+                                    reloadRecents()
+                                }
+                            }
+                            .accessibilityAction { open(url) }
                     }
                 }
-            } primaryAction: { urls in
-                if let url = urls.first { open(url) }
+                .padding(DS.Spacing.space3)
+            }
+            .focusable()
+            .focusEffectDisabled()
+            .focused($listFocused)
+            .onAppear { listFocused = true }
+            .onKeyPress(.upArrow) { step(-1) }
+            .onKeyPress(.downArrow) { step(1) }
+            .onKeyPress(.return) {
+                guard let selected else { return .ignored }
+                open(selected)
+                return .handled
             }
         }
+    }
+
+    /// A click selects the part; the second click of a double-click opens it.
+    private func click(_ url: URL) {
+        selected = url
+        if (NSApp.currentEvent?.clickCount ?? 1) >= 2 { open(url) }
+    }
+
+    /// Moves the selection up or down the list.
+    private func step(_ by: Int) -> KeyPress.Result {
+        guard !recents.isEmpty else { return .ignored }
+        let i = selected.flatMap { recents.firstIndex(of: $0) } ?? (by > 0 ? -1 : recents.count)
+        selected = recents[min(max(i + by, 0), recents.count - 1)]
+        return .handled
     }
 
     private func reloadRecents() {
@@ -133,7 +165,10 @@ struct WelcomeView: View {
     }
 
     private func open(_ url: URL) {
+        guard opening == nil else { return }
+        opening = url
         Task {
+            defer { opening = nil }
             do {
                 try await openDocument(at: url)
                 dismissWindow(id: AppWindows.welcomeID)
@@ -176,9 +211,12 @@ private struct WelcomeAction: View {
     }
 }
 
-/// A recent part: file icon, name, and where it lives.
+/// A recent part: file icon, name, and where it lives; blue when selected, as in a source list.
 private struct RecentRow: View {
     let url: URL
+    let selected: Bool
+    let opening: Bool
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -187,12 +225,23 @@ private struct RecentRow: View {
                 .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 1) {
                 Text(url.deletingPathExtension().lastPathComponent).font(.headline).lineLimit(1)
-                Text(Self.abbreviated(url.deletingLastPathComponent())).font(.callout).foregroundStyle(.secondary)
+                Text(Self.abbreviated(url.deletingLastPathComponent())).font(.callout)
+                    .foregroundStyle(selected ? Color.white.opacity(0.8) : Color.secondary)
                     .lineLimit(1).truncationMode(.middle)
             }
+            Spacer(minLength: 0)
+            if opening { ProgressView().controlSize(.small).tint(selected ? .white : nil) }
         }
-        .padding(.vertical, 3)
+        .foregroundStyle(selected ? Color.white : Color.primary)
+        .padding(.horizontal, DS.Spacing.space3)
+        .padding(.vertical, 5)
+        .background(selected ? Color.accentColor : hovering ? Color.primary.opacity(0.06) : .clear,
+                    in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
         .help(url.path)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
     /// "~/Desktop" rather than "/Users/name/Desktop".

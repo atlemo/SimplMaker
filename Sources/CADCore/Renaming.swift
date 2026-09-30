@@ -70,8 +70,12 @@ extension Feature.Kind {
             f.pitch = change(f.pitch); f.turns = change(f.turns)
             self = .primitive(f)
         case .pipe(var f): f.diameter = change(f.diameter); f.wall = f.wall.map(change); self = .pipe(f)
-        case .move(var f): f.dx = change(f.dx); f.dy = change(f.dy); f.dz = change(f.dz); self = .move(f)
+        case .move(var f):
+            f.dx = change(f.dx); f.dy = change(f.dy); f.dz = change(f.dz)
+            f.rx = change(f.rx); f.ry = change(f.ry); f.rz = change(f.rz)
+            self = .move(f)
         case .rotate(var f): f.angle = change(f.angle); self = .rotate(f)
+        case .scale(var f): f.factor = change(f.factor); self = .scale(f)
         case .plane(var f): f.offset = change(f.offset); f.angle = change(f.angle); self = .plane(f)
         case .mirror: break
         case .pattern(var f): f.count = change(f.count); f.spacing = change(f.spacing); self = .pattern(f)
@@ -151,6 +155,7 @@ extension Feature {
         case .fillet(let f), .chamfer(let f): f.edges.forEach { add($0.body) }; f.faces.forEach { add($0.body) }
         case .move(let f): f.bodies.forEach { add($0) }; f.sketches.forEach { add($0) }
         case .rotate(let f): f.bodies.forEach { add($0) }
+        case .scale(let f): f.sketches.forEach { add($0) }
         case .combine(let f): add(f.target); f.tools.forEach { add($0) }
         case .plane(let f): add(f.base.feature)
         case .mirror(let f): f.bodies.forEach { add($0) }; add(f.plane.feature)
@@ -185,7 +190,7 @@ extension Feature {
         case .mirror(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
         case .pattern(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
         case .shell(let f): out.insert(f.body)
-        case .sketch, .plane, .importBody: break
+        case .sketch, .plane, .importBody, .scale: break
         }
         return out
     }

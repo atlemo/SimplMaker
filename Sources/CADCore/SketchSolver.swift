@@ -32,6 +32,113 @@ public enum SketchSolver {
     /// least-squares compromise (re-solve without them to satisfy the constraints exactly).
     public static func solve(_ sketch: inout Sketch, dimensionValues: [EntityID: Double],
                              soft: [SoftTarget] = [], softWeight: Double = 0.05) -> SolveResult {
+        // The solver is dense, so a big sketch (an imported drawing, say) is solved in independent groups.
+        guard sketch.points.count > splitThreshold else {
+            return solveTogether(&sketch, dimensionValues: dimensionValues, soft: soft, softWeight: softWeight)
+        }
+        return solveInGroups(&sketch, dimensionValues: dimensionValues, soft: soft, softWeight: softWeight)
+    }
+
+    /// Sketches with more points than this are split into groups that don't constrain each other.
+    static let splitThreshold = 150
+
+    /// Solves the groups of a sketch one by one. Arcs, constraints, dimensions and soft targets tie
+    /// together the movable points (and circle radii) they mention; things tied together are one
+    /// group. Fixed points are constants and tie nothing. Points and circles that nothing mentions
+    /// are free, and cost nothing.
+    static func solveInGroups(_ sketch: inout Sketch, dimensionValues: [EntityID: Double],
+                              soft: [SoftTarget], softWeight: Double) -> SolveResult {
+        struct Item {
+            var refs: [EntityID]
+            var constraint: SketchConstraint?
+            var dimension: SketchDimension?
+            var soft: SoftTarget?
+        }
+        var items: [Item] = []
+        for c in sketch.curves { if case .arc = c.geometry { items.append(Item(refs: [c.id])) } }
+        for c in sketch.constraints { items.append(Item(refs: Sketch.references(c.kind), constraint: c)) }
+        for d in sketch.dimensions { items.append(Item(refs: Sketch.references(d.kind), dimension: d)) }
+        for t in soft {
+            switch t {
+            case .point(let id, _), .radius(let id, _): items.append(Item(refs: [id], soft: t))
+            }
+        }
+
+        let fixed = Set(sketch.points.filter(\.fixed).map(\.id))
+        let pointIDs = Set(sketch.points.map(\.id))
+        let curveByID = Dictionary(sketch.curves.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        /// The points of some entities: points themselves, and the points curves are built from.
+        func pointsOf(_ refs: [EntityID]) -> Set<EntityID> {
+            var out = Set<EntityID>()
+            for id in refs {
+                if pointIDs.contains(id) { out.insert(id) } else if let c = curveByID[id] { out.formUnion(sketch.pointIDs(of: c)) }
+            }
+            return out
+        }
+        let circles = Set(sketch.curves.compactMap { c -> EntityID? in if case .circle = c.geometry { return c.id } else { return nil } })
+        var parent: [EntityID: EntityID] = [:]
+        func find(_ id: EntityID) -> EntityID {
+            var root = id
+            while let p = parent[root], p != root { root = p }
+            var walk = id
+            while let p = parent[walk], p != root { parent[walk] = root; walk = p }
+            return root
+        }
+        var nodes: [[EntityID]] = [], points: [Set<EntityID>] = []
+        for item in items {
+            let pts = pointsOf(item.refs)
+            var n = pts.subtracting(fixed)
+            for r in item.refs where circles.contains(r) { n.insert(r) }
+            let list = Array(n)
+            for id in list where parent[id] == nil { parent[id] = id }
+            if let first = list.first { let root = find(first); for id in list { parent[find(id)] = root } }
+            nodes.append(list); points.append(pts)
+        }
+
+        struct Group {
+            var points = Set<EntityID>()
+            var curves = Set<EntityID>()
+            var constraints: [SketchConstraint] = []
+            var dimensions: [SketchDimension] = []
+            var soft: [SoftTarget] = []
+        }
+        var groups: [EntityID: Group] = [:]
+        var touched = Set<EntityID>(), used = Set<EntityID>()
+        for (i, item) in items.enumerated() {
+            let key = nodes[i].first.map(find) ?? "~"  // only fixed things: one group for all of those
+            groups[key, default: Group()].points.formUnion(points[i])
+            groups[key]!.curves.formUnion(item.refs)
+            touched.formUnion(points[i]); used.formUnion(item.refs)
+            if let c = item.constraint { groups[key]!.constraints.append(c) }
+            if let d = item.dimension { groups[key]!.dimensions.append(d) }
+            if let t = item.soft { groups[key]!.soft.append(t) }
+        }
+
+        var total = SolveResult(status: .solved, degreesOfFreedom: 0, maxResidual: 0, iterations: 0)
+        for p in sketch.points where !p.fixed && !touched.contains(p.id) { total.degreesOfFreedom += 2 }
+        for c in circles where !used.contains(c) { total.degreesOfFreedom += 1 }
+
+        let index = Dictionary(uniqueKeysWithValues: sketch.points.indices.map { (sketch.points[$0].id, $0) })
+        let curveIndex = Dictionary(uniqueKeysWithValues: sketch.curves.indices.map { (sketch.curves[$0].id, $0) })
+        for g in groups.values {
+            var part = Sketch()
+            part.points = g.points.compactMap { index[$0] }.sorted().map { sketch.points[$0] }
+            part.curves = g.curves.compactMap { curveIndex[$0] }.sorted().map { sketch.curves[$0] }
+            part.constraints = g.constraints
+            part.dimensions = g.dimensions
+            let r = solveTogether(&part, dimensionValues: dimensionValues, soft: g.soft, softWeight: softWeight)
+            for p in part.points { if let i = index[p.id], !p.fixed { sketch.points[i] = p } }
+            for c in part.curves { if let i = curveIndex[c.id] { sketch.curves[i] = c } }
+            if r.status == .failed { total.status = .failed }
+            total.degreesOfFreedom += r.degreesOfFreedom
+            total.maxResidual = max(total.maxResidual, r.maxResidual)
+            total.iterations += r.iterations
+        }
+        return total
+    }
+
+    static func solveTogether(_ sketch: inout Sketch, dimensionValues: [EntityID: Double],
+                              soft: [SoftTarget], softWeight: Double) -> SolveResult {
         var system = System(sketch)
         system.addConstraints(sketch, dimensionValues: dimensionValues)
         system.addSoft(soft, weight: softWeight)

@@ -150,6 +150,7 @@ public enum Regenerator {
                 case .pipe(let f): try pipe(f, feature, &r)
                 case .move(let f): try move(f, feature, &r)
                 case .rotate(let f): try rotate(f, feature, &r)
+                case .scale(let f): try scale(f, feature, &r)
                 case .combine(let f): try combine(f, feature, &r)
                 case .plane(let f): r.planes[feature.id] = try plane(f, r)
                 case .mirror(let f): try mirror(f, feature, &r)
@@ -634,15 +635,49 @@ public enum Regenerator {
     static func move(_ f: MoveFeature, _ feature: Feature, _ r: inout RegenResult) throws {
         let p = r.parameters
         let d = SIMD3(try p.value(of: f.dx, kind: .length), try p.value(of: f.dy, kind: .length), try p.value(of: f.dz, kind: .length))
-        for id in f.sketches {
+        let turn = SIMD3(try p.value(of: f.rx, kind: .angle), try p.value(of: f.ry, kind: .angle), try p.value(of: f.rz, kind: .angle))
+        // Turns are about the middle of what moves, as it was before this feature.
+        let inputSketches = try f.sketches.map { id -> SketchResult in
             guard let sk = r.sketches[id] else { throw KernelError(message: "a sketch it moves failed or is missing") }
+            return sk
+        }
+        let inputBodies = f.bodies.compactMap { id in r.bodies.first { $0.id == id }?.body }
+        let pivot = center(of: inputBodies, sketches: inputSketches) ?? .zero
+        let matrix = rotationMatrix(turn)
+        for (id, sk) in zip(f.sketches, inputSketches) {
             r.sketchInputs[feature.id, default: [:]][id] = sk
             var frame = sk.frame
-            frame.origin += d
+            frame.origin = pivot + matrix * (frame.origin - pivot) + d
+            frame.normal = matrix * frame.normal
+            frame.xAxis = matrix * frame.xAxis
             r.sketches[id] = try sketchResult(sk.solved, solve: sk.solve, frame: frame, parameters: p)
         }
         if f.bodies.isEmpty && !f.sketches.isEmpty { return }
-        for i in try transformInputs(f.bodies, feature, &r) { r.bodies[i].body = try r.bodies[i].body.translated(d) }
+        for i in try transformInputs(f.bodies, feature, &r) {
+            var body = r.bodies[i].body
+            for (axis, angle) in [(Axis3.x, turn.x), (.y, turn.y), (.z, turn.z)] where abs(angle) > 1e-12 {
+                body = try body.rotated(about: pivot, axis: direction(axis), angle: angle)
+            }
+            r.bodies[i].body = abs(d.x) + abs(d.y) + abs(d.z) > 0 ? try body.translated(d) : body
+        }
+    }
+
+    /// Turning about X, then Y, then Z (all fixed world axes), as one matrix.
+    public static func rotationMatrix(_ turn: SIMD3<Double>) -> simd_double3x3 {
+        func about(_ a: SIMD3<Double>, _ t: Double) -> simd_double3x3 { simd_double3x3(simd_quatd(angle: t, axis: a)) }
+        return about(SIMD3(0, 0, 1), turn.z) * about(SIMD3(0, 1, 0), turn.y) * about(SIMD3(1, 0, 0), turn.x)
+    }
+
+    static func scale(_ f: ScaleFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let p = r.parameters
+        let k = try p.value(of: f.factor, kind: .none)
+        guard k > 1e-9 else { throw KernelError(message: "the scale factor must be more than zero") }
+        guard !f.sketches.isEmpty else { throw KernelError(message: "no sketch to scale") }
+        for id in f.sketches {
+            guard let sk = r.sketches[id] else { throw KernelError(message: "a sketch it scales failed or is missing") }
+            r.sketchInputs[feature.id, default: [:]][id] = sk
+            r.sketches[id] = try sketchResult(sk.solved.scaled(by: k, parameters: p), solve: sk.solve, frame: sk.frame, parameters: p)
+        }
     }
 
     static func combine(_ f: CombineFeature, _ feature: Feature, _ r: inout RegenResult) throws {

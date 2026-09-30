@@ -9,6 +9,15 @@ struct Icon: View {
     let name: String
     var size: CGFloat = 16
     var weight: Weight = .regular
+    /// When set, the stroke is this many points thick on screen whatever the icon's size (the glyph
+    /// grid is 24 units, so the stroke is drawn thicker on the grid the smaller the icon is shown).
+    var renderedStroke: CGFloat?
+
+    /// The thickness of tool icons in the toolbars and their menus, in points as rendered.
+    static let toolStroke: CGFloat = 1.2
+
+    /// The stroke width in the glyph's 24-unit grid.
+    var gridStrokeWidth: CGFloat { renderedStroke.map { $0 * 24 / size } ?? weight.strokeWidth }
 
     enum Weight {
         case ultralight, light, regular, medium, semibold, bold
@@ -25,10 +34,11 @@ struct Icon: View {
         }
     }
 
-    init(_ name: String, size: CGFloat = 16, weight: Weight = .regular) {
+    init(_ name: String, size: CGFloat = 16, weight: Weight = .regular, renderedStroke: CGFloat? = nil) {
         self.name = name
         self.size = size
         self.weight = weight
+        self.renderedStroke = renderedStroke
     }
 
     var body: some View {
@@ -39,7 +49,7 @@ struct Icon: View {
                 if element.filled {
                     element.path.fill().opacity(element.opacity)
                 } else {
-                    element.path.stroke(style: StrokeStyle(lineWidth: weight.strokeWidth, lineCap: .round, lineJoin: .round))
+                    element.path.stroke(style: StrokeStyle(lineWidth: gridStrokeWidth, lineCap: .round, lineJoin: .round))
                 }
             }
         }

@@ -42,12 +42,13 @@ import Testing
         let model = DocumentModel(document: boxDoc())
         try await settle(model)
         model.run(.rotate)
-        #expect(model.pendingTool == .rotate && model.toolPrompt == "Click the body to rotate")
+        #expect(model.pendingTool == .rotate && model.toolPrompt == "Click the bodies or sketches to rotate")
         model.click(PickID(body: 0, face: 0), additive: false)
-        guard case .rotate(let r)? = model.document.features.last?.kind else { Issue.record("expected a rotate"); return }
-        #expect(r.axis == .z && r.bodies == ["b"])
+        // The same feature and manipulator as Move, with the Z ring ready for an angle.
+        guard case .move(let r)? = model.document.features.last?.kind else { Issue.record("expected a move"); return }
+        #expect(r.rotating && r.arrow == .z && r.bodies == ["b"] && model.document.features.last?.name == "Rotate1")
         try await settle(model)
-        #expect(model.dragHandle?.label == "Angle")
+        #expect(model.dragHandle?.label == "Rotate Z")
         #expect(model.commitHandle("90"))
         try await settle(model)
         let box = try #require(model.result?.body("b")?.bounds)

@@ -242,21 +242,29 @@ public enum Axis3: String, Codable, Hashable, Sendable, CaseIterable {
     case x = "X", y = "Y", z = "Z"
 }
 
-/// Moves bodies and sketches by (dx, dy, dz). `arrow` is the direction the drag handle points along.
-/// A moved sketch is moved for the features after this one.
+/// Moves and turns bodies and sketches: first turned by (rx, ry, rz) about axes parallel to X, Y and Z
+/// through the middle of what moves, in that order, then moved by (dx, dy, dz). A moved sketch is moved
+/// for the features after this one. `arrow` and `rotating` say which value the drag handle's typed
+/// field sets: the distance along `arrow`, or, when `rotating`, the turn about it.
 public struct MoveFeature: Codable, Hashable, Sendable {
     public var bodies: [FeatureID]
     public var sketches: [FeatureID]
     public var dx: String
     public var dy: String
     public var dz: String
+    public var rx: String
+    public var ry: String
+    public var rz: String
     public var arrow: Axis3
+    public var rotating: Bool
     public init(bodies: [FeatureID], sketches: [FeatureID] = [], dx: String = "0 mm", dy: String = "0 mm",
-                dz: String = "0 mm", arrow: Axis3 = .x) {
-        self.bodies = bodies; self.sketches = sketches; self.dx = dx; self.dy = dy; self.dz = dz; self.arrow = arrow
+                dz: String = "0 mm", rx: String = "0 deg", ry: String = "0 deg", rz: String = "0 deg",
+                arrow: Axis3 = .x, rotating: Bool = false) {
+        self.bodies = bodies; self.sketches = sketches; self.dx = dx; self.dy = dy; self.dz = dz
+        self.rx = rx; self.ry = ry; self.rz = rz; self.arrow = arrow; self.rotating = rotating
     }
 
-    private enum CodingKeys: String, CodingKey { case bodies, sketches, dx, dy, dz, arrow }
+    private enum CodingKeys: String, CodingKey { case bodies, sketches, dx, dy, dz, rx, ry, rz, arrow, rotating }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -265,7 +273,11 @@ public struct MoveFeature: Codable, Hashable, Sendable {
         dx = try c.decode(String.self, forKey: .dx)
         dy = try c.decode(String.self, forKey: .dy)
         dz = try c.decode(String.self, forKey: .dz)
+        rx = try c.decodeIfPresent(String.self, forKey: .rx) ?? "0 deg"  // older files only move
+        ry = try c.decodeIfPresent(String.self, forKey: .ry) ?? "0 deg"
+        rz = try c.decodeIfPresent(String.self, forKey: .rz) ?? "0 deg"
         arrow = try c.decode(Axis3.self, forKey: .arrow)
+        rotating = try c.decodeIfPresent(Bool.self, forKey: .rotating) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -275,8 +287,15 @@ public struct MoveFeature: Codable, Hashable, Sendable {
         try c.encode(dx, forKey: .dx)
         try c.encode(dy, forKey: .dy)
         try c.encode(dz, forKey: .dz)
+        // Older versions of the app read files that don't turn anything; keep them that way.
+        if [rx, ry, rz] != ["0 deg", "0 deg", "0 deg"] { try c.encode(rx, forKey: .rx); try c.encode(ry, forKey: .ry); try c.encode(rz, forKey: .rz) }
         try c.encode(arrow, forKey: .arrow)
+        if rotating { try c.encode(rotating, forKey: .rotating) }
     }
+
+    /// The distance along an axis, or the turn about it, as stored.
+    public func distance(_ a: Axis3) -> String { a == .x ? dx : a == .y ? dy : dz }
+    public func turn(_ a: Axis3) -> String { a == .x ? rx : a == .y ? ry : rz }
 }
 
 /// Which of a plane's own axes (through its origin) a construction plane turns about.
@@ -358,6 +377,15 @@ public struct CombineFeature: Codable, Hashable, Sendable {
     }
 }
 
+/// Scales sketches evenly about their origins. The features after it see the scaled sketches; a sketch
+/// itself stays as it was drawn, so its dimensions and this factor stay editable.
+public struct ScaleFeature: Codable, Hashable, Sendable {
+    public var sketches: [FeatureID]
+    /// Plain number, or an expression: "2", "width / 40".
+    public var factor: String
+    public init(sketches: [FeatureID], factor: String = "1") { self.sketches = sketches; self.factor = factor }
+}
+
 /// Rotates bodies about an axis (parallel to X, Y or Z) through the middle of their bounding box.
 public struct RotateFeature: Codable, Hashable, Sendable {
     public var bodies: [FeatureID]
@@ -419,6 +447,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case pipe(PipeFeature)
         case move(MoveFeature)
         case rotate(RotateFeature)
+        case scale(ScaleFeature)
         case combine(CombineFeature)
         case plane(PlaneFeature)
         case mirror(MirrorFeature)
@@ -451,6 +480,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .pipe: return "Pipe"
         case .move: return "Move"
         case .rotate: return "Rotate"
+        case .scale: return "Scale"
         case .combine: return "Combine"
         case .plane: return "Plane"
         case .mirror: return "Mirror"
@@ -463,7 +493,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
     /// Sketches this feature is built from (they are hidden once used, as in other CAD tools).
     public var sketchesUsed: [FeatureID] {
         switch kind {
-        case .sketch, .fillet, .chamfer, .hole, .thread, .primitive, .move, .rotate, .combine, .plane, .mirror, .pattern,
+        case .sketch, .fillet, .chamfer, .hole, .thread, .primitive, .move, .rotate, .scale, .combine, .plane, .mirror, .pattern,
              .shell, .importBody: return []
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
@@ -486,7 +516,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .mirror(let m): return m.operation == .newBody
         case .pattern(let p): return p.operation == .newBody
         case .importBody: return true
-        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .combine, .plane, .shell: return false
+        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .plane, .shell: return false
         }
     }
 }

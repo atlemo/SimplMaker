@@ -13,14 +13,16 @@ public enum TextOutline {
     public typealias Segment = [SIMD2<Double>]
 
     /// The closed contours of `text` in `fontName`, with capital letters `height` tall, starting at
-    /// `origin` on the baseline. Empty where Core Text isn't available.
-    public static func contours(_ text: String, fontName: String, height: Double, origin: SIMD2<Double>) -> [[Segment]] {
+    /// `origin` on the baseline, the line turned counter-clockwise by `angle` about `origin`. Empty where Core Text isn't available.
+    public static func contours(_ text: String, fontName: String, height: Double, origin: SIMD2<Double>,
+                                angle: Double = 0) -> [[Segment]] {
         #if canImport(CoreText)
         guard !text.isEmpty, height > 0 else { return [] }
         let size: CGFloat = 100
         let font = CTFontCreateWithName(fontName as CFString, size, nil)
         let cap = CTFontGetCapHeight(font)
         let scale = height / Double(cap > 0 ? cap : size * 0.7)
+        let (s, k) = (sin(angle), cos(angle))
         let attributed = NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
         let line = CTLineCreateWithAttributedString(attributed)
         var contours: [[Segment]] = []
@@ -35,7 +37,10 @@ public enum TextOutline {
             for (glyph, position) in zip(glyphs, positions) {
                 guard let path = CTFontCreatePathForGlyph(runFont, glyph, nil) else { continue }
                 let offset = SIMD2(Double(position.x), Double(position.y))
-                contours += Self.contours(of: path) { p in origin + (SIMD2(Double(p.x), Double(p.y)) + offset) * scale }
+                contours += Self.contours(of: path) { p in
+                    let d = (SIMD2(Double(p.x), Double(p.y)) + offset) * scale
+                    return origin + SIMD2(k * d.x - s * d.y, s * d.x + k * d.y)
+                }
             }
         }
         return contours
@@ -106,6 +111,6 @@ extension SketchText {
     public func contours(in sketch: Sketch, parameters: ParameterValues) -> [[TextOutline.Segment]] {
         guard let origin = sketch.point(position)?.position,
               let h = try? parameters.value(of: height, kind: .length) else { return [] }
-        return TextOutline.contours(text, fontName: font, height: h, origin: origin)
+        return TextOutline.contours(text, fontName: font, height: h, origin: origin, angle: angle)
     }
 }

@@ -28,6 +28,8 @@ enum StandardView: String, CaseIterable, Identifiable {
 
 enum CameraCommand {
     case look(target: SIMD3<Float>, normal: SIMD3<Float>)
+    /// Looks straight at a plane and frames a box on it.
+    case lookFit(min: SIMD3<Float>, max: SIMD3<Float>, normal: SIMD3<Float>)
     case standard(StandardView)
 }
 

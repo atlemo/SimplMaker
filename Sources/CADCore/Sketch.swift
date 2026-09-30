@@ -103,9 +103,33 @@ public struct SketchText: Codable, Hashable, Sendable, Identifiable {
     public var height: String
     /// PostScript name of the font ("Helvetica-Bold").
     public var font: String
+    /// How far the baseline is turned counter-clockwise about the anchor, in radians.
+    public var angle: Double
     public init(id: EntityID = IDs.make(), text: String, position: EntityID, height: String = "10 mm",
-                font: String = SketchText.defaultFont) {
-        self.id = id; self.text = text; self.position = position; self.height = height; self.font = font
+                font: String = SketchText.defaultFont, angle: Double = 0) {
+        self.id = id; self.text = text; self.position = position; self.height = height; self.font = font; self.angle = angle
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, text, position, height, font, angle }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(EntityID.self, forKey: .id)
+        text = try c.decode(String.self, forKey: .text)
+        position = try c.decode(EntityID.self, forKey: .position)
+        height = try c.decode(String.self, forKey: .height)
+        font = try c.decode(String.self, forKey: .font)
+        angle = try c.decodeIfPresent(Double.self, forKey: .angle) ?? 0  // older files: level
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(text, forKey: .text)
+        try c.encode(position, forKey: .position)
+        try c.encode(height, forKey: .height)
+        try c.encode(font, forKey: .font)
+        if angle != 0 { try c.encode(angle, forKey: .angle) }
     }
     public static let defaultFont = "Helvetica-Bold"
 }

@@ -221,7 +221,7 @@ struct StatusBar: View {
                 .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
             Group {
                 if !model.selection.isEmpty { Text("\(model.selection.count) selected") }
-                if model.isImporting { Text("Reading the STEP file…").foregroundStyle(.secondary) }
+                if model.isImporting { Text("Reading the file…").foregroundStyle(.secondary) }
                 if model.isRegenerating || model.isImporting {
                     ProgressView().controlSize(.small)
                 } else if let r = model.result {
@@ -253,6 +253,8 @@ struct StatusBar: View {
             Text(model.previewInvalid ? "That size doesn't fit — let go to keep the previous size"
                                       : model.selectedHole != nil
                                         ? "Drag the orange dot to move the hole, or the arrow to change its depth"
+                                        : model.manipulatedFeature != nil
+                                        ? "Drag an arrow, square or ring dot · or type the \(h.label.lowercased()) in the field"
                                         : "Drag the orange arrow to change the \(h.label.lowercased()), or type it in the field next to it")
                 .foregroundStyle(model.previewInvalid ? Color.red : Color.secondary)
         } else if !model.selectedProfiles.isEmpty, model.hovered == nil {
@@ -395,6 +397,7 @@ struct Sidebar: View {
                 }
                 Button(model.isHidden(id) ? "Show Sketch" : "Hide Sketch") { model.setHidden([id], !model.isHidden(id)) }
                 Button("Move Sketch") { model.move(sketches: [id]) }
+                Button("Scale Sketch") { model.scale(sketches: [id]) }
                 Button("Rename Sketch") { renaming = id }
             } else if case .plane = f.kind {
                 Button("New Sketch on Plane") { model.beginSketch(on: .plane(id)) }
@@ -693,7 +696,7 @@ struct ToolButton: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: DS.Spacing.space1) {
-                Icon(icon, size: 18).frame(height: 20)
+                Icon(icon, size: 18, renderedStroke: Icon.toolStroke).frame(height: 20)
                 if showsTitle {
                     Text(title)
                         .font(.system(size: 11))
@@ -770,6 +773,9 @@ struct SketchToolbar: View {
             ToolGroup("Modify", id: "sketch.modify", defaults: ["Round Corner", "Trim", "Extend", "Offset"],
                       tools: SketchTool.modify.map(tool) + [offset])
             ToolDivider()
+            ToolGroup("Transform", id: "sketch.transform", defaults: SketchTransformTool.allCases.map(\.rawValue),
+                      tools: SketchTransformTool.allCases.map(transform))
+            ToolDivider()
             ToolGroup("Constraints", id: "sketch.constraints", defaults: ["Dimension", "Constrain", "Construction"],
                       tools: [tool(.dimension), constrain, construction])
             ToolDivider()
@@ -799,6 +805,17 @@ struct SketchToolbar: View {
         }
         return GroupTool(id: head.rawValue, title: head.shortTitle, icon: mode.symbol, help: mode.help, shortcut: head.key,
                          active: head.family.contains(session.tool), modes: modes) { model.setSketchTool(mode) }
+    }
+
+    private func transform(_ tool: SketchTransformTool) -> GroupTool {
+        // Move and Rotate show the manipulator to drag (or type into); Scale asks for a factor.
+        GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool.symbol, help: tool.help,
+                  active: session.manipulating == tool, enabled: session.canTransform,
+                  popover: tool != .scale ? nil : ToolPopover(isPresented: Binding(get: { session.transformRequested == tool },
+                                                            set: { if $0 { session.transformRequested = tool } else if session.transformRequested == tool { session.transformRequested = nil } }),
+                                       content: AnyView(TransformPopover(model: model, session: session, tool: tool)))) {
+            model.beginSketchTransform(tool)
+        }
     }
 
     private var offset: GroupTool {
@@ -920,6 +937,55 @@ struct DimensionEditor: View {
         let id = dimensionID, text = draft
         model.sketchCommand { $0.setDimension(id, expression: text) }
         if session.editingDimension == nil { onDone() }
+    }
+}
+
+/// Asks for the factor of Scale, and applies it to the selection (or the whole sketch). Move and Rotate
+/// have the manipulator in the viewport instead.
+struct TransformPopover: View {
+    let model: DocumentModel
+    let session: SketchSession
+    let tool: SketchTransformTool
+    @State private var factor = "2"
+    @State private var pivot = TransformPivot.selection
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.labelGap) {
+            Text(tool.rawValue).font(.headline)
+            field("Factor", $factor, focus: true)
+            pivotPicker
+            HStack {
+                Text("Works on \(session.transformTargetDescription).").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button(tool.rawValue, action: commit).keyboardShortcut(.defaultAction)
+            }
+            if let message = session.message { Text(message).font(.caption).foregroundStyle(.red).frame(width: 240, alignment: .leading) }
+        }
+        .padding(DS.Spacing.space6)
+        .onAppear { focused = true }
+    }
+
+    private func field(_ title: String, _ text: Binding<String>, focus: Bool = false) -> some View {
+        LabeledContent(title) {
+            let box = TextField(title, text: text)
+                .textFieldStyle(.roundedBorder)
+                .font(.body.monospaced())
+                .frame(width: 140)
+                .onSubmit(commit)
+            if focus { box.focused($focused) } else { box }
+        }
+    }
+
+    private var pivotPicker: some View {
+        Picker("About", selection: $pivot) {
+            ForEach(TransformPivot.allCases) { Text($0.rawValue).tag($0) }
+        }
+    }
+
+    private func commit() {
+        let (factor, pivot) = (factor, pivot)
+        model.sketchCommand { $0.scaleSelection(factor: factor, about: pivot) }
     }
 }
 

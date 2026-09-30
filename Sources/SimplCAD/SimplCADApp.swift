@@ -80,6 +80,8 @@ struct SimplCADCommands: Commands {
             Button("Import STEP…") { model?.importSTEP() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(model == nil)
+            Button("Import SVG as Sketch…") { model?.importSVG() }
+                .disabled(model == nil)
             Divider()
             Button("Export STEP…") { model?.export(stl: false) }.disabled(model == nil)
             Button("Export STL…") { model?.export(stl: true) }.disabled(model == nil)
@@ -144,6 +146,10 @@ struct SimplCADCommands: Commands {
                 }
                 Button("Offset Selection…") { model?.sketchSession?.beginOffset() }
                     .disabled(!(model?.sketchSession?.canOffset ?? false))
+                ForEach(SketchTransformTool.allCases) { tool in
+                    Button(tool == .scale ? "Scale Selection…" : "\(tool.rawValue) Selection") { model?.beginSketchTransform(tool) }
+                        .disabled(!(model?.sketchSession?.canTransform ?? false))
+                }
                 Divider()
                 Button("Finish Sketch") { model?.finishSketch() }
             }
