@@ -37,7 +37,7 @@ struct Icon: View {
             ForEach(elements.indices, id: \.self) { i in
                 let element = elements[i]
                 if element.filled {
-                    element.path.fill()
+                    element.path.fill().opacity(element.opacity)
                 } else {
                     element.path.stroke(style: StrokeStyle(lineWidth: weight.strokeWidth, lineCap: .round, lineJoin: .round))
                 }
@@ -56,10 +56,12 @@ struct Icon: View {
 }
 
 /// One drawable piece of a glyph: a path from a `<path>`, `<rect>`, `<circle>`, `<ellipse>`,
-/// `<line>`, `<polyline>` or `<polygon>` element, filled (a solid dot) or stroked (everything else).
+/// `<line>`, `<polyline>` or `<polygon>` element, filled (a solid dot, or a see-through face with
+/// `fill-opacity`) or stroked (everything else).
 struct SVGPathElement {
     let path: Path
     let filled: Bool
+    var opacity: Double = 1
 }
 
 /// Parses the tiny, self-closing-tags-only SVG fragments in IconGlyphs.table into drawable paths.
@@ -80,11 +82,12 @@ enum SVGGlyph {
             let tagName = String(body[body.startIndex..<space])
             let attrs = String(body[space...])  // keeps the leading space, so lookups can require a word boundary
             let filled = attribute(attrs, "fill") == "currentColor"
+            let opacity = number(attrs, "fill-opacity") ?? 1
 
             switch tagName {
             case "path":
                 if let d = attribute(attrs, "d") {
-                    elements.append(SVGPathElement(path: parsePathData(d), filled: filled))
+                    elements.append(SVGPathElement(path: parsePathData(d), filled: filled, opacity: opacity))
                 }
             case "rect":
                 let x = number(attrs, "x") ?? 0, y = number(attrs, "y") ?? 0
@@ -96,18 +99,18 @@ enum SVGGlyph {
                 } else {
                     p.addRect(CGRect(x: x, y: y, width: w, height: h))
                 }
-                elements.append(SVGPathElement(path: p, filled: filled))
+                elements.append(SVGPathElement(path: p, filled: filled, opacity: opacity))
             case "circle":
                 let cx = number(attrs, "cx") ?? 0, cy = number(attrs, "cy") ?? 0, r = number(attrs, "r") ?? 0
                 var p = Path()
                 p.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
-                elements.append(SVGPathElement(path: p, filled: filled))
+                elements.append(SVGPathElement(path: p, filled: filled, opacity: opacity))
             case "ellipse":
                 let cx = number(attrs, "cx") ?? 0, cy = number(attrs, "cy") ?? 0
                 let rx = number(attrs, "rx") ?? 0, ry = number(attrs, "ry") ?? 0
                 var p = Path()
                 p.addEllipse(in: CGRect(x: cx - rx, y: cy - ry, width: rx * 2, height: ry * 2))
-                elements.append(SVGPathElement(path: p, filled: filled))
+                elements.append(SVGPathElement(path: p, filled: filled, opacity: opacity))
             case "line":
                 let x1 = number(attrs, "x1") ?? 0, y1 = number(attrs, "y1") ?? 0
                 let x2 = number(attrs, "x2") ?? 0, y2 = number(attrs, "y2") ?? 0
@@ -127,7 +130,7 @@ enum SVGGlyph {
                         j += 2
                     }
                     if tagName == "polygon" { p.closeSubpath() }
-                    elements.append(SVGPathElement(path: p, filled: filled))
+                    elements.append(SVGPathElement(path: p, filled: filled, opacity: opacity))
                 }
             default:
                 break

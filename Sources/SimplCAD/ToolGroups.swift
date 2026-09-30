@@ -91,7 +91,7 @@ struct ToolGroup: View {
     private func groupButton(hidden: [GroupTool]) -> some View {
         GroupLabel(title: title, chevron: true,
                    highlighted: hidden.contains { $0.active }) { listOpen.toggle() }
-            .help("All \(title) tools. Pin the ones you use to the toolbar.")
+            .toolTip("All \(title) tools. Pin the ones you use to the toolbar.")
             .accessibilityLabel("\(title) tools")
             .popover(isPresented: $listOpen, arrowEdge: .bottom) {
                 ToolGroupList(title: title, tools: tools, pins: pins, isDefault: stored == nil,
@@ -136,7 +136,7 @@ struct SoloTool: View {
         VStack(spacing: 0) {
             PinnedTool(tool: tool).environment(\.toolTitles, false)
             GroupLabel(title: tool.title, chevron: false, highlighted: tool.active, action: tool.action)
-                .help(tool.help)
+                .toolTip(tool.help)
                 .accessibilityHidden(true)  // the button above says the same
         }
     }
@@ -195,7 +195,7 @@ private struct PinnedTool: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(onTint ? Color.white : Color.primary)
-                .help("Choose how to draw the \(tool.title.lowercased())")
+                .toolTip("Choose how to draw the \(tool.title.lowercased())")
                 .accessibilityLabel("\(tool.title) options")
                 .popover(isPresented: $modesOpen, arrowEdge: .bottom) {
                     HStack(spacing: DS.Spacing.space1) {

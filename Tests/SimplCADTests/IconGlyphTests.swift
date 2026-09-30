@@ -22,7 +22,7 @@ import Testing
 
     @Test func toolbarIconsUsedInSimplCADAreDefined() {
         let used = ["cuboid", "cylinder", "globe", "torus", "orbit", "waypoints", "layers", "layers-2",
-                    "square-split-horizontal", "circle-dot", "rotate-3d", "spline", "radius", "triangle",
+                    "square-split-horizontal", "circle-dot", "rotate-3d", "spline", "fillet", "chamfer",
                     "pen-tool", "circle-x", "focus", "mouse-pointer-2", "minus", "square", "circle",
                     "dot", "scissors", "arrow-up-right", "ruler", "link", "expand", "square-dashed", "corner-round", "file-box"]
         for name in used {
@@ -38,5 +38,13 @@ import Testing
         #expect(!elements.isEmpty)
         let box = elements[0].path.boundingRect
         #expect(box.width > 10 && box.height > 10, "folder's rounded path looked collapsed: \(box)")
+    }
+
+    /// The fillet and chamfer glyphs shade their cut face with a see-through fill.
+    @Test func fillOpacityIsParsed() {
+        let face = SVGGlyph.parse(IconGlyphs.table["chamfer"] ?? "").first
+        #expect(face?.filled == true)
+        #expect(face?.opacity == 0.35)
+        #expect(SVGGlyph.parse(IconGlyphs.table["dot"] ?? "").first?.opacity == 1)
     }
 }

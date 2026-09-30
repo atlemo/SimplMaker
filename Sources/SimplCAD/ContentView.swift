@@ -708,7 +708,7 @@ struct ToolButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(help ?? title)
+        .toolTip(help ?? title)
         .accessibilityLabel(title)
         .accessibilityAddTraits(active ? .isSelected : [])
     }
@@ -777,7 +777,7 @@ struct SketchToolbar: View {
                     Label("Finish Sketch", systemImage: "checkmark.circle.fill").labelStyle(.iconOnly)
                 }
             }
-            .help("Finish the sketch (Return)")
+            .toolTip("Finish the sketch (Return)")
             .buttonStyle(.borderedProminent)
         }
         // Sketch mode tints the tools' glass while the window is active.

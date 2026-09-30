@@ -105,27 +105,25 @@ struct WelcomeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            // The list's own double-click (and Return) opens a part. A tap gesture on the rows
+            // would fight the list's click handling, which made double-clicks slow to register.
             List(recents, id: \.self, selection: $selected) { url in
-                RecentRow(url: url)
-                    .tag(url)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { open(url) }
-                    .contextMenu {
-                        Button("Open") { open(url) }
-                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                        Divider()
-                        Button("Remove from Recent Parts") {
-                            RecentParts.remove(url)
-                            reloadRecents()
-                        }
-                    }
+                RecentRow(url: url).tag(url)
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
-            .onKeyPress(.return) {
-                guard let selected else { return .ignored }
-                open(selected)
-                return .handled
+            .contextMenu(forSelectionType: URL.self) { urls in
+                if let url = urls.first {
+                    Button("Open") { open(url) }
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    Divider()
+                    Button("Remove from Recent Parts") {
+                        RecentParts.remove(url)
+                        reloadRecents()
+                    }
+                }
+            } primaryAction: { urls in
+                if let url = urls.first { open(url) }
             }
         }
     }
