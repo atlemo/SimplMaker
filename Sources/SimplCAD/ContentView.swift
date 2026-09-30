@@ -110,6 +110,8 @@ struct DocumentWindow: View {
                     }
                 }
                 .environment(\.toolTitles, model.sketchSession == nil || windowWidth >= Self.titledSketchWidth)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Tools")
             }
             .sharedBackgroundVisibility(.hidden)  // the tools draw their own glass, shaped like the panels
             ToolbarItem(placement: .navigation) {
@@ -540,6 +542,7 @@ struct EyeButton: View {
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
         .help(hidden ? "Show" : "Hide")
+        .accessibilityLabel(hidden ? "Show" : "Hide")  // the eye symbol's own name is always "Show"
     }
 }
 

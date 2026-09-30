@@ -9,7 +9,7 @@ extension View {
     /// tools, and they're re-registered whenever a tool redraws (as it does on hover), so moving
     /// between tools could briefly show the previous tool's tooltip.
     func toolTip(_ text: String) -> some View {
-        background(ToolTipArea(text: text))
+        background(ToolTipArea(text: text)).accessibilityHint(text)  // what .help also tells VoiceOver
     }
 }
 

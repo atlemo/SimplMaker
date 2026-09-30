@@ -86,18 +86,19 @@ struct TimelineBar: View {
         .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.xl3))
     }
 
-    /// Start · back one · forward one · end, for the marker.
+    /// Start · back one · forward one · end, for the marker. (Named here: the symbols' own names
+    /// have start and end the wrong way round for a timeline.)
     private var playback: some View {
         let count = model.document.features.count, at = model.markerPosition
         return HStack(spacing: DS.Spacing.space3) {
             Button { model.setMarker(0) } label: { Image(systemName: "backward.end.fill") }
-                .help("Roll back to the start").disabled(at == 0)
+                .help("Roll back to the start").accessibilityLabel("Start").disabled(at == 0)
             Button { model.setMarker(at - 1) } label: { Image(systemName: "backward.frame.fill") }
-                .help("Step back one feature").disabled(at == 0)
+                .help("Step back one feature").accessibilityLabel("Back one").disabled(at == 0)
             Button { model.setMarker(at + 1) } label: { Image(systemName: "forward.frame.fill") }
-                .help("Step forward one feature").disabled(at >= count)
+                .help("Step forward one feature").accessibilityLabel("Forward one").disabled(at >= count)
             Button { model.setMarker(count) } label: { Image(systemName: "forward.end.fill") }
-                .help("Roll forward to the end").disabled(at >= count)
+                .help("Roll forward to the end").accessibilityLabel("End").disabled(at >= count)
         }
         .buttonStyle(.borderless)
         .labelStyle(.iconOnly)
