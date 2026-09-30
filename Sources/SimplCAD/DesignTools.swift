@@ -539,8 +539,9 @@ extension DocumentModel {
         return round.min { distance($0.cylinder) < distance($1.cylinder) }.map { FaceRef(body: ref.body, face: $0.face) }
     }
 
-    /// What shows in blue for threading: while the Thread tool waits, the round face a click would
-    /// thread; while a Thread feature is selected, the section it threaded.
+    /// What shows in blue for a feature being edited: while the Thread tool waits, the round face a
+    /// click would thread; while a feature is selected, the faces it made (kernel faces are named
+    /// after the feature that created them). Moves, turns, scales, combines and sketches make none.
     var threadHighlight: [UInt32] {
         guard sketchSession == nil else { return [] }
         if pendingTool == .thread {
@@ -548,8 +549,13 @@ extension DocumentModel {
             return facePicks { $0.id == ref.body ? $1 == ref.face : false }
         }
         guard pendingTool == nil, let id = selectedFeature, let f = document.features.first(where: { $0.id == id }),
-              !f.suppressed, case .thread = f.kind else { return [] }
-        return facePicks { _, name in name.hasPrefix("\(id).thread") }
+              !f.suppressed else { return [] }
+        switch f.kind {
+        case .sketch, .plane, .move, .rotate, .scale, .combine: return []
+        default: break
+        }
+        let prefix = "\(id)."
+        return facePicks { _, name in name.hasPrefix(prefix) }
     }
 
     /// Pick IDs of the faces (on shown bodies) that pass the test.

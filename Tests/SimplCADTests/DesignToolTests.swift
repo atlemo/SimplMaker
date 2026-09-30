@@ -157,6 +157,26 @@ import Testing
         #expect(model.dragHandle?.label == "Length")
     }
 
+    @Test func editingAFeatureLightsUpTheFacesItMade() async throws {
+        let model = try await loaded(.demo())
+        var lit = 0
+        for f in model.document.features {
+            model.selectedFeature = f.id
+            let names = model.meshes.flatMap(\.mesh.faceNames)
+            let shown = model.highlighted.map { raw in model.meshes[PickID(raw: raw).body].mesh.faceNames[PickID(raw: raw).element] }
+            if case .sketch = f.kind {
+                #expect(shown.isEmpty, "a sketch shows itself, not faces")
+                continue
+            }
+            #expect(shown.allSatisfy { $0.hasPrefix("\(f.id).") }, "\(f.name): \(shown)")
+            #expect(Set(shown) == Set(names.filter { $0.hasPrefix("\(f.id).") }), "\(f.name) lights every face it made")
+            if !shown.isEmpty { lit += 1 }
+        }
+        #expect(lit >= 3, "the demo's extrude, hole and fillets each leave faces on the body")
+        model.selectedFeature = nil
+        #expect(model.highlighted.isEmpty)
+    }
+
     @Test func pipeFollowsAChainOfCurves() async throws {
         var s = Sketch()
         let a = s.addPoint(0, 0), b = s.addPoint(0, 30), c = s.addPoint(20, 30), d = s.addPoint(50, 50)
