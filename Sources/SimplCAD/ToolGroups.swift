@@ -270,7 +270,7 @@ private struct ToolGroupRow: View {
         HStack(spacing: DS.Spacing.space2) {
             Button { run(tool) } label: {
                 HStack(spacing: DS.Spacing.space4) {
-                    Icon(tool.icon, size: 16).frame(width: 20)
+                    Icon(tool.icon, size: 16, renderedStroke: Icon.toolStroke).frame(width: 20)
                     Text(tool.title).lineLimit(1)
                     Spacer(minLength: DS.Spacing.space4)
                 }
@@ -283,7 +283,7 @@ private struct ToolGroupRow: View {
             .help(tool.help)
             ForEach(tool.modes) { mode in
                 Button { run(mode) } label: {
-                    Icon(mode.icon, size: 14)
+                    Icon(mode.icon, size: 14, renderedStroke: Icon.toolStroke)
                         .frame(width: 22, height: 22)
                         .background(mode.active ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.06),
                                     in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))

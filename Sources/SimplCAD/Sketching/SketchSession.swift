@@ -6,6 +6,34 @@ import CADKernel
 import Foundation
 import Observation
 
+/// The sketch tools that change existing geometry as a whole, each with a popover for its values.
+enum SketchTransformTool: String, CaseIterable, Identifiable {
+    case move = "Move", rotate = "Rotate", scale = "Scale"
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .move: return "move"
+        case .rotate: return "rotate-cw"
+        case .scale: return "scaling"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .move: return "Move the selected curves (or the whole sketch) by a distance"
+        case .rotate: return "Turn the selected curves (or the whole sketch) by an angle"
+        case .scale: return "Make the selected curves (or the whole sketch) bigger or smaller"
+        }
+    }
+}
+
+/// What Rotate and Scale turn or grow about.
+enum TransformPivot: String, CaseIterable, Identifiable {
+    case selection = "Middle of selection", origin = "Sketch origin"
+    var id: String { rawValue }
+}
+
 enum SketchTool: String, CaseIterable, Identifiable {
     case select = "Select", line = "Line", rectangle = "Rectangle", centerRectangle = "Center Rectangle"
     case circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", arc3Point = "3-Point Arc", bezier = "Bézier Curve"
@@ -205,6 +233,8 @@ final class SketchSession {
     private(set) var hover: EntityID?
     /// Set by the Offset command to ask the toolbar to show the offset distance popover.
     var offsetRequested = false
+    /// Set by Move, Rotate and Scale to ask the toolbar to show that tool's popover.
+    var transformRequested: SketchTransformTool?
     private(set) var cursor: SIMD2<Double>?
     private(set) var clicks: [SketchSnap] = []
     /// Where the Text tool was clicked: waiting for the text to be typed.
@@ -682,6 +712,76 @@ final class SketchSession {
         return nil
     }
 
+    // MARK: move, rotate, scale
+
+    /// Whether there is anything to move: the selection, or with none, the whole sketch.
+    var canTransform: Bool { sketch.points.contains { !$0.fixed } }
+
+    func beginTransform(_ tool: SketchTransformTool) { if canTransform { transformRequested = tool } }
+
+    /// What Move, Rotate and Scale work on, for the popover: "3 selected" or "the whole sketch".
+    var transformTargetDescription: String {
+        let n = selection.filter { sketch.kind(of: $0) != nil }.count
+        return n == 0 ? "the whole sketch" : "\(n) selected"
+    }
+
+    /// Slides the selection (or the whole sketch) by an offset, in sketch x and y.
+    func moveSelection(x: String, y: String) -> String? {
+        do {
+            let dx = try parameters.value(of: x, kind: .length), dy = try parameters.value(of: y, kind: .length)
+            guard hypot(dx, dy) > 1e-9 else { return failTransform("The move is zero") }
+            return transform(.move(dx: dx, dy: dy), "Move", "move")
+        } catch { return failTransform("\(error)") }
+    }
+
+    /// Turns the selection counter-clockwise about its middle or the sketch origin.
+    func rotateSelection(angle: String, about pivot: TransformPivot) -> String? {
+        do {
+            let a = try parameters.value(of: angle, kind: .angle)
+            guard abs(a.truncatingRemainder(dividingBy: 2 * .pi)) > 1e-9 else { return failTransform("The angle is zero") }
+            return transform(.rotate(angle: a, about: transformPivot(pivot)), "Rotate", "turn")
+        } catch { return failTransform("\(error)") }
+    }
+
+    /// Grows or shrinks the selection about its middle or the sketch origin.
+    func scaleSelection(factor: String, about pivot: TransformPivot) -> String? {
+        do {
+            let f = try parameters.value(of: factor, kind: .none)
+            guard f > 1e-9 else { return failTransform("The scale factor must be more than zero") }
+            guard abs(f - 1) > 1e-12 else { return failTransform("A factor of 1 changes nothing") }
+            return transform(.scale(factor: f, about: transformPivot(pivot)), "Scale", "scale")
+        } catch { return failTransform("\(error)") }
+    }
+
+    private func transformPivot(_ pivot: TransformPivot) -> SIMD2<Double> {
+        pivot == .origin ? .zero : sketch.transformCenter(selection) ?? .zero
+    }
+
+    private func failTransform(_ text: String) -> String? {
+        message = text
+        return nil
+    }
+
+    /// Applies a transform if the constraints and dimensions let it stand: after solving, what
+    /// was transformed must still be where it was put.
+    private func transform(_ t: SketchTransform, _ action: String, _ verb: String) -> String? {
+        transformRequested = nil
+        var trial = sketch
+        guard trial.apply(t, to: selection, parameters: parameters) else { return failTransform("Nothing to \(verb)") }
+        let moved = trial.transformPoints(selection)
+        var solved = trial
+        let result = SketchSolver.solve(&solved, dimensionValues: trial.dimensionValues(parameters))
+        let held = moved.contains { id in
+            guard let a = trial.point(id), let b = solved.point(id) else { return false }
+            return hypot(a.x - b.x, a.y - b.y) > 1e-6 * max(1, hypot(a.x, a.y))
+        }
+        guard result.status == .solved, !held else {
+            return failTransform("Constraints or dimensions keep it from staying there. Delete the ones in the way (fixed, horizontal, vertical, or distances from the origin), or leave them out of the selection.")
+        }
+        sketch = trial
+        return finish(action)
+    }
+
     // MARK: offset
 
     var canOffset: Bool { selection.contains { sketch.curve($0) != nil } }
@@ -776,6 +876,15 @@ final class SketchSession {
     }
 
     func cancelText() { pendingText = nil; editingText = nil }
+
+    /// Adds another sketch's shapes (e.g. from an SVG file), selects them and re-solves.
+    func merge(_ other: Sketch) {
+        let before = Set(sketch.curves.map(\.id))
+        sketch.merge(other)
+        setTool(.select)
+        selection = sketch.curves.map(\.id).filter { !before.contains($0) }
+        resolve()
+    }
 
     /// Changes a text's words, height or font from the inspector.
     func updateText(_ id: EntityID, _ change: (inout SketchText) -> Void) -> String? {

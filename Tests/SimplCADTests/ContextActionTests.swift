@@ -39,7 +39,7 @@ import Testing
         #expect(titles(model.contextItems(for: PickID(body: 0, edge: 0))).starts(with: ["Fillet", "Chamfer"]))
         model.selectedFeature = "base"
         let s = try #require(model.sketchSlots.firstIndex(of: "base")) + 1
-        #expect(titles(model.contextItems(for: PickID(region: 0, slot: s))) == ["Extrude", "Revolve", "Sweep", "Loft", "Edit Base Sketch", "Move Base Sketch", "Hide Base Sketch"])
+        #expect(titles(model.contextItems(for: PickID(region: 0, slot: s))) == ["Extrude", "Revolve", "Sweep", "Loft", "Edit Base Sketch", "Move Base Sketch", "Scale Base Sketch", "Hide Base Sketch"])
         model.run(.box)
         #expect(titles(model.contextItems(for: top)) == ["Cancel Box"])
         model.cancelTool()

@@ -47,4 +47,14 @@ import Testing
         #expect(face?.opacity == 0.35)
         #expect(SVGGlyph.parse(IconGlyphs.table["dot"] ?? "").first?.opacity == 1)
     }
+
+    /// Tool icons render 1.2 pt thick whatever size they are shown at.
+    @Test @MainActor func toolIconsRenderTheSameThicknessAtEverySize() {
+        for size in [14.0, 16, 18] as [CGFloat] {
+            let icon = Icon("move", size: size, renderedStroke: Icon.toolStroke)
+            #expect(abs(icon.gridStrokeWidth * size / 24 - 1.2) < 1e-9, "\(size)")
+        }
+        #expect(Icon("move", size: 18).gridStrokeWidth == 1.75, "without a rendered width the weight decides")
+        #expect(Icon("move", size: 18, weight: .bold).gridStrokeWidth == 2.5)
+    }
 }

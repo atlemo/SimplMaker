@@ -24,6 +24,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var handleDrag = false
     /// A hole's move dot is being dragged.
     private var holeMoveDrag = false
+    /// The Move/Rotate manipulator: what it draws, the part under the pointer, and the drag in progress.
+    private var manipulatorView: ManipulatorView?
+    private var manipulatorLayout: ManipulatorLayout?
+    private var manipulatorHover: ManipulatorPart?
+    private var manipulatorDrag: ManipulatorDrag?
     private var labels: [EntityID: DimensionLabelView] = [:]
     private var glyphViews: [String: ConstraintGlyphView] = [:]
     private var prompt: CursorPromptView?
@@ -310,6 +315,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             default: return .arrow
             }
         }
+        if manipulatorDrag != nil { return .closedHand }
+        if manipulatorHover != nil { return .openHand }
         if let tool = model.pendingTool {
             guard let h = model.hovered, tool.accepts(h.kind) else { return .arrow }
             return .pointingHand
@@ -377,7 +384,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     /// The smallest of 1, 2 or 5 × 10ⁿ mm that is at least `minimum`.
-    static func niceStep(_ minimum: Double) -> Double {
+    nonisolated static func niceStep(_ minimum: Double) -> Double {
         guard minimum > 0, minimum.isFinite else { return 1 }
         let base = pow(10, floor(log10(minimum)))
         for m in [1.0, 2, 5, 10] where base * m >= minimum { return base * m }
@@ -396,6 +403,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let p = location(event)
         lastPoint = p
         requestPick(at: p)
+        if manipulatorDrag == nil {
+            let over = manipulatorLayout?.hit(p)
+            if over != manipulatorHover {
+                manipulatorHover = over
+                manipulatorView?.hover = over
+                updateCursor()
+            }
+        }
         if let renderer, let model, model.pendingTool == .thread {
             // The hole nearest the pointer lights up on a face with several.
             let ray = renderer.camera.ray(at: p, viewSize: bounds.size)
@@ -418,6 +433,17 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         window?.makeFirstResponder(self)
         let p = location(event)
         let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
+        if let model, model.sketchSession == nil, let layout = manipulatorLayout, let part = layout.hit(p),
+           let (_, move) = model.manipulatedFeature,
+           let drag = ManipulatorDrag(part: part, at: p, layout: layout, start: model.transformValues(move)) {
+            model.beginManipulatorDrag(part)
+            manipulatorDrag = drag
+            lastDrag = p
+            dragged = false
+            updateCursor()
+            refreshOverlay()
+            return
+        }
         if event.clickCount == 2, model?.sketchSession == nil, let renderer {
             let f = renderer.camera.forward
             model?.doubleClick(renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered),
@@ -453,6 +479,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if manipulatorDrag != nil, let renderer {
+            if let v = manipulatorDrag?.values(at: location(event), camera: renderer.camera, viewSize: bounds.size) {
+                model?.previewManipulator(v)
+            }
+            refreshOverlay()
+            return
+        }
         if sketchDrag {
             let p = location(event)
             lastPoint = p
@@ -497,7 +530,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { lastDrag = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; updateCursor() }
+        defer { lastDrag = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; manipulatorDrag = nil; updateCursor() }
+        if manipulatorDrag != nil {
+            model?.endManipulatorDrag()
+            refreshOverlay()
+            return
+        }
         if holeMoveDrag {
             model?.endHoleMove()
             refreshOverlay()
@@ -738,10 +776,37 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         updateGlyphs()
         updatePrompt()
         syncPopover()
+        syncManipulator()
         syncHandleField()
         syncSketchFields()
         syncTextEntry()
         fitControls()
+    }
+
+    /// Shows the Move/Rotate manipulator on the selected Move feature, or takes it away.
+    private func syncManipulator() {
+        guard let renderer, let model, let middle = model.manipulatorMiddle, let values = model.manipulatorValues,
+              let layout = ManipulatorLayout(middle: middle, turn: values.turn, camera: renderer.camera, viewSize: bounds.size) else {
+            manipulatorView?.removeFromSuperview()
+            manipulatorView = nil
+            manipulatorLayout = nil
+            if manipulatorHover != nil { manipulatorHover = nil; updateCursor() }
+            return
+        }
+        let view: ManipulatorView
+        if let existing = manipulatorView {
+            view = existing
+        } else {
+            view = ManipulatorView(frame: bounds)
+            view.autoresizingMask = [.width, .height]
+            addSubview(view)
+            manipulatorView = view
+        }
+        view.frame = bounds
+        view.hover = manipulatorHover
+        view.active = model.manipulatorActivePart
+        view.layout = layout
+        manipulatorLayout = layout
     }
 
     /// The Text tool's field: appears where the tool was clicked, focused, until Return or Esc.
@@ -826,7 +891,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if field.currentEditor() == nil || handleFieldFeature?.id != h.featureID { handleFieldFeature = (h.featureID, text) }
         field.textColor = model.previewInvalid ? .systemRed : .labelColor
         let tip = h.base + h.direction * h.value
-        guard let p = renderer.camera.project(SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)), viewSize: bounds.size) else {
+        var anchor = renderer.camera.project(SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)), viewSize: bounds.size)
+        if let layout = manipulatorLayout, let part = model.manipulatorActivePart {
+            // On the manipulator's arrow or ring; up beside the middle when that one points at the viewer.
+            anchor = layout.anchor(for: part) ?? CGPoint(x: layout.center.x + 40, y: layout.center.y - 40)
+        }
+        guard let p = anchor else {
             field.isHidden = true
             return
         }
@@ -1323,6 +1393,10 @@ struct ViewportView: NSViewRepresentable {
             switch cmd.command {
             case .look(let target, let normal):
                 renderer.camera.look(along: normal, at: target)
+            case .lookFit(let lo, let hi, let normal):
+                view.updateCameraInsets()
+                renderer.camera.look(along: normal, at: (lo + hi) / 2)
+                renderer.camera.fit(min: lo, max: hi, aspect: view.viewAspect)
             case .standard(let v):
                 renderer.camera.setStandard(v)
                 if let b = model.sceneBounds {

@@ -44,6 +44,7 @@ struct InspectorView: View {
                 case .pipe(let f): PipeInspector(model: model, id: id, pipe: f)
                 case .move(let f): MoveInspector(model: model, id: id, move: f)
                 case .rotate(let f): RotateInspector(model: model, id: id, rotate: f)
+                case .scale(let f): ScaleInspector(model: model, id: id, scale: f)
                 case .combine(let f): CombineInspector(model: model, id: id, combine: f)
                 case .plane(let f): PlaneInspector(model: model, id: id, plane: f)
                 case .mirror(let f): MirrorInspector(model: model, id: id, mirror: f)
@@ -811,9 +812,11 @@ struct MoveInspector: View {
             edit.row("X", move.dx, "Move X") { $0.dx = $1 }
             edit.row("Y", move.dy, "Move Y") { $0.dy = $1 }
             edit.row("Z", move.dz, "Move Z") { $0.dz = $1 }
-            Picker("Arrow along", selection: Binding(get: { move.arrow }, set: { a in edit.update("Change Axis") { $0.arrow = a } })) {
-                ForEach(Axis3.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
+            edit.row("Rotate X", move.rx, "Rotate X") { $0.rx = $1 }
+            edit.row("Rotate Y", move.ry, "Rotate Y") { $0.ry = $1 }
+            edit.row("Rotate Z", move.rz, "Rotate Z") { $0.rz = $1 }
+            Text("Turns about the middle of what moves, X then Y then Z, before the move. Drag the arrows, squares and rings in the viewport, or type here.")
+                .font(.caption).foregroundStyle(.secondary)
             if !move.bodies.isEmpty { BodiesRow(model: model, ids: move.bodies) }
             if !move.sketches.isEmpty {
                 let names = move.sketches.map { id in model.document.features.first { $0.id == id }?.name ?? "missing" }
@@ -850,6 +853,26 @@ struct CombineInspector: View {
                 }
             }
             .disabled(combine.tools.count != 1)
+        }
+    }
+}
+
+struct ScaleInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let scale: ScaleFeature
+
+    var edit: FeatureEdit<ScaleFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .scale(let s) = $0 { s } else { nil } }, wrap: { .scale($0) })
+    }
+
+    var body: some View {
+        Section("Scale") {
+            edit.row("Factor", scale.factor, "Edit Scale Factor") { $0.factor = $1 }
+            let names = scale.sketches.map { model.featureName($0) }
+            LabeledContent(names.count == 1 ? "Sketch" : "Sketches", value: names.joined(separator: ", "))
+            Text("Scales about each sketch's origin. Features after this one use the scaled sketch.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }

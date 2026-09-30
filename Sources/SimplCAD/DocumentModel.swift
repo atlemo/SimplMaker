@@ -143,6 +143,18 @@ final class DocumentModel {
         replace(with: doc, actionName: actionName)
     }
 
+    /// Changes something that isn't part of the model (which handle a feature's typed field is for): no undo
+    /// step and nothing to rebuild.
+    func setPresentation(_ id: FeatureID, _ change: (inout Feature) -> Void) {
+        guard let i = document.index(of: id) else { return }
+        var f = document.features[i]
+        change(&f)
+        guard f != document.features[i] else { return }
+        document.features[i] = f
+        onDocumentChange?(document)
+        overlayRevision += 1
+    }
+
     private func replace(with doc: CADDocument, actionName: String) {
         let old = document
         document = doc
@@ -836,7 +848,7 @@ final class DocumentModel {
             guard let frame = result?.planes[f.id] else { continue }
             SketchOverlayBuilder.constructionPlane(frame, size: planeSize, id: PickID(plane: OriginPlane.allCases.count + slot).raw, into: &o)
         }
-        if let h = dragHandle {
+        if let h = dragHandle, manipulatedFeature == nil {
             let a = h.base, b = h.base + h.direction * h.value
             let fa = SIMD3<Float>(Float(a.x), Float(a.y), Float(a.z)), fb = SIMD3<Float>(Float(b.x), Float(b.y), Float(b.z))
             let id = PickID.handle.raw
@@ -923,21 +935,32 @@ final class DocumentModel {
         var startValue: Double?
         /// A hole dragged over its face (X and Y together), instead of one size.
         var holePosition: SIMD2<Double>?
+        /// A move or turn dragged with the manipulator: the values that changed, by `TransformKey` index.
+        var transform: [Int: Double]?
 
         /// The dragged value, as the prompt shows it.
         var valueText: String {
+            if let t = transform {
+                return t.sorted { $0.key < $1.key }.map { key, v in
+                    "\(TransformKey(rawValue: key)?.label ?? "") \(formatDimension(v, kind: key < 3 ? .length : .angle))"
+                }.joined(separator: ", ")
+            }
             if let uv = holePosition { return "\(formatDimension(uv.x, kind: .length)), \(formatDimension(uv.y, kind: .length))" }
             return formatDimension(value, kind: unit)
         }
     }
 
+    /// Move/Rotate manipulator: the document when a part was grabbed, the values then, and the values now.
+    @ObservationIgnored var manipulatorStart: CADDocument?
+    @ObservationIgnored var manipulatorBase: TransformValues?
+    var manipulatorLive: TransformValues?
     @ObservationIgnored private var handleDragStart: CADDocument?
     /// The document when a hole's move dot was grabbed, and where the dot is being dragged (in the face's u, v).
     @ObservationIgnored var holeMoveStart: CADDocument?
     var holeMovePreview: SIMD2<Double>?
     private(set) var handlePreviewValue: Double?
     /// The latest preview failed (e.g. a fillet too big for its faces); the last good model stays visible.
-    private(set) var previewInvalid = false
+    var previewInvalid = false
     /// Why the size typed in the handle's field can't be used, shown under the field.
     private(set) var handleProblem: String?
     /// What's typed in the handle's field and not stored yet (the viewport keeps this up to date).
@@ -960,6 +983,9 @@ final class DocumentModel {
     var handleFieldText: String? {
         guard let h = dragHandle else { return nil }
         if handleDragStart != nil { return formatDimension(h.featureValue(h.value), kind: h.unit) }
+        if manipulatorStart != nil, let live = manipulatorLive, let (_, m) = manipulatedFeature {
+            return m.rotating ? formatDimension(live.turn[m.arrow.index], kind: .angle) : formatDimension(live.move[m.arrow.index], kind: .length)
+        }
         return h.expression
     }
 
@@ -1044,14 +1070,10 @@ final class DocumentModel {
             guard let at = pathPoint(rf.path, result, middle: true) else { return nil }
             return handle("Thickness", at.point, at.normal, rf.thickness, per: 0.5)
         case .move(let mf):
-            let bodies = Array((result.featureInputs[id] ?? [:]).values), sketches = Array((result.sketchInputs[id] ?? [:]).values)
-            guard let center = Regenerator.center(of: bodies, sketches: sketches) else { return nil }
-            let offset = SIMD3((try? params.value(of: mf.dx, kind: .length)) ?? 0, (try? params.value(of: mf.dy, kind: .length)) ?? 0,
-                               (try? params.value(of: mf.dz, kind: .length)) ?? 0)
+            guard let middle = manipulatorMiddle(id, mf) else { return nil }
             let dir = Regenerator.direction(mf.arrow)
-            let along = simd_dot(offset, dir)
-            // The arrow starts where the body is, apart from the part of the move along the arrow.
-            return handle("Move \(mf.arrow.rawValue)", center + offset - along * dir, dir, Self.component(mf, mf.arrow), negative: true)
+            if mf.rotating { return handle("Rotate \(mf.arrow.rawValue)", middle, dir, mf.turn(mf.arrow), unit: .angle, negative: true) }
+            return handle("Move \(mf.arrow.rawValue)", middle, dir, mf.distance(mf.arrow), negative: true)
         case .rotate(let rf):
             guard let inputs = result.featureInputs[id], let center = Regenerator.center(of: Array(inputs.values)),
                   let box = inputs.values.first?.bounds else { return nil }
@@ -1061,6 +1083,11 @@ final class DocumentModel {
             var h = handle("Angle", center + r * radial, simd_cross(axis, radial), rf.angle, unit: .angle, per: r, max: 2 * .pi)
             h.allowsNegative = true
             return h
+        case .scale(let sf):
+            // From the sketch's origin along its x axis: the arrow is as long as the sketch is wide, times the factor.
+            guard let sk = result.sketchInputs[id]?[sf.sketches.first ?? ""], let box = sk.bounds else { return nil }
+            let size = max(simd_reduce_max(box.max - box.min) / 2, 1)
+            return handle("Scale", sk.frame.origin, sk.frame.xAxis, sf.factor, unit: .none, per: size)
         case .plane(let pf):
             // From where the plane is with no offset, along its normal. Worked out from the plane it
             // starts from (not from the plane as last built), so it holds still while being dragged.
@@ -1264,7 +1291,10 @@ final class DocumentModel {
     func resolveUnlink(useValue: Bool) {
         guard let p = unlinkPrompt else { return }
         unlinkPrompt = nil
-        if useValue, let uv = p.holePosition {
+        if let t = p.transform {
+            manipulatorLive = nil
+            if useValue { commitTransform(p.featureID, t) } else { regenerate() }
+        } else if useValue, let uv = p.holePosition {
             commitHoleMove(p.featureID, to: uv)
         } else if useValue {
             commitHandle(p.featureID, p.label, formatDimension(p.value, kind: p.unit), from: p.startValue, to: p.value)
@@ -1305,7 +1335,7 @@ final class DocumentModel {
     func handleSizeProblem(_ text: String, _ h: DragHandle) -> String? {
         let t = text.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { return "Type a size" }
-        let needed = h.unit == .angle ? "an angle" : "a length"
+        let needed = h.unit == .angle ? "an angle" : h.unit == .none ? "a plain number" : "a length"
         do {
             let v = try parameterValues.value(of: t, kind: h.unit)
             if h.allowsNegative ? abs(v) <= 1e-9 : v <= 1e-9 { return h.allowsNegative ? "It can't be zero" : "It must be more than zero" }
@@ -1416,12 +1446,18 @@ final class DocumentModel {
             r.thickness = text
             doc.features[i].kind = .rib(r)
         case .move(var m):
-            switch m.arrow {
-            case .x: m.dx = text
-            case .y: m.dy = text
-            case .z: m.dz = text
+            switch (m.arrow, m.rotating) {
+            case (.x, false): m.dx = text
+            case (.y, false): m.dy = text
+            case (.z, false): m.dz = text
+            case (.x, true): m.rx = text
+            case (.y, true): m.ry = text
+            case (.z, true): m.rz = text
             }
             doc.features[i].kind = .move(m)
+        case .scale(var s):
+            s.factor = text
+            doc.features[i].kind = .scale(s)
         case .rotate(var r):
             r.angle = text
             doc.features[i].kind = .rotate(r)
@@ -1529,6 +1565,81 @@ final class DocumentModel {
             alert = AlertInfo(title: "\(url.lastPathComponent) couldn't be imported", message: reason)
             return nil
         }
+    }
+
+    /// Asks for an SVG file and puts its shapes in a sketch.
+    func importSVG() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.svg]
+        panel.prompt = "Import"
+        panel.message = "Choose an SVG file. Its shapes and paths become a sketch, in millimetres."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await importSVG(from: url) }
+    }
+
+    /// Reads an SVG file into the sketch being edited, or else into a new sketch on the selected flat
+    /// face or plane (the XY plane when nothing is selected), with the drawing's middle on the sketch
+    /// origin. False if it can't be read (an alert says why).
+    @discardableResult
+    func importSVG(from url: URL) async -> Bool {
+        isImporting = true
+        let outcome = await Task.detached(priority: .userInitiated) { () -> Swift.Result<SVGImport.Result, any Error> in
+            Swift.Result { try SVGImport.sketch(from: Data(contentsOf: url)) }
+        }.value
+        isImporting = false
+        let imported: SVGImport.Result
+        switch outcome {
+        case .success(let r): imported = r
+        case .failure(let error):
+            var reason = (error as? SVGImportError).map { $0.message } ?? error.localizedDescription
+            reason = (reason.prefix(1).uppercased() + reason.dropFirst()) + "."
+            alert = AlertInfo(title: "\(url.lastPathComponent) couldn't be imported", message: reason)
+            return false
+        }
+        if sketchSession != nil {
+            sketchCommand { session in
+                session.merge(imported.sketch)
+                return "Import \(url.lastPathComponent)"
+            }
+        } else {
+            let plane = selectedFacePlane ?? .xy
+            let frame: Frame
+            do {
+                frame = try Regenerator.sketchFrame(SketchFeature(plane: plane, sketch: Sketch()), result ?? RegenResult())
+            } catch {
+                alert = AlertInfo(title: "You can't sketch on that face",
+                                  message: "Choose a flat face or one of the origin planes. (\(error))")
+                return false
+            }
+            pendingTool = nil
+            isPickingSketchPlane = false
+            let feature = Feature(name: document.nextName("Sketch"),
+                                  .sketch(SketchFeature(plane: plane, sketch: imported.sketch)))
+            mutate("Import \(url.lastPathComponent)") { doc in
+                if let r = doc.rollback, r < doc.features.count {
+                    doc.features.insert(feature, at: r)
+                    doc.rollback = r + 1
+                } else {
+                    doc.features.append(feature)
+                }
+                doc.hidden.remove(feature.id)
+            }
+            selection = []
+            selectedFeature = feature.id
+            let hw = imported.width / 2, hh = imported.height / 2
+            let corners = [(-hw, -hh), (hw, hh)].map { u, v -> SIMD3<Float> in
+                let p = frame.origin + frame.xAxis * u + frame.yAxis * v
+                return SIMD3(Float(p.x), Float(p.y), Float(p.z))
+            }
+            let n = frame.normal
+            send(.lookFit(min: simd_min(corners[0], corners[1]), max: simd_max(corners[0], corners[1]),
+                          normal: SIMD3(Float(n.x), Float(n.y), Float(n.z))))
+        }
+        if !imported.skipped.isEmpty {
+            alert = AlertInfo(title: "Some of \(url.lastPathComponent) wasn't imported",
+                              message: "Sketches hold lines, arcs and curves, so \(imported.skipped.joined(separator: " and ")) in the file were left out. Convert them to outlines first (in Inkscape: Path ▸ Object to Path).")
+        }
+        return true
     }
 
     func export(stl: Bool) {

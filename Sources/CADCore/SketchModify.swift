@@ -528,3 +528,22 @@ extension Sketch {
         return dimID
     }
 }
+
+extension Sketch {
+    /// The sketch grown by `factor` about its origin: every point and circle radius, and the height of
+    /// its texts. Constraints stay as they are, and dimensions are left alone, so the result is for
+    /// drawing and profiles, not for solving again.
+    public func scaled(by factor: Double, parameters: ParameterValues) -> Sketch {
+        var s = self
+        for i in s.points.indices { s.points[i].x *= factor; s.points[i].y *= factor }
+        for i in s.curves.indices {
+            if case .circle(let c, let r) = s.curves[i].geometry { s.curves[i].geometry = .circle(center: c, radius: r * factor) }
+        }
+        for i in s.texts.indices {
+            if let h = try? parameters.value(of: s.texts[i].height, kind: .length) {
+                s.texts[i].height = formatDimension(h * factor, kind: .length)
+            }
+        }
+        return s
+    }
+}

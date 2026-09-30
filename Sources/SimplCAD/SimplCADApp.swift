@@ -80,6 +80,8 @@ struct SimplCADCommands: Commands {
             Button("Import STEP…") { model?.importSTEP() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(model == nil)
+            Button("Import SVG as Sketch…") { model?.importSVG() }
+                .disabled(model == nil)
             Divider()
             Button("Export STEP…") { model?.export(stl: false) }.disabled(model == nil)
             Button("Export STL…") { model?.export(stl: true) }.disabled(model == nil)
