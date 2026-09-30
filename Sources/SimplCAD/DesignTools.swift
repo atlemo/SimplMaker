@@ -28,12 +28,12 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// A glyph name from the macOS Design System's icon set (see IconGlyphs.swift), not an SF Symbol.
     var symbol: String {
         switch self {
-        case .extrude: return "layers"
-        case .revolve: return "rotate-3d"
+        case .extrude: return "extrude"
+        case .revolve: return "revolve"
         case .sweep: return "spline"
         case .loft: return "layers-2"
         case .rib: return "square-split-horizontal"
-        case .hole: return "circle-dot"
+        case .hole: return "hole"
         case .box: return "cuboid"
         case .cylinder: return "cylinder"
         case .sphere: return "globe"

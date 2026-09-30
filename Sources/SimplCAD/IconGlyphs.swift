@@ -190,6 +190,12 @@ enum IconGlyphs {
     "corner-round": "<path d=\"M4 20v-8a8 8 0 0 1 8-8h8\" /><circle cx=\"4\" cy=\"4\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\" />",
     // A threaded shaft: its outline, with the thread's slanted crests across it.
     "thread": "<rect width=\"12\" height=\"20\" x=\"6\" y=\"2\" rx=\"1.5\" /><path d=\"m6 8.75 12-3.5\" /><path d=\"m6 14 12-3.5\" /><path d=\"m6 19.25 12-3.5\" />",
+    // A box grown up from its profile (shaded), with an arrow up beside it.
+    "extrude": "<path d=\"M2 9.5 6.5 5H16l-4.5 4.5Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M2 21V9.5L6.5 5H16v11.5L11.5 21Z\" /><path d=\"M2 9.5h9.5V21\" /><path d=\"M11.5 9.5 16 5\" /><path d=\"M20.5 20V3\" /><path d=\"m17.5 6 3-3 3 3\" />",
+    // A profile swept part way round (its shaded top), with a curved arrow over it.
+    "revolve": "<path d=\"M2.94 12.92A11.5 11.5 0 0 1 21.06 12.92L15.15 17.54A4 4 0 0 0 8.85 17.54Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M2.94 12.92A11.5 11.5 0 0 1 21.06 12.92L15.15 17.54A4 4 0 0 0 8.85 17.54Z\" /><path d=\"M2.94 12.92V16.42A11.5 11.5 0 0 1 21.06 16.42V12.92\" /><path d=\"M21.06 16.42L15.15 21.04V17.54\" /><path d=\"M18.9 7.02A14.7 14.7 0 0 0 4.21 7.53\" /><path d=\"M6.97 8.02L4.21 7.53L4.98 4.84\" />",
+    // A box with a hole in its front face; the wall inside the hole is shaded.
+    "hole": "<path d=\"M12.78 15.98A3.6 3.6 0 1 1 8.02 11.22A3.6 3.6 0 0 0 12.78 15.98Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 21V8l5-5h13v13l-5 5Z\" /><path d=\"M3 8h13v13\" /><path d=\"m16 8 5-5\" /><circle cx=\"9.5\" cy=\"14.5\" r=\"3.6\" /><path d=\"M12.78 15.98A3.6 3.6 0 0 0 8.02 11.22\" />",
     // A box with its front-right edge cut (chamfer) or rounded (fillet); the new face is shaded.
     "chamfer": "<path d=\"M10 8 15 3l6 6-5 5Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 21V8l5-5h7l6 6v7l-5 5Z\" /><path d=\"M3 8h7l6 6v7\" /><path d=\"m10 8 5-5\" /><path d=\"m16 14 5-5\" />",
     "fillet": "<path d=\"M10 8A6 6 0 0 1 16 14l5-5A6 6 0 0 0 15 3Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 21V8l5-5h7A6 6 0 0 1 21 9v7l-5 5Z\" /><path d=\"M3 8h7A6 6 0 0 1 16 14v7\" /><path d=\"m10 8 5-5\" /><path d=\"m16 14 5-5\" />",
