@@ -29,6 +29,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var manipulatorLayout: ManipulatorLayout?
     private var manipulatorHover: ManipulatorPart?
     private var manipulatorDrag: ManipulatorDrag?
+    /// The mouse went down on the toolbar strip (the view extends under it): the window is being dragged
+    /// by it, so the view stays out of it until the button comes up.
+    private var windowDrag = false
     private var labels: [EntityID: DimensionLabelView] = [:]
     private var glyphViews: [String: ConstraintGlyphView] = [:]
     private var prompt: CursorPromptView?
@@ -58,6 +61,15 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private let controlsLayer = ControlsLayer()
 
     override var acceptsFirstResponder: Bool { true }
+
+    /// Whether a point (in this view) is on the toolbar strip at the top, which drags the window.
+    private func isOnToolbar(_ p: NSPoint) -> Bool { topInset > 0 && p.y < topInset }
+
+    /// Only the strip under the toolbar moves the window; the rest of the view is for the model.
+    override var mouseDownCanMoveWindow: Bool {
+        guard let window else { return false }
+        return isOnToolbar(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
 
     /// The layer for controls, on top of the window's content. Its controls are placed in the
     /// viewport's coordinates (see fitControls). Called before each placement, so it stays on top
@@ -432,6 +444,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if event.modifierFlags.contains(.control) { return showContextMenu(event) }  // ⌃-click = right-click
         window?.makeFirstResponder(self)
         let p = location(event)
+        windowDrag = isOnToolbar(p)
+        if windowDrag { return }  // the window follows the mouse; the view must not react to it as well
         let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
         if let model, let layout = manipulatorLayout, let part = layout.hit(p), let start = model.manipulatorDragStart,
            let drag = ManipulatorDrag(part: part, at: p, layout: layout, start: start) {
@@ -478,6 +492,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if windowDrag { return }
         if manipulatorDrag != nil, let renderer {
             if let v = manipulatorDrag?.values(at: location(event), camera: renderer.camera, viewSize: bounds.size) {
                 model?.previewManipulator(v)
@@ -529,6 +544,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if windowDrag { windowDrag = false; return }
         defer { lastDrag = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; manipulatorDrag = nil; updateCursor() }
         if manipulatorDrag != nil {
             model?.endManipulatorDrag()
