@@ -57,6 +57,8 @@ struct ManipulatorFrame {
     var rings = Axis3.allCases
     /// Whether the dot in the middle slides in the plane of the screen (else in the plane of the Z ring).
     var dotFollowsScreen = true
+    /// Whether the dot in the middle can be grabbed (the Pattern tool's is only a marker).
+    var dotGrabs = true
 
     static let world = ManipulatorFrame()
 
@@ -68,6 +70,16 @@ struct ManipulatorFrame {
         squares = [.z]
         rings = [.z]
         dotFollowsScreen = false
+    }
+
+    /// The Pattern tool's: the arrows along the sketch's x and y that set the spacing of a grid, or the
+    /// ring that sets how far a circle of copies spreads.
+    init(pattern circular: Bool, sketch f: Frame) {
+        self.init(sketch: f)
+        arrows = circular ? [] : [.x, .y]
+        squares = []
+        rings = circular ? [.z] : []
+        dotGrabs = false
     }
 
     func vector(_ axis: Axis3) -> SIMD3<Double> { basis[axis.index] }
@@ -178,7 +190,7 @@ struct ManipulatorLayout {
 
     /// What a click at `p` grabs, the small things first.
     func hit(_ p: CGPoint) -> ManipulatorPart? {
-        if hypot(p.x - center.x, p.y - center.y) <= Self.dotRadius + 3 { return .center }
+        if frame.dotGrabs, hypot(p.x - center.x, p.y - center.y) <= Self.dotRadius + 3 { return .center }
         for a in arrows where Self.distance(p, toSegment: a.tail, a.tip) <= 9 { return .axis(a.axis) }
         for r in rings where hypot(p.x - r.handle.x, p.y - r.handle.y) <= Self.handleRadius + 3 { return .ring(r.axis) }
         for s in squares where Self.contains(s.corners, p) { return .plane(s.normal) }

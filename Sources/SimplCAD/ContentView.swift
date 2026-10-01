@@ -205,7 +205,8 @@ struct CursorPrompt: View {
     }
 }
 
-/// The toolbar's background: a colour over the top strip of the view that fades in and out.
+/// The toolbar's background: a thick glass strip over the top of the view, always there so the
+/// tools read, with a colour that fades in and out over it.
 struct ToolbarFade: View {
     let tint: Color
     let height: CGFloat
@@ -213,11 +214,11 @@ struct ToolbarFade: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Rectangle().fill(tint).frame(height: height)
+            Rectangle().fill(.thickMaterial).frame(height: height)
+                .overlay { Rectangle().fill(tint).opacity(visible ? 1 : 0) }
             Spacer(minLength: 0)
         }
         .ignoresSafeArea()
-        .opacity(visible ? 1 : 0)
         .animation(.easeInOut(duration: DS.Duration.base), value: visible)
         .animation(.easeInOut(duration: DS.Duration.base), value: tint)
         .allowsHitTesting(false)
@@ -913,7 +914,8 @@ struct SketchToolbar: View {
     private func transform(_ tool: SketchTransformTool) -> GroupTool {
         // Move and Rotate show the manipulator to drag (or type into); Scale asks for a factor.
         GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool.symbol, help: tool.help,
-                  active: session.manipulating == tool, enabled: session.canTransform,
+                  active: session.manipulating == tool || (tool == .pattern && session.isPatterning),
+                  enabled: tool == .pattern ? session.canPattern : session.canTransform,
                   popover: tool != .scale ? nil : ToolPopover(isPresented: Binding(get: { session.transformRequested == tool },
                                                             set: { if $0 { session.transformRequested = tool } else if session.transformRequested == tool { session.transformRequested = nil } }),
                                        content: AnyView(TransformPopover(model: model, session: session, tool: tool)))) {

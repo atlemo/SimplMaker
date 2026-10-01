@@ -385,6 +385,8 @@ extension Sketch {
         }
         points.removeAll { gone.contains($0.id) }
         dropBrokenProjections()
+        for i in patterns.indices { patterns[i].sources.removeAll { gone.contains($0) } }
+        patterns.removeAll { $0.sources.isEmpty }
         constraints.removeAll { gone.contains($0.id) || Sketch.references($0.kind).contains(where: gone.contains) }
         dimensions.removeAll { gone.contains($0.id) || Sketch.references($0.kind).contains(where: gone.contains) }
     }

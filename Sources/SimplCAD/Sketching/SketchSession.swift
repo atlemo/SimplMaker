@@ -8,7 +8,7 @@ import Observation
 
 /// The sketch tools that change existing geometry as a whole, each with a popover for its values.
 enum SketchTransformTool: String, CaseIterable, Identifiable {
-    case move = "Move", rotate = "Rotate", scale = "Scale"
+    case move = "Move", rotate = "Rotate", scale = "Scale", pattern = "Pattern"
     var id: String { rawValue }
 
     var symbol: String {
@@ -16,6 +16,7 @@ enum SketchTransformTool: String, CaseIterable, Identifiable {
         case .move: return "move"
         case .rotate: return "rotate-cw"
         case .scale: return "scaling"
+        case .pattern: return "pattern"
         }
     }
 
@@ -24,8 +25,15 @@ enum SketchTransformTool: String, CaseIterable, Identifiable {
         case .move: return "Move the selected curves (or the whole sketch): drag the arrows or the square, or type a distance"
         case .rotate: return "Turn the selected curves (or the whole sketch): drag the ring, or type an angle"
         case .scale: return "Make the selected curves (or the whole sketch) bigger or smaller"
+        case .pattern: return "Copy the selected curves (or the whole sketch) in a grid or around a point: drag the arrows or the ring, or type the counts and spacing"
         }
     }
+}
+
+extension SketchPatternDef.Kind: CaseIterable, Identifiable {
+    public static var allCases: [SketchPatternDef.Kind] { [.rectangular, .circular] }
+    public var id: String { rawValue }
+    var title: String { self == .rectangular ? "Rectangular" : "Circular" }
 }
 
 /// What Rotate and Scale turn or grow about.
@@ -170,11 +178,22 @@ enum SketchInput: String, CaseIterable, Identifiable {
     case diameter = "Diameter", radius = "Radius", sweep = "Sweep"
     /// What Move and Rotate take, for the manipulator: how far along x and y, and how far to turn.
     case moveX = "Move X", moveY = "Move Y", turn = "Rotate"
+    /// What Pattern takes: how many copies (the original counts) and how far apart.
+    case countX = "Count X", spacingX = "Spacing X", countY = "Count Y", spacingY = "Spacing Y"
+    case copies = "Count", spread = "Spread over"
 
     var id: String { rawValue }
-    var unit: UnitKind { self == .angle || self == .sweep || self == .turn ? .angle : .length }
+    var unit: UnitKind {
+        switch self {
+        case .angle, .sweep, .turn, .spread: return .angle
+        case .countX, .countY, .copies: return .none
+        default: return .length
+        }
+    }
     /// Whether zero and negative values mean something (a move back, a turn clockwise).
-    var isOffset: Bool { self == .moveX || self == .moveY || self == .turn }
+    var isOffset: Bool { [.moveX, .moveY, .turn, .spacingX, .spacingY, .spread].contains(self) }
+    /// A whole number of copies.
+    var isCount: Bool { self == .countX || self == .countY || self == .copies }
     /// Short label shown in front of the field.
     var symbol: String {
         switch self {
@@ -182,6 +201,12 @@ enum SketchInput: String, CaseIterable, Identifiable {
         case .angle, .sweep, .turn: return "∠"
         case .moveX: return "X"
         case .moveY: return "Y"
+        case .countX: return "#X"
+        case .countY: return "#Y"
+        case .copies: return "#"
+        case .spacingX: return "↔"
+        case .spacingY: return "↕"
+        case .spread: return "∠"
         case .width: return "W"
         case .height: return "H"
         case .diameter: return "⌀"
@@ -234,7 +259,7 @@ final class SketchSession {
     private(set) var tool: SketchTool = .select
 
     func setTool(_ t: SketchTool) {
-        if t != .select { stopManipulating() }
+        if t != .select { stopManipulating(); cancelPattern() }
         tool = t
         if t.family.count > 1 { lastInFamily[t.family[0]] = t }
         resetToolState()
@@ -303,6 +328,9 @@ final class SketchSession {
 
     /// Replaces the sketch (after undo/redo or a parameter change) and re-solves.
     func reload(_ s: Sketch, parameters: ParameterValues) {
+        patternSetup = nil
+        patternBase = nil
+        patternBackup = nil
         sketch = s
         self.parameters = parameters
         selection = selection.filter { s.kind(of: $0) != nil }
@@ -313,7 +341,7 @@ final class SketchSession {
     /// Moves the sketch's projected model edges to where the model has them now, and re-solves, so
     /// what is tied to them follows. Not written to the document until the next edit.
     func followModel(_ r: RegenResult) {
-        guard !sketch.projections.isEmpty else { return }
+        guard !sketch.projections.isEmpty, patternBase == nil else { return }
         var next = sketch
         guard (try? Regenerator.followProjections(&next, frame: frame, r)) != nil, next != sketch else { return }
         sketch = next
@@ -323,6 +351,12 @@ final class SketchSession {
     private func resolve() {
         values = sketch.dimensionValues(parameters)
         solve = SketchSolver.solveLocally(&sketch, dimensionValues: values)
+        refreshCopies()
+    }
+
+    /// Makes the pattern copies again after the originals changed.
+    private func refreshCopies() {
+        if !sketch.patterns.isEmpty { sketch.refreshPatterns(parameters) }
     }
 
     private func resetToolState() {
@@ -338,7 +372,7 @@ final class SketchSession {
 
     var hoverEntity: EntityID? { hover }
     var hoverIsDraggable: Bool {
-        guard let hover else { return false }
+        guard let hover, !Sketch.isGenerated(hover) else { return false }
         if let p = sketch.point(hover) { return !p.fixed }
         return sketch.curve(hover) != nil
     }
@@ -395,7 +429,7 @@ final class SketchSession {
             return best?.0
         }
         let own = excluding.map { Set([$0] + (sketch.curve($0).map { sketch.pointIDs(of: $0) } ?? [])) } ?? []
-        if let p = nearest(sketch.points.filter { !own.contains($0.id) }, { $0.position }) {
+        if let p = nearest(sketch.points.filter { !own.contains($0.id) && !Sketch.isGenerated($0.id) }, { $0.position }) {
             return (SketchSnap(p.position, point: p.id), sketch.curves.contains { c in
                 if case .circle(let center, _) = c.geometry { return center == p.id }
                 if case .arc(let center, _, _) = c.geometry { return center == p.id }
@@ -403,10 +437,10 @@ final class SketchSession {
             } ? .center : .point)
         }
         // The middle of a closed shape (not one being dragged): a point placed there stays centred.
-        let centers = sketch.shapeCenters().filter { own.isDisjoint(with: $0.points) }
+        let centers = sketch.shapeCenters().filter { own.isDisjoint(with: $0.points) && !$0.points.contains(where: Sketch.isGenerated) }
         if let c = nearest(centers, { $0.position }) { return (SketchSnap(c.position, centerOf: c.corners), .center) }
         let lines = sketch.curves.compactMap { c -> SIMD2<Double>? in
-            guard !own.contains(c.id), case .line(let a, let b) = c.geometry, let pa = sketch.position(a),
+            guard !own.contains(c.id), !Sketch.isGenerated(c.id), case .line(let a, let b) = c.geometry, let pa = sketch.position(a),
                   let pb = sketch.position(b) else { return nil }
             return (pa + pb) / 2
         }
@@ -414,7 +448,7 @@ final class SketchSession {
         if let i = nearest(Array(references.points.indices), { references.points[$0] }) {
             return (SketchSnap(references.points[i], model: references.pointModel(i)), .vertex)
         }
-        let curves = sketch.curves.filter { !own.contains($0.id) }.map(\.id)
+        let curves = sketch.curves.filter { !own.contains($0.id) && !Sketch.isGenerated($0.id) }.map(\.id)
         let onCurves = curves.compactMap { id in sketch.geometry(of: id).map { (id, Self.closest(uv, on: $0)) } }
         if let hovered = hover, hovered != excluding, let g = sketch.geometry(of: hovered) {
             return (SketchSnap(Self.closest(uv, on: g), curve: hovered), .curve)
@@ -462,6 +496,7 @@ final class SketchSession {
             // What's exactly under the cursor, or else the nearest point or curve within a few
             // pixels: sketch lines are thin, and picking shouldn't need pixel precision.
             hover = entity(for: m.pick) ?? m.uv.flatMap { m.snapping ? nearestEntity($0) : nil }
+            if let h = hover, Sketch.isGenerated(h), tool != .select { hover = nil }  // copies are only for picking their pattern
         }
         gridStep = m.gridStep
         snapping = m.snapping
@@ -480,8 +515,13 @@ final class SketchSession {
 
     private func mouseDown(_ m: SketchMouse) -> (handled: Bool, commit: String?) {
         message = nil
+        if patternSetup != nil { return (patternClick(), nil) }
         switch tool {
         case .select:
+            if let h = hover, let pid = Sketch.pattern(ofGenerated: h) {  // a copy: change its pattern
+                beginPattern(editing: pid)
+                return (true, nil)
+            }
             guard let h = hover else {
                 if !m.additive { selection = [] }
                 return (false, nil)  // empty space: let the view orbit
@@ -531,6 +571,7 @@ final class SketchSession {
         if sketch.drag(id, to: uv, grabOffset: dragOffset, values: values) {
             dragMoved = true
             solve = SketchSolver.solve(&sketch, dimensionValues: values)
+            refreshCopies()
         }
         return nil
     }
@@ -637,6 +678,7 @@ final class SketchSession {
 
     /// The fields for the current drawing step.
     var inputFields: [SketchInput] {
+        if let patternSetup { return patternSetup.kind == .rectangular ? [.countX, .spacingX, .countY, .spacingY] : [.copies, .spread] }
         if let manipulating { return manipulating == .rotate ? [.turn] : [.moveX, .moveY] }
         switch (tool, clicks.count) {
         case (.line, 1): return [.length, .angle]
@@ -653,10 +695,12 @@ final class SketchSession {
         let t = text.trimmingCharacters(in: .whitespaces)
         typed[field] = t.isEmpty ? nil : t
         if manipulating != nil { previewTyped() }
+        if patternSetup != nil { applyTypedPattern() }
     }
 
     func clearTyped() {
         typed = [:]
+        if patternSetup != nil { cancelPattern() }
         if manipulating != nil { cancelManipulatorPreview() }
     }
 
@@ -664,6 +708,7 @@ final class SketchSession {
     func typedValue(_ field: SketchInput) -> Double? {
         guard let text = typed[field], let v = try? parameters.value(of: text, kind: field.unit) else { return nil }
         if field.unit == .length, !field.isOffset, v <= 1e-9 { return nil }
+        if field.isCount, abs(v - v.rounded()) > 1e-9 || v < 1 || v > Double(SketchPattern.maxCopies) { return nil }
         if field == .sweep, abs(v) <= 1e-9 { return nil }
         return v
     }
@@ -714,6 +759,7 @@ final class SketchSession {
         case .moveX: return manipulatorValues.move.x
         case .moveY: return manipulatorValues.move.y
         case .turn: return manipulatorValues.turn.z
+        case .countX, .countY, .copies, .spacingX, .spacingY, .spread: return patternValue(field)
         default: break
         }
         guard let t = target()?.position, let a = clicks.first?.position else { return nil }
@@ -732,12 +778,13 @@ final class SketchSession {
             var sweep = atan2(d.y, d.x) - atan2(s.y, s.x)
             while sweep <= 0 { sweep += 2 * .pi }
             return sweep
-        case .moveX, .moveY, .turn: return nil
+        case .moveX, .moveY, .turn, .countX, .countY, .copies, .spacingX, .spacingY, .spread: return nil
         }
     }
 
     /// Return in a field: place the next point from the typed values, as a click would.
     func commitTyped() -> String? {
+        if patternSetup != nil { return commitPattern() }
         if manipulating != nil { return commitTypedTransform() }
         guard !inputFields.isEmpty, let t = target() else { return nil }
         message = nil
@@ -792,8 +839,10 @@ final class SketchSession {
     func beginTransform(_ tool: SketchTransformTool) {
         guard canTransform else { return }
         if tool == .scale { transformRequested = tool; return }
+        if tool == .pattern { beginPattern(); return }
         if manipulating == tool { stopManipulating(); return }
         setTool(.select)
+        cancelPattern()
         manipulating = tool
         message = nil
         lastSnap = nil
@@ -807,6 +856,7 @@ final class SketchSession {
 
     /// Where the manipulator sits, in sketch (u, v): the middle of what it works on, carried along by a drag.
     var manipulatorMiddle: SIMD2<Double>? {
+        if patternSetup != nil { return patternMiddle }
         guard manipulating != nil else { return nil }
         if manipulatorBase != nil { return manipulatorPivot + SIMD2(manipulatorValues.move.x, manipulatorValues.move.y) }
         return sketch.transformCenter(selection)
@@ -825,14 +875,19 @@ final class SketchSession {
 
     /// Puts the sketch back as it was before the preview, and forgets what was typed.
     private func cancelManipulatorPreview() {
-        if let base = manipulatorBase { sketch = base }
+        if let base = manipulatorBase { sketch = base; refreshCopies() }
         manipulatorBase = nil
         manipulatorValues = TransformValues()
         typed = [:]
     }
 
-    /// The mouse went down on a part of the manipulator.
-    func beginManipulatorDrag() -> Bool {
+    /// The mouse went down on a part of the manipulator (for the Pattern tool: an arrow or the ring).
+    func beginManipulatorDrag(_ part: ManipulatorPart) -> Bool {
+        if patternSetup != nil {
+            message = nil
+            for field in patternFields(of: part) { typed[field] = nil }  // dragging replaces what was typed
+            return true
+        }
         cancelManipulatorPreview()
         message = nil
         return captureManipulatorBase()
@@ -840,9 +895,20 @@ final class SketchSession {
 
     /// Shows the selection moved and turned by the dragged values, without keeping it.
     func previewManipulator(_ v: TransformValues) {
+        if patternSetup != nil {
+            setPattern { d in
+                if d.kind == .rectangular {
+                    d.spacingX = formatDimension(v.move.x, kind: .length)
+                    d.spacingY = formatDimension(v.move.y, kind: .length)
+                } else {
+                    d.angle = formatDimension(v.turn.z, kind: .angle)
+                }
+            }
+            return
+        }
         guard let base = manipulatorBase else { return }
         manipulatorValues = v
-        if let shown = transformed(base, by: v) { sketch = shown }
+        if let shown = transformed(base, by: v) { sketch = shown; refreshCopies() }
     }
 
     /// The mouse came up: keep the move and turn if the constraints let them stand (one undo step).
@@ -860,6 +926,7 @@ final class SketchSession {
         let v = typedTransform
         manipulatorValues = v
         sketch = transformed(base, by: v) ?? base
+        refreshCopies()
     }
 
     private var typedTransform: TransformValues {
@@ -949,6 +1016,208 @@ final class SketchSession {
         return finish(action)
     }
 
+    // MARK: pattern
+
+    /// The pattern being made or changed while the Pattern tool is on.
+    private(set) var patternSetup: SketchPatternDef?
+    /// The sketch as it was before, to go back to; and without this pattern, to show it on.
+    @ObservationIgnored private var patternBackup: Sketch?
+    @ObservationIgnored private var patternBase: Sketch?
+    /// Whether the pattern is new (else an existing one is being changed).
+    private(set) var patternIsNew = true
+
+    var isPatterning: Bool { patternSetup != nil }
+    var canPattern: Bool { patternSetup != nil || sketch.canPattern(selection) }
+
+    /// The numbers the pattern's expressions come to now (0 where they don't come to one).
+    private func evaluated(_ text: String, _ kind: UnitKind) -> Double { (try? parameters.value(of: text, kind: kind)) ?? 0 }
+
+    func patternValue(_ field: SketchInput) -> Double? {
+        guard let d = patternSetup else { return nil }
+        switch field {
+        case .countX: return evaluated(d.countX, .none)
+        case .countY: return evaluated(d.countY, .none)
+        case .copies: return evaluated(d.count, .none)
+        case .spacingX: return evaluated(d.spacingX, .length)
+        case .spacingY: return evaluated(d.spacingY, .length)
+        case .spread: return evaluated(d.angle, .angle)
+        default: return nil
+        }
+    }
+
+    /// The values the arrows and the ring show: the spacing along x and y, and the spread.
+    var patternValues: TransformValues? {
+        guard patternSetup != nil else { return nil }
+        var v = TransformValues()
+        v.move = SIMD3(patternValue(.spacingX) ?? 0, patternValue(.spacingY) ?? 0, 0)
+        v.turn = SIMD3(0, 0, patternValue(.spread) ?? 0)
+        return v
+    }
+
+    /// Where the arrows sit: the middle of what is copied (for a circle, the point it goes round).
+    private var patternMiddle: SIMD2<Double>? {
+        guard let d = patternSetup, let base = patternBase else { return nil }
+        if d.kind == .circular { return base.position(d.center) ?? .zero }
+        return base.patternBox(d.sources).map { ($0.min + $0.max) / 2 }
+    }
+
+    /// The Pattern button: starts a pattern of the selection (or the whole sketch), or ends it, pressed again.
+    func beginPattern() {
+        if patternSetup != nil { cancelPattern(); return }
+        guard sketch.canPattern(selection) else { message = "Nothing to copy"; return }
+        var def = SketchPatternDef(sources: sketch.patternSources(selection))
+        if let box = sketch.patternBox(selection) {
+            // A little more than the shape's own size, so the copies sit side by side.
+            func gap(_ size: Double) -> String { formatDimension(max((size * 1.5 * 2).rounded() / 2, 2), kind: .length) }
+            def.spacingX = gap(box.max.x - box.min.x)
+            def.spacingY = gap(box.max.y - box.min.y)
+        }
+        startPattern(def, isNew: true)
+    }
+
+    /// Opens an existing pattern (clicked on one of its copies) to change it.
+    func beginPattern(editing id: EntityID) {
+        guard patternSetup == nil, let def = sketch.patterns.first(where: { $0.id == id }) else { return }
+        startPattern(def, isNew: false)
+    }
+
+    private func startPattern(_ def: SketchPatternDef, isNew: Bool) {
+        stopManipulating()
+        setTool(.select)
+        message = nil
+        patternBackup = sketch
+        var base = sketch
+        base.patterns.removeAll { $0.id == def.id }
+        base.refreshPatterns(parameters)
+        patternBase = base
+        patternIsNew = isNew
+        patternSetup = def
+        previewPattern()
+    }
+
+    /// Takes the changes back and leaves the sketch as it was.
+    func cancelPattern() {
+        guard patternSetup != nil else { return }
+        if let backup = patternBackup { sketch = backup }
+        endPattern()
+    }
+
+    private func endPattern() {
+        patternSetup = nil
+        patternBackup = nil
+        patternBase = nil
+        typed = [:]
+        message = nil
+    }
+
+    func setPatternKind(_ kind: SketchPatternDef.Kind) {
+        setPattern { $0.kind = kind }
+    }
+
+    /// Changes the pattern and shows the copies it makes.
+    private func setPattern(_ change: (inout SketchPatternDef) -> Void) {
+        guard var def = patternSetup else { return }
+        change(&def)
+        patternSetup = def
+        message = nil
+        previewPattern()
+    }
+
+    /// What is typed becomes the pattern's expressions, field by field, where it can be used.
+    private func applyTypedPattern() {
+        setPattern { d in
+            for field in inputFields {
+                guard typedValue(field) != nil, let text = typed[field] else { continue }
+                let e = Self.expression(text, field)
+                switch field {
+                case .countX: d.countX = e
+                case .countY: d.countY = e
+                case .copies: d.count = e
+                case .spacingX: d.spacingX = e
+                case .spacingY: d.spacingY = e
+                case .spread: d.angle = e
+                default: break
+                }
+            }
+        }
+    }
+
+    /// The typed fields a part of the manipulator stands for.
+    private func patternFields(of part: ManipulatorPart) -> [SketchInput] {
+        switch part {
+        case .axis(.x): return [.spacingX]
+        case .axis(.y): return [.spacingY]
+        case .ring: return [.spread]
+        default: return []
+        }
+    }
+
+    /// Why the pattern can't make copies, if it can't.
+    var patternProblem: String? {
+        guard let d = patternSetup, let base = patternBase else { return nil }
+        if inputFields.contains(where: typedIsInvalid) { return "That isn't a whole number of copies, a distance or an angle." }
+        let layout: SketchPattern
+        do { layout = try d.layout(base, parameters) } catch {
+            let text = "\(error)"
+            return text.prefix(1).uppercased() + text.dropFirst() + "."
+        }
+        if layout.copyCount < 1 { return "A count of 1 makes no copies. The original counts too." }
+        switch layout {
+        case .rectangular(let nx, let sx, let ny, let sy) where (nx > 1 && abs(sx) < 1e-9) || (ny > 1 && abs(sy) < 1e-9):
+            return "A spacing of zero puts the copies on top of each other."
+        case .circular(_, let angle, _) where abs(angle) < 1e-9:
+            return "A spread of zero puts the copies on top of each other."
+        default: return nil
+        }
+    }
+
+    /// Shows the copies the pattern makes, over the sketch without it.
+    private func previewPattern() {
+        guard let def = patternSetup, let base = patternBase else { return }
+        var shown = base
+        shown.patterns.append(def)
+        shown.refreshPatterns(parameters)
+        sketch = shown
+    }
+
+    /// A click while Pattern is on: on a point, it sets what a circle of copies goes round.
+    private func patternClick() -> Bool {
+        guard let d = patternSetup, d.kind == .circular, let h = hover, !Sketch.isGenerated(h), patternBase?.point(h) != nil else { return hover != nil }
+        setPattern { $0.center = h }
+        return true
+    }
+
+    var patternHint: String {
+        guard let d = patternSetup else { return "" }
+        let tail = " · type the counts and spacing, or drag the \(d.kind == .rectangular ? "arrows" : "ring") · Return keeps the pattern · Esc cancels"
+        return d.kind == .rectangular ? "Rectangular pattern" + tail : "Click a point to copy around it (now \(patternCenterName))" + tail
+    }
+
+    private var patternCenterName: String {
+        guard let d = patternSetup else { return "" }
+        guard d.center != "origin", let c = patternBase?.position(d.center), simdLength(c) > 1e-9 else { return "the origin" }
+        return "\(formatDimension(c.x, kind: .length)), \(formatDimension(c.y, kind: .length))"
+    }
+
+    /// Return: keeps the pattern (one undo step). The copies stay linked to what they copy.
+    func commitPattern() -> String? {
+        guard let d = patternSetup, var made = patternBase else { return nil }
+        if let problem = patternProblem { message = problem; return nil }
+        made.patterns.append(d)
+        let isNew = patternIsNew
+        endPattern()
+        sketch = made
+        return finish(isNew ? "Pattern" : "Edit Pattern")
+    }
+
+    /// Deletes the pattern being changed: its copies go, the originals stay.
+    func deletePattern() -> String? {
+        guard patternSetup != nil, !patternIsNew, let base = patternBase else { return nil }
+        endPattern()
+        sketch = base
+        return finish("Delete Pattern")
+    }
+
     // MARK: offset
 
     var canOffset: Bool { selection.contains { sketch.curve($0) != nil } }
@@ -998,12 +1267,12 @@ final class SketchSession {
     /// The nearest sketch point within the pick tolerance, else the nearest curve.
     func nearestEntity(_ uv: SIMD2<Double>) -> EntityID? {
         var best: (EntityID, Double)?
-        for p in sketch.points {
+        for p in sketch.points where tool == .select || !Sketch.isGenerated(p.id) {
             let d = simdLength(p.position - uv)
             if d <= tolerance, d < (best?.1 ?? .infinity) { best = (p.id, d) }
         }
         if let best { return best.0 }
-        for c in sketch.curves {
+        for c in sketch.curves where tool == .select || !Sketch.isGenerated(c.id) {
             guard let g = sketch.geometry(of: c.id) else { continue }
             let d = simdLength(Self.closest(uv, on: g) - uv)
             if d <= tolerance, d < (best?.1 ?? .infinity) { best = (c.id, d) }
@@ -1155,6 +1424,7 @@ final class SketchSession {
     func escape() {
         if editingDimension != nil { editingDimension = nil }
         else if !clicks.isEmpty || !dimensionPicks.isEmpty { resetToolState() }
+        else if patternSetup != nil { cancelPattern() }
         else if manipulating != nil { stopManipulating() }
         else if tool != .select { setTool(.select) }
         else { selection = [] }
@@ -1265,6 +1535,7 @@ final class SketchSession {
 
     var statusText: String {
         if let message { return message }
+        if patternSetup != nil { return message ?? patternHint }
         var s = manipulating == nil ? tool.hint : "Drag an arrow, the square or the ring to \(manipulating == .rotate ? "turn" : "move") \(selection.isEmpty ? "the sketch" : "the selection") · or type the values · Esc to stop"
         if let snap = lastSnap { s = "Snap: \(snap.kind.rawValue)\(snap.kind == .grid ? " \(gridStep.map { formatDimension($0, kind: .length) } ?? "")" : "") · " + s }
         if !inputFields.isEmpty, manipulating == nil {

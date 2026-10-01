@@ -158,8 +158,10 @@ public struct Sketch: Codable, Hashable, Sendable {
     public var texts: [SketchText] = []
     /// Model edges this sketch follows (see SketchProjection).
     public var projections: [SketchProjection] = []
+    /// Patterns of the sketch's own geometry; their copies are generated (see SketchPattern.swift).
+    public var patterns: [SketchPatternDef] = []
 
-    private enum CodingKeys: String, CodingKey { case points, curves, constraints, dimensions, texts, projections }
+    private enum CodingKeys: String, CodingKey { case points, curves, constraints, dimensions, texts, projections, patterns }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -169,6 +171,7 @@ public struct Sketch: Codable, Hashable, Sendable {
         dimensions = try c.decode([SketchDimension].self, forKey: .dimensions)
         texts = try c.decodeIfPresent([SketchText].self, forKey: .texts) ?? []  // older files have none
         projections = try c.decodeIfPresent([SketchProjection].self, forKey: .projections) ?? []
+        patterns = try c.decodeIfPresent([SketchPatternDef].self, forKey: .patterns) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -179,6 +182,7 @@ public struct Sketch: Codable, Hashable, Sendable {
         try c.encode(dimensions, forKey: .dimensions)
         if !texts.isEmpty { try c.encode(texts, forKey: .texts) }
         if !projections.isEmpty { try c.encode(projections, forKey: .projections) }
+        if !patterns.isEmpty { try c.encode(patterns, forKey: .patterns) }
     }
 
     /// Every sketch starts with a fixed origin point, id "origin".

@@ -12,7 +12,7 @@ public enum SketchTransform: Sendable, Equatable {
 extension Sketch {
     /// The curves a transform of `selection` works on: the selected ones, or every one when nothing is selected.
     func transformCurves(_ selection: [EntityID]) -> [SketchCurve] {
-        selection.isEmpty ? curves : curves.filter { selection.contains($0.id) }
+        (selection.isEmpty ? curves : curves.filter { selection.contains($0.id) }).filter { !Sketch.isGenerated($0.id) }
     }
 
     /// The points a transform of `selection` moves: those of the selected curves, the selected points,
@@ -32,7 +32,7 @@ extension Sketch {
     public func transformCenter(_ selection: [EntityID]) -> SIMD2<Double>? {
         var lo = SIMD2(Double.infinity, Double.infinity), hi = -lo
         func grow(_ p: SIMD2<Double>) { lo.replace(with: p, where: p .< lo); hi.replace(with: p, where: p .> hi) }
-        let ids = selection.isEmpty ? Set(points.map(\.id)) : Set(transformPoints(selection))
+        let ids = selection.isEmpty ? Set(points.map(\.id).filter { !Sketch.isGenerated($0) }) : Set(transformPoints(selection))
         for id in ids { if let p = point(id), id != "origin" { grow(p.position) } }
         for c in transformCurves(selection) {
             if case .circle(let m, let r) = c.geometry, let p = point(m) { grow(p.position - SIMD2(r, r)); grow(p.position + SIMD2(r, r)) }

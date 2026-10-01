@@ -356,6 +356,19 @@ extension DocumentModel {
 
 import SwiftUI
 
+extension View {
+    /// A message that wraps at `width` and reports its wrapped height to a hosting view's
+    /// `fittingSize`. A `maxWidth` frame doesn't: the fitting size then counts one line, and the
+    /// panel around the text comes out too short. Short messages keep their natural width.
+    @ViewBuilder fileprivate func errorWrap(_ text: String, width: CGFloat) -> some View {
+        if text.count > 40 {
+            fixedSize(horizontal: false, vertical: true).frame(width: width, alignment: .leading)
+        } else {
+            fixedSize()
+        }
+    }
+}
+
 /// The options panel under a feature's size field: how it combines with the body, flip, and
 /// OK / Cancel — the choices that matter while sizing it, next to where you're looking.
 struct FeatureHUD: View {
@@ -369,8 +382,7 @@ struct FeatureHUD: View {
                     Text(problem)
                         .font(.caption)
                         .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 320, alignment: .leading)
+                        .errorWrap(problem, width: 320)
                 }
                 controls(id)
             }
@@ -432,6 +444,51 @@ struct FeatureHUD: View {
     }
 }
 
+/// The Pattern tool's options, under its fields: rectangular or circular, what is wrong with the
+/// settings, and OK / Cancel.
+struct SketchPatternHUD: View {
+    let model: DocumentModel
+
+    var body: some View {
+        if let session = model.sketchSession, let setup = session.patternSetup {
+            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                if let problem = session.message ?? session.patternProblem {
+                    Text(problem)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .errorWrap(problem, width: 280)
+                }
+                HStack(spacing: DS.Spacing.space3) {
+                    Picker("Pattern", selection: Binding(get: { setup.kind }, set: { kind in
+                        session.setPatternKind(kind)
+                        model.overlayRevision += 1
+                    })) {
+                        ForEach(SketchPatternDef.Kind.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Copy in a grid, or around a point")
+                    if !session.patternIsNew {
+                        Button("Delete") { model.commitSketch(session.deletePattern()) }
+                            .help("Remove the pattern's copies (⌫)")
+                    }
+                    Button("Cancel") {
+                        session.cancelPattern()
+                        model.overlayRevision += 1
+                    }
+                    Button("OK") { model.commitSketchTyped() }
+                        .help("Keep the pattern (Return)")
+                }
+            }
+            .controlSize(.small)
+            .padding(DS.Spacing.space3)
+            .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.xl2))
+            .fixedSize()
+        }
+    }
+}
+
 /// OK and Cancel for a feature with no drag handle to carry them (see DocumentModel.featureWithoutHandle).
 struct FeatureDoneBar: View {
     let model: DocumentModel
@@ -443,8 +500,7 @@ struct FeatureDoneBar: View {
                     Text(problem)
                         .font(.callout)
                         .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 420, alignment: .leading)
+                        .errorWrap(problem, width: 420)
                 } else {
                     Text(model.featureName(id))
                         .font(.callout.weight(.medium))

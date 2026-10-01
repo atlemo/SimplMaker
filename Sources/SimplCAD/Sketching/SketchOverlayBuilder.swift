@@ -13,6 +13,8 @@ struct DimensionLabel: Identifiable, Equatable {
     var editing: Bool
     /// A measured size that isn't a dimension yet (drawn lighter; a click makes it a dimension).
     var reference = false
+    /// For a radius or diameter: which way is away from the curve, so the label can stand clear of it.
+    var outward: SIMD3<Float>?
 
     /// Id of the light label showing a curve's measured size.
     static func referenceID(_ curve: EntityID) -> EntityID { "ref:" + curve }
@@ -199,20 +201,34 @@ enum SketchOverlayBuilder {
             let isParametric = ((try? Expressions.parse(d.expression))?.references.isEmpty == false)
             return DimensionLabel(id: d.id, world: world(session.frame, anchor),
                                   text: prefix(d.kind) + (isParametric ? "\(d.expression) = \(value)" : value),
-                                  editing: session.editingDimension == d.id)
+                                  editing: session.editingDimension == d.id, outward: outward(d.kind, session.frame))
         }
         // Every other line, circle and arc shows its measured size, lighter.
         let pending = session.pendingLineLength != nil ? session.dimensionPicks.first : nil
         for m in session.referenceMeasurements where m.curve != pending {
             guard let anchor = anchor(m.kind, s) else { continue }
             out.append(DimensionLabel(id: DimensionLabel.referenceID(m.curve), world: world(session.frame, anchor),
-                                      text: prefix(m.kind) + measured(m.value), editing: false, reference: true))
+                                      text: prefix(m.kind) + measured(m.value), editing: false, reference: true,
+                                      outward: outward(m.kind, session.frame)))
         }
         if let length = session.pendingLineLength, let line = pending, let anchor = anchor(.length(line), s) {
             out.append(DimensionLabel(id: DimensionLabel.pendingID, world: world(session.frame, anchor),
                                       text: "\(measured(length)) · click again to place", editing: true))
         }
         return out
+    }
+
+    /// The direction a label stands in from its anchor, away from the curve it measures (radius and diameter only:
+    /// their labels sit on the curve itself, and a small round corner would hide under its own value).
+    static func outward(_ k: SketchDimension.Kind, _ frame: Frame) -> SIMD3<Float>? {
+        let d: SIMD2<Double>
+        switch k {
+        case .radius, .diameter: d = SIMD2(0.7071, 0.7071)
+        case .radialOffset: d = SIMD2(-0.7071, 0.7071)
+        default: return nil
+        }
+        let w = frame.xAxis * d.x + frame.yAxis * d.y
+        return SIMD3(Float(w.x), Float(w.y), Float(w.z))
     }
 
     /// A measured length for display: at most two decimals ("35.36 mm"), since it's only a guide.

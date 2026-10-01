@@ -147,8 +147,8 @@ struct SimplCADCommands: Commands {
                 Button("Offset Selection…") { model?.sketchSession?.beginOffset() }
                     .disabled(!(model?.sketchSession?.canOffset ?? false))
                 ForEach(SketchTransformTool.allCases) { tool in
-                    Button(tool == .scale ? "Scale Selection…" : "\(tool.rawValue) Selection") { model?.beginSketchTransform(tool) }
-                        .disabled(!(model?.sketchSession?.canTransform ?? false))
+                    Button(tool == .scale ? "Scale Selection…" : tool == .pattern ? "Pattern Selection" : "\(tool.rawValue) Selection") { model?.beginSketchTransform(tool) }
+                        .disabled(!((tool == .pattern ? model?.sketchSession?.canPattern : model?.sketchSession?.canTransform) ?? false))
                 }
                 Divider()
                 Button("Finish Sketch") { model?.finishSketch() }

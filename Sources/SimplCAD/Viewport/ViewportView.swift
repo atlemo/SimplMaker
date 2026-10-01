@@ -51,6 +51,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var textEntryFor: EntityID?
     /// Options for the selected feature (Join/Cut, Flip, OK, Cancel), below the size field.
     private var featureHUD: SelfSizingHostingView<FeatureHUD>?
+    /// The sketch Pattern tool's options (grid or circle, OK, Cancel), under its fields.
+    private var patternHUD: SelfSizingHostingView<SketchPatternHUD>?
     /// Typed values for the sketch step in progress (a line's length and angle, ...), beside the cursor.
     private var sketchPanel: NSStackView?
     private var sketchFields: [SketchInput: ValueField] = [:]
@@ -652,9 +654,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if let session = model.sketchSession, plainKey {
             switch event.keyCode {
             case 53: session.escape(); refreshOverlay(); return                                      // Esc
-            case 51, 117: model.sketchCommand { $0.deleteSelection() }; refreshOverlay(); return     // ⌫ ⌦
+            case 51, 117:                                                                             // ⌫ ⌦
+                if session.isPatterning { model.commitSketch(session.deletePattern()) } else { model.sketchCommand { $0.deleteSelection() } }
+                refreshOverlay()
+                return
             case 36, 76:                                                                              // Return
-                if session.typed.isEmpty { model.finishSketch() } else { model.sketchCommand { $0.commitTyped() }; refreshOverlay() }
+                if session.typed.isEmpty, !session.isPatterning { model.finishSketch() } else { model.commitSketchTyped(); refreshOverlay() }
                 return
             case 48 where !session.inputFields.isEmpty:                                               // Tab
                 focusSketchField(session.inputFields[0], typing: nil)
@@ -764,6 +769,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             view.removeFromSuperview()
             labels[id] = nil
         }
+        // Where each label goes: on its anchor, or for a radius or diameter standing clear of the curve; and
+        // never on top of a label placed before it (dimensions first, then the lighter measured sizes).
+        var placed: [CGRect] = []
         for l in wanted {
             let view: DimensionLabelView
             if let existing = labels[l.id] {
@@ -780,19 +788,38 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             view.isEditingHighlight = l.editing
             view.toolTip = l.reference ? "Measured size · click to make it a dimension you can set" : nil
             view.sizeToFit()
-            if let p = renderer.camera.project(l.world, viewSize: bounds.size) {
-                view.isHidden = false
-                view.setFrameOrigin(NSPoint(x: p.x - view.frame.width / 2, y: p.y - view.frame.height / 2))
-            } else {
+            guard let p = renderer.camera.project(l.world, viewSize: bounds.size) else {
                 view.isHidden = true
+                continue
             }
+            view.isHidden = false
+            var center = p
+            if let out = l.outward, let tip = renderer.camera.project(l.world + out, viewSize: bounds.size) {
+                let d = CGVector(dx: tip.x - p.x, dy: tip.y - p.y), len = hypot(d.dx, d.dy)
+                if len > 1e-3 {
+                    let u = CGVector(dx: d.dx / len, dy: d.dy / len)
+                    // Half the label's extent along that direction, plus a gap: its near edge clears the curve.
+                    let reach = abs(u.dx) * view.frame.width / 2 + abs(u.dy) * view.frame.height / 2 + 8
+                    center = CGPoint(x: p.x + u.dx * reach, y: p.y + u.dy * reach)
+                }
+            }
+            var frame = CGRect(x: center.x - view.frame.width / 2, y: center.y - view.frame.height / 2,
+                               width: view.frame.width, height: view.frame.height)
+            for _ in 0..<8 {
+                guard let hit = placed.first(where: { $0.insetBy(dx: -2, dy: -2).intersects(frame) }) else { break }
+                frame.origin.y = hit.maxY + 4  // below the one in the way
+            }
+            view.setFrameOrigin(frame.origin)
+            placed.append(frame)
         }
-        updateGlyphs()
+        // Labels sit above the constraint glyphs, so they stay clickable.
+        if updateGlyphs(avoiding: placed) { for view in labels.values { addSubview(view) } }
         updatePrompt()
         syncPopover()
         syncManipulator()
         syncHandleField()
         syncSketchFields()
+        syncPatternHUD()
         syncTextEntry()
         fitControls()
     }
@@ -980,6 +1007,29 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         panel.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
     }
 
+    /// Shows the Pattern tool's options just under its fields, or takes them away.
+    private func syncPatternHUD() {
+        guard model?.sketchSession?.isPatterning == true, let model, let panel = sketchPanel, !panel.isHidden else {
+            patternHUD?.removeFromSuperview()
+            patternHUD = nil
+            return
+        }
+        let hud: SelfSizingHostingView<SketchPatternHUD>
+        if let patternHUD {
+            hud = patternHUD
+        } else {
+            hud = SelfSizingHostingView(rootView: SketchPatternHUD(model: model))
+            raiseControls().addSubview(hud)
+            patternHUD = hud
+        }
+        raiseControls()
+        let s = hud.fittingSize
+        let x = min(max(panel.frame.minX, 0), max(bounds.width - s.width, 0))
+        var y = panel.frame.maxY + 6
+        if y + s.height > bounds.height { y = max(panel.frame.minY - 6 - s.height, 0) }
+        hud.frame = NSRect(x: x, y: y, width: s.width, height: s.height)
+    }
+
     private func buildSketchFields(_ inputs: [SketchInput]) {
         removeSketchFields()
         let panel = NSStackView()
@@ -1107,7 +1157,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             session.setTyped(input, field.stringValue)
             if session.typedIsInvalid(input) { NSSound.beep(); return true }
             window?.makeFirstResponder(self)
-            model.sketchCommand { $0.commitTyped() }
+            model.commitSketchTyped()
         } else if cancel {
             session.clearTyped()
             window?.makeFirstResponder(self)
@@ -1134,14 +1184,17 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if model?.cursorPromptAt != at { model?.cursorPromptAt = at }
     }
 
-    private func updateGlyphs() {
-        guard let renderer, let model else { return }
+    /// Places the constraint glyphs; true if a new glyph view was added (above everything, labels included).
+    private func updateGlyphs(avoiding labelFrames: [CGRect] = []) -> Bool {
+        guard let renderer, let model else { return false }
+        var created = false
         let wanted = showConstraints ? (model.sketchSession.map { SketchOverlayBuilder.glyphs($0) } ?? []) : []
         let ids = Set(wanted.map(\.id))
         for (id, view) in glyphViews where !ids.contains(id) {
             view.removeFromSuperview()
             glyphViews[id] = nil
         }
+        var placedGlyphs: [CGRect] = []
         for g in wanted {
             let view: ConstraintGlyphView
             if let existing = glyphViews[g.id] {
@@ -1154,6 +1207,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                     self?.refreshOverlay()
                 }
                 addSubview(view)
+                created = true
                 glyphViews[g.id] = view
             }
             view.stringValue = g.symbol
@@ -1163,11 +1217,19 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             view.setFrameSize(NSSize(width: max(view.frame.width, 14), height: view.frame.height))
             if let p = renderer.camera.project(g.world, viewSize: bounds.size) {
                 view.isHidden = false
-                view.setFrameOrigin(NSPoint(x: p.x + 8 + CGFloat(g.stack) * 17, y: p.y + 6))
+                // Beside its curve, but not on a value label (or another glyph): moved along until it is clear.
+                var frame = CGRect(origin: CGPoint(x: p.x + 8 + CGFloat(g.stack) * 17, y: p.y + 6), size: view.frame.size)
+                for _ in 0..<10 {
+                    guard let hit = (labelFrames + placedGlyphs).first(where: { $0.insetBy(dx: -1, dy: -1).intersects(frame) }) else { break }
+                    frame.origin.x = hit.maxX + 3
+                }
+                view.setFrameOrigin(frame.origin)
+                placedGlyphs.append(frame)
             } else {
                 view.isHidden = true
             }
         }
+        return created
     }
 }
 
@@ -1208,13 +1270,40 @@ final class ConstraintGlyphView: NSTextField {
 final class DimensionLabelView: NSTextField {
     var onClick: (() -> Void)?
     var isReference = false
-    var isEditingHighlight = false {
-        didSet {
-            backgroundColor = isEditingHighlight ? NSColor.selectedContentBackgroundColor
-                : NSColor.textBackgroundColor.withAlphaComponent(isReference ? 0.5 : 0.85)
-            textColor = isEditingHighlight ? .alternateSelectedControlTextColor : isReference ? .secondaryLabelColor : .labelColor
+    var isEditingHighlight = false { didSet { updateAppearance() } }
+    /// The pointer is over the label (or the margin around it that answers a click): it lights up as a button.
+    private var isHovered = false { didSet { updateAppearance() } }
+    private var tracking: NSTrackingArea?
+
+    private func updateAppearance() {
+        if isEditingHighlight {
+            backgroundColor = .selectedContentBackgroundColor
+            textColor = .alternateSelectedControlTextColor
+            layer?.borderWidth = 0
+        } else if isHovered {
+            backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.3)
+            textColor = .labelColor
+            layer?.borderColor = NSColor.controlAccentColor.cgColor
+            layer?.borderWidth = 1
+        } else {
+            backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(isReference ? 0.5 : 0.85)
+            textColor = isReference ? .secondaryLabelColor : .labelColor
+            layer?.borderWidth = 0
         }
     }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds.insetBy(dx: -6, dy: -6), options: [.mouseEnteredAndExited, .activeInKeyWindow],
+                                  owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true; NSCursor.pointingHand.set() }
+    override func mouseExited(with event: NSEvent) { isHovered = false }
+    override func resetCursorRects() { addCursorRect(bounds.insetBy(dx: -6, dy: -6), cursor: .pointingHand) }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -1232,6 +1321,11 @@ final class DimensionLabelView: NSTextField {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func mouseDown(with event: NSEvent) { onClick?() }
+
+    /// A little more than the label itself answers a click: a value is small, and often next to a curve.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isHidden ? nil : frame.insetBy(dx: -6, dy: -6).contains(point) ? self : nil
+    }
 }
 
 /// Turns right-click menu entries into an NSMenu; each item runs its closure.

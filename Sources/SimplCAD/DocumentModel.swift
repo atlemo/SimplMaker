@@ -815,7 +815,14 @@ final class DocumentModel {
 
     func sketchCommand(_ command: (SketchSession) -> String?) {
         guard let session = sketchSession else { return }
+        session.cancelPattern()  // a command works on the sketch as it is, not with the pattern's copies shown
         commitSketch(command(session))
+    }
+
+    /// Return in the viewport or in a typed field: places what is typed, or keeps the Pattern tool's copies.
+    func commitSketchTyped() {
+        guard let session = sketchSession else { return }
+        commitSketch(session.commitTyped())
     }
 
     /// Selects a sketch entity or constraint (e.g. from a constraint glyph).

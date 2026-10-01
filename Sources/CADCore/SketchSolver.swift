@@ -32,6 +32,12 @@ public enum SketchSolver {
     /// least-squares compromise (re-solve without them to satisfy the constraints exactly).
     public static func solve(_ sketch: inout Sketch, dimensionValues: [EntityID: Double],
                              soft: [SoftTarget] = [], softWeight: Double = 0.05) -> SolveResult {
+        // Pattern copies take no part: they are made again from the originals afterwards.
+        if sketch.points.contains(where: { Sketch.isGenerated($0.id) }) {
+            let generated = sketch.takeGenerated()
+            defer { sketch.restoreGenerated(generated) }
+            return solve(&sketch, dimensionValues: dimensionValues, soft: soft, softWeight: softWeight)
+        }
         // The solver is dense, so a big sketch (an imported drawing, say) is solved in independent groups.
         guard sketch.points.count > splitThreshold else {
             return solveTogether(&sketch, dimensionValues: dimensionValues, soft: soft, softWeight: softWeight)
@@ -469,6 +475,11 @@ extension SketchSolver {
     /// ring, and only then everything. So typing a rounded corner's radius moves the arc and its
     /// two touch points, not the whole rectangle a little. Nothing changed: a plain solve.
     public static func solveLocally(_ sketch: inout Sketch, dimensionValues: [EntityID: Double]) -> SolveResult {
+        if sketch.points.contains(where: { Sketch.isGenerated($0.id) }) {
+            let generated = sketch.takeGenerated()
+            defer { sketch.restoreGenerated(generated) }
+            return solveLocally(&sketch, dimensionValues: dimensionValues)
+        }
         var moving = Set<EntityID>()
         for d in sketch.dimensions {
             guard let target = dimensionValues[d.id], let now = sketch.measure(d.kind), abs(now - target) > 1e-9 else { continue }
