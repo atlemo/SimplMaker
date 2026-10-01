@@ -1154,7 +1154,15 @@ final class DocumentModel {
             let bodies = Array((result.featureInputs[id] ?? [:]).values)
             guard let center = Regenerator.center(of: bodies), let axis = try? Regenerator.line(pf.axis, result) else { return nil }
             return handle("Spacing", center, axis.direction, pf.spacing, negative: true)
-        case .sketch, .sweep, .loft, .combine, .mirror, .pattern, .shell, .importBody:
+        case .shell(let sf):
+            // On the first flat open face (as it was before the shell), pointing into the wall.
+            guard let body = result.featureInputs[id]?[sf.body] else { return nil }
+            for face in sf.faces where face.body == sf.body {
+                guard let frame = try? body.faceFrame(face.face), let center = try? body.faceCenter(face.face) else { continue }
+                return handle("Thickness", center, frame.normal * (sf.inside ? -1 : 1), sf.thickness)
+            }
+            return nil
+        case .sketch, .sweep, .loft, .combine, .mirror, .pattern, .importBody:
             return nil
         }
     }
@@ -1521,7 +1529,10 @@ final class DocumentModel {
         case .pattern(var p):
             p.spacing = text
             doc.features[i].kind = .pattern(p)
-        case .sketch, .sweep, .loft, .combine, .mirror, .shell, .importBody:
+        case .shell(var sf):
+            sf.thickness = text
+            doc.features[i].kind = .shell(sf)
+        case .sketch, .sweep, .loft, .combine, .mirror, .importBody:
             break
         }
     }

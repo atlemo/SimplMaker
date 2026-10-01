@@ -4,6 +4,8 @@
 #include "SimplKernel.h"
 
 #include <algorithm>
+#include <typeinfo>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -180,7 +182,13 @@ std::shared_ptr<Object> lookup(SKHandle h, T *&out) {
 #define SK_CATCH(ret)                                          \
   }                                                            \
   catch (const Standard_Failure &e) {                          \
-    setError(std::string("kernel: ") + e.what());  \
+    /* Some OpenCASCADE failures carry no message: name the kind of failure instead. */ \
+    std::string what = e.what() ? e.what() : "";               \
+    if (what.empty()) {                                        \
+      what = typeid(e).name();                                 \
+      while (!what.empty() && isdigit((unsigned char)what[0])) what.erase(0, 1); \
+    }                                                          \
+    setError(std::string("kernel: ") + what);                  \
     return ret;                                                \
   }                                                            \
   catch (const std::exception &e) {                            \

@@ -58,6 +58,9 @@ public struct RegenResult: Sendable {
     /// Construction planes, by the id of their Plane feature.
     public var planes: [FeatureID: Frame] = [:]
     public var duration: TimeInterval = 0
+    /// The fillets built so far (feature name and radius), so a shell that fails can say which rounded
+    /// edge its walls can't follow.
+    public var rounds: [(feature: String, radius: Double)] = []
 
     public func body(_ id: FeatureID) -> KBody? { bodies.first { $0.id == id }?.body }
 
@@ -263,18 +266,54 @@ public enum Regenerator {
     }
 
     static func shell(_ f: ShellFeature, _ feature: Feature, _ r: inout RegenResult) throws {
-        guard let i = r.bodies.firstIndex(where: { $0.id == f.body }) else { throw KernelError(message: "the body to shell is missing") }
+        guard let i = r.bodies.firstIndex(where: { $0.id == f.body }) else {
+            throw KernelError(message: "The body to shell is missing. Pick the faces to leave open again.")
+        }
+        // Recorded first, so the thickness handle still shows when the wall can't be built.
         r.featureInputs[feature.id, default: [:]][f.body] = r.bodies[i].body
         let thickness = try r.parameters.value(of: f.thickness, kind: .length)
+        guard thickness > 1e-9 else { throw KernelError(message: "The wall thickness must be more than zero.") }
         let faces = f.faces.filter { $0.body == f.body }.map(\.face)
-        let before = r.bodies[i].body.volume
-        let shelled = try r.bodies[i].body.shell(removing: faces, thickness: thickness, inside: f.inside, featureID: feature.id)
+        let body = r.bodies[i].body
+        let before = body.volume
+        var kernelReason = ""
+        var shelled: KBody?
+        do { shelled = try body.shell(removing: faces, thickness: thickness, inside: f.inside, featureID: feature.id) }
+        catch { kernelReason = "\(error)" }
         // Walls too thick for the body can come back as the unchanged body instead of an error.
-        let after = shelled.volume
-        guard f.inside ? after < before - 1e-6 && after > 1e-6 : after > before + 1e-6 else {
-            throw KernelError(message: "shell failed (is the wall thicker than the body allows?)")
+        if let made = shelled {
+            let after = made.volume
+            if f.inside ? after < before - 1e-6 && after > 1e-6 : after > before + 1e-6 {
+                r.bodies[i].body = made
+                return
+            }
         }
-        r.bodies[i].body = shelled
+        throw KernelError(message: shellFailure(body, thickness: thickness, inside: f.inside, rounds: r.rounds, kernel: kernelReason))
+    }
+
+    /// Why walls of this thickness couldn't be built, as plainly as can be told.
+    static func shellFailure(_ body: KBody, thickness: Double, inside: Bool, rounds: [(feature: String, radius: Double)],
+                             kernel: String) -> String {
+        func mm(_ x: Double) -> String { formatDimension(x, kind: .length) }
+        let t = mm(thickness)
+        if inside, let box = body.bounds {
+            let size = box.max - box.min
+            let narrowest = min(size.x, size.y, size.z)
+            if thickness * 2 >= narrowest - 1e-6 {
+                return "A \(t) wall doesn't fit: the body is only \(mm(narrowest)) across at its narrowest, "
+                    + "so walls on both sides can be at most \(mm(narrowest / 2)) thick."
+            }
+        }
+        if let tight = rounds.filter({ $0.radius <= thickness + 1e-9 }).min(by: { $0.radius < $1.radius }) {
+            return "\(tight.feature) rounds an edge with a \(mm(tight.radius)) radius, no bigger than the \(t) wall. "
+                + "A wall can't follow a corner tighter than it is thick, which is the likely reason. "
+                + "Use a thinner wall, or move the shell earlier in the timeline, before the fillets."
+        }
+        var text = "The walls couldn't be built at \(t). Rounded, slanted or very small features can stop an offset like this: "
+            + "try a thinner wall, open a different face, or shell earlier in the timeline, before fillets, chamfers and threads."
+        let detail = kernel.replacingOccurrences(of: "shell: ", with: "")
+        if !detail.isEmpty, !detail.hasPrefix("shell failed") { text += " (Kernel: \(detail))" }
+        return text
     }
 
     /// Reads a STEP file's contents into a body, the way an Import feature does, and keeps it
@@ -759,6 +798,7 @@ public enum Regenerator {
                 ? b.fillet(edges: edges, radius: size, featureID: feature.id)
                 : b.chamfer(edges: edges, distance: size, featureID: feature.id)
         }
+        if fillet { r.rounds.append((feature.name, size)) }
     }
 }
 

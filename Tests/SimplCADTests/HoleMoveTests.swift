@@ -163,3 +163,61 @@ import Testing
         #expect(model.featureWithoutHandle == nil)
     }
 }
+
+/// Shell has a thickness handle, so it previews live, and a wall that can't be built says why.
+@Suite @MainActor struct ShellHandleTests {
+    private func loaded(thickness: String = "2 mm") async throws -> DocumentModel {
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20 mm", length: "20 mm", height: "20 mm"))),
+            Feature(id: "s", name: "Shell1", .shell(ShellFeature(body: "b", faces: [FaceRef(body: "b", face: "b.top")], thickness: thickness))),
+        ]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        return model
+    }
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    @Test func theHandleSitsOnTheOpenFacePointingIntoTheWall() async throws {
+        let model = try await loaded()
+        model.selectedFeature = "s"
+        let h = try #require(model.dragHandle)
+        #expect(h.label == "Thickness" && h.value == 2)
+        #expect(h.base.z == 20 && h.direction.z == -1, "on the top face, pointing down into the box")
+        #expect(model.featureWithoutHandle == nil, "the handle carries OK and Cancel")
+    }
+
+    @Test func typingAThicknessPreviewsItAndAnImpossibleOneSaysWhy() async throws {
+        let model = try await loaded()
+        model.selectedFeature = "s"
+        let before = try #require(model.result?.body("b")).volume
+        #expect(model.previewHandle("3 mm"))
+        try await settle(model)
+        let after = try #require(model.result?.body("b")).volume
+        #expect(after > 0 && after != before, "the walls changed")
+        #expect(!model.previewInvalid)
+        _ = model.previewHandle("11 mm")
+        try await settle(model)
+        #expect(model.previewInvalid)
+        #expect(model.handleProblem?.contains("at most 10 mm") == true, "\(model.handleProblem ?? "no reason")")
+    }
+
+    @Test func aShellThatFailsOnLoadShowsItsReasonInTheViewport() async throws {
+        let model = try await loaded(thickness: "11 mm")
+        model.selectedFeature = "s"
+        #expect(model.errorText(of: "s")?.contains("at most 10 mm") == true, "\(model.errorText(of: "s") ?? "none")")
+        #expect(model.dragHandle != nil, "the handle is still there to type a smaller wall")
+    }
+
+    @Test func committingAThicknessKeepsItAsOneStep() async throws {
+        let model = try await loaded()
+        model.selectedFeature = "s"
+        #expect(model.commitHandle("4 mm"))
+        try await settle(model)
+        guard case .shell(let s)? = model.document.features.last?.kind else { Issue.record("no shell"); return }
+        #expect(s.thickness == "4 mm")
+    }
+}

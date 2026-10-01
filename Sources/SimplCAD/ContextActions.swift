@@ -328,6 +328,17 @@ extension DocumentModel {
         }
     }
 
+    /// Why a feature failed to build, without the repeated "name:" the kernel puts in front.
+    func errorText(of id: FeatureID) -> String? {
+        guard let error = result?.errors[id] else { return nil }
+        let parts = error.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+        return parts.count == 2 && parts[0].lowercased() == featureKindWord(id) ? parts[1] : error
+    }
+
+    private func featureKindWord(_ id: FeatureID) -> String {
+        document.features.first { $0.id == id }?.typeName.lowercased() ?? ""
+    }
+
     /// Cancel on a feature that was just created: take it out again (and show its sketches again).
     func cancelNewFeature() {
         guard let id = newFeature, let before = documentBeforeNewFeature else { return finishFeatureEdit() }
@@ -354,7 +365,7 @@ struct FeatureHUD: View {
         if let id = model.dragHandle?.featureID {
             VStack(alignment: .leading, spacing: DS.Spacing.space2) {
                 // Why the typed size can't be used, right where the user is looking.
-                if let problem = model.handleProblem {
+                if let problem = model.handleProblem ?? model.errorText(of: id) {
                     Text(problem)
                         .font(.caption)
                         .foregroundStyle(.red)
@@ -428,11 +439,19 @@ struct FeatureDoneBar: View {
     var body: some View {
         if let id = model.featureWithoutHandle {
             HStack(spacing: DS.Spacing.space3) {
-                Text(model.featureName(id))
-                    .font(.callout.weight(.medium))
-                Text("Set it up in the inspector")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                if let problem = model.errorText(of: id) {
+                    Text(problem)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 420, alignment: .leading)
+                } else {
+                    Text(model.featureName(id))
+                        .font(.callout.weight(.medium))
+                    Text("Set it up in the inspector")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
                 if model.newFeature == id {
                     Button("Cancel") { model.cancelNewFeature() }
                         .help("Remove this new feature")
