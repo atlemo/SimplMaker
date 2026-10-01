@@ -22,6 +22,9 @@ struct DocumentWindow: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     @AppStorage(Preferences.showGrid) private var showGrid = true
+    @AppStorage(Preferences.unitSystem) private var unitSystem = Preferences.UnitSystem.system
+    @AppStorage(Preferences.gridSizeMetric) private var gridSizeMetric = 0.0
+    @AppStorage(Preferences.gridSizeUS) private var gridSizeUS = 0.0
     @AppStorage(Preferences.showAxes) private var showAxes = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     /// The window's width: below this, the Finish Sketch button drops its title so the sketch
@@ -50,7 +53,7 @@ struct DocumentWindow: View {
                          highlighted: model.highlighted, fitRevision: model.fitRevision,
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
                          visualStyle: model.visualStyle,
-                         showGrid: showGrid, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
+                         showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                        Panel.bottomInset(timeline: model.showTimeline)))

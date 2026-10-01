@@ -215,6 +215,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     // MARK: sketch grid and rulers
 
     /// Rulers along the sketch axes (keyed "u:25", "v:-50") and the origin marker.
+    var gridSetting = ""
     private var rulerLabels: [String: AxisLabelView] = [:]
     private var originMarker: OriginMarkerView?
 
@@ -223,7 +224,16 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private func sketchGridSteps() -> (minor: Double, major: Double, snap: Double)? {
         let c = NSPoint(x: bounds.midX, y: bounds.midY)
         guard let a = sketchUV(c), let b = sketchUV(NSPoint(x: c.x + 1, y: c.y)) else { return nil }
-        let minor = Self.niceStep(40 * simdLength(b - a))
+        let mmPerPixel = simdLength(b - a)
+        let fixed = Preferences.gridSizeMM
+        if fixed > 0 {
+            // The chosen square, kept at least 12 px wide by stepping up (×4 in inches, ×10 in mm).
+            let us = Preferences.unitSystemSetting.isUS
+            var minor = fixed
+            while minor < 12 * mmPerPixel, minor.isFinite { minor *= us ? 4 : 10 }
+            return (minor, minor * (us ? 4 : 5), minor)
+        }
+        let minor = Self.niceStep(40 * mmPerPixel)
         let twos = abs(minor / pow(10, floor(log10(minor))) - 2) < 1e-9
         return (minor, minor * 5, minor / (twos ? 4 : 5))
     }
@@ -267,7 +277,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 let value = k * grid.major
                 k += 1
                 guard abs(value) > 1e-9, let p = alongU ? screen(value, 0) : screen(0, value) else { continue }
-                let text = String(format: "%g", (value * 1e6).rounded() / 1e6)
+                let text = Preferences.rulerText(value, us: Preferences.unitSystemSetting.isUS)
                 wanted[(alongU ? "u:" : "v:") + text] = (text, p, alongU)
             }
         }
@@ -1404,6 +1414,8 @@ struct ViewportView: NSViewRepresentable {
     let orthographic: Bool
     var visualStyle = VisualStyle.standard
     let showGrid: Bool
+    /// Grid square and unit setting, so a change in Settings redraws the sketch grid.
+    var gridSetting = ""
     var showAxes = true
     let showConstraints: Bool
     /// Widths covered by the floating panels, so the camera centres on what's left.
@@ -1457,6 +1469,10 @@ struct ViewportView: NSViewRepresentable {
         renderer.visualStyle = visualStyle
         renderer.showGrid = showGrid
         renderer.showAxes = showAxes
+        if view.gridSetting != gridSetting {
+            view.gridSetting = gridSetting
+            view.needsDisplay = true
+        }
         view.showConstraints = showConstraints
         if c.cameraRevision != cameraRevision, let cmd = model.cameraCommand {
             c.cameraRevision = cameraRevision

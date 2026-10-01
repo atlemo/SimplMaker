@@ -10,6 +10,9 @@ enum Preferences {
     static let showConstraints = "showConstraints"
     static let showWelcome = "showWelcome"
     static let snapToGrid = "snapToGrid"
+    static let unitSystem = "unitSystem"
+    static let gridSizeMetric = "gridSizeMetric"
+    static let gridSizeUS = "gridSizeUS"
 
     /// The tools pinned to a toolbar group (see ToolGroups.swift), by the group's id.
     static func toolbarPins(_ group: String) -> String { "toolbarPins.\(group)" }
@@ -29,6 +32,45 @@ enum Preferences {
     static var showsWelcome: Bool { UserDefaults.standard.object(forKey: showWelcome) as? Bool ?? true }
     /// Sketch points snap to a grid that follows the zoom (on by default; ⌥ turns all snapping off).
     static var snapsToGrid: Bool { UserDefaults.standard.object(forKey: snapToGrid) as? Bool ?? true }
+
+    /// Which units the grid is laid out in. By default whatever macOS is set to (System Settings ▸
+    /// General ▸ Language & Region ▸ Measurement System); everything inside a model stays in mm.
+    enum UnitSystem: String, CaseIterable, Identifiable {
+        case system, metric, us
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .system: return Locale.current.measurementSystem == .us ? "Same as system (US)" : "Same as system (Metric)"
+            case .metric: return "Metric (mm)"
+            case .us: return "US (inches)"
+            }
+        }
+        var isUS: Bool { self == .system ? Locale.current.measurementSystem == .us : self == .us }
+    }
+
+    /// One choice for the size of a grid square; `mm` 0 is "Automatic", which follows the zoom.
+    struct GridSize: Hashable, Identifiable {
+        var title: String
+        var mm: Double
+        var id: Double { mm }
+    }
+    static let automaticGrid = GridSize(title: "Automatic (follows zoom)", mm: 0)
+    static let metricGridSizes = [automaticGrid] + [1.0, 2, 5, 10, 25, 50, 100].map { GridSize(title: "\(Int($0)) mm", mm: $0) }
+    static let usGridSizes = [automaticGrid] + [("1/16\"", 1.0 / 16), ("1/8\"", 1.0 / 8), ("1/4\"", 0.25), ("1/2\"", 0.5),
+                                                ("1\"", 1), ("2\"", 2), ("6\"", 6), ("1 ft", 12)].map { GridSize(title: $0.0, mm: $0.1 * 25.4) }
+
+    static var unitSystemSetting: UnitSystem {
+        UnitSystem(rawValue: UserDefaults.standard.string(forKey: unitSystem) ?? "") ?? .system
+    }
+    /// The chosen grid square in mm, or 0 for automatic.
+    static var gridSizeMM: Double {
+        UserDefaults.standard.double(forKey: unitSystemSetting.isUS ? gridSizeUS : gridSizeMetric)
+    }
+
+    /// A length in mm as a ruler label in the grid's units: "25", or "0.25" in a US grid (inches).
+    static func rulerText(_ mm: Double, us: Bool) -> String {
+        String(format: "%g", ((us ? mm / 25.4 : mm) * 1e4).rounded() / 1e4)
+    }
 }
 
 struct SettingsView: View {
@@ -38,6 +80,9 @@ struct SettingsView: View {
     @AppStorage(Preferences.showAxes) private var showAxes = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     @AppStorage(Preferences.showWelcome) private var showWelcome = true
+    @AppStorage(Preferences.unitSystem) private var unitSystem = Preferences.UnitSystem.system
+    @AppStorage(Preferences.gridSizeMetric) private var gridSizeMetric = 0.0
+    @AppStorage(Preferences.gridSizeUS) private var gridSizeUS = 0.0
 
     var body: some View {
         TabView {
@@ -65,12 +110,27 @@ struct SettingsView: View {
             Tab("Viewport", systemImage: "cube") {
                 Form {
                     Toggle("Show grid", isOn: $showGrid)
+                    Picker("Units", selection: $unitSystem) {
+                        ForEach(Preferences.UnitSystem.allCases) { Text($0.title).tag($0) }
+                    }
+                    if unitSystem.isUS {
+                        Picker("Grid square", selection: $gridSizeUS) {
+                            ForEach(Preferences.usGridSizes) { Text($0.title).tag($0.mm) }
+                        }
+                    } else {
+                        Picker("Grid square", selection: $gridSizeMetric) {
+                            ForEach(Preferences.metricGridSizes) { Text($0.title).tag($0.mm) }
+                        }
+                    }
+                    Text("The size of one square of the sketch grid, which \"Snap to Grid\" snaps to. Automatic picks a round size that follows the zoom; a fixed size is thinned out only when zoomed far out.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Toggle("Show axes", isOn: $showAxes)
                     Toggle("Show sketch constraints", isOn: $showConstraints)
                 }
                 .formStyle(.grouped)
             }
         }
-        .frame(width: 460, height: 260)
+        .frame(width: 460, height: 380)
     }
 }
