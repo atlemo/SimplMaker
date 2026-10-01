@@ -25,10 +25,10 @@ struct WindowSizeMemory: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) {}
 
     final class Tracker: NSView {
-        private var observer: NSObjectProtocol?
+        private var observed = false
 
         override func viewDidMoveToWindow() {
-            guard let window, observer == nil else { return }
+            guard let window, !observed else { return }
             if let size = Preferences.rememberedWindowSize, !window.styleMask.contains(.fullScreen) {
                 let visible = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? size
                 let fitted = NSSize(width: min(size.width, visible.width), height: min(size.height, visible.height))
@@ -37,11 +37,14 @@ struct WindowSizeMemory: NSViewRepresentable {
                 frame.size = fitted
                 window.setFrame(frame, display: true)
             }
-            observer = NotificationCenter.default.addObserver(
-                forName: NSWindow.didEndLiveResizeNotification, object: window, queue: .main) { note in
-                    guard let w = note.object as? NSWindow, !w.styleMask.contains(.fullScreen) else { return }
-                    Preferences.rememberWindowSize(w.frame.size)
-            }
+            observed = true
+            NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
+                                                   name: NSWindow.didEndLiveResizeNotification, object: window)
+        }
+
+        @objc private func windowResized() {
+            guard let window, !window.styleMask.contains(.fullScreen) else { return }
+            Preferences.rememberWindowSize(window.frame.size)
         }
     }
 }
