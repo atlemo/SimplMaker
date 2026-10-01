@@ -96,3 +96,70 @@ import Testing
         #expect(model.holeMovePreview == nil && model.dragHandle?.label == "Depth", "the arrow is back")
     }
 }
+
+/// Picking a feature the timeline marker has rolled back builds it again, so its handle has a hole to show.
+@Suite @MainActor struct RolledBackEditTests {
+    @Test func editingARolledBackHoleMovesTheMarkerPastIt() async throws {
+        var doc = CADDocument.demo()
+        doc.features = Array(doc.features.prefix(4))
+        let holeID = doc.features[3].id
+        doc.rollback = 3  // the last hole is rolled back
+        let model = DocumentModel(document: doc)
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+        let before = try #require(model.result?.body("plate")).volume
+        model.editFeature(holeID)
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(model.markerPosition == 4 && model.document.rollback == nil)
+        #expect(try #require(model.result?.body("plate")).volume < before, "the hole is cut")
+        #expect(model.selectedFeature == holeID)
+    }
+}
+
+/// A thread running the full length has no drag handle; its OK and Cancel come from the bar instead.
+@Suite @MainActor struct FeatureWithoutHandleTests {
+    private func loaded() async throws -> DocumentModel {
+        var doc = CADDocument.demo()
+        doc.features = Array(doc.features.prefix(4))
+        let model = DocumentModel(document: doc)
+        try await settle(model)
+        return model
+    }
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+    private func addThread(_ model: DocumentModel) throws -> FeatureID {
+        let wall = try #require(model.meshes.first?.mesh.faceNames.firstIndex(of: "plate.side.C0"))
+        #expect(model.addThread(on: PickID(body: 0, face: wall)))
+        return try #require(model.document.features.last?.id)
+    }
+
+    @Test func aNewThreadHasNoHandleButCanBeFinished() async throws {
+        let model = try await loaded()
+        let id = try addThread(model)
+        try await settle(model)
+        #expect(model.dragHandle == nil)
+        #expect(model.featureWithoutHandle == id)
+        model.finishFeatureEdit()
+        #expect(model.featureWithoutHandle == nil && model.selectedFeature == nil && model.newFeature == nil)
+        #expect(model.document.features.last?.id == id, "OK keeps the thread")
+    }
+
+    @Test func cancelTakesTheNewThreadOut() async throws {
+        let model = try await loaded()
+        let before = model.document.features.count
+        _ = try addThread(model)
+        try await settle(model)
+        model.cancelNewFeature()
+        try await settle(model)
+        #expect(model.document.features.count == before && model.featureWithoutHandle == nil)
+    }
+
+    @Test func aSketchOrAHandleFeatureDoesNotGetTheBar() async throws {
+        let model = try await loaded()
+        model.selectedFeature = model.document.features.first?.id  // the sketch
+        #expect(model.featureWithoutHandle == nil)
+    }
+}

@@ -124,6 +124,8 @@ SKHandle sk_mirror_copy(SKHandle body, double ox, double oy, double oz, double n
 SKHandle sk_shell(SKHandle body, const char *const *faceNames, int count, double thickness, bool inside, const char *featureId);
 // A straight edge's line: a point on it and its direction (out[0..2], out[3..5]); false if it's curved.
 bool sk_body_edge_line(SKHandle body, const char *edgeName, double out[6]);
+// A straight edge's two ends (out[0..2] = where it starts, out[3..5] = where it ends); false if it's curved.
+bool sk_body_edge_ends(SKHandle body, const char *edgeName, double out[6]);
 
 /// Boolean between two bodies; names from both operands are carried through.
 SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op);

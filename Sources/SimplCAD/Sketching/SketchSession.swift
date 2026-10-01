@@ -208,7 +208,14 @@ struct SketchMouse {
 /// sketch plane (e.g. the outline of the face being sketched on), in sketch (u, v).
 struct SketchReferences {
     var segments: [(SIMD2<Double>, SIMD2<Double>)] = []
+    /// For each segment and point: the straight model edge it belongs to, which a sketch can follow
+    /// (nil for the parts of a curved edge).
+    var segmentModels: [ModelSnap?] = []
     var points: [SIMD2<Double>] = []
+    var pointModels: [ModelSnap?] = []
+
+    func segmentModel(_ i: Int) -> ModelSnap? { i < segmentModels.count ? segmentModels[i] : nil }
+    func pointModel(_ i: Int) -> ModelSnap? { i < pointModels.count ? pointModels[i] : nil }
 }
 
 /// What the cursor snapped to, shown as a marker and in the status bar.
@@ -270,6 +277,8 @@ final class SketchSession {
     private var dragEntity: EntityID?
     private var dragOffset = SIMD2<Double>.zero
     private var dragMoved = false
+    /// What a dragged point last snapped to; a model edge or corner it is dropped on is followed from then on.
+    private var dragSnap: SketchSnap?
 
     /// Model edges and corners in the sketch plane, for snapping (kept up to date by the model).
     @ObservationIgnored var references = SketchReferences()
@@ -298,6 +307,16 @@ final class SketchSession {
         self.parameters = parameters
         selection = selection.filter { s.kind(of: $0) != nil }
         if let d = editingDimension, !s.dimensions.contains(where: { $0.id == d }) { editingDimension = nil }
+        resolve()
+    }
+
+    /// Moves the sketch's projected model edges to where the model has them now, and re-solves, so
+    /// what is tied to them follows. Not written to the document until the next edit.
+    func followModel(_ r: RegenResult) {
+        guard !sketch.projections.isEmpty else { return }
+        var next = sketch
+        guard (try? Regenerator.followProjections(&next, frame: frame, r)) != nil, next != sketch else { return }
+        sketch = next
         resolve()
     }
 
@@ -392,7 +411,9 @@ final class SketchSession {
             return (pa + pb) / 2
         }
         if let m = nearest(lines, { $0 }) { return (SketchSnap(m), .midpoint) }
-        if let v = nearest(references.points, { $0 }) { return (SketchSnap(v), .vertex) }
+        if let i = nearest(Array(references.points.indices), { references.points[$0] }) {
+            return (SketchSnap(references.points[i], model: references.pointModel(i)), .vertex)
+        }
         let curves = sketch.curves.filter { !own.contains($0.id) }.map(\.id)
         let onCurves = curves.compactMap { id in sketch.geometry(of: id).map { (id, Self.closest(uv, on: $0)) } }
         if let hovered = hover, hovered != excluding, let g = sketch.geometry(of: hovered) {
@@ -400,7 +421,11 @@ final class SketchSession {
         }
         if let c = nearest(onCurves, { $0.1 }) { return (SketchSnap(c.1, curve: c.0), .curve) }
         let onEdges = references.segments.map { Self.closest(uv, on: .line($0.0, $0.1)) }
-        if let e = nearest(onEdges, { $0 }) { return (SketchSnap(e), .edge) }
+        if let e = nearest(Array(onEdges.indices), { onEdges[$0] }) {
+            var model = references.segmentModel(e)
+            model?.endIndex = nil
+            return (SketchSnap(onEdges[e], model: model), .edge)
+        }
         if let step = gridStep, step > 0 {
             return (SketchSnap(SIMD2((uv.x / step).rounded() * step, (uv.y / step).rounded() * step)), .grid)
         }
@@ -447,7 +472,8 @@ final class SketchSession {
         case .down: return mouseDown(m)
         case .dragged: return (dragEntity != nil, drag(m))
         case .up:
-            defer { dragEntity = nil; dragMoved = false }
+            defer { dragEntity = nil; dragMoved = false; dragSnap = nil }
+            if let id = dragEntity, dragMoved, let model = dragSnap, model.model != nil { attachDragged(id, to: model) }
             return (dragEntity != nil, dragEntity != nil && dragMoved ? "Move" : nil)
         }
     }
@@ -497,12 +523,29 @@ final class SketchSession {
 
     private func drag(_ m: SketchMouse) -> String? {
         guard let id = dragEntity, var uv = m.uv else { return nil }
-        if sketch.point(id) != nil { uv = snap(uv, excluding: id).position }  // dragged points snap too (without constraints)
+        if sketch.point(id) != nil {  // dragged points snap too (without constraints, except to a model edge or corner)
+            let s = snap(uv, excluding: id)
+            uv = s.position
+            dragSnap = s
+        }
         if sketch.drag(id, to: uv, grabOffset: dragOffset, values: values) {
             dragMoved = true
             solve = SketchSolver.solve(&sketch, dimensionValues: values)
         }
         return nil
+    }
+
+    /// A point dropped on a model edge or corner stays on it (or at it) when the model changes. If the
+    /// sketch can't have that, the point stays where it was dropped, without the tie.
+    private func attachDragged(_ id: EntityID, to snap: SketchSnap) {
+        let before = sketch
+        sketch.attach(id, to: snap)
+        resolve()
+        if solve?.status == .failed {
+            sketch = before
+            resolve()
+            message = "That would conflict with the constraints already there"
+        }
     }
 
     private func toolClick(_ s: SketchSnap) -> String? {

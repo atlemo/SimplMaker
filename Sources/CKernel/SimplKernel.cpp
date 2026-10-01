@@ -1597,6 +1597,28 @@ bool sk_body_edge_line(SKHandle body, const char *edgeName, double out[6]) {
   SK_CATCH(false)
 }
 
+bool sk_body_edge_ends(SKHandle body, const char *edgeName, double out[6]) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->edgeIndex.find(edgeName);
+  if (it == b->edgeIndex.end()) {
+    setError(std::string("edge not found: ") + edgeName);
+    return false;
+  }
+  BRepAdaptor_Curve c(TopoDS::Edge(b->edges(it->second + 1)));
+  if (c.GetType() != GeomAbs_Line) {
+    setError("that edge isn't straight");
+    return false;
+  }
+  gp_Pnt p = c.Value(c.FirstParameter()), q = c.Value(c.LastParameter());
+  out[0] = p.X(); out[1] = p.Y(); out[2] = p.Z();
+  out[3] = q.X(); out[4] = q.Y(); out[5] = q.Z();
+  return true;
+  SK_CATCH(false)
+}
+
 SKHandle sk_translate(SKHandle body, double dx, double dy, double dz) {
   SK_TRY
   gp_Trsf t;

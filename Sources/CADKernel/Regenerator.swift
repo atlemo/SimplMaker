@@ -303,11 +303,30 @@ public enum Regenerator {
             catch { throw KernelError(message: "dimension '\(d.expression)': \(error)") }
         }
         var solved = f.sketch
+        try followProjections(&solved, frame: frame, r)
         let solve = SketchSolver.solveLocally(&solved, dimensionValues: values)  // a changed parameter moves only what it drives
         guard solve.status == .solved else {
             throw KernelError(message: "sketch cannot satisfy its constraints (residual \(solve.maxResidual))")
         }
         return try sketchResult(solved, solve: solve, frame: frame, parameters: r.parameters)
+    }
+
+    /// Puts a sketch's projected model edges where the edges are now, so geometry tied to them follows.
+    public static func followProjections(_ sketch: inout Sketch, frame: Frame, _ r: RegenResult) throws {
+        for p in sketch.projections {
+            guard let body = r.body(p.edge.body) else {
+                throw KernelError(message: "the body with the projected edge \(p.edge.edge) is missing")
+            }
+            guard let ends = try? body.edgeEnds(p.edge.edge) else {
+                throw KernelError(message: "projected edge not found: \(p.edge.edge)")
+            }
+            func local(_ w: SIMD3<Double>) -> SIMD2<Double> { SIMD2(simd_dot(w - frame.origin, frame.xAxis), simd_dot(w - frame.origin, frame.yAxis)) }
+            for (id, w) in [(p.start, ends.start), (p.end, ends.end)] {
+                guard let i = sketch.points.firstIndex(where: { $0.id == id }) else { continue }
+                let uv = local(w)
+                sketch.points[i].x = uv.x; sketch.points[i].y = uv.y; sketch.points[i].fixed = true
+            }
+        }
     }
 
     /// A solved sketch's profiles on a plane.

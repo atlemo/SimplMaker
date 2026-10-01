@@ -10,15 +10,30 @@ public enum SketchEntityKind: Sendable, Equatable {
 }
 
 /// Where a tool click landed: a free position, an existing point, or on an existing curve.
+/// A straight model edge the cursor snapped to (its ends in sketch coordinates), or one of its ends.
+public struct ModelSnap: Sendable, Equatable {
+    public var edge: EdgeRef
+    public var start: SIMD2<Double>
+    public var end: SIMD2<Double>
+    /// 0 = the start, 1 = the end; nil = somewhere along the edge.
+    public var endIndex: Int?
+    public init(edge: EdgeRef, start: SIMD2<Double>, end: SIMD2<Double>, endIndex: Int? = nil) {
+        self.edge = edge; self.start = start; self.end = end; self.endIndex = endIndex
+    }
+}
+
 public struct SketchSnap: Sendable, Equatable {
     public var position: SIMD2<Double>
     public var point: EntityID?
     public var curve: EntityID?
+    /// A model edge or corner: it becomes a projection of that edge when the snap is used (see concrete).
+    public var model: ModelSnap?
     /// Two opposite corners of the four-sided shape whose center this is: a point placed here
     /// is kept at the middle of the diagonal between them.
     public var centerOf: [EntityID]?
-    public init(_ position: SIMD2<Double>, point: EntityID? = nil, curve: EntityID? = nil, centerOf: [EntityID]? = nil) {
-        self.position = position; self.point = point; self.curve = curve; self.centerOf = centerOf
+    public init(_ position: SIMD2<Double>, point: EntityID? = nil, curve: EntityID? = nil, centerOf: [EntityID]? = nil,
+                model: ModelSnap? = nil) {
+        self.position = position; self.point = point; self.curve = curve; self.centerOf = centerOf; self.model = model
     }
 }
 
@@ -111,6 +126,7 @@ extension Sketch {
     /// Returns a point for the snap: the snapped point itself, or a new point
     /// (constrained onto the snapped curve, if any).
     public mutating func resolve(_ snap: SketchSnap) -> EntityID {
+        let snap = concrete(snap)
         if let p = snap.point, point(p) != nil { return p }
         let id = addPoint(snap.position.x, snap.position.y)
         if let c = snap.curve, curve(c) != nil { constrain(.pointOnCurve(point: id, curve: c)) }
@@ -120,6 +136,41 @@ extension Sketch {
             constrain(.midpoint(point: id, line: diagonal))
         }
         return id
+    }
+
+    // MARK: projected model edges
+
+    /// The projection of a model edge, made if the sketch doesn't have it yet.
+    @discardableResult
+    public mutating func project(_ m: ModelSnap) -> SketchProjection {
+        if let have = projections.first(where: { $0.edge == m.edge }), point(have.start) != nil, point(have.end) != nil,
+           curve(have.line) != nil {
+            return have
+        }
+        projections.removeAll { $0.edge == m.edge }
+        let a = addPoint(m.start.x, m.start.y), b = addPoint(m.end.x, m.end.y)
+        for id in [a, b] { if let i = points.firstIndex(where: { $0.id == id }) { points[i].fixed = true } }
+        let line = addLine(a, b, construction: true)
+        let p = SketchProjection(edge: m.edge, start: a, end: b, line: line)
+        projections.append(p)
+        return p
+    }
+
+    /// A snap that names a model edge, turned into one that names sketch geometry: the edge's end
+    /// point, or its line. Any other snap is returned as it is.
+    public mutating func concrete(_ snap: SketchSnap) -> SketchSnap {
+        guard let m = snap.model else { return snap }
+        let p = project(m)
+        var out = snap
+        out.model = nil
+        if let end = m.endIndex { out.point = end == 0 ? p.start : p.end } else { out.curve = p.line }
+        return out
+    }
+
+    /// Drops projections whose points or line are gone.
+    mutating func dropBrokenProjections() {
+        let kept = projections.filter { p in point(p.start) != nil && point(p.end) != nil && curve(p.line) != nil }
+        projections = kept
     }
 
     /// Every curve joined to `id` end to end, directly or through others (points that are shared
@@ -200,7 +251,7 @@ extension Sketch {
     @discardableResult
     public mutating func addLine(from s: SketchSnap, to e: SketchSnap, startPoint: EntityID? = nil) -> (line: EntityID, end: EntityID) {
         let a = startPoint ?? resolve(s)
-        var endSnap = e
+        var endSnap = concrete(e)
         let aPos = position(a) ?? s.position
         let alignment = Sketch.inferredAlignment(from: aPos, to: e.position)
         if endSnap.point == nil, endSnap.curve == nil, let alignment {  // make it exactly aligned
@@ -217,6 +268,7 @@ extension Sketch {
     /// Rectangle from two corner snaps; snapped corners are tied to what they snapped to.
     @discardableResult
     public mutating func addRectangle(from s: SketchSnap, to e: SketchSnap) -> [EntityID] {
+        let s = concrete(s), e = concrete(e)
         let r = addRectangle(s.position.x, s.position.y, e.position.x, e.position.y)
         attach(r.corners[0], to: s)
         attach(r.corners[2], to: e)
@@ -228,6 +280,7 @@ extension Sketch {
     /// (bottom, right, top, left).
     @discardableResult
     public mutating func addCenterRectangle(center: SketchSnap, corner: SketchSnap) -> [EntityID] {
+        let center = concrete(center), corner = concrete(corner)
         let c = center.point.flatMap { position($0) } ?? center.position
         let r = addRectangle(2 * c.x - corner.position.x, 2 * c.y - corner.position.y, corner.position.x, corner.position.y)
         attach(r.corners[2], to: corner)
@@ -270,6 +323,7 @@ extension Sketch {
     /// midway. Clicked points that snapped to geometry are kept on the circle.
     @discardableResult
     public mutating func addCircle(diameterFrom a: SketchSnap, to b: SketchSnap) -> EntityID {
+        let a = concrete(a), b = concrete(b)
         let pa = a.point.flatMap { position($0) } ?? a.position, pb = b.point.flatMap { position($0) } ?? b.position
         let mid = (pa + pb) / 2
         let id = addCircle(center: addPoint(mid.x, mid.y), radius: max(vlen(pb - pa) / 2, 1e-3))
@@ -286,7 +340,7 @@ extension Sketch {
         let cp = position(c) ?? s.position
         let a = resolve(start)
         let r = vlen((position(a) ?? start.position) - cp)
-        var endSnap = end
+        var endSnap = concrete(end)
         if endSnap.point == nil {
             let d = end.position - cp
             let len = vlen(d)
@@ -307,7 +361,8 @@ extension Sketch {
         return addBezier(start: s, control1: addPoint(c1.x, c1.y), control2: addPoint(c2.x, c2.y), end: e)
     }
 
-    mutating func attach(_ p: EntityID, to snap: SketchSnap) {
+    public mutating func attach(_ p: EntityID, to snap: SketchSnap) {
+        let snap = concrete(snap)
         if let q = snap.point, point(q) != nil { constrain(.coincident(p, q)) }
         else if let c = snap.curve, curve(c) != nil { constrain(.pointOnCurve(point: p, curve: c)) }
     }
@@ -329,6 +384,7 @@ extension Sketch {
             for p in pointIDs(of: c) where p != "origin" && !stillUsed.contains(p) { gone.insert(p) }
         }
         points.removeAll { gone.contains($0.id) }
+        dropBrokenProjections()
         constraints.removeAll { gone.contains($0.id) || Sketch.references($0.kind).contains(where: gone.contains) }
         dimensions.removeAll { gone.contains($0.id) || Sketch.references($0.kind).contains(where: gone.contains) }
     }

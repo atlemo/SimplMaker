@@ -622,6 +622,18 @@ public struct CADDocument: Codable, Hashable, Sendable {
 
     public var activeFeatures: ArraySlice<Feature> { features.prefix(rollback ?? features.count) }
 
+    /// Adds a feature where the timeline marker is: before the features the marker has rolled back, and
+    /// at the end (with the marker still there) when it hasn't.
+    public mutating func insertAtMarker(_ feature: Feature) {
+        if let r = rollback, r < features.count {
+            features.insert(feature, at: r)
+            rollback = r + 1
+        } else {
+            features.append(feature)
+            rollback = nil  // a marker at the end is no marker; left set, it would hide the new feature
+        }
+    }
+
     public func index(of id: FeatureID) -> Int? { features.firstIndex { $0.id == id } }
 
     /// Next free "<base><n>" name, e.g. "Fillet3".

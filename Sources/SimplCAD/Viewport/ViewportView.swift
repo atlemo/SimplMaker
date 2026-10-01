@@ -34,7 +34,6 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var windowDrag = false
     private var labels: [EntityID: DimensionLabelView] = [:]
     private var glyphViews: [String: ConstraintGlyphView] = [:]
-    private var prompt: CursorPromptView?
     private var mouseInside = false
     var showConstraints = true
     private var popover: NSPopover?
@@ -677,11 +676,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         } else if event.keyCode == 53 {
             if model.isPickingSketchPlane { model.cancelSketchPlanePick() }
             else if model.pendingTool != nil { model.cancelTool() }
-            else if model.selection.isEmpty, model.dragHandle != nil { model.finishFeatureEdit() }
+            else if model.selection.isEmpty, model.dragHandle != nil || model.featureWithoutHandle != nil { model.finishFeatureEdit() }
             else { model.clearSelection() }
             refreshOverlay()
             return
-        } else if plainKey, event.keyCode == 36 || event.keyCode == 76, model.pendingTool != nil || model.dragHandle != nil {  // Return
+        } else if plainKey, event.keyCode == 36 || event.keyCode == 76, model.pendingTool != nil || model.dragHandle != nil || model.featureWithoutHandle != nil {  // Return
             if model.pendingTool != nil { model.confirmTool() } else { model.finishFeatureEdit() }
             refreshOverlay()
             return
@@ -1128,30 +1127,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         return true
     }
 
-    /// Keeps the instruction ("Select a plane or planar face") just below and right of the cursor.
+    /// Tells the model where the cursor is while a prompt is due; the window draws it (CursorPrompt),
+    /// so it lies over the floating panels too.
     private func updatePrompt() {
-        guard let text = model?.cursorPrompt, mouseInside, let p = lastPoint else {
-            prompt?.isHidden = true
-            return
-        }
-        let view: CursorPromptView
-        if let prompt {
-            view = prompt
-        } else {
-            view = CursorPromptView(frame: .zero)
-            addSubview(view)
-            prompt = view
-        }
-        if view.stringValue != text {
-            view.stringValue = text
-            view.sizeToFit()
-            view.setFrameSize(NSSize(width: view.frame.width + 12, height: view.frame.height + 6))
-        }
-        let size = view.frame.size
-        let x = min(max(p.x + 18, 0), max(bounds.width - size.width, 0))
-        let y = min(max(p.y + 18, 0), max(bounds.height - size.height, 0))
-        view.setFrameOrigin(NSPoint(x: x, y: y))
-        view.isHidden = false
+        let at: CGPoint? = model?.cursorPrompt != nil && mouseInside ? lastPoint : nil
+        if model?.cursorPromptAt != at { model?.cursorPromptAt = at }
     }
 
     private func updateGlyphs() {
@@ -1222,29 +1202,6 @@ final class ConstraintGlyphView: NSTextField {
     override func mouseDown(with event: NSEvent) {
         onClick?(event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command))
     }
-}
-
-/// The instruction that follows the cursor while the app waits for a pick. Clicks pass through it.
-final class CursorPromptView: NSTextField {
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        isEditable = false
-        isSelectable = false
-        isBordered = false
-        drawsBackground = true
-        alignment = .center
-        backgroundColor = .windowBackgroundColor
-        textColor = .labelColor
-        font = .systemFont(ofSize: 13)
-        wantsLayer = true
-        layer?.cornerRadius = DS.Radius.checkbox
-        layer?.borderWidth = 1
-        layer?.borderColor = NSColor.separatorColor.cgColor
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// A small clickable value label for a sketch dimension (or, lighter, a measured size).

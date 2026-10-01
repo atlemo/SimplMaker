@@ -187,6 +187,13 @@ final class DocumentModel {
         if let id = selectedFeature, let i = document.index(of: id), i >= p { selectedFeature = nil }
     }
 
+    /// A feature picked for editing that the marker has rolled back is built again: the marker moves to
+    /// just after it (later features stay rolled back), so its handle has something to show.
+    func bringIntoModel(_ id: FeatureID) {
+        guard let i = document.index(of: id), i >= markerPosition else { return }
+        setMarker(i + 1)
+    }
+
     /// Shows the model as it would be with the marker at `position`, while the marker is dragged.
     func previewMarker(_ position: Int) {
         var doc = document
@@ -406,6 +413,7 @@ final class DocumentModel {
             guard let i = doc.index(of: id) else { return }
             doc.features.remove(at: i)
             if let r = doc.rollback, i < r { doc.rollback = r - 1 }  // the marker stays after the same features
+            if doc.rollback == doc.features.count { doc.rollback = nil }  // deleting the last one after it leaves it at the end
         }
         if selectedFeature == id { selectedFeature = nil }
     }
@@ -431,12 +439,7 @@ final class DocumentModel {
         documentBeforeNewFeature = document
         mutate("Add \(feature.typeName)") { doc in
             // At the timeline marker: rolled back, a new feature goes where the marker is.
-            if let r = doc.rollback, r < doc.features.count {
-                doc.features.insert(feature, at: r)
-                doc.rollback = r + 1
-            } else {
-                doc.features.append(feature)
-            }
+            doc.insertAtMarker(feature)
             doc.hidden.formUnion(feature.sketchesUsed)
         }
         selection = []
@@ -511,7 +514,10 @@ final class DocumentModel {
         sceneRevision += 1
         overlayRevision += 1
         if fit { fitRevision += 1 }
-        if let session = sketchSession, let frame = r.sketches[session.featureID]?.frame { session.frame = frame }
+        if let session = sketchSession, let frame = r.sketches[session.featureID]?.frame {
+            session.frame = frame
+            session.followModel(r)
+        }
         updateSketchReferences()
     }
 
@@ -580,7 +586,7 @@ final class DocumentModel {
     /// Return (or Esc) after sizing a feature: done with it, so its handle and size field go away.
     func finishFeatureEdit() {
         newFeature = nil
-        guard dragHandle != nil else { return }
+        guard dragHandle != nil || featureWithoutHandle != nil else { return }
         selectedFeature = nil
         selection = []
     }
@@ -641,6 +647,8 @@ final class DocumentModel {
     }
 
     /// Instruction shown next to the cursor while the app waits for a pick.
+    /// Where the cursor is in the viewport (window coordinates) while that prompt is showing.
+    var cursorPromptAt: CGPoint?
     var cursorPrompt: String? { isPickingSketchPlane ? "Select a plane or planar face" : toolPrompt }
 
     /// The origin planes are offered while choosing where to sketch or where to put a primitive.
@@ -713,13 +721,42 @@ final class DocumentModel {
         }
         for m in visibleMeshes {
             let s = m.mesh.segments, edge = m.mesh.segmentEdge
-            for i in edge.indices {
-                let a = local(s, i * 6), b = local(s, i * 6 + 3)
-                guard abs(a.w) < 1e-3, abs(b.w) < 1e-3 else { continue }
-                refs.segments.append((a.uv, b.uv))
+            let body = result?.body(m.id)
+            var first = 0
+            while first < edge.count {
+                var last = first
+                while last + 1 < edge.count, edge[last + 1] == edge[first] { last += 1 }
+                defer { first = last + 1 }
+                let run = (first...last).map { (a: local(s, $0 * 6), b: local(s, $0 * 6 + 3)) }
+                guard run.contains(where: { abs($0.a.w) < 1e-3 && abs($0.b.w) < 1e-3 }) else { continue }
+                // A straight edge lying in the plane can be followed: the sketch then keeps hold of the
+                // edge itself, not just of where it is now.
+                var model: ModelSnap?
+                var ends = (a: run[0].a.uv, b: run[run.count - 1].b.uv)
+                if run.count == 1, run[0].a.w.magnitude < 1e-3, run[0].b.w.magnitude < 1e-3,
+                   let name = edge[first] < m.mesh.edgeNames.count ? m.mesh.edgeNames[Int(edge[first])] : nil,
+                   let e = try? body?.edgeEnds(name) {
+                    func uv(_ p: SIMD3<Double>) -> SIMD2<Double> {
+                        let d = p - f.origin
+                        return SIMD2(simd_dot(d, f.xAxis), simd_dot(d, f.yAxis))
+                    }
+                    ends = (uv(e.start), uv(e.end))
+                    model = ModelSnap(edge: EdgeRef(body: m.id, edge: name), start: ends.a, end: ends.b)
+                }
+                for seg in run where abs(seg.a.w) < 1e-3 && abs(seg.b.w) < 1e-3 {
+                    refs.segments.append((seg.a.uv, seg.b.uv))
+                    refs.segmentModels.append(model)
+                }
                 // An edge's ends: where its run of segments starts and stops.
-                if i == 0 || edge[i - 1] != edge[i] { refs.points.append(a.uv) }
-                if i == edge.count - 1 || edge[i + 1] != edge[i] { refs.points.append(b.uv) }
+                if let model {
+                    var start = model, end = model
+                    start.endIndex = 0; end.endIndex = 1
+                    refs.points.append(model.start); refs.pointModels.append(start)
+                    refs.points.append(model.end); refs.pointModels.append(end)
+                } else if abs(run[0].a.w) < 1e-3 {
+                    refs.points.append(ends.a); refs.pointModels.append(nil)
+                    if abs(run[run.count - 1].b.w) < 1e-3 { refs.points.append(ends.b); refs.pointModels.append(nil) }
+                }
             }
         }
         session.references = refs
@@ -993,6 +1030,17 @@ final class DocumentModel {
             return m.rotating ? formatDimension(live.turn[m.arrow.index], kind: .angle) : formatDimension(live.move[m.arrow.index], kind: .length)
         }
         return h.expression
+    }
+
+    /// The selected feature that is being edited but has no drag handle to carry the OK button (a thread
+    /// that runs the full length, a shell, a mirror…). Its OK and Cancel float at the bottom instead.
+    var featureWithoutHandle: FeatureID? {
+        guard sketchSession == nil, pendingTool == nil, holeMoveStart == nil, let id = selectedFeature, dragHandle == nil,
+              let f = document.features.first(where: { $0.id == id }), !f.suppressed else { return nil }
+        switch f.kind {
+        case .sketch, .importBody: return nil  // a sketch has its own mode; an import has nothing to size
+        default: return id
+        }
     }
 
     var dragHandle: DragHandle? {
@@ -1505,12 +1553,7 @@ final class DocumentModel {
         let feature = Feature(id: id, name: document.nextName("Import"),
                               .importBody(ImportFeature(fileName: url.lastPathComponent, data: data)))
         mutate("Import \(url.lastPathComponent)") { doc in
-            if let r = doc.rollback, r < doc.features.count {
-                doc.features.insert(feature, at: r)
-                doc.rollback = r + 1
-            } else {
-                doc.features.append(feature)
-            }
+            doc.insertAtMarker(feature)
             doc.bodyNames[id] = url.deletingPathExtension().lastPathComponent
         }
         selection = []
@@ -1622,12 +1665,7 @@ final class DocumentModel {
             let feature = Feature(name: document.nextName("Sketch"),
                                   .sketch(SketchFeature(plane: plane, sketch: imported.sketch)))
             mutate("Import \(url.lastPathComponent)") { doc in
-                if let r = doc.rollback, r < doc.features.count {
-                    doc.features.insert(feature, at: r)
-                    doc.rollback = r + 1
-                } else {
-                    doc.features.append(feature)
-                }
+                doc.insertAtMarker(feature)
                 doc.hidden.remove(feature.id)
             }
             selection = []

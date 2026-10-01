@@ -1,5 +1,6 @@
 // Main window: timeline + parameters on the left, viewport in the middle, inspector on the right.
 // SPDX-License-Identifier: GPL-3.0-or-later
+import AppKit
 import CADCore
 import CADKernel
 import SwiftUI
@@ -28,6 +29,13 @@ struct DocumentWindow: View {
     @State private var windowWidth: CGFloat = 1200
     static let titledSketchWidth: CGFloat = 1100
 
+    @Environment(\.controlActiveState) private var activeState
+    /// Sketch mode tints the toolbar while the window is active.
+    private var sketchTint: Bool { model.sketchSession != nil && activeState != .inactive }
+    /// The pointer is over the toolbar strip, which fades in a background, and how tall that strip is.
+    @State private var toolbarHovered = false
+    @State private var toolbarHeight: CGFloat = 65
+
     private var unlinkTitle: String {
         guard let p = model.unlinkPrompt else { return "" }
         return "Replace \(p.expression) with \(p.valueText)?"
@@ -35,7 +43,8 @@ struct DocumentWindow: View {
 
     var body: some View {
         // The viewport fills the window, under the toolbar too; the browser and the inspector float
-        // over it as glass panels, like the sidebars of current macOS apps.
+        // over it as glass panels, like the sidebars of current macOS apps. The toolbar has no
+        // background until the pointer is over it, when one fades in.
         ZStack {
             ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
                          highlighted: model.highlighted, fitRevision: model.fitRevision,
@@ -46,6 +55,8 @@ struct DocumentWindow: View {
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                        Panel.bottomInset(timeline: model.showTimeline)))
                 .ignoresSafeArea()
+            ToolbarFade(tint: sketchTint ? .accentColor : Color(nsColor: .windowBackgroundColor),
+                        height: toolbarHeight, visible: toolbarHovered || sketchTint)
             VStack(spacing: Panel.inset) {
             HStack(alignment: .top, spacing: 0) {
                 if model.showSidebar {
@@ -97,8 +108,20 @@ struct DocumentWindow: View {
                 .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
                 .padding(.bottom, model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
         }
+        // A feature with no drag handle gets its OK and Cancel here, above the status bar.
+        .overlay(alignment: .bottom) {
+            FeatureDoneBar(model: model)
+                .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
+                .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
+                .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset) + DS.ControlHeight.large + Panel.inset)
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.featureWithoutHandle)
+        // The cursor's prompt goes above everything, panels included.
+        .overlay { CursorPrompt(model: model) }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
         .toolbar {
             // The tools sit in the middle of the toolbar, in Design and in Sketch mode.
             ToolbarItem(placement: .principal) {
@@ -113,7 +136,7 @@ struct DocumentWindow: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Tools")
             }
-            .sharedBackgroundVisibility(.hidden)  // the tools draw their own glass, shaped like the panels
+            .sharedBackgroundVisibility(.hidden)  // the tools sit on the toolbar itself, with no glass of their own
             ToolbarItem(placement: .navigation) {
                 Button { model.showSidebar.toggle() } label: { Label("Browser", systemImage: "sidebar.left") }
                     .help("Show or hide the browser (⌃⌘S)")
@@ -151,6 +174,88 @@ struct DocumentWindow: View {
             Button("OK") { model.alert = nil }
         } message: { info in
             Text(info.message)
+        }
+    }
+}
+
+/// The instruction next to the cursor while the app waits for a pick ("Select a plane or planar face"),
+/// just below and right of the pointer and kept inside the window.
+struct CursorPrompt: View {
+    let model: DocumentModel
+    @State private var size = CGSize.zero
+
+    var body: some View {
+        GeometryReader { geo in
+            if let text = model.cursorPrompt, let p = model.cursorPromptAt {
+                Text(text)
+                    .font(.system(size: 13))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: DS.Radius.checkbox))
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.checkbox).strokeBorder(Color(nsColor: .separatorColor)))
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+                    .offset(x: min(max(p.x + 18, 0), max(geo.size.width - size.width, 0)),
+                            y: min(max(p.y + 18, 0), max(geo.size.height - size.height, 0)))
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+/// The toolbar's background: a colour over the top strip of the view that fades in and out.
+struct ToolbarFade: View {
+    let tint: Color
+    let height: CGFloat
+    let visible: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(tint).frame(height: height)
+            Spacer(minLength: 0)
+        }
+        .ignoresSafeArea()
+        .opacity(visible ? 1 : 0)
+        .animation(.easeInOut(duration: DS.Duration.base), value: visible)
+        .animation(.easeInOut(duration: DS.Duration.base), value: tint)
+        .allowsHitTesting(false)
+    }
+}
+
+/// Tells whether the pointer is over the window's toolbar strip. Events over the toolbar never reach
+/// the content's own tracking areas, so a local event monitor watches the pointer instead.
+struct ToolbarHoverMonitor: NSViewRepresentable {
+    @Binding var hovering: Bool
+
+    func makeNSView(context: Context) -> MonitorView { MonitorView() }
+
+    func updateNSView(_ view: MonitorView, context: Context) {
+        let binding = $hovering
+        view.onChange = { if binding.wrappedValue != $0 { binding.wrappedValue = $0 } }
+    }
+
+    final class MonitorView: NSView {
+        var onChange: (Bool) -> Void = { _ in }
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .mouseEntered, .mouseExited, .leftMouseDragged]) { [weak self] event in
+                MainActor.assumeIsolated { self?.check(event) }
+                return event
+            }
+        }
+
+        private func check(_ event: NSEvent) {
+            guard let window else { return }
+            let p = window.mouseLocationOutsideOfEventStream
+            let top = window.contentLayoutRect.maxY
+            let inside = event.window === window && p.y >= top && p.y <= window.frame.height && p.x >= 0 && p.x <= window.frame.width
+            onChange(inside)
         }
     }
 }
@@ -729,15 +834,13 @@ extension EnvironmentValues {
 }
 
 extension View {
-    /// The toolbar tools' glass background, with the floating panels' corner radius, and a gap
-    /// above it (the toolbar centres its items, so the padding is twice the gap).
-    func toolsPanel(tint: Color? = nil) -> some View {
-        padding(.horizontal, DS.Spacing.space5)
-            .padding(.top, DS.Spacing.space3)
-            .padding(.bottom, DS.Spacing.space2)
+    /// The toolbar tools' row, sitting on the toolbar's own background. macOS makes the toolbar about
+    /// 52 pt tall whatever is in it: padding doesn't change that, and an accessory strip under it adds
+    /// at least 36 pt.
+    func toolsPanel() -> some View {
+        padding(.horizontal, DS.Spacing.space3)
+            .padding(.vertical, DS.Spacing.space2)
             .fixedSize()
-            .glassEffect(tint.map { .regular.tint($0) } ?? .regular, in: .rect(cornerRadius: DS.Radius.window))
-            .padding(.top, DS.Spacing.space4)
     }
 }
 
@@ -791,7 +894,7 @@ struct SketchToolbar: View {
         }
         // Sketch mode tints the tools' glass while the window is active.
         .environment(\.toolsOnTint, activeState != .inactive)
-        .toolsPanel(tint: activeState != .inactive ? .accentColor : nil)
+        .toolsPanel()
     }
 
     /// A sketch tool's button. A shape with several ways to draw it (rectangle, circle, arc) draws

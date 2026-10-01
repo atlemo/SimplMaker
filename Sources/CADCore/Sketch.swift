@@ -134,14 +134,32 @@ public struct SketchText: Codable, Hashable, Sendable, Identifiable {
     public static let defaultFont = "Helvetica-Bold"
 }
 
+/// A straight edge of the model brought into the sketch: two fixed points and a construction line
+/// between them, put back where the edge is on every rebuild. Other geometry constrained to them
+/// (a corner on the line, a point coincident with an end) follows the model when it changes.
+public struct SketchProjection: Codable, Hashable, Sendable, Identifiable {
+    public var id: EntityID
+    public var edge: EdgeRef
+    /// The edge's two ends, as fixed sketch points.
+    public var start: EntityID
+    public var end: EntityID
+    /// The construction line between them.
+    public var line: EntityID
+    public init(id: EntityID = IDs.make(), edge: EdgeRef, start: EntityID, end: EntityID, line: EntityID) {
+        self.id = id; self.edge = edge; self.start = start; self.end = end; self.line = line
+    }
+}
+
 public struct Sketch: Codable, Hashable, Sendable {
     public var points: [SketchPoint] = []
     public var curves: [SketchCurve] = []
     public var constraints: [SketchConstraint] = []
     public var dimensions: [SketchDimension] = []
     public var texts: [SketchText] = []
+    /// Model edges this sketch follows (see SketchProjection).
+    public var projections: [SketchProjection] = []
 
-    private enum CodingKeys: String, CodingKey { case points, curves, constraints, dimensions, texts }
+    private enum CodingKeys: String, CodingKey { case points, curves, constraints, dimensions, texts, projections }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -150,6 +168,7 @@ public struct Sketch: Codable, Hashable, Sendable {
         constraints = try c.decode([SketchConstraint].self, forKey: .constraints)
         dimensions = try c.decode([SketchDimension].self, forKey: .dimensions)
         texts = try c.decodeIfPresent([SketchText].self, forKey: .texts) ?? []  // older files have none
+        projections = try c.decodeIfPresent([SketchProjection].self, forKey: .projections) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -159,6 +178,7 @@ public struct Sketch: Codable, Hashable, Sendable {
         try c.encode(constraints, forKey: .constraints)
         try c.encode(dimensions, forKey: .dimensions)
         if !texts.isEmpty { try c.encode(texts, forKey: .texts) }
+        if !projections.isEmpty { try c.encode(projections, forKey: .projections) }
     }
 
     /// Every sketch starts with a fixed origin point, id "origin".

@@ -266,6 +266,13 @@ public final class KBody: @unchecked Sendable {
         return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]))
     }
 
+    /// A straight edge's two ends; throws for a curved edge.
+    public func edgeEnds(_ edge: String) throws -> (start: SIMD3<Double>, end: SIMD3<Double>) {
+        var o = [Double](repeating: 0, count: 6)
+        guard sk_body_edge_ends(handle, edge, &o) else { throw KernelError.last("edge ends") }
+        return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]))
+    }
+
     /// Cuts a thread into a round face (see sk_thread); `length` nil = the whole face.
     public func thread(face: String, majorDiameter: Double, pitch: Double, length: Double?, flipped: Bool, leftHanded: Bool,
                        featureID: String) throws -> KBody {

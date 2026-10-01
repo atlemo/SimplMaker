@@ -190,6 +190,7 @@ extension DocumentModel {
         if result?.errors[id] != nil, profileSource(id) != nil { reselectProfiles(id); return }
         if sketchSession != nil { finishSketch() }
         pendingTool = nil
+        bringIntoModel(id)
         selection = []
         selectedFeature = id
         showInspector = true
@@ -416,6 +417,35 @@ struct FeatureHUD: View {
             // field could store what was typed. Return in the field already means OK.
             Button("OK") { model.finishFeatureEdit() }
                 .help("Done (Return)")
+        }
+    }
+}
+
+/// OK and Cancel for a feature with no drag handle to carry them (see DocumentModel.featureWithoutHandle).
+struct FeatureDoneBar: View {
+    let model: DocumentModel
+
+    var body: some View {
+        if let id = model.featureWithoutHandle {
+            HStack(spacing: DS.Spacing.space3) {
+                Text(model.featureName(id))
+                    .font(.callout.weight(.medium))
+                Text("Set it up in the inspector")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                if model.newFeature == id {
+                    Button("Cancel") { model.cancelNewFeature() }
+                        .help("Remove this new feature")
+                }
+                Button("OK") { model.finishFeatureEdit() }
+                    .help("Done (Return)")
+            }
+            .controlSize(.small)
+            .padding(.horizontal, DS.Spacing.space4)
+            .padding(.vertical, DS.Spacing.space2)
+            .glassEffect(.regular, in: .capsule)
+            .fixedSize()
+            .transition(.opacity)
         }
     }
 }
