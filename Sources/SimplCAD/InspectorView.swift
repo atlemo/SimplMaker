@@ -51,6 +51,7 @@ struct InspectorView: View {
                 case .pattern(let f): PatternInspector(model: model, id: id, pattern: f)
                 case .shell(let f): ShellInspector(model: model, id: id, shell: f)
                 case .importBody(let f): ImportInspector(model: model, id: id, imported: f)
+                case .image(let f): ImageInspector(model: model, id: id, image: f)
                 }
                 Section {
                     Button("Delete Feature", role: .destructive) { model.deleteFeature(id) }
@@ -1043,6 +1044,48 @@ struct ShellInspector: View {
                 }
             }
             BodiesRow(model: model, ids: [shell.body])
+        }
+    }
+}
+
+struct ImageInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let image: ImageFeature
+    /// The opacity while the slider is dragged; nil otherwise, so the view follows the model.
+    @State private var dragging: Double?
+
+    var edit: FeatureEdit<ImageFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .image(let i) = $0 { i } else { nil } }, wrap: { .image($0) })
+    }
+
+    var body: some View {
+        Section("Canvas") {
+            LabeledContent("File", value: image.fileName)
+            LabeledContent("On", value: model.planeName(image.plane))
+            LabeledContent("Opacity") {
+                HStack {
+                    Slider(value: Binding(get: { dragging ?? image.opacity }, set: { v in
+                        dragging = v
+                        model.setImageOpacity(id, v, final: false)
+                    }), in: 0...1) { editing in
+                        if !editing, let v = dragging {
+                            model.setImageOpacity(id, v)
+                            dragging = nil
+                        }
+                    }
+                    Text("\(Int(((dragging ?? image.opacity) * 100).rounded()))%")
+                        .monospacedDigit().foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
+                }
+            }
+            edit.row("Width", image.width, "Edit Width") { $0.width = $1 }
+            LabeledContent("Height", value: model.imageHeightText(image))
+            edit.row("Across", image.u, "Edit Position") { $0.u = $1 }
+            edit.row("Up", image.v, "Edit Position") { $0.v = $1 }
+            edit.row("Turn", image.angle, "Edit Angle") { $0.angle = $1 }
+            Button("Replace Image…") { model.replaceImage(id) }
+            Text("A reference to trace over: it builds nothing, and clicks pass through it. The image is kept in the part. Width, position and turn take expressions.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }

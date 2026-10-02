@@ -161,6 +161,7 @@ struct SimplCADCommands: Commands {
             ForEach(DesignTool.primitives) { tool in toolItem(tool) }
             Divider()
             toolItem(.plane, title: "Construction Plane")
+            toolItem(.canvas, title: "Canvas (Reference Image)…")
             Divider()
             Button("Rebuild") { model?.regenerate() }
                 .keyboardShortcut("r", modifiers: [.command])

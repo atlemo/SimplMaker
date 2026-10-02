@@ -135,6 +135,42 @@ enum Shaders {
         return o;
     }
 
+    // Reference images: a textured quad on a plane, blended (premultiplied) at the image's opacity.
+    // It writes colour only, so clicks pass through to whatever lies beneath.
+    struct ImageParams {
+        float4 corners[4];     // top left, top right, bottom right, bottom left
+        float opacity;
+        float depthBias;
+        float2 pad;
+    };
+    struct ImageOut {
+        float4 position [[position]];
+        float2 uv;
+    };
+
+    vertex ImageOut imageVertex(uint vid [[vertex_id]],
+                                constant Uniforms& u [[buffer(1)]],
+                                constant ImageParams& p [[buffer(3)]]) {
+        // A triangle strip: top left, top right, bottom left, bottom right.
+        const float2 uvs[4] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 1) };
+        const int corner[4] = { 0, 1, 3, 2 };
+        ImageOut o;
+        o.position = u.viewProj * float4(p.corners[corner[vid]].xyz, 1.0);
+        o.position.z -= p.depthBias;
+        o.uv = uvs[vid];
+        return o;
+    }
+
+    fragment FragOut imageFragment(ImageOut in [[stage_in]],
+                                   texture2d<float> image [[texture(0)]],
+                                   constant ImageParams& p [[buffer(3)]]) {
+        constexpr sampler smooth(filter::linear, mip_filter::linear, address::clamp_to_edge);
+        FragOut o;
+        o.color = image.sample(smooth, in.uv) * p.opacity;  // the texture holds premultiplied colour
+        o.id = 0;
+        return o;
+    }
+
     // Each segment instance is a screen-space quad (triangle strip of 4 vertices).
     vertex LineOut segmentVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                                  device const Segment* segs [[buffer(0)]],

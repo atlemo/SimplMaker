@@ -38,6 +38,20 @@ public struct BodyResult: Sendable, Identifiable {
     public var body: KBody
 }
 
+/// Where a reference image lies: its middle and axes (x along the picture's top edge, y up it, both
+/// already turned by the feature's angle) and its size, in mm.
+public struct ImagePlacement: Sendable, Equatable {
+    public var frame: Frame
+    public var width: Double
+    public var height: Double
+
+    /// The corners in world space: top left, top right, bottom right, bottom left, as the picture reads.
+    public var corners: [SIMD3<Double>] {
+        let x = frame.xAxis * (width / 2), y = frame.yAxis * (height / 2)
+        return [frame.origin - x + y, frame.origin + x + y, frame.origin + x - y, frame.origin - x - y]
+    }
+}
+
 public struct RegenResult: Sendable {
     public var parameters: ParameterValues = ParameterValues()
     public var sketches: [FeatureID: SketchResult] = [:]
@@ -57,6 +71,8 @@ public struct RegenResult: Sendable {
     public var bodyNames: [FeatureID: String] = [:]
     /// Construction planes, by the id of their Plane feature.
     public var planes: [FeatureID: Frame] = [:]
+    /// Reference images, by the id of their Canvas feature.
+    public var images: [FeatureID: ImagePlacement] = [:]
     public var duration: TimeInterval = 0
     /// The fillets built so far (feature name and radius), so a shell that fails can say which rounded
     /// edge its walls can't follow.
@@ -160,6 +176,7 @@ public enum Regenerator {
                 case .pattern(let f): try pattern(f, feature, &r)
                 case .shell(let f): try shell(f, feature, &r)
                 case .importBody(let f): try importBody(f, feature, &r)
+                case .image(let f): r.images[feature.id] = try image(f, &r)
                 }
             } catch {
                 r.errors[feature.id] = "\(error)"
@@ -325,6 +342,20 @@ public enum Regenerator {
     static func importBody(_ f: ImportFeature, _ feature: Feature, _ r: inout RegenResult) throws {
         let body = try importedBody(f.data, featureID: feature.id)
         r.bodies.append(BodyResult(id: feature.id, name: r.bodyNames[feature.id] ?? "Body\(r.bodies.count + 1)", body: body))
+    }
+
+    /// Where a reference image lies on its plane. Like a sketch on a face, it reads upright as the view shows the plane.
+    static func image(_ f: ImageFeature, _ r: inout RegenResult) throws -> ImagePlacement {
+        let plane = try resolvePlane(f.plane, r)
+        let base = f.plane.isFaceOrPlane ? plane.upright : plane
+        let p = r.parameters
+        let u = try p.value(of: f.u, kind: .length), v = try p.value(of: f.v, kind: .length)
+        let width = try p.value(of: f.width, kind: .length)
+        let angle = try p.value(of: f.angle, kind: .angle)
+        guard width > 1e-9 else { throw KernelError(message: "The image's width must be more than zero.") }
+        let normal = simd_normalize(base.normal)
+        let x = simd_normalize(turned(base.xAxis, about: normal, by: angle))
+        return ImagePlacement(frame: Frame(origin: base.point(u, v), normal: normal, xAxis: x), width: width, height: width * f.aspect)
     }
 
     /// Where a sketch lies: its plane, with upright axes unless it's from before they were (see

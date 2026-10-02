@@ -386,6 +386,7 @@ struct Sidebar: View {
     @State private var sketchesOpen = true
     @State private var parametersOpen = true
     @State private var planesOpen = true
+    @State private var imagesOpen = true
     /// The body or sketch whose name is being edited in place.
     @State private var renaming: FeatureID?
 
@@ -446,6 +447,20 @@ struct Sidebar: View {
                         }
                     } label: {
                         FolderRow(title: "Planes", ids: model.planeFeatures.map(\.id), model: model)
+                    }
+                }
+                if !model.imageFeatures.isEmpty {
+                    DisclosureGroup(isExpanded: $imagesOpen) {
+                        ForEach(model.imageFeatures) { f in
+                            BrowserRow(name: f.name, hidden: model.isHidden(f.id),
+                                       toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
+                                       renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
+                                Icon("image", size: 14)
+                            }
+                            .tag(f.id)
+                        }
+                    } label: {
+                        FolderRow(title: "Canvases", ids: model.imageFeatures.map(\.id), model: model)
                     }
                 }
             }
@@ -512,6 +527,10 @@ struct Sidebar: View {
                 Button("New Sketch on Plane") { model.beginSketch(on: .plane(id)) }
                 Button(model.isHidden(id) ? "Show Plane" : "Hide Plane") { model.setHidden([id], !model.isHidden(id)) }
                 Button("Rename Plane") { renaming = id }
+            } else if case .image = f.kind {
+                Button("Replace Image…") { model.replaceImage(id) }
+                Button(model.isHidden(id) ? "Show Canvas" : "Hide Canvas") { model.setHidden([id], !model.isHidden(id)) }
+                Button("Rename Canvas") { renaming = id }
             } else if model.bodies.contains(where: { $0.id == id }) {
                 Button(model.isHidden(id) ? "Show Body" : "Hide Body") { model.setHidden([id], !model.isHidden(id)) }
                 Button("Move Body") { model.move(bodies: [id]) }
@@ -991,7 +1010,7 @@ struct DesignToolbar: View {
             ToolDivider()
             group("Modify", id: "design.modify", DesignTool.modifiers, defaults: DesignTool.modifiers)
             ToolDivider()
-            group("Construct", id: "design.construct", DesignTool.construct, defaults: [.plane, .mirror, .pattern])
+            group("Construct", id: "design.construct", DesignTool.construct, defaults: [.plane, .mirror, .pattern, .canvas])
         }
         .toolsPanel()
     }

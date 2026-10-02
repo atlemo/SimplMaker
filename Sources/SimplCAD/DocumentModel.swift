@@ -208,7 +208,13 @@ final class DocumentModel {
 
     /// Shows or hides bodies and sketches (by the id of the feature that made them), as one undo step.
     func setHidden(_ ids: [FeatureID], _ hidden: Bool) {
-        let noun = ids.count == 1 ? (document.features.first { $0.id == ids[0] }.map { if case .sketch = $0.kind { "Sketch" } else { "Body" } } ?? "") : "Items"
+        let noun = ids.count == 1 ? (document.features.first { $0.id == ids[0] }.map { f -> String in
+            switch f.kind {
+            case .sketch: return "Sketch"
+            case .image: return "Canvas"
+            default: return "Body"
+            }
+        } ?? "") : "Items"
         mutate(hidden ? "Hide \(noun)" : "Show \(noun)") { doc in
             if hidden { doc.hidden.formUnion(ids) } else { doc.hidden.subtract(ids) }
         }
@@ -272,6 +278,9 @@ final class DocumentModel {
     /// Construction planes in document order. A plane's position here, plus 3 (after the origin
     /// planes), is its index in plane pick IDs.
     var planeFeatures: [Feature] { document.features.filter { if case .plane = $0.kind { true } else { false } } }
+
+    /// Reference images (Canvas features) in document order.
+    var imageFeatures: [Feature] { document.features.filter { if case .image = $0.kind { true } else { false } } }
 
     /// The construction plane a plane pick points at (nil for the origin planes).
     func constructionPlane(of pick: PickID) -> FeatureID? {
@@ -883,6 +892,8 @@ final class DocumentModel {
     /// sketches with pickable profiles and curves, plus the origin planes and the drag handle.
     func sketchOverlay() -> SketchOverlay {
         var o = SketchOverlay()
+        o.images = imageDraws()
+        o.imageBorder = imageBorder()
         if let session = sketchSession {
             SketchOverlayBuilder.editing(session, into: &o)
             if let r = result?.sketches[session.featureID] { SketchOverlayBuilder.regions(r, slot: 0, into: &o) }
@@ -1045,7 +1056,7 @@ final class DocumentModel {
         guard sketchSession == nil, pendingTool == nil, holeMoveStart == nil, let id = selectedFeature, dragHandle == nil,
               let f = document.features.first(where: { $0.id == id }), !f.suppressed else { return nil }
         switch f.kind {
-        case .sketch, .importBody: return nil  // a sketch has its own mode; an import has nothing to size
+        case .sketch, .importBody, .image: return nil  // a sketch has its own mode; an import and a canvas have nothing to size
         default: return id
         }
     }
@@ -1169,7 +1180,7 @@ final class DocumentModel {
                 return handle("Thickness", center, frame.normal * (sf.inside ? -1 : 1), sf.thickness)
             }
             return nil
-        case .sketch, .sweep, .loft, .combine, .mirror, .pattern, .importBody:
+        case .sketch, .sweep, .loft, .combine, .mirror, .pattern, .importBody, .image:
             return nil
         }
     }
@@ -1539,7 +1550,7 @@ final class DocumentModel {
         case .shell(var sf):
             sf.thickness = text
             doc.features[i].kind = .shell(sf)
-        case .sketch, .sweep, .loft, .combine, .mirror, .importBody:
+        case .sketch, .sweep, .loft, .combine, .mirror, .importBody, .image:
             break
         }
     }

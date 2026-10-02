@@ -13,7 +13,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
     case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", rotate = "Rotate", scale = "Scale", combine = "Combine"
-    case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell"
+    case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell", canvas = "Canvas"
 
     var id: String { rawValue }
 
@@ -22,8 +22,8 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
     static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .move, .rotate, .scale, .combine]
-    /// Construction planes, and copies of bodies.
-    static let construct: [DesignTool] = [.plane, .mirror, .pattern]
+    /// Construction planes, copies of bodies, and reference images.
+    static let construct: [DesignTool] = [.plane, .mirror, .pattern, .canvas]
 
     /// A glyph name from the macOS Design System's icon set (see IconGlyphs.swift), not an SF Symbol.
     var symbol: String {
@@ -51,6 +51,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .mirror: return "flip-horizontal-2"
         case .pattern: return "pattern"
         case .shell: return "shell"
+        case .canvas: return "image"
         }
     }
 
@@ -81,6 +82,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .plane: return "n"
         case .mirror: return "i"
         case .pattern: return "t"
+        case .canvas: return "v"
         }
     }
 
@@ -109,6 +111,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .mirror: return "Mirror (I): copy bodies across a plane"
         case .pattern: return "Pattern (T): copy bodies in a row or around an axis"
         case .shell: return "Shell (S): hollow a body, leaving the picked faces open"
+        case .canvas: return "Canvas (V): place a reference image on a plane or flat face, to trace over; its opacity is adjustable"
         }
     }
 
@@ -124,7 +127,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Placed by clicking a plane or a flat face (the origin planes show while it waits).
-    var needsPlane: Bool { primitive != nil || self == .plane }
+    var needsPlane: Bool { primitive != nil || self == .plane || self == .canvas }
 
     /// Shows the origin planes while it waits, to pick one (mirror across a plane).
     var showsPlanes: Bool { needsPlane || self == .mirror }
@@ -150,7 +153,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .move, .rotate: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve
         case .combine: return kind == .face || kind == .edge
         case .scale: return kind == .region || kind == .sketchCurve
-        case .plane: return kind == .plane || kind == .face
+        case .plane, .canvas: return kind == .plane || kind == .face
         case .mirror: return kind == .face || kind == .edge || kind == .plane  // bodies, then the plane
         case .pattern: return kind == .face || kind == .edge  // bodies (faces), and a straight edge for the direction
         case .shell: return kind == .face  // the faces to leave open
@@ -240,6 +243,7 @@ extension DocumentModel {
         case .rotate: return "Click the bodies or sketches to rotate"
         case .scale: return "Click the sketches to scale"
         case .plane: return "Click an origin plane, a construction plane or a flat face to start the new plane from"
+        case .canvas: return "Click a plane or flat face to place the image on, then choose the image"
         case .mirror:
             return pickedBodies.isEmpty ? "Click the bodies to mirror" : "Click more bodies, or the plane to mirror across (\(pickedBodies.count) picked)"
         case .pattern:
@@ -339,7 +343,7 @@ extension DocumentModel {
             }
             guard !sketches.isEmpty else { return false }
             add(Feature(name: document.nextName(tool.rawValue), .scale(ScaleFeature(sketches: sketches))))
-        case .plane:
+        case .plane, .canvas:
             guard selection.count == 1, let pick = selection.first else { return false }
             return place(tool, on: pick)
         case .mirror:
@@ -461,6 +465,13 @@ extension DocumentModel {
         if tool == .plane {
             add(Feature(name: document.nextName("Plane"), .plane(PlaneFeature(base: plane))))
             return true
+        }
+        if tool == .canvas {
+            clickRay = nil; clickRayNext = nil
+            let centre = faceRef(pick).flatMap { ref in
+                (try? result?.body(ref.body)?.faceOutlineCenter(ref.face)).map { Self.uv(of: $0, on: frame) }
+            } ?? (pick.isFace ? faceCenter(pick, on: frame) : nil) ?? .zero
+            return insertImage(on: plane, at: centre)
         }
         // The middle of a face's outline, or a plane's origin; a click within 10 points of it (or of a line through
         // it) lands on it, and with no click the thing goes there.

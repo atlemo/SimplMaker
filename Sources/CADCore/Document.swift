@@ -431,6 +431,35 @@ public struct ImportFeature: Codable, Hashable, Sendable {
     public init(fileName: String, data: Data) { self.fileName = fileName; self.data = data }
 }
 
+/// A reference image (a canvas) lying on a plane or flat face, centred at (u, v) in the plane's frame.
+/// It is for tracing and measuring against, and builds nothing. The image's file is kept in the
+/// document, so the part opens without the original.
+public struct ImageFeature: Codable, Hashable, Sendable {
+    public var plane: PlaneRef
+    /// The name of the file it came from, for showing only.
+    public var fileName: String
+    /// The image file's contents (PNG, JPEG, HEIC…).
+    public var data: Data
+    public var pixelWidth: Int
+    public var pixelHeight: Int
+    public var u: String
+    public var v: String
+    /// Width across the plane's x axis; the height follows the picture's proportions.
+    public var width: String
+    /// Turn about the centre, counter-clockwise as the plane is seen.
+    public var angle: String
+    /// 0 (see-through) to 1 (solid). Changing it rebuilds nothing (see `CADDocument.ignoringPresentation`).
+    public var opacity: Double
+    public init(plane: PlaneRef, fileName: String, data: Data, pixelWidth: Int, pixelHeight: Int, u: String = "0 mm",
+                v: String = "0 mm", width: String = "100 mm", angle: String = "0 deg", opacity: Double = 0.5) {
+        self.plane = plane; self.fileName = fileName; self.data = data
+        self.pixelWidth = max(pixelWidth, 1); self.pixelHeight = max(pixelHeight, 1)
+        self.u = u; self.v = v; self.width = width; self.angle = angle; self.opacity = min(max(opacity, 0), 1)
+    }
+    /// Height over width.
+    public var aspect: Double { Double(pixelHeight) / Double(pixelWidth) }
+}
+
 public struct Feature: Codable, Hashable, Sendable, Identifiable {
     public enum Kind: Codable, Hashable, Sendable {
         case sketch(SketchFeature)
@@ -454,6 +483,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case pattern(PatternFeature)
         case shell(ShellFeature)
         case importBody(ImportFeature)
+        case image(ImageFeature)
     }
     public var id: FeatureID
     public var name: String
@@ -487,6 +517,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .pattern(let p): return p.kind == .linear ? "Pattern" : "Circular Pattern"
         case .shell: return "Shell"
         case .importBody: return "Import"
+        case .image: return "Canvas"
         }
     }
 
@@ -494,7 +525,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
     public var sketchesUsed: [FeatureID] {
         switch kind {
         case .sketch, .fillet, .chamfer, .hole, .thread, .primitive, .move, .rotate, .scale, .combine, .plane, .mirror, .pattern,
-             .shell, .importBody: return []
+             .shell, .importBody, .image: return []
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
         case .sweep(let s): return [s.sketch, s.path.sketch]
@@ -516,7 +547,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .mirror(let m): return m.operation == .newBody
         case .pattern(let p): return p.operation == .newBody
         case .importBody: return true
-        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .plane, .shell: return false
+        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .plane, .shell, .image: return false
         }
     }
 }
@@ -616,7 +647,10 @@ public struct CADDocument: Codable, Hashable, Sendable {
         d.hidden = []
         d.bodyNames = [:]
         d.bodyColors = [:]
-        for i in d.features.indices { d.features[i].name = "" }
+        for i in d.features.indices {
+            d.features[i].name = ""
+            if case .image(var f) = d.features[i].kind { f.opacity = 1; d.features[i].kind = .image(f) }
+        }
         return d
     }
 

@@ -53,6 +53,10 @@ extension DocumentModel {
                 self.selection = [pick]
                 self.run(.extrude)
             },
+            .action("Insert Image…", symbol: "photo", enabled: flat) {
+                self.selection = [pick]
+                self.run(.canvas)
+            },
             .action("Hole Here", symbol: DesignTool.hole.symbol, enabled: flat) {
                 self.clickRay = ray
                 self.place(.hole, on: pick)
@@ -133,6 +137,7 @@ extension DocumentModel {
             .action("New Plane from \(name)", symbol: DesignTool.plane.symbol) {
                 self.add(Feature(name: self.document.nextName("Plane"), .plane(PlaneFeature(base: .plane(id)))))
             },
+            .action("Insert Image…", symbol: "photo") { self.selection = [pick]; self.run(.canvas) },
             .separator,
             .action("Edit \(name)", symbol: "pencil") { self.editFeature(id) },
             .action("Hide \(name)", symbol: "eye.slash") { self.setHidden([id], true) },

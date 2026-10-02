@@ -1,5 +1,6 @@
 // Metal renderer: shaded faces, screen-space edges, grid, and an ID buffer for picking.
 // SPDX-License-Identifier: GPL-3.0-or-later
+import CADCore
 import CADKernel
 import Metal
 import MetalKit
@@ -69,6 +70,23 @@ struct PickID: Hashable, Sendable {
     }
 }
 
+/// A reference image to draw: a picture on a quad in world space.
+struct ImageDraw {
+    var id: FeatureID
+    /// The image file's contents; the texture is made again only when they change.
+    var data: Data
+    /// Top left, top right, bottom right, bottom left, as the picture reads.
+    var corners: [SIMD3<Float>]
+    var opacity: Float
+}
+
+struct ImageParams {
+    var corners: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>)
+    var opacity: Float
+    var depthBias: Float
+    var pad: SIMD2<Float> = .zero
+}
+
 /// Sketch geometry to draw on top of the bodies.
 struct SketchOverlay {
     var regionVertices: [FaceVertex] = []
@@ -80,6 +98,9 @@ struct SketchOverlay {
     /// A plane is being asked for: planes show through bodies, and their borders pick through them,
     /// so one that lies under or inside a body (the floor, under a part sitting on it) can still be chosen.
     var planesSeeThrough = false
+    /// Reference images, and the border of the one selected.
+    var images: [ImageDraw] = []
+    var imageBorder: [SegmentInstance] = []
     var curves: [SegmentInstance] = []
     var construction: [SegmentInstance] = []
     var inactive: [SegmentInstance] = []   // finished sketches: thin, pickable as paths and axes
@@ -256,6 +277,7 @@ final class Renderer {
     private let hiddenPlanePipeline: MTLRenderPipelineState
     private let regionPipeline: MTLRenderPipelineState
     private let planePipeline: MTLRenderPipelineState
+    private let imagePipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
     private let onTopDepthState: MTLDepthStencilState
     /// Depth-tested but not depth-writing: translucent planes hide nothing drawn after them.
@@ -294,6 +316,9 @@ final class Renderer {
         var planeCenters: [SIMD3<Float>] = []
         var planeOutline: MTLBuffer?, planeOutlineCount = 0
         var planesSeeThrough = false
+        /// Images with their textures, farthest first once drawn (see draw).
+        var images: [(draw: ImageDraw, texture: MTLTexture)] = []
+        var imageBorder: MTLBuffer?, imageBorderCount = 0
         var curves: MTLBuffer?, curveCount = 0
         var construction: MTLBuffer?, constructionCount = 0
         var inactive: MTLBuffer?, inactiveCount = 0
@@ -306,6 +331,8 @@ final class Renderer {
         var fullyConstrained = false
     }
     private var overlay = GPUOverlay()
+    /// The textures made for reference images, kept while their picture stays the same.
+    private var imageTextures: [FeatureID: (data: Data, texture: MTLTexture)] = [:]
 
     private var idTexture: MTLTexture?
     private let pickBuffer: MTLBuffer
@@ -339,7 +366,7 @@ final class Renderer {
         self.pickBuffer = pickBuffer
         do {
             let library = try device.makeLibrary(source: Shaders.source, options: nil)
-            func pipeline(_ vertex: String, _ fragment: String, blend: Bool = false,
+            func pipeline(_ vertex: String, _ fragment: String, blend: Bool = false, premultiplied: Bool = false,
                           writesID: Bool = true, writesColor: Bool = true) throws -> MTLRenderPipelineState {
                 let d = MTLRenderPipelineDescriptor()
                 d.vertexFunction = library.makeFunction(name: vertex)
@@ -347,7 +374,7 @@ final class Renderer {
                 d.colorAttachments[0].pixelFormat = Renderer.colorFormat
                 if blend {  // colour only; the integer ID attachment can't blend
                     d.colorAttachments[0].isBlendingEnabled = true
-                    d.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+                    d.colorAttachments[0].sourceRGBBlendFactor = premultiplied ? .one : .sourceAlpha
                     d.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
                     d.colorAttachments[0].sourceAlphaBlendFactor = .one
                     d.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
@@ -366,6 +393,7 @@ final class Renderer {
             regionPipeline = try pipeline("regionVertex", "regionFragment", blend: true)
             planePipeline = try pipeline("regionVertex", "planeFragment", blend: true)
             hiddenPlanePipeline = try pipeline("regionVertex", "planeFragment", blend: true, writesID: false)
+            imagePipeline = try pipeline("imageVertex", "imageFragment", blend: true, premultiplied: true, writesID: false)
         } catch {
             print("SimplCAD: Metal setup failed: \(error)")
             return nil
@@ -418,6 +446,9 @@ final class Renderer {
         }
         g.planeOutline = makeBuffer(o.planeOutline); g.planeOutlineCount = o.planeOutline.count
         g.planesSeeThrough = o.planesSeeThrough
+        g.images = o.images.compactMap { d in texture(for: d).map { (d, $0) } }
+        imageTextures = imageTextures.filter { key, _ in o.images.contains { $0.id == key } }
+        g.imageBorder = makeBuffer(o.imageBorder); g.imageBorderCount = o.imageBorder.count
         g.curves = makeBuffer(o.curves); g.curveCount = o.curves.count
         g.construction = makeBuffer(o.construction); g.constructionCount = o.construction.count
         g.inactive = makeBuffer(o.inactive); g.inactiveCount = o.inactive.count
@@ -429,6 +460,28 @@ final class Renderer {
         g.handleInvalid = o.handleInvalid
         g.fullyConstrained = o.fullyConstrained
         overlay = g
+    }
+
+    /// The texture for a reference image, made when it is new or its picture changed.
+    private func texture(for d: ImageDraw) -> MTLTexture? {
+        if let kept = imageTextures[d.id], kept.data == d.data { return kept.texture }
+        guard let image = ReferenceImage.decode(d.data), let pixels = ReferenceImage.premultipliedPixels(image) else { return nil }
+        let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: pixels.width, height: pixels.height,
+                                                            mipmapped: true)
+        desc.usage = .shaderRead
+        guard let texture = device.makeTexture(descriptor: desc) else { return nil }
+        pixels.bytes.withUnsafeBytes {
+            texture.replace(region: MTLRegionMake2D(0, 0, pixels.width, pixels.height), mipmapLevel: 0,
+                            withBytes: $0.baseAddress!, bytesPerRow: pixels.width * 4)
+        }
+        // Mip levels, so a big picture seen small doesn't shimmer.
+        if let cmd = queue.makeCommandBuffer(), let blit = cmd.makeBlitCommandEncoder() {
+            blit.generateMipmaps(for: texture)
+            blit.endEncoding()
+            cmd.commit()
+        }
+        imageTextures[d.id] = (d.data, texture)
+        return texture
     }
 
     private func upload(_ m: BodyMesh) -> GPUBody {
@@ -604,6 +657,25 @@ final class Renderer {
 
         // Depth bias per layer, as a fraction of the view depth (0.001 ≈ 0.2 mm at the default zoom).
         let biasScale = camera.depthBiasScale * 2.5
+
+        // Reference images, over the faces they lie on but under the grid and everything drawn in the
+        // sketch. They don't write depth or the ID buffer, so picking and sketching see right through them.
+        if !overlay.images.isEmpty {
+            enc.setRenderPipelineState(imagePipeline)
+            enc.setDepthStencilState(noWriteDepthState)
+            let forward = camera.forward
+            func depth(_ d: ImageDraw) -> Float { d.corners.reduce(0) { $0 + simd_dot($1, forward) } }
+            for (draw, texture) in overlay.images.sorted(by: { depth($0.draw) > depth($1.draw) }) {  // farthest first
+                func corner(_ i: Int) -> SIMD4<Float> { SIMD4(draw.corners[i], 1) }
+                var params = ImageParams(corners: (corner(0), corner(1), corner(2), corner(3)), opacity: draw.opacity,
+                                         depthBias: 0.00003 * biasScale)
+                enc.setVertexBytes(&params, length: MemoryLayout<ImageParams>.stride, index: 3)
+                enc.setFragmentBytes(&params, length: MemoryLayout<ImageParams>.stride, index: 3)
+                enc.setFragmentTexture(texture, index: 0)
+                enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            }
+            enc.setDepthStencilState(depthState)
+        }
         func segments(_ buffer: MTLBuffer?, _ count: Int, _ params: DrawParams, pipeline: MTLRenderPipelineState? = nil) {
             guard let buffer, count > 0 else { return }
             var p = params
@@ -615,6 +687,9 @@ final class Renderer {
             enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count)
         }
         let p = palette
+        segments(overlay.imageBorder, overlay.imageBorderCount,
+                 DrawParams(color: p.selection, hoverColor: p.selection, selectColor: p.selection,
+                            thickness: 2 * scale, depthBias: 0.0001, pickable: 0))
         // The grid goes under the translucent profile fills, so it shows through them.
         if sketchGrid != nil {
             // Just in front of a face being sketched on, behind everything drawn in the sketch.

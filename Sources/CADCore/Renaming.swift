@@ -81,6 +81,7 @@ extension Feature.Kind {
         case .pattern(var f): f.count = change(f.count); f.spacing = change(f.spacing); self = .pattern(f)
         case .shell(var f): f.thickness = change(f.thickness); self = .shell(f)
         case .importBody: break
+        case .image(var f): f.u = change(f.u); f.v = change(f.v); f.width = change(f.width); f.angle = change(f.angle); self = .image(f)
         }
     }
 
@@ -164,6 +165,7 @@ extension Feature {
             if case .edge(let e) = f.axis { add(e.body) }
         case .shell(let f): add(f.body); f.faces.forEach { add($0.body) }
         case .importBody: break
+        case .image(let f): add(f.plane.feature)
         }
         out.remove(id)
         return out
@@ -190,7 +192,7 @@ extension Feature {
         case .mirror(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
         case .pattern(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
         case .shell(let f): out.insert(f.body)
-        case .sketch, .plane, .importBody, .scale: break
+        case .sketch, .plane, .importBody, .scale, .image: break
         }
         return out
     }
