@@ -115,7 +115,7 @@ extension Sketch {
     public static func references(_ k: SketchDimension.Kind) -> [EntityID] {
         switch k {
         case .distance(let a, let b), .horizontalDistance(let a, let b), .verticalDistance(let a, let b),
-             .angle(let a, let b), .radialOffset(let a, let b): return [a, b]
+             .angle(let a, let b), .radialOffset(let a, let b), .gap(let a, let b): return [a, b]
         case .pointLineDistance(let p, let l): return [p, l]
         case .length(let a), .radius(let a), .diameter(let a): return [a]
         }
@@ -424,6 +424,8 @@ extension Sketch {
         case .radialOffset(let a, let b):
             guard let ca = curve(a), let cb = curve(b), let ra = radius(of: ca), let rb = radius(of: cb) else { return nil }
             return abs(rb - ra)
+        case .gap(let a, let b):
+            return rimGap(a, b).map { abs($0.gap($0.side)) }
         case .angle(let l1, let l2):
             guard case let (a1, b1)? = lineEnds(l1), case let (a2, b2)? = lineEnds(l2) else { return nil }
             let u = b1 - a1, w = b2 - a2
@@ -447,6 +449,42 @@ extension Sketch {
         guard let lo = along.min(by: { $0.1 < $1.1 }), let hi = along.max(by: { $0.1 < $1.1 }),
               lo.0 != a || hi.0 != b else { return nil }
         return (lo.0, hi.0)
+    }
+
+    /// A circle or arc's rim and what it is measured to, as they are now.
+    func rimGap(_ circle: EntityID, _ other: EntityID) -> RimGap? {
+        guard let c = curve(circle), let r = radius(of: c), let cp = center(of: circle).flatMap({ position($0) }) else { return nil }
+        switch kind(of: other) {
+        case .point?: return position(other).map { RimGap(center: cp, radius: r, other: .point($0)) }
+        case .line?: return lineEnds(other).map { RimGap(center: cp, radius: r, other: .line($0.0, $0.1)) }
+        case .circle?, .arc?:
+            guard let oc = curve(other), let orad = radius(of: oc), let op = center(of: other).flatMap({ position($0) })
+            else { return nil }
+            return RimGap(center: cp, radius: r, other: .circle(op, orad))
+        case .bezier?, nil: return nil
+        }
+    }
+
+    /// The distance the Distance tool sets between two picked items: points and lines as usual, a
+    /// circle or arc by its rim (to measure from its middle, pick its center point instead).
+    /// Nil for a pair with no single distance: two lines that aren't parallel, or a spline.
+    public func suggestDistance(for ids: [EntityID]) -> (kind: SketchDimension.Kind, value: Double)? {
+        guard ids.count == 2, ids[0] != ids[1], let k0 = kind(of: ids[0]), let k1 = kind(of: ids[1]) else { return nil }
+        func gap(_ circle: EntityID, _ other: EntityID) -> (kind: SketchDimension.Kind, value: Double)? {
+            if center(of: circle) == other { return nil }  // a circle to its own center
+            let k = SketchDimension.Kind.gap(circle, other)
+            return measure(k).map { (kind: k, value: $0) }
+        }
+        switch (k0, k1) {
+        case (.bezier, _), (_, .bezier): return nil
+        case (.circle, _), (.arc, _): return gap(ids[0], ids[1])
+        case (_, .circle), (_, .arc): return gap(ids[1], ids[0])
+        case (.line, .line):
+            guard case let (a1, b1)? = lineEnds(ids[0]), case let (a2, b2)? = lineEnds(ids[1]),
+                  abs(vcross(b1 - a1, b2 - a2)) / max(vlen(b1 - a1) * vlen(b2 - a2), 1e-12) < 1e-6 else { return nil }
+            return suggestDimension(for: ids)
+        default: return suggestDimension(for: ids)
+        }
     }
 
     /// The dimension that fits a picked set of entities, with its current value.

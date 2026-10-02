@@ -903,8 +903,8 @@ struct SketchToolbar: View {
             ToolGroup("Transform", id: "sketch.transform", defaults: SketchTransformTool.allCases.map(\.rawValue),
                       tools: SketchTransformTool.allCases.map(transform))
             ToolDivider()
-            ToolGroup("Constraints", id: "sketch.constraints", defaults: ["Dimension", "Constrain", "Construction"],
-                      tools: [tool(.dimension), constrain, construction])
+            ToolGroup("Constraints", id: "sketch.constraints", defaults: ["Dimension", "Distance", "Constrain", "Construction"],
+                      tools: [tool(.dimension), tool(.distance), constrain, construction])
             ToolDivider()
             Button { model.finishSketch() } label: {
                 if showsTitles {
@@ -1044,6 +1044,16 @@ struct DimensionEditor: View {
                     .onSubmit(commit)
                     .onExitCommand(perform: onDone)
                 Button("Set", action: commit).keyboardShortcut(.defaultAction)
+            }
+            if let direction = session.distanceDirection(of: dimensionID) {
+                Picker("Measured", selection: Binding(get: { direction }, set: { d in
+                    model.sketchCommand { $0.setDistanceDirection(dimensionID, d) }
+                })) {
+                    ForEach(SketchSession.DistanceDirection.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .help("Straight between the points, or only the horizontal or vertical part of it")
             }
             if let message = session.message {
                 Text(message).font(.caption).foregroundStyle(.red)

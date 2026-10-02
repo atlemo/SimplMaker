@@ -143,10 +143,35 @@ public enum SketchSolver {
         return total
     }
 
+    /// Solves with circle radii held first: where the constraints leave a choice, a circle moves
+    /// rather than growing (a hole put 4 mm from an edge keeps its size). Only when that can't satisfy
+    /// them are the radii solved for too.
     static func solveTogether(_ sketch: inout Sketch, dimensionValues: [EntityID: Double],
                               soft: [SoftTarget], softWeight: Double) -> SolveResult {
-        var system = System(sketch)
+        let hasCircles = sketch.curves.contains { if case .circle = $0.geometry { return true } else { return false } }
+        let pullsRadius = soft.contains { if case .radius = $0 { return true } else { return false } }
+        if hasCircles, !pullsRadius {
+            var trial = sketch
+            let held = solveSystem(&trial, dimensionValues: dimensionValues, soft: soft, softWeight: softWeight, holdRadii: true)
+            if held.hardResidual <= tolerance * 100 {
+                sketch = trial
+                var result = held.result
+                var full = System(sketch)
+                full.addConstraints(sketch, dimensionValues: dimensionValues)
+                full.addSoft(soft, weight: softWeight)
+                let x = full.initial
+                result.degreesOfFreedom = x.count - (x.isEmpty ? 0 : matrixRank(full.jacobian(x), rows: full.terms.count, cols: x.count))
+                return result
+            }
+        }
+        return solveSystem(&sketch, dimensionValues: dimensionValues, soft: soft, softWeight: softWeight, holdRadii: false).result
+    }
+
+    private static func solveSystem(_ sketch: inout Sketch, dimensionValues: [EntityID: Double], soft: [SoftTarget],
+                                    softWeight: Double, holdRadii: Bool) -> (result: SolveResult, hardResidual: Double) {
+        var system = System(sketch, holdRadii: holdRadii)
         system.addConstraints(sketch, dimensionValues: dimensionValues)
+        let hardTerms = system.terms.count
         system.addSoft(soft, weight: softWeight)
         var x = system.initial
 
@@ -191,8 +216,9 @@ public enum SketchSolver {
         system.write(x, into: &sketch)
         let residual = maxAbs(f)
         let rank = x.isEmpty ? 0 : matrixRank(system.jacobian(x), rows: f.count, cols: x.count)
-        return SolveResult(status: residual <= tolerance * 100 ? .solved : .failed,
-                           degreesOfFreedom: x.count - rank, maxResidual: residual, iterations: iterations)
+        let result = SolveResult(status: residual <= tolerance * 100 ? .solved : .failed,
+                                 degreesOfFreedom: x.count - rank, maxResidual: residual, iterations: iterations)
+        return (result, maxAbs(Array(f[0..<hardTerms])))
     }
 
     // MARK: - system assembly
@@ -202,13 +228,15 @@ public enum SketchSolver {
         var pointSlot: [EntityID: Int] = [:]          // index of x-coordinate in the unknown vector
         var fixedPoints: [EntityID: SIMD2<Double>] = [:]
         var radiusSlot: [EntityID: Int] = [:]          // circles
+        var heldRadius: [EntityID: Double] = [:]       // circles whose radius is held constant this pass
         var arcs: [EntityID: (center: EntityID, start: EntityID)] = [:]
         var lines: [EntityID: (EntityID, EntityID)] = [:]
         var circleCenters: [EntityID: EntityID] = [:]  // circles and arcs
         var beziers: [EntityID: [EntityID]] = [:]      // start, control 1, control 2, end
         var terms: [([Double]) -> Double] = []
 
-        init(_ s: Sketch) {
+        /// With `holdRadii`, circles keep the radius they have: nothing is solved for it.
+        init(_ s: Sketch, holdRadii: Bool = false) {
             for p in s.points {
                 if p.fixed { fixedPoints[p.id] = p.position } else {
                     pointSlot[p.id] = initial.count; initial += [p.x, p.y]
@@ -218,7 +246,8 @@ public enum SketchSolver {
                 switch c.geometry {
                 case .line(let a, let b): lines[c.id] = (a, b)
                 case .circle(let center, let r):
-                    radiusSlot[c.id] = initial.count; initial.append(r); circleCenters[c.id] = center
+                    if holdRadii { heldRadius[c.id] = r } else { radiusSlot[c.id] = initial.count; initial.append(r) }
+                    circleCenters[c.id] = center
                 case .arc(let center, let start, _):
                     arcs[c.id] = (center, start); circleCenters[c.id] = center
                 case .bezier(let a, let c1, let c2, let b):
@@ -233,8 +262,18 @@ public enum SketchSolver {
         }
         func radius(_ id: EntityID, _ x: [Double]) -> Double {
             if let i = radiusSlot[id] { return x[i] }
+            if let r = heldRadius[id] { return r }
             if let a = arcs[id] { return vlen(p(a.start, x) - p(a.center, x)) }
             return 0
+        }
+        /// A circle or arc's rim against a point, line, or another circle or arc (see RimGap).
+        func rimGap(_ circle: EntityID, _ other: EntityID, _ x: [Double]) -> RimGap? {
+            guard let c = circleCenters[circle] else { return nil }
+            let target: RimGap.Other
+            if let (a, b) = lines[other] { target = .line(p(a, x), p(b, x)) }
+            else if let oc = circleCenters[other] { target = .circle(p(oc, x), radius(other, x)) }
+            else { target = .point(p(other, x)) }
+            return RimGap(center: p(c, x), radius: radius(circle, x), other: target)
         }
         func dir(_ line: EntityID, _ x: [Double]) -> SIMD2<Double> {
             guard case let (a, b)? = lines[line] else { return .zero }
@@ -373,6 +412,10 @@ public enum SketchSolver {
             case .radialOffset(let a, let b):
                 let sign: Double = me.radius(b, x0) >= me.radius(a, x0) ? 1 : -1  // keep the current side
                 add { (me.radius(b, $0) - me.radius(a, $0)) - sign * v }
+            case .gap(let a, let b):
+                guard let g0 = me.rimGap(a, b, x0) else { return }
+                let side = g0.side, sign: Double = g0.gap(side) >= 0 ? 1 : -1  // keep the current side
+                add { me.rimGap(a, b, $0).map { sign * $0.gap(side) - v } ?? 0 }
             case .angle(let a, let b):
                 // sin(θ - v) where θ is the ccw angle from a to b; zero at θ = v.
                 add {
@@ -480,11 +523,14 @@ extension SketchSolver {
             defer { sketch.restoreGenerated(generated) }
             return solveLocally(&sketch, dimensionValues: dimensionValues)
         }
-        var moving = Set<EntityID>()
+        var moving = Set<EntityID>(), anchored = Set<EntityID>()
         for d in sketch.dimensions {
             guard let target = dimensionValues[d.id], let now = sketch.measure(d.kind), abs(now - target) > 1e-9 else { continue }
-            moving.formUnion(sketch.points(of: Sketch.references(d.kind)))
+            let anchors = sketch.points(of: Sketch.anchors(of: d.kind))
+            moving.formUnion(sketch.points(of: Sketch.references(d.kind)).subtracting(anchors))
+            anchored.formUnion(anchors)
         }
+        anchored.subtract(moving)  // held, unless another dimension has to move it
         guard !moving.isEmpty else { return solve(&sketch, dimensionValues: dimensionValues) }
         for _ in 0..<4 {
             var trial = sketch
@@ -494,7 +540,7 @@ extension SketchSolver {
                 sketch = trial
                 return solve(&sketch, dimensionValues: dimensionValues)  // already solved: reports the real freedom
             }
-            let wider = moving.union(sketch.neighbours(of: moving))
+            let wider = moving.union(sketch.neighbours(of: moving)).subtracting(anchored)
             if wider == moving { break }
             moving = wider
         }

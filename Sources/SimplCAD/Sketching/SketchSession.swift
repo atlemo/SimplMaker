@@ -4,6 +4,7 @@
 import CADCore
 import CADKernel
 import Foundation
+import simd
 import Observation
 
 /// The sketch tools that change existing geometry as a whole, each with a popover for its values.
@@ -44,6 +45,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     case select = "Select", line = "Line", rectangle = "Rectangle", centerRectangle = "Center Rectangle"
     case circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", arc3Point = "3-Point Arc", bezier = "Spline"
     case point = "Point", text = "Text", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
+    case distance = "Distance"
 
     var id: String { rawValue }
 
@@ -66,7 +68,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     var placesPoints: Bool {
         switch self {
         case .line, .rectangle, .centerRectangle, .circle, .circle2Point, .arc, .arc3Point, .bezier, .point, .text: return true
-        case .select, .fillet, .trim, .extend, .dimension: return false
+        case .select, .fillet, .trim, .extend, .dimension, .distance: return false
         }
     }
 
@@ -129,6 +131,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .trim: return "scissors"
         case .extend: return "arrow-up-right"
         case .dimension: return "ruler"
+        case .distance: return "dimension-line"
         }
     }
     /// Single-key shortcut while the viewport has focus.
@@ -145,7 +148,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .fillet: return "f"
         case .trim: return "t"
         case .extend: return "e"
-        case .dimension: return "d"
+        case .dimension: return "i"
+        case .distance: return "d"
         }
     }
     var hint: String {
@@ -165,6 +169,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
         case .extend: return "Click near the end of a line or arc to extend it to the next curve"
         case .dimension: return "Click a line (then click again to place its length), a circle or arc, or two items for a distance or angle · or click any grey size"
+        case .distance: return "Click two items (points, lines, circles or arcs), then type the distance between them · a circle is measured from its edge, its center point from the middle"
         }
     }
 }
@@ -306,6 +311,9 @@ final class SketchSession {
     private var dragEntity: EntityID?
     private var dragOffset = SIMD2<Double>.zero
     private var dragMoved = false
+    /// A dimension line being dragged to a new place, and the one the cursor is over.
+    private var dragDimension: EntityID?
+    private(set) var hoverDimension: EntityID?
     /// What a dragged point last snapped to; a model edge or corner it is dropped on is followed from then on.
     private var dragSnap: SketchSnap?
 
@@ -381,6 +389,7 @@ final class SketchSession {
 
     var hoverEntity: EntityID? { hover }
     var hoverIsDraggable: Bool {
+        if hover == nil, hoverDimension != nil { return true }
         guard let hover, !Sketch.isGenerated(hover) else { return false }
         if let p = sketch.point(hover) { return !p.fixed }
         return sketch.curve(hover) != nil
@@ -508,6 +517,7 @@ final class SketchSession {
             // pixels: sketch lines are thin, and picking shouldn't need pixel precision.
             hover = entity(for: m.pick) ?? m.uv.flatMap { m.snapping ? nearestEntity($0) : nil }
             if let h = hover, Sketch.isGenerated(h), tool != .select { hover = nil }  // copies are only for picking their pattern
+            hoverDimension = tool == .select && hover == nil ? m.uv.flatMap { dimensionLine(near: $0) } : nil
         }
         gridStep = m.gridStep
         snapping = m.snapping
@@ -522,9 +532,15 @@ final class SketchSession {
                 curvePull = simdLength(pull) > tolerance ? pull : nil
                 return (true, nil)
             }
+            if let d = dragDimension, let uv = m.uv {
+                moveDimensionLine(d, to: uv)
+                dragMoved = true
+                return (true, nil)
+            }
             return (dragEntity != nil, drag(m))
         case .up:
-            defer { dragEntity = nil; dragMoved = false; dragSnap = nil }
+            defer { dragEntity = nil; dragDimension = nil; dragMoved = false; dragSnap = nil }
+            if dragDimension != nil { return (true, dragMoved ? "Move Dimension" : nil) }
             if let down = curveDown {
                 let pull = curvePull
                 curveDown = nil
@@ -543,6 +559,11 @@ final class SketchSession {
         case .select:
             if let h = hover, let pid = Sketch.pattern(ofGenerated: h) {  // a copy: change its pattern
                 beginPattern(editing: pid)
+                return (true, nil)
+            }
+            if hover == nil, let d = hoverDimension {  // a dimension line: drag it to move it
+                dragDimension = d
+                dragMoved = false
                 return (true, nil)
             }
             guard let h = hover else {
@@ -564,6 +585,8 @@ final class SketchSession {
             return (true, nil)
         case .dimension:
             return (true, dimensionClick())
+        case .distance:
+            return (true, distanceClick())
         case .trim, .extend:
             guard let h = hover, sketch.curve(h) != nil, let uv = m.uv else {
                 message = "Click on a curve"
@@ -690,7 +713,7 @@ final class SketchSession {
             if let anchor = s.point ?? hover, beginEditingText(anchoredAt: anchor) { return nil }
             pendingText = s
             return nil
-        case .select, .dimension, .fillet, .trim, .extend, .bezier:
+        case .select, .dimension, .distance, .fillet, .trim, .extend, .bezier:
             clicks = []
             return nil
         }
@@ -1309,6 +1332,28 @@ final class SketchSession {
         return sketch.dimensionPickIsComplete(dimensionPicks) ? createDimension() : nil
     }
 
+    /// Distance tool clicks: two items, then the distance between them opens for typing.
+    private func distanceClick() -> String? {
+        guard let h = hover, sketch.kind(of: h) != nil else {
+            message = dimensionPicks.isEmpty ? "Click a point, line, circle or arc" : "Click what to measure to"
+            return nil
+        }
+        guard !dimensionPicks.contains(h) else { return nil }
+        dimensionPicks.append(h)
+        guard dimensionPicks.count == 2 else {
+            message = "Now click what to measure to"
+            return nil
+        }
+        defer { dimensionPicks = [] }
+        guard let suggestion = sketch.suggestDistance(for: dimensionPicks) else {
+            let lines = dimensionPicks.allSatisfy { sketch.kind(of: $0) == .line }
+            message = lines ? "Those lines aren't parallel. Use Dimension for the angle between them"
+                            : "There's no single distance between those two"
+            return nil
+        }
+        return addDimension(suggestion.kind, value: suggestion.value)
+    }
+
     /// The nearest sketch point within the pick tolerance, else the nearest curve.
     func nearestEntity(_ uv: SIMD2<Double>) -> EntityID? {
         var best: (EntityID, Double)?
@@ -1431,7 +1476,11 @@ final class SketchSession {
             message = "Can't dimension that combination"
             return nil
         }
-        let kind = suggestion.kind, value = suggestion.value
+        return addDimension(suggestion.kind, value: suggestion.value)
+    }
+
+    /// Adds a dimension at its current value and opens it for typing.
+    private func addDimension(_ kind: SketchDimension.Kind, value: Double) -> String? {
         let unit: UnitKind
         if case .angle = kind { unit = .angle } else { unit = .length }
         let id = IDs.make()
@@ -1439,6 +1488,9 @@ final class SketchSession {
                                     values: values, id: id) else {
             message = "That dimension would over-constrain the sketch"
             return nil
+        }
+        if let i = sketch.dimensions.firstIndex(where: { $0.id == id }) {
+            sketch.dimensions[i].offset = sketch.defaultOffset(for: kind, value: value)
         }
         editingDimension = id
         return finish("Dimension")
@@ -1526,6 +1578,70 @@ final class SketchSession {
         }
         sketch = trial
         editingDimension = nil
+        return finish("Edit Dimension")
+    }
+
+    /// The dimension whose line (the part between its arrows, or the arrows) the point is on, within the pick tolerance.
+    func dimensionLine(near uv: SIMD2<Double>) -> EntityID? {
+        var best: (EntityID, Double)?
+        for d in sketch.dimensions {
+            guard let line = sketch.dimensionLine(of: d) else { continue }
+            let a = line.q1, b = line.q2, ab = b - a
+            let t = min(max(simd_dot(uv - a, ab) / max(simd_dot(ab, ab), 1e-18), 0), 1)
+            let dist = simdLength(uv - (a + ab * t))
+            if dist <= tolerance, dist < (best?.1 ?? .infinity) { best = (d.id, dist) }
+        }
+        return best?.0
+    }
+
+    /// Drags a dimension's line to where the cursor is: only how far it stands from what it measures changes.
+    private func moveDimensionLine(_ id: EntityID, to uv: SIMD2<Double>) {
+        guard let i = sketch.dimensions.firstIndex(where: { $0.id == id }), let line = sketch.dimensionLine(of: sketch.dimensions[i])
+        else { return }
+        sketch.dimensions[i].offset = line.value(through: uv)
+    }
+
+    /// How a distance between two points is taken, when it can be changed.
+    enum DistanceDirection: String, CaseIterable, Identifiable {
+        case aligned = "Straight", horizontal = "Horizontal", vertical = "Vertical"
+        var id: String { rawValue }
+    }
+
+    func distanceDirection(of id: EntityID) -> DistanceDirection? {
+        switch sketch.dimensions.first(where: { $0.id == id })?.kind {
+        case .distance?: return .aligned
+        case .horizontalDistance?: return .horizontal
+        case .verticalDistance?: return .vertical
+        default: return nil
+        }
+    }
+
+    /// Measures a distance between two points straight, or only sideways or only up and down. The
+    /// value stays what it is now (nothing moves); type a new one to move the points.
+    func setDistanceDirection(_ id: EntityID, _ direction: DistanceDirection) -> String? {
+        guard let i = sketch.dimensions.firstIndex(where: { $0.id == id }) else { return nil }
+        let ends: (EntityID, EntityID)
+        switch sketch.dimensions[i].kind {
+        case .distance(let a, let b), .horizontalDistance(let a, let b), .verticalDistance(let a, let b): ends = (a, b)
+        default: return nil
+        }
+        let kind: SketchDimension.Kind
+        switch direction {
+        case .aligned: kind = .distance(ends.0, ends.1)
+        case .horizontal: kind = .horizontalDistance(ends.0, ends.1)
+        case .vertical: kind = .verticalDistance(ends.0, ends.1)
+        }
+        guard kind != sketch.dimensions[i].kind, let value = sketch.measure(kind) else { return nil }
+        var trial = sketch
+        trial.dimensions[i].kind = kind
+        trial.dimensions[i].expression = formatDimension(value, kind: .length)
+        var v = values
+        v[id] = value
+        guard SketchSolver.solveLocally(&trial, dimensionValues: v).status == .solved else {
+            message = "The sketch can't take that"
+            return nil
+        }
+        sketch = trial
         return finish("Edit Dimension")
     }
 

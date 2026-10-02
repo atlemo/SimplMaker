@@ -157,12 +157,43 @@ enum SketchOverlayBuilder {
                 o.construction += segments([p - SIMD2(0, r), p + SIMD2(0, r)], frame: f, id: 0)
             }
         }
+        for d in s.dimensions {
+            guard let line = s.dimensionLine(of: d) else { continue }
+            o.preview += dimensionSegments(line, size: session.snapTolerance, frame: f)
+        }
         for line in session.previewPolylines() { o.preview += segments(line, frame: f, id: 0) }
         if let snap = session.lastSnap {
             let w = world(f, snap.position)
             o.snap = [SegmentInstance(ax: w.x, ay: w.y, az: w.z, bx: w.x, by: w.y, bz: w.z, id: 0)]
         }
         o.fullyConstrained = session.solve?.status == .solved && session.solve?.degreesOfFreedom == 0
+    }
+
+    /// Where a dimension's value stands: the middle of its line; for a circle's size, the middle of the half
+    /// the line points along, clear of the center marker.
+    static func labelAnchor(_ line: DimensionLine) -> SIMD2<Double> {
+        guard let c = line.center else { return (line.q1 + line.q2) / 2 }
+        return (c + line.q2) / 2
+    }
+
+    /// A distance dimension drawn out: extension lines from what it measures, the dimension line between
+    /// them, and an arrowhead at each end. `size` (about a few pixels, in mm) scales the arrows and overshoot.
+    static func dimensionSegments(_ line: DimensionLine, size: Double, frame: Frame) -> [SegmentInstance] {
+        let q1 = line.q1, q2 = line.q2
+        var out = segments([q1, q2], frame: frame, id: 0)
+        for (p, q) in [(line.p1, q1), (line.p2, q2)] where simdLength(q - p) > 1e-9 {
+            let u = (q - p) / simdLength(q - p)
+            out += segments([p, q + u * size * 0.8], frame: frame, id: 0)  // a little past the dimension line
+        }
+        let span = simdLength(q2 - q1)
+        guard span > 1e-9 else { return out }
+        let u = (q2 - q1) / span
+        let arrow = min(size * 2.2, span / 2)
+        for (tip, dir) in [(q1, u), (q2, -u)] where line.arrowAtStart || tip == q2 {
+            let back = tip + dir * arrow, side = SIMD2(-dir.y, dir.x) * arrow * 0.3
+            out += segments([tip, back + side, back - side, tip], frame: frame, id: 0)
+        }
+        return out
     }
 
     /// A finished sketch's curves, pickable (as paths, axes and rib lines) under its slot.
@@ -197,12 +228,13 @@ enum SketchOverlayBuilder {
     static func labels(_ session: SketchSession) -> [DimensionLabel] {
         let s = session.sketch
         var out: [DimensionLabel] = s.dimensions.compactMap { d in
-            guard let anchor = anchor(d.kind, s) else { return nil }
+            guard let anchor = s.dimensionLine(of: d).map(labelAnchor) ?? anchor(d.kind, s) else { return nil }
             let value = session.values[d.id].map { d.unitKind.format($0) } ?? "?"
             let isParametric = ((try? Expressions.parse(d.expression))?.references.isEmpty == false)
             return DimensionLabel(id: d.id, world: world(session.frame, anchor),
                                   text: prefix(d.kind) + (isParametric ? "\(d.expression) = \(value)" : value),
-                                  editing: session.editingDimension == d.id, outward: outward(d.kind, session.frame))
+                                  editing: session.editingDimension == d.id,
+                                  outward: s.dimensionLine(of: d) == nil ? outward(d.kind, session.frame) : nil)
         }
         // Every other line, circle and arc shows its measured size, lighter.
         let pending = session.pendingLineLength != nil ? session.dimensionPicks.first : nil
@@ -259,6 +291,7 @@ enum SketchOverlayBuilder {
         case .distance(let a, let b), .horizontalDistance(let a, let b), .verticalDistance(let a, let b):
             return mid(s.position(a), s.position(b))
         case .pointLineDistance(let p, let l): return mid(s.position(p), lineMid(l))
+        case .gap(let c, let o): return s.gapEnds(c, o).map { ($0.0 + $0.1) / 2 }
         case .length(let l): return lineMid(l)
         case .radius(let c), .diameter(let c):
             guard let curve = s.curve(c), let center = s.center(of: c).flatMap({ s.position($0) }),

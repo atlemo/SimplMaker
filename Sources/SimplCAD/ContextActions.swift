@@ -171,7 +171,7 @@ extension DocumentModel {
             items.append(.action("Delete", symbol: "trash") { self.sketchCommand { $0.deleteSelection() } })
             items.append(.separator)
         }
-        items += ([.select] + SketchTool.draw + [.dimension]).map { tool in
+        items += ([.select] + SketchTool.draw + [.dimension, .distance]).map { tool in
             .action(tool.rawValue, symbol: tool.symbol, enabled: session.tool != tool) { self.setSketchTool(tool) }
         }
         return items

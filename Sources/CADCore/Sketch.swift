@@ -78,14 +78,20 @@ public struct SketchDimension: Codable, Hashable, Sendable, Identifiable {
         case diameter(EntityID)                       // circle/arc
         case angle(EntityID, EntityID)                // line, line: counter-clockwise from first to second
         case radialOffset(from: EntityID, to: EntityID)  // circle/arc radii difference (concentric offsets)
+        /// Clear space from a circle's or arc's rim (first) to a point, a line, or another circle or arc's rim.
+        case gap(EntityID, EntityID)
     }
     public var id: EntityID
     public var kind: Kind
     /// Driving value as an expression, e.g. "width / 2".
     public var expression: String
+    /// Where the dimension line is drawn (see Sketch.dimensionLine): how far it stands from what it
+    /// measures, in mm, or for a circle's radius or diameter the angle of its line in radians.
+    /// Nil until it is moved: it then sits on the measured points (a circle's goes up and to the right).
+    public var offset: Double?
 
-    public init(id: EntityID = IDs.make(), _ kind: Kind, _ expression: String) {
-        self.id = id; self.kind = kind; self.expression = expression
+    public init(id: EntityID = IDs.make(), _ kind: Kind, _ expression: String, offset: Double? = nil) {
+        self.id = id; self.kind = kind; self.expression = expression; self.offset = offset
     }
     public var unitKind: UnitKind {
         if case .angle = kind { return .angle }
