@@ -874,7 +874,7 @@ struct SketchToolbar: View {
             SoloTool(tool: tool(.select))
             ToolDivider()
             // Tools in a family (rectangle, circle, arc) share one button, under the first one's name.
-            ToolGroup("Draw", id: "sketch.draw", defaults: ["Line", "Rectangle", "Circle", "Arc", "Text"],
+            ToolGroup("Draw", id: "sketch.draw", defaults: ["Line", "Rectangle", "Circle", "Spline", "Text"],
                       tools: SketchTool.draw.filter { $0.family.first == $0 }.map(tool))
             ToolDivider()
             ToolGroup("Modify", id: "sketch.modify", defaults: ["Round Corner", "Trim", "Extend", "Offset"],

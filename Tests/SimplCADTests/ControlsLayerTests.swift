@@ -14,16 +14,18 @@ import Testing
         window.contentView = content
         content.layoutSubtreeIfNeeded()
 
-        let layer = ControlsLayer(frame: NSRect(x: 100, y: 100, width: 120, height: 40))
+        // Beside the hosting view, in the window's frame view, not inside it.
+        let frameView = try #require(content.superview)
+        let layer = ControlsLayer(frame: frameView.convert(NSRect(x: 100, y: 100, width: 120, height: 40), from: content))
         let button = NSButton(title: "OK", target: nil, action: nil)
         button.frame = layer.bounds
         layer.addSubview(button)
-        content.addSubview(layer, positioned: .above, relativeTo: nil)
+        frameView.addSubview(layer, positioned: .above, relativeTo: nil)
 
-        let onButton = content.convert(NSPoint(x: 160, y: 120), to: content.superview)
-        #expect(content.hitTest(onButton) === button)
-        let beside = content.convert(NSPoint(x: 20, y: 20), to: content.superview)
-        let other = content.hitTest(beside)
+        let onButton = content.convert(NSPoint(x: 160, y: 120), to: nil)
+        #expect(frameView.hitTest(onButton) === button)
+        let beside = content.convert(NSPoint(x: 20, y: 20), to: nil)
+        let other = frameView.hitTest(beside)
         #expect(other !== button && other !== layer, "a click beside the controls reaches the content")
     }
 }

@@ -127,7 +127,8 @@ enum SketchOverlayBuilder {
     /// The sketch being edited: pickable curves and points, plus the tool preview.
     static func editing(_ session: SketchSession, into o: inout SketchOverlay) {
         let s = session.sketch, f = session.frame
-        for (i, c) in s.curves.enumerated() {
+        let redrawn = session.redrawnCurves
+        for (i, c) in s.curves.enumerated() where !redrawn.contains(c.id) {
             let segs = segments(polyline(c, in: s), frame: f, id: PickID(sketchCurve: i).raw)
             if c.construction { o.construction += segs } else { o.curves += segs }
             // A Bézier's handles: thin lines from each end to its control point.

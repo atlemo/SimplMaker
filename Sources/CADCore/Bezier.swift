@@ -57,6 +57,51 @@ public enum Bezier {
         return split(tail, t0 < 1 ? (t1 - t0) / (1 - t0) : 0).left
     }
 
+    /// Handles for a run of cubic Béziers that passes smoothly through the points `p`: for each
+    /// segment (point i to the next, wrapping round when `closed`), its two middle control points.
+    ///
+    /// An anchor with a `pulled` vector (the handle the user dragged out) gets that handle going
+    /// forward and its mirror going back. Any other anchor turns along the bisector of the way in and
+    /// the way out, with handles a third of the neighbouring gap long; the two ends of an open run
+    /// leave as the mirror image of the next anchor's direction across the chord, so a few points
+    /// give an even, round bend instead of a straight start.
+    public static func smoothHandles(through p: [SIMD2<Double>], pulled: [SIMD2<Double>?],
+                                     closed: Bool) -> [(SIMD2<Double>, SIMD2<Double>)] {
+        let n = p.count
+        guard n >= 2, pulled.count == n else { return [] }
+        func unit(_ v: SIMD2<Double>) -> SIMD2<Double>? { let l = vlen(v); return l > 1e-12 ? v / l : nil }
+        func next(_ i: Int) -> Int { (i + 1) % n }
+        func prev(_ i: Int) -> Int { (i + n - 1) % n }
+        func pull(_ i: Int) -> SIMD2<Double>? { pulled[i].flatMap { vlen($0) > 1e-9 ? $0 : nil } }
+
+        var dir = [SIMD2<Double>?](repeating: nil, count: n)
+        for i in 0..<n {
+            if let h = pull(i) { dir[i] = unit(h); continue }
+            if !closed, i == 0 || i == n - 1 { continue }
+            guard let b = unit(p[next(i)] - p[i]) else { continue }
+            let a = unit(p[i] - p[prev(i)]) ?? b
+            dir[i] = unit(a + b) ?? b  // a U-turn has no bisector: carry on the way out
+        }
+        if !closed {
+            // The mirror of the neighbour's direction across the chord (just the chord for two points).
+            func end(_ i: Int, _ neighbour: Int) {
+                guard dir[i] == nil else { return }
+                let chord = unit(i == 0 ? p[1] - p[0] : p[n - 1] - p[n - 2]) ?? SIMD2(1, 0)
+                guard n > 2, let t = dir[neighbour] else { dir[i] = chord; return }
+                dir[i] = unit(2 * vdot(chord, t) * chord - t) ?? chord
+            }
+            end(0, 1)
+            end(n - 1, n - 2)
+        }
+
+        return (0..<(closed ? n : n - 1)).map { i in
+            let j = next(i), gap = vlen(p[j] - p[i]) / 3
+            let out = pull(i) ?? (dir[i] ?? SIMD2(1, 0)) * gap
+            let into = pull(j) ?? (dir[j] ?? SIMD2(1, 0)) * gap
+            return (p[i] + out, p[j] - into)
+        }
+    }
+
     /// The curve as a polyline of `steps` segments.
     public static func flatten(_ p: [SIMD2<Double>], steps: Int = 48) -> [SIMD2<Double>] {
         (0...steps).map { point(p, Double($0) / Double(steps)) }

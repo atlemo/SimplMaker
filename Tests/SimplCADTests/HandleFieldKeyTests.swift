@@ -40,8 +40,9 @@ import Testing
         window.contentView = view
         view.draw(view.bounds)  // lays out the handle field
         try await Task.sleep(for: .milliseconds(100))  // lets the new feature focus its field (queued on the main queue)
-        // The field sits in the controls layer on top of the window's content (here, the viewport itself).
-        let field = try #require(allSubviews(of: view).compactMap { $0 as? ValueField }.first { $0.input == nil })
+        // The field sits in the controls layer, beside the window's content in its frame view.
+        let frameView = try #require(window.contentView?.superview)
+        let field = try #require(allSubviews(of: frameView).compactMap { $0 as? ValueField }.first { $0.input == nil })
         #expect(field.currentEditor() != nil, "a new feature's size field has the focus")
 
         key(window, "3", code: 20)

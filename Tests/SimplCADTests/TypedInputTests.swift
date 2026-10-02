@@ -160,18 +160,103 @@ import Testing
         #expect(SketchTool.forKey("a", current: .arc) == .arc3Point)
     }
 
-    @Test func bezierToolTakesStartEndAndBend() throws {
+    /// Presses at (x, y), drags to (toX, toY) and lets go.
+    private func drag(_ s: SketchSession, _ x: Double, _ y: Double, to toX: Double, _ toY: Double) {
+        _ = s.handle(SketchMouse(phase: .moved, uv: SIMD2(x, y), pick: nil))
+        _ = s.handle(SketchMouse(phase: .down, uv: SIMD2(x, y), pick: nil))
+        _ = s.handle(SketchMouse(phase: .dragged, uv: SIMD2(toX, toY), pick: nil))
+        _ = s.handle(SketchMouse(phase: .up, uv: SIMD2(toX, toY), pick: nil))
+    }
+
+    @Test func splineIsItsOwnToolWithItsOwnKey() {
+        #expect(SketchTool.bezier.family == [.bezier] && SketchTool.line.family == [.line])
+        #expect(SketchTool.forKey("b", current: .select) == .bezier && SketchTool.forKey("l", current: .bezier) == .line)
+        #expect(SketchTool.bezier.shortTitle == "Spline" && SketchTool.draw.contains(.bezier))
+    }
+
+    @Test func curveToolChainsSmoothCurvesPointByPoint() throws {
         let c = session()
         c.setTool(.bezier)
         click(c, 0, 0)
-        click(c, 20, 0)
-        move(c, 10, 6)
-        #expect(c.previewPolylines().count == 3, "the curve and its two handles")
-        click(c, 10, 6)
+        #expect(c.sketch.curves.isEmpty, "the first point only starts the run")
+        click(c, 10, 8)
+        #expect(c.sketch.curves.count == 1 && c.clicks.count == 1)
+        move(c, 20, -4)
+        #expect(c.previewPolylines().count >= 6, "the last curve turning to meet the cursor, and the new one, with handles")
+        #expect(c.redrawnCurves.count == 1, "the committed curve it redraws isn't drawn twice")
+        click(c, 20, -4)
+        click(c, 30, 6)
+        #expect(c.sketch.curves.count == 3)
+        let ends = c.sketch.curves.compactMap { c.sketch.geometry(of: $0.id) }
+        #expect(ends.count == 3)
+        let pass = [SIMD2(10.0, 8), SIMD2(20, -4)]
+        for p in pass { #expect(ends.contains { simdLength($0.point(1) - p) < 1e-9 }, "passes through each point clicked") }
+        c.escape()
+        #expect(c.curveChain == nil && c.clicks.isEmpty && c.sketch.curves.count == 3, "Esc ends the run and keeps the curves")
+    }
+
+    @Test func draggingOnAPointPullsOutItsHandle() throws {
+        let c = session()
+        c.setTool(.bezier)
+        click(c, 0, 0)
+        drag(c, 20, 0, to: 20, 6)
         let curve = try #require(c.sketch.curves.first)
-        let g = try #require(c.sketch.geometry(of: curve.id))
-        #expect(simdLength(g.point(0.5) - SIMD2(10, 6)) < 1e-6)
-        #expect(c.sketch.curves.count == 1 && c.clicks.isEmpty)
+        guard case .bezier(_, _, let c2, let end) = curve.geometry else { Issue.record("expected a Bézier"); return }
+        let handle = try #require(c.sketch.position(c2)), anchor = try #require(c.sketch.position(end))
+        #expect(simdLength(anchor - SIMD2(20, 0)) < 1e-9)
+        #expect(simdLength(handle - SIMD2(20, -6)) < 1e-9, "the curve arrives along the pulled handle's mirror")
+        // The pulled handle goes on being the way out of that point.
+        click(c, 40, 0)
+        let second = try #require(c.sketch.curves.last)
+        guard case .bezier(_, let out, _, _) = second.geometry else { Issue.record("expected a Bézier"); return }
+        #expect(try simdLength(#require(c.sketch.position(out)) - SIMD2(20, 6)) < 1e-9)
+    }
+
+    @Test func aTinyDragIsJustAClick() throws {
+        let c = session()
+        c.setTool(.bezier)
+        click(c, 0, 0)
+        drag(c, 20, 0, to: 20.0001, 0.0001)
+        #expect(c.curveChain?.pulled.isEmpty == true)
+    }
+
+    @Test func clickingTheFirstPointClosesTheShape() throws {
+        let c = session()
+        c.setTool(.bezier)
+        for p in [(0.0, 0.0), (20, 0), (20, 20), (0, 20)] { click(c, p.0, p.1) }
+        #expect(c.sketch.curves.count == 3)
+        click(c, 0.2, 0.1)  // near the first point: snaps to it
+        #expect(c.sketch.curves.count == 4 && c.curveChain == nil && c.clicks.isEmpty)
+        let starts = c.sketch.curves.compactMap { cu -> EntityID? in
+            if case .bezier(let a, _, _, _) = cu.geometry { return a }
+            return nil
+        }
+        let ends = c.sketch.curves.compactMap { cu -> EntityID? in
+            if case .bezier(_, _, _, let b) = cu.geometry { return b }
+            return nil
+        }
+        #expect(Set(starts) == Set(ends), "a closed loop: every point is the end of one curve and the start of the next")
+    }
+
+    @Test func theCurveDoesNotSnapToItsOwnHandles() throws {
+        let c = session()
+        c.setTool(.bezier)
+        click(c, 0, 0)
+        click(c, 30, 0)
+        let handle = try #require(c.curveChain?.segments.first?.control1)
+        let at = try #require(c.sketch.position(handle))
+        move(c, at.x, at.y)
+        #expect(c.snap(at).point == nil, "a click there is a new point, not a handle")
+    }
+
+    @Test func undoingMidCurveStartsOver() throws {
+        let c = session()
+        c.setTool(.bezier)
+        click(c, 0, 0)
+        click(c, 10, 5)
+        #expect(c.curveChain != nil)
+        c.reload(Sketch(), parameters: ParameterEvaluator.evaluate([]))
+        #expect(c.curveChain == nil && c.clicks.isEmpty)
     }
 
     @Test func unusableTextIsIgnoredAndEscapeClearsIt() throws {

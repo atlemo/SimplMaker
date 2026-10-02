@@ -74,10 +74,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     /// The layer for controls, on top of the window's content. Its controls are placed in the
     /// viewport's coordinates (see fitControls). Called before each placement, so it stays on top
-    /// as panels come and go.
+    /// as panels come and go. It sits beside the content view, in the window's frame view: AppKit
+    /// doesn't support subviews added to a SwiftUI hosting view.
     @discardableResult
     private func raiseControls() -> NSView {
-        guard let content = window?.contentView else { return self }
+        guard let content = window?.contentView?.superview ?? window?.contentView else { return self }
         if controlsLayer.superview !== content || content.subviews.last !== controlsLayer {
             content.addSubview(controlsLayer, positioned: .above, relativeTo: nil)
         }
@@ -614,8 +615,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     override func otherMouseDown(with event: NSEvent) { lastDrag = location(event); dragged = false }
     override func otherMouseDragged(with event: NSEvent) { drag(event, pan) }
 
+    /// `dy` arrives upward-positive (see `drag`); the camera's pan, like the scroll wheel's, takes downward-positive.
     private func pan(_ dx: Float, _ dy: Float) {
-        renderer?.camera.pan(dx: dx, dy: dy, viewHeight: Float(bounds.height))
+        renderer?.camera.pan(dx: dx, dy: -dy, viewHeight: Float(bounds.height))
     }
 
     private func drag(_ event: NSEvent, _ apply: (Float, Float) -> Void) {

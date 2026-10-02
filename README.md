@@ -43,7 +43,7 @@ SimplCAD is a normal Mac document app, with New, Open Recent, autosave, versions
 - **Timeline** (left sidebar): select a feature to edit it in the inspector on the right. Right-click a feature to suppress or delete it. A red triangle means the feature failed; hover over it to see why. The features after it still rebuild.
 - **Sketch:**
   1. Click **Sketch** in the toolbar (or Sketch → New Sketch…). The three origin planes appear at the origin; click **XY**, **XZ** or **YZ**, or click a flat face of a body. Esc cancels. If a flat face is already selected, the sketch goes straight onto it. The view turns to face the sketch plane. (Sketch → New Sketch On still picks a plane directly.)
-  2. Draw with the tools in the toolbar. Keys: **L** line (click point after point; Esc ends the chain), **R** rectangle, **C** circle, **A** arc (center, start, end), **P** point, **D** dimension, **S** select.
+  2. Draw with the tools in the toolbar. Keys: **L** line (click point after point; Esc ends the chain), **B** spline (a smooth curve through the points you click; press and drag to pull a handle, click the first point to close the shape), **R** rectangle, **C** circle, **A** arc (center, start, end), **P** point, **D** dimension, **S** select.
      - **F** fillet: click a corner where two lines meet to round it.
      - **T** trim: click the part of a curve to cut away, up to where other curves cross it.
      - **E** extend: click near the end of a line or arc to extend it to the next curve.

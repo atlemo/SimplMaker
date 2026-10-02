@@ -50,7 +50,10 @@ public enum SketchPattern: Equatable, Sendable {
 
 /// A pattern of a sketch: what it copies and how, as expressions so parameters can drive it.
 public struct SketchPatternDef: Codable, Hashable, Sendable, Identifiable {
-    public enum Kind: String, Codable, Hashable, Sendable { case rectangular, circular }
+    public enum Kind: String, Codable, Hashable, Sendable, CaseIterable, Identifiable {
+        case rectangular, circular
+        public var id: String { rawValue }
+    }
     public var id: EntityID
     public var kind: Kind
     /// What is copied: curves, and points on their own (a text's anchor, a loose point).

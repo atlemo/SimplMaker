@@ -30,9 +30,7 @@ enum SketchTransformTool: String, CaseIterable, Identifiable {
     }
 }
 
-extension SketchPatternDef.Kind: CaseIterable, Identifiable {
-    public static var allCases: [SketchPatternDef.Kind] { [.rectangular, .circular] }
-    public var id: String { rawValue }
+extension SketchPatternDef.Kind {
     var title: String { self == .rectangular ? "Rectangular" : "Circular" }
 }
 
@@ -44,7 +42,7 @@ enum TransformPivot: String, CaseIterable, Identifiable {
 
 enum SketchTool: String, CaseIterable, Identifiable {
     case select = "Select", line = "Line", rectangle = "Rectangle", centerRectangle = "Center Rectangle"
-    case circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", arc3Point = "3-Point Arc", bezier = "Bézier Curve"
+    case circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", arc3Point = "3-Point Arc", bezier = "Spline"
     case point = "Point", text = "Text", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
 
     var id: String { rawValue }
@@ -60,7 +58,6 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .circle2Point: return "Circle"
         case .centerRectangle: return "Rectangle"
         case .arc3Point: return "Arc"
-        case .bezier: return "Curve"
         default: return rawValue
         }
     }
@@ -161,7 +158,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .circle2Point: return "Click two points on opposite sides of the circle · C again for center"
         case .arc: return "Click the center, the start, then the end (counter-clockwise) · A again for 3-point"
         case .arc3Point: return "Click the start, the end, then a point the arc passes through · A again for center"
-        case .bezier: return "Click the start and the end, then where the curve bends · drag its handles to shape it"
+        case .bezier: return "Click points to draw a smooth spline through them, or press and drag to pull a handle · click the first point to close it · Esc ends the spline"
         case .point: return "Click to place a point"
         case .text: return "Click where the text starts, type it, and press Return · click a text (or double-click it) to change its words"
         case .fillet: return "Click the corner point where two lines meet to round it with an arc"
@@ -290,6 +287,13 @@ final class SketchSession {
     /// What the typing box starts with: the words of the text being edited, or nothing for a new one.
     var textEntryInitial: String { editingText.flatMap { id in sketch.texts.first { $0.id == id }?.text } ?? "" }
     private var chainPoint: EntityID?
+    /// The Curve tool's run of curves so far (nil until its second point is placed).
+    private(set) var curveChain: CurveChain?
+    /// The Curve tool's mouse is down on this point (a curve point is placed when it comes up).
+    private var curveDown: SketchSnap?
+    /// The handle pulled out of that point so far, and of the run's first point once that is placed.
+    private var curvePull: SIMD2<Double>?
+    private var curveFirstPull: SIMD2<Double>?
     /// Values typed for the current drawing step, as entered. Cleared when the step completes.
     private(set) var typed: [SketchInput: String] = [:]
     /// Typed values from earlier steps of the shape in progress (an arc's radius), as dimensions to add.
@@ -333,6 +337,7 @@ final class SketchSession {
         patternBackup = nil
         sketch = s
         self.parameters = parameters
+        if let chain = curveChain, !s.contains(chain) { resetToolState() }  // undone: start the curve again
         selection = selection.filter { s.kind(of: $0) != nil }
         if let d = editingDimension, !s.dimensions.contains(where: { $0.id == d }) { editingDimension = nil }
         resolve()
@@ -364,6 +369,10 @@ final class SketchSession {
         pendingText = nil
         editingText = nil
         chainPoint = nil
+        curveChain = nil
+        curveDown = nil
+        curvePull = nil
+        curveFirstPull = nil
         typed = [:]
         pendingDimensions = []
         dimensionPicks = []
@@ -413,9 +422,11 @@ final class SketchSession {
     }
 
     private func findSnap(_ uv: SIMD2<Double>, excluding: EntityID?) -> (snap: SketchSnap, kind: SnapKind?) {
-        if let h = hover, h != excluding, let p = sketch.point(h) { return (SketchSnap(p.position, point: h), .point) }
+        // A curve being drawn doesn't snap to its own handles or segments, which lie close to the next point.
+        let drawn = curveChain?.owned ?? []
+        if let h = hover, h != excluding, !drawn.contains(h), let p = sketch.point(h) { return (SketchSnap(p.position, point: h), .point) }
         guard snapping else {
-            if let h = hover, h != excluding, sketch.curve(h) != nil { return (SketchSnap(uv, curve: h), .curve) }
+            if let h = hover, h != excluding, !drawn.contains(h), sketch.curve(h) != nil { return (SketchSnap(uv, curve: h), .curve) }
             return (SketchSnap(uv), nil)
         }
         let tol = tolerance
@@ -428,7 +439,7 @@ final class SketchSession {
             }
             return best?.0
         }
-        let own = excluding.map { Set([$0] + (sketch.curve($0).map { sketch.pointIDs(of: $0) } ?? [])) } ?? []
+        let own = (excluding.map { Set([$0] + (sketch.curve($0).map { sketch.pointIDs(of: $0) } ?? [])) } ?? []).union(drawn)
         if let p = nearest(sketch.points.filter { !own.contains($0.id) && !Sketch.isGenerated($0.id) }, { $0.position }) {
             return (SketchSnap(p.position, point: p.id), sketch.curves.contains { c in
                 if case .circle(let center, _) = c.geometry { return center == p.id }
@@ -450,7 +461,7 @@ final class SketchSession {
         }
         let curves = sketch.curves.filter { !own.contains($0.id) && !Sketch.isGenerated($0.id) }.map(\.id)
         let onCurves = curves.compactMap { id in sketch.geometry(of: id).map { (id, Self.closest(uv, on: $0)) } }
-        if let hovered = hover, hovered != excluding, let g = sketch.geometry(of: hovered) {
+        if let hovered = hover, hovered != excluding, !drawn.contains(hovered), let g = sketch.geometry(of: hovered) {
             return (SketchSnap(Self.closest(uv, on: g), curve: hovered), .curve)
         }
         if let c = nearest(onCurves, { $0.1 }) { return (SketchSnap(c.1, curve: c.0), .curve) }
@@ -500,14 +511,26 @@ final class SketchSession {
         }
         gridStep = m.gridStep
         snapping = m.snapping
-        if let uv = m.uv, tool != .select || dragEntity != nil { _ = snap(uv, excluding: dragEntity) } else { lastSnap = nil }
+        if let uv = m.uv, curveDown == nil, tool != .select || dragEntity != nil { _ = snap(uv, excluding: dragEntity) } else { lastSnap = nil }
         if let uv = m.uv { cursor = uv }
         switch m.phase {
         case .moved: return (false, nil)
         case .down: return mouseDown(m)
-        case .dragged: return (dragEntity != nil, drag(m))
+        case .dragged:
+            if let down = curveDown, let uv = m.uv {  // pulling a handle out of the point
+                let pull = uv - down.position
+                curvePull = simdLength(pull) > tolerance ? pull : nil
+                return (true, nil)
+            }
+            return (dragEntity != nil, drag(m))
         case .up:
             defer { dragEntity = nil; dragMoved = false; dragSnap = nil }
+            if let down = curveDown {
+                let pull = curvePull
+                curveDown = nil
+                curvePull = nil
+                return (true, curveClick(down, pulled: pull))
+            }
             if let id = dragEntity, dragMoved, let model = dragSnap, model.model != nil { attachDragged(id, to: model) }
             return (dragEntity != nil, dragEntity != nil && dragMoved ? "Move" : nil)
         }
@@ -555,6 +578,11 @@ final class SketchSession {
             return (true, finish(tool.rawValue))
         case .fillet:
             return (true, filletClick())
+        case .bezier:
+            guard let uv = m.uv else { return (true, nil) }
+            curveDown = snap(uv)
+            curvePull = nil
+            return (true, nil)
         default:
             guard let uv = m.uv else { return (true, nil) }
             return (true, toolClick(target() ?? snap(uv)))
@@ -651,12 +679,6 @@ final class SketchSession {
             let arc = sketch.addArc(center: clicks[0], start: clicks[1], end: s)
             addPendingDimensions([.radius: .radius(arc)])
             return finish("Arc")
-        case .bezier:
-            if clicks.count == 2, distance(clicks[0], s) <= 1e-6 { clicks.removeLast(); return nil }
-            guard clicks.count == 3 else { return nil }
-            defer { clicks = [] }
-            sketch.addBezier(from: clicks[0], to: clicks[1], through: s.position)
-            return finish("Curve")
         case .point:
             clicks = []
             guard s.point == nil else { return nil }
@@ -668,10 +690,33 @@ final class SketchSession {
             if let anchor = s.point ?? hover, beginEditingText(anchoredAt: anchor) { return nil }
             pendingText = s
             return nil
-        case .select, .dimension, .fillet, .trim, .extend:
+        case .select, .dimension, .fillet, .trim, .extend, .bezier:
             clicks = []
             return nil
         }
+    }
+
+    /// The Curve tool's mouse came up on `s`: the first point starts the run, each later one adds a
+    /// smooth curve to it. `pulled` is the handle dragged out of the point, if any.
+    private func curveClick(_ s: SketchSnap, pulled: SIMD2<Double>?) -> String? {
+        guard let first = clicks.first else {
+            clicks = [s]
+            curveFirstPull = pulled
+            return nil
+        }
+        guard distance(first, s) > 1e-6 else { return nil }
+        var chain = curveChain ?? CurveChain(anchors: [sketch.resolve(first)])
+        if curveChain == nil, let p = curveFirstPull { chain.pulled[chain.anchors[0]] = p }
+        let r = sketch.extendCurve(chain, to: s, pulled: pulled)
+        if r.continues, let end = r.chain.anchors.last {
+            curveChain = r.chain
+            clicks = [SketchSnap(sketch.position(end) ?? s.position, point: end)]
+        } else {
+            curveChain = nil
+            clicks = []
+        }
+        curveFirstPull = nil
+        return finish("Curve")
     }
 
     // MARK: typed values
@@ -1488,6 +1533,7 @@ final class SketchSession {
 
     /// Rubber-band geometry for the tool in progress, in sketch coordinates.
     func previewPolylines() -> [[SIMD2<Double>]] {
+        if tool == .bezier { return curvePreview()?.lines ?? [] }
         guard !clicks.isEmpty, let c = target()?.position else { return [] }
         let a = clicks[0].position
         switch tool {
@@ -1508,12 +1554,6 @@ final class SketchSession {
             return [circle(a, r, 0, 2 * .pi)]
         case .circle2Point:
             return [circle((a + c) / 2, simdLength(c - a) / 2, 0, 2 * .pi), [a, c]]
-        case .bezier:
-            // Straight until the end is placed; then the curve bends through the cursor.
-            guard clicks.count > 1 else { return [[a, c]] }
-            let e = clicks[1].position, push = (c - (a + e) / 2) / 0.75
-            let ctrl = [a, a + (e - a) / 3 + push, a + (e - a) * 2 / 3 + push, e]
-            return [Bezier.flatten(ctrl), [a, ctrl[1]], [e, ctrl[2]]]
         case .arc:
             let r = simdLength(clicks.count > 1 ? clicks[1].position - a : c - a)
             if clicks.count == 1 { return [[a, c]] }
@@ -1524,6 +1564,54 @@ final class SketchSession {
         default: return []
         }
     }
+
+    /// The curves the Curve tool would draw next: the new one, and the last one placed (and, when the
+    /// run would close, the first), which turn to meet it. `redrawn` are those already in the sketch.
+    private func curvePreview() -> (lines: [[SIMD2<Double>]], redrawn: Set<EntityID>)? {
+        let next = curveDown ?? target()
+        guard let next else { return nil }
+        guard let chain = curveChain else {
+            guard let first = clicks.first else {  // nothing placed yet: just the handle being pulled out
+                guard let down = curveDown, let pull = curvePull else { return nil }
+                return ([[down.position - pull, down.position + pull]], [])
+            }
+            let pull = curveFirstPull, end = next.position
+            guard distance(first, next) > 1e-6 else { return nil }
+            return (curveLines([first.position, end], [pull, curvePull], closed: false, from: 0, handlesAt: end), [])
+        }
+        let anchors = chain.anchors.compactMap { sketch.position($0) }
+        guard anchors.count == chain.anchors.count, let last = anchors.last, simdLength(next.position - last) > 1e-6 else { return nil }
+        let pulled = chain.anchors.map { chain.pulled[$0] }
+        if chain.anchors.count >= 3, next.point == chain.anchors.first {  // closes: smooth all the way round
+            let lines = curveLines(anchors, pulled, closed: true, from: chain.segments.count - 1, handlesAt: nil)
+            let first = Bezier.flatten(Self.poles(anchors, pulled, closed: true)[0])
+            let redrawn = Set([chain.segments.first, chain.segments.last].compactMap { $0?.curve })
+            return (lines + [first], redrawn)
+        }
+        let lines = curveLines(anchors + [next.position], pulled + [curvePull], closed: false,
+                               from: chain.segments.count - 1, handlesAt: next.position)
+        return (lines, Set([chain.segments.last?.curve].compactMap { $0 }))
+    }
+
+    private static func poles(_ anchors: [SIMD2<Double>], _ pulled: [SIMD2<Double>?], closed: Bool) -> [[SIMD2<Double>]] {
+        let handles = Bezier.smoothHandles(through: anchors, pulled: pulled, closed: closed)
+        return handles.enumerated().map { i, h in [anchors[i], h.0, h.1, anchors[(i + 1) % anchors.count]] }
+    }
+
+    /// The curve through `anchors` from segment `from` on, with the thin handle lines, and the handle
+    /// being pulled out at `handlesAt` (the point the mouse is down on).
+    private func curveLines(_ anchors: [SIMD2<Double>], _ pulled: [SIMD2<Double>?], closed: Bool, from: Int,
+                            handlesAt: SIMD2<Double>?) -> [[SIMD2<Double>]] {
+        var lines: [[SIMD2<Double>]] = []
+        for p in Self.poles(anchors, pulled, closed: closed).dropFirst(max(from, 0)) {
+            lines += [Bezier.flatten(p), [p[0], p[1]], [p[3], p[2]]]
+        }
+        if let at = handlesAt, let pull = curvePull { lines.append([at, at + pull]) }
+        return lines
+    }
+
+    /// Curves already in the sketch that the Curve tool's preview draws over, so they aren't drawn twice.
+    var redrawnCurves: Set<EntityID> { tool == .bezier ? curvePreview()?.redrawn ?? [] : [] }
 
     func circle(_ c: SIMD2<Double>, _ r: Double, _ a0: Double, _ a1: Double) -> [SIMD2<Double>] {
         let n = max(8, Int(abs(a1 - a0) / (2 * .pi) * 96))
