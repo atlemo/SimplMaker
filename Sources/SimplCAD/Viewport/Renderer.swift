@@ -298,9 +298,10 @@ final class Renderer {
     /// Each body's own colour, in the order of setScene's meshes; nil = the palette's face colour.
     /// Set apart from the meshes, so a colour change doesn't upload them again.
     var bodyColors: [SIMD4<Float>?] = []
-    private var grid: MTLBuffer?
-    private var gridCount = 0
+    /// The ground grid (the XY plane when not sketching): rebuilt as the view moves, to cover what's in view.
+    private var worldGrid: (key: WorldGridKey, minor: MTLBuffer?, minorCount: Int, major: MTLBuffer?, majorCount: Int)?
     private var axes: [(MTLBuffer, SIMD4<Float>)] = []
+    private var axesLength: Float = 0
     /// While sketching: the grid in the sketch's plane (replaces the world grid and axes).
     private(set) var sketchGrid: SketchGrid?
     private var sketchGridBuffers: (minor: MTLBuffer?, minorCount: Int, major: MTLBuffer?, majorCount: Int,
@@ -423,7 +424,7 @@ final class Renderer {
         self.noWriteDepthState = noWriteState
         self.hiddenDepthState = behindState
         self.overEverythingDepthState = overState
-        buildGrid(size: 200, step: 10)
+        buildAxes(length: 200)
     }
 
     // MARK: scene
@@ -549,17 +550,76 @@ final class Renderer {
                              makeBuffer([seg(w(0, g.v.lowerBound), w(0, g.v.upperBound))]))
     }
 
-    func buildGrid(size: Float, step: Float) {
-        var lines: [SegmentInstance] = []
-        let n = Int(size / step)
-        // The lines through the origin too: the axes cover only their positive halves, and are hidden while sketching.
-        for i in -n...n {
-            let t = Float(i) * step
-            lines.append(SegmentInstance(ax: t, ay: -size, az: 0, bx: t, by: size, bz: 0, id: 0))
-            lines.append(SegmentInstance(ax: -size, ay: t, az: 0, bx: size, by: t, bz: 0, id: 0))
+    /// What the ground grid covers: lines at multiples of `minor` (every `major` one darker), from
+    /// index i0 to i1 across and j0 to j1 along.
+    struct WorldGridKey: Equatable {
+        var minor: Double, major: Double
+        var i0: Int, i1: Int, j0: Int, j1: Int
+        /// The ground the lines cover, in mm: x range, y range.
+        var x: ClosedRange<Double> { Double(i0) * minor...Double(i1) * minor }
+        var y: ClosedRange<Double> { Double(j0) * minor...Double(j1) * minor }
+    }
+
+    /// Where the ground grid has to reach to fill the view: the part of the XY plane in view, a little
+    /// beyond it, and no more than 60 major steps from the middle (a plane seen edge-on runs to the horizon).
+    func worldGridKey(viewSize: CGSize) -> WorldGridKey {
+        let mmPerPoint = Double(2 * camera.halfHeight) / Double(max(viewSize.height, 1))
+        let steps = ViewportMTKView.gridSteps(mmPerPixel: mmPerPoint)
+        let reach = 60 * steps.major
+        func onGround(_ p: CGPoint) -> SIMD2<Double>? {
+            let r = camera.ray(at: p, viewSize: viewSize)
+            guard abs(r.direction.z) > 1e-3 else { return nil }
+            let t = -r.origin.z / r.direction.z
+            guard t > 0 else { return nil }
+            let h = r.origin + t * r.direction
+            return SIMD2(Double(h.x), Double(h.y))
         }
-        grid = makeBuffer(lines)
-        gridCount = lines.count
+        let w = viewSize.width, h = viewSize.height
+        let points = [CGPoint(x: 0, y: 0), CGPoint(x: w, y: 0), CGPoint(x: 0, y: h), CGPoint(x: w, y: h)]
+        let hits = points.compactMap(onGround)
+        let centre = onGround(CGPoint(x: w / 2, y: h / 2)) ?? SIMD2(Double(camera.target.x), Double(camera.target.y))
+        var lo = centre - reach, hi = centre + reach
+        if hits.count == points.count {  // everything in view meets the ground: only what's seen
+            lo = simd_max(lo, hits.reduce(hits[0], simd_min) - steps.major)
+            hi = simd_min(hi, hits.reduce(hits[0], simd_max) + steps.major)
+        }
+        // Whole major steps, so the grid is rebuilt only when the view has moved a good way.
+        func index(_ v: Double, up: Bool) -> Int {
+            let m = (v / steps.major)
+            return Int((up ? m.rounded(.up) : m.rounded(.down))) * max(Int((steps.major / steps.minor).rounded()), 1)
+        }
+        return WorldGridKey(minor: steps.minor, major: steps.major, i0: index(lo.x, up: false), i1: index(hi.x, up: true),
+                            j0: index(lo.y, up: false), j1: index(hi.y, up: true))
+    }
+
+    /// Makes the ground grid and the axes cover the view, when they don't already.
+    private func updateWorldGrid(viewSize: CGSize) {
+        let key = worldGridKey(viewSize: viewSize)
+        if worldGrid?.key != key {
+            let x0 = Float(Double(key.i0) * key.minor), x1 = Float(Double(key.i1) * key.minor)
+            let y0 = Float(Double(key.j0) * key.minor), y1 = Float(Double(key.j1) * key.minor)
+            let ratio = max(Int((key.major / key.minor).rounded()), 1)
+            var minor: [SegmentInstance] = [], major: [SegmentInstance] = []
+            // The lines through the origin too: the axes cover only their positive halves, and are hidden while sketching.
+            for i in key.i0...max(key.i0, key.i1) {
+                let t = Float(Double(i) * key.minor)
+                let s = SegmentInstance(ax: t, ay: y0, az: 0, bx: t, by: y1, bz: 0, id: 0)
+                if i % ratio == 0 { major.append(s) } else { minor.append(s) }
+            }
+            for j in key.j0...max(key.j0, key.j1) {
+                let t = Float(Double(j) * key.minor)
+                let s = SegmentInstance(ax: x0, ay: t, az: 0, bx: x1, by: t, bz: 0, id: 0)
+                if j % ratio == 0 { major.append(s) } else { minor.append(s) }
+            }
+            worldGrid = (key, makeBuffer(minor), minor.count, makeBuffer(major), major.count)
+        }
+        // The axes run out to the edge of the grid, and the vertical one stands a few major steps high.
+        let length = Float(max(200, Double(key.i1) * key.minor, Double(key.j1) * key.minor, 5 * key.major))
+        if length != axesLength { buildAxes(length: length) }
+    }
+
+    func buildAxes(length size: Float) {
+        axesLength = size
         axes = [
             (makeBuffer([SegmentInstance(ax: 0, ay: 0, az: 0, bx: size, by: 0, bz: 0, id: 0)])!, SIMD4(0.85, 0.25, 0.25, 1)),
             (makeBuffer([SegmentInstance(ax: 0, ay: 0, az: 0, bx: 0, by: size, bz: 0, id: 0)])!, SIMD4(0.25, 0.7, 0.3, 1)),
@@ -613,6 +673,7 @@ final class Renderer {
         pass.colorAttachments[1].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
 
         let aspect = Float(size.width / size.height)
+        if (showGrid || showAxes) && sketchGrid == nil { updateWorldGrid(viewSize: view.bounds.size) }
         var uniforms = Uniforms(viewProj: camera.projectionMatrix(aspect: aspect) * camera.viewMatrix(),
                                 eye: SIMD4(camera.eye, 1), viewport: SIMD2(Float(size.width), Float(size.height)),
                                 hovered: hovered, selectedCount: UInt32(min(selected.count, 256)),
@@ -702,9 +763,11 @@ final class Renderer {
             line(b.major, b.majorCount, p.grid, 1)
             line(b.axisU, 1, p.sketchAxisU, 1.2)
             line(b.axisV, 1, p.sketchAxisV, 1.2)
-        } else if showGrid {
-            segments(grid, gridCount, DrawParams(color: p.grid, hoverColor: p.grid, selectColor: p.grid,
-                                                 thickness: 1 * scale, depthBias: 0, pickable: 0))
+        } else if showGrid, let g = worldGrid {
+            segments(g.minor, g.minorCount, DrawParams(color: p.gridMinor, hoverColor: p.gridMinor, selectColor: p.gridMinor,
+                                                       thickness: 1 * scale, depthBias: 0, pickable: 0))
+            segments(g.major, g.majorCount, DrawParams(color: p.grid, hoverColor: p.grid, selectColor: p.grid,
+                                                       thickness: 1 * scale, depthBias: 0, pickable: 0))
         }
         // Fills sit just in front of the faces they lie on, but behind every edge and sketch line.
         let fillBias = 0.0002 * biasScale

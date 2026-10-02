@@ -220,21 +220,25 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var rulerLabels: [String: AxisLabelView] = [:]
     private var originMarker: OriginMarkerView?
 
-    /// Sketch grid spacing at the current zoom: minor lines about 40 px apart (1, 2 or 5 × 10ⁿ mm),
-    /// a major line every fifth, and the snapping step, which lands on the minor lines too.
+    /// Sketch grid spacing at the current zoom (see gridSteps).
     private func sketchGridSteps() -> (minor: Double, major: Double, snap: Double)? {
         let c = NSPoint(x: bounds.midX, y: bounds.midY)
         guard let a = sketchUV(c), let b = sketchUV(NSPoint(x: c.x + 1, y: c.y)) else { return nil }
-        let mmPerPixel = simdLength(b - a)
+        return Self.gridSteps(mmPerPixel: simdLength(b - a))
+    }
+
+    /// Grid spacing for a zoom: minor lines about 40 px apart (1, 2 or 5 × 10ⁿ mm) or the square chosen in
+    /// Settings (stepped up when it would be under 12 px wide), a major line every fifth (fourth in
+    /// inches), and the snapping step, which lands on the minor lines too.
+    static func gridSteps(mmPerPixel: Double) -> (minor: Double, major: Double, snap: Double) {
         let fixed = Preferences.gridSizeMM
         if fixed > 0 {
-            // The chosen square, kept at least 12 px wide by stepping up (×4 in inches, ×10 in mm).
             let us = Preferences.unitSystemSetting.isUS
             var minor = fixed
             while minor < 12 * mmPerPixel, minor.isFinite { minor *= us ? 4 : 10 }
             return (minor, minor * (us ? 4 : 5), minor)
         }
-        let minor = Self.niceStep(40 * mmPerPixel)
+        let minor = niceStep(40 * mmPerPixel)
         let twos = abs(minor / pow(10, floor(log10(minor))) - 2) < 1e-9
         return (minor, minor * 5, minor / (twos ? 4 : 5))
     }
