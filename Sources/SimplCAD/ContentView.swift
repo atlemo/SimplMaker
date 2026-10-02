@@ -123,6 +123,7 @@ struct DocumentWindow: View {
         .overlay { CursorPrompt(model: model) }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
+        .background(TitlebarAppearance(dark: sketchTint))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
         .toolbar {

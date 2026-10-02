@@ -48,3 +48,44 @@ struct WindowSizeMemory: NSViewRepresentable {
         }
     }
 }
+
+/// Put in a document window's content: while `dark`, the titlebar (the document title and the
+/// toolbar buttons) draws in its dark appearance, so it reads white on Sketch mode's accent-coloured
+/// toolbar. The content below keeps the system appearance.
+struct TitlebarAppearance: NSViewRepresentable {
+    let dark: Bool
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        // The window isn't known until the view is in it, so apply on the next turn of the run loop.
+        DispatchQueue.main.async { [weak view] in
+            guard let window = view?.window else { return }
+            window.appearance = dark ? NSAppearance(named: .darkAqua) : nil
+            window.contentView?.appearance = dark ? NSApp.effectiveAppearance : nil
+            // The title and subtitle labels keep their own colour whatever the appearance, so set it.
+            guard let titlebar = window.contentView?.superview else { return }
+            Self.recolorTitles(in: titlebar, dark: dark)
+            // The subtitle ("Edited") can appear a moment after the first edit, so go over them again.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak titlebar] in
+                if let titlebar { Self.recolorTitles(in: titlebar, dark: dark) }
+            }
+        }
+    }
+
+    private static func recolorTitles(in view: NSView, dark: Bool) {
+        if view.className == "NSToolbarTitleView" {
+            for case let label as NSTextField in allSubviews(of: view) {
+                let primary = label.className == "_NSToolbarTitleField"
+                label.textColor = dark ? NSColor.white.withAlphaComponent(primary ? 1 : 0.75)
+                                       : (primary ? .labelColor : .secondaryLabelColor)
+            }
+            return
+        }
+        for sub in view.subviews { recolorTitles(in: sub, dark: dark) }
+    }
+
+    private static func allSubviews(of view: NSView) -> [NSView] {
+        view.subviews + view.subviews.flatMap { allSubviews(of: $0) }
+    }
+}
