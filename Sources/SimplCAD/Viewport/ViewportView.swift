@@ -38,10 +38,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     var showConstraints = true
     private var popover: NSPopover?
     private var popoverID: EntityID?
-    /// The drag handle's size, typed beside the arrow.
-    private var handleField: ValueField?
-    /// The feature whose size the handle's field shows, and the size it showed.
-    private var handleFieldFeature: (id: FeatureID, text: String)?
+    /// The drag handles' sizes, typed beside their arrows, by slot (a hole has one for its depth, one for its diameter).
+    private var handleFields: [Int: ValueField] = [:]
+    /// The feature whose size each handle field shows, and the size it showed.
+    private var handleFieldFeatures: [Int: (id: FeatureID, text: String)] = [:]
     private var seenHandleFieldReset = 0
     private var seenHandleFocusRequest = 0
     private var handlePreviewTask: Task<Void, Never>?
@@ -502,7 +502,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             updateCursor()
         } else if let renderer, PickID(raw: renderer.hovered).kind == .handle {
             handleDrag = true
-            model?.beginHandleDrag()
+            model?.beginHandleDrag(slot: PickID(raw: renderer.hovered).handleSlot)
             updateCursor()
         }
     }
@@ -917,68 +917,87 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     // MARK: typed values
 
-    /// Keeps the handle's size field just right of the arrow tip, showing the stored size.
+    /// Keeps each arrow's size field just right of its tip, showing the stored size (or the size being dragged).
     private func syncHandleField() {
-        guard let renderer, let model, let h = model.dragHandle, let text = model.handleFieldText else {
-            if let f = handleField {
-                if f.currentEditor() != nil { window?.makeFirstResponder(self) }
-                f.removeFromSuperview()
-                handleField = nil
+        guard let renderer, let model, case let handles = model.dragHandles, !handles.isEmpty else {
+            if !handleFields.isEmpty {
+                if handleFields.values.contains(where: { $0.currentEditor() != nil }) { window?.makeFirstResponder(self) }
+                handleFields.values.forEach { $0.removeFromSuperview() }
+                handleFields = [:]
+                handleFieldFeatures = [:]
                 featureHUD?.removeFromSuperview()
                 featureHUD = nil
             }
             return
         }
-        let field: ValueField
-        if let handleField {
-            field = handleField
-        } else {
+        let layer = raiseControls()
+        if featureHUD == nil {
             let hud = SelfSizingHostingView(rootView: FeatureHUD(model: model))
-            let layer = raiseControls()
             layer.addSubview(hud)
             featureHUD = hud
-            field = ValueField(frame: .zero)
+        }
+        let slots = Set(handles.map(\.slot))
+        for (slot, field) in handleFields where !slots.contains(slot) {
+            if field.currentEditor() != nil { window?.makeFirstResponder(self) }
+            field.removeFromSuperview()
+            handleFields[slot] = nil
+            handleFieldFeatures[slot] = nil
+        }
+        for slot in slots where handleFields[slot] == nil {
+            let field = ValueField(frame: .zero)
+            field.handleSlot = slot
             field.delegate = self
-            field.toolTip = "Type a size or an expression, then press Return · Esc cancels"
+            field.onFocus = { [weak self] in self?.model?.activeHandleSlot = slot }
             layer.addSubview(field)
-            handleField = field
+            handleFields[slot] = field
         }
         raiseControls()
-        if model.handleFieldReset != seenHandleFieldReset {
-            // An option beside the field changed the feature; what was typed is stored already.
+        let reset = model.handleFieldReset != seenHandleFieldReset
+        if reset {
+            // An option beside the fields changed the feature; what was typed is stored already.
             seenHandleFieldReset = model.handleFieldReset
-            handleFieldFeature = (h.featureID, text)
-            field.stringValue = text
-            if field.currentEditor() != nil { window?.makeFirstResponder(self) }  // ends editing with nothing left to store
+            if handleFields.values.contains(where: { $0.currentEditor() != nil }) { window?.makeFirstResponder(self) }  // ends editing with nothing left to store
         }
-        if field.currentEditor() == nil { field.stringValue = text }
-        if field.currentEditor() == nil || handleFieldFeature?.id != h.featureID { handleFieldFeature = (h.featureID, text) }
-        field.textColor = model.previewInvalid ? .systemRed : .labelColor
-        let tip = h.base + h.direction * h.value
-        var anchor = renderer.camera.project(SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)), viewSize: bounds.size)
-        if let layout = manipulatorLayout, let part = model.manipulatorActivePart {
-            // On the manipulator's arrow or ring; up beside the middle when that one points at the viewer.
-            anchor = layout.anchor(for: part) ?? CGPoint(x: layout.center.x + 40, y: layout.center.y - 40)
-        }
-        guard let p = anchor else {
-            field.isHidden = true
-            return
-        }
-        field.isHidden = false
         let size = NSSize(width: 110, height: 24)
-        let x = min(max(p.x + 26, 0), max(bounds.width - size.width, 0))
-        let y = min(max(p.y - size.height / 2, 0), max(bounds.height - size.height, 0))
-        field.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
-        if let hud = featureHUD {  // the options panel sits just below the field
+        var placed: [NSRect] = []
+        for h in handles {
+            guard let field = handleFields[h.slot], let text = model.handleFieldText(for: h.slot) else { continue }
+            field.toolTip = "\(h.label): type a size or an expression, then press Return · Tab for the next · Esc cancels"
+            if reset { handleFieldFeatures[h.slot] = (h.featureID, text); field.stringValue = text }
+            if field.currentEditor() == nil { field.stringValue = text }
+            if field.currentEditor() == nil || handleFieldFeatures[h.slot]?.id != h.featureID { handleFieldFeatures[h.slot] = (h.featureID, text) }
+            field.textColor = model.previewInvalid && h.slot == model.activeHandleSlot ? .systemRed : .labelColor
+            let tip = h.base + h.direction * h.value
+            var anchor = renderer.camera.project(SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)), viewSize: bounds.size)
+            if h.slot == 0, let layout = manipulatorLayout, let part = model.manipulatorActivePart {
+                // On the manipulator's arrow or ring; up beside the middle when that one points at the viewer.
+                anchor = layout.anchor(for: part) ?? CGPoint(x: layout.center.x + 40, y: layout.center.y - 40)
+            }
+            guard let p = anchor else {
+                field.isHidden = true
+                continue
+            }
+            field.isHidden = false
+            let x = min(max(p.x + 26, 0), max(bounds.width - size.width, 0))
+            var y = min(max(p.y - size.height / 2, 0), max(bounds.height - size.height, 0))
+            // Two arrows can end close together: the later field steps down out of the earlier one's way.
+            for _ in 0..<4 where placed.contains(where: { $0.insetBy(dx: -2, dy: -2).intersects(NSRect(origin: NSPoint(x: x, y: y), size: size)) }) {
+                y = min(y + size.height + 4, max(bounds.height - size.height, 0))
+            }
+            field.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
+            placed.append(field.frame)
+        }
+        if let hud = featureHUD, let first = placed.first {  // the options panel sits just below the first field
             let s = hud.fittingSize
-            hud.frame = NSRect(x: min(max(x, 0), max(bounds.width - s.width, 0)),
-                               y: min(y + size.height + 6, max(bounds.height - s.height, 0)), width: s.width, height: s.height)
+            let below = placed.map(\.maxY).max() ?? first.maxY
+            hud.frame = NSRect(x: min(max(first.minX, 0), max(bounds.width - s.width, 0)),
+                               y: min(below + 6, max(bounds.height - s.height, 0)), width: s.width, height: s.height)
         }
         if model.handleFocusRequest != seenHandleFocusRequest {
             // A new feature: select its size so typing replaces it (outside drawing, to be safe).
             seenHandleFocusRequest = model.handleFocusRequest
-            DispatchQueue.main.async { [weak self, weak field] in
-                guard let field, field.superview != nil else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let field = self?.handleFields[handles[0].slot], field.superview != nil else { return }
                 self?.window?.makeFirstResponder(field)
                 field.selectText(nil)
             }
@@ -986,12 +1005,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     /// Previews a typed handle size once typing pauses.
-    private func scheduleHandlePreview(_ text: String) {
+    private func scheduleHandlePreview(_ text: String, slot: Int) {
         handlePreviewTask?.cancel()
         handlePreviewTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled, let self, let model = self.model else { return }
-            if !model.previewHandle(text) { self.handleField?.textColor = .systemRed }
+            model.activeHandleSlot = slot
+            if !model.previewHandle(text) { self.handleFields[slot]?.textColor = .systemRed }
             self.refreshOverlay()
         }
     }
@@ -1116,10 +1136,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     func controlTextDidChange(_ note: Notification) {
         guard let field = note.object as? ValueField else { return }
-        if field === handleField {
+        if let slot = field.handleSlot {
             field.textColor = .labelColor
+            model?.activeHandleSlot = slot
             model?.handleDraft = field.stringValue
-            scheduleHandlePreview(field.stringValue)
+            scheduleHandlePreview(field.stringValue, slot: slot)
         } else if let input = field.input, let session = model?.sketchSession {
             session.setTyped(input, field.stringValue)
             refreshOverlay()
@@ -1128,11 +1149,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     func controlTextDidEndEditing(_ note: Notification) {
         // Clicking away from the handle's field keeps what was typed, if it's a usable size.
-        guard let field = note.object as? ValueField, field === handleField, let model else { return }
+        guard let field = note.object as? ValueField, let slot = field.handleSlot, let model else { return }
         handlePreviewTask?.cancel()
         // Store what was typed on the feature the field was for, even if the handle has just gone.
-        let owner = handleFieldFeature
-        if field.stringValue != (owner?.text ?? model.handleFieldText), !model.commitHandle(field.stringValue, for: owner?.id) {
+        let owner = handleFieldFeatures[slot]
+        if field.stringValue != (owner?.text ?? model.handleFieldText(for: slot)),
+           !model.commitHandle(field.stringValue, for: owner?.id, slot: slot) {
             model.cancelHandleEdit()
         }
         refreshOverlay()
@@ -1150,24 +1172,43 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             refreshOverlay()
             return true
         }
-        if field === handleField {
+        if let slot = field.handleSlot {
+            let tab = selector == #selector(NSResponder.insertTab(_:)), backtab = selector == #selector(NSResponder.insertBacktab(_:))
             if newline {
                 handlePreviewTask?.cancel()
-                guard model.commitHandle(field.stringValue) else {
+                guard model.commitHandle(field.stringValue, slot: slot) else {
                     NSSound.beep()
                     field.textColor = .systemRed
                     refreshOverlay()  // the options panel grows to say why
                     return true
                 }
-                field.stringValue = model.handleFieldText ?? field.stringValue
-                handleFieldFeature?.text = field.stringValue  // stored: nothing left to commit
+                field.stringValue = model.handleFieldText(for: slot) ?? field.stringValue
+                handleFieldFeatures[slot]?.text = field.stringValue  // stored: nothing left to commit
                 window?.makeFirstResponder(self)
-                model.finishFeatureEdit()  // done: the handle and its field go away
+                model.finishFeatureEdit()  // done: the handles and their fields go away
             } else if cancel {
                 handlePreviewTask?.cancel()
                 model.cancelHandleEdit()
-                field.stringValue = model.handleFieldText ?? ""
+                field.stringValue = model.handleFieldText(for: slot) ?? ""
                 window?.makeFirstResponder(self)
+            } else if tab || backtab {
+                // On to the feature's other size, keeping what was typed here if it's usable.
+                let order = handleFields.keys.sorted()
+                guard order.count > 1, let i = order.firstIndex(of: slot) else { return true }
+                handlePreviewTask?.cancel()
+                if field.stringValue != (handleFieldFeatures[slot]?.text ?? model.handleFieldText(for: slot)) {
+                    guard model.commitHandle(field.stringValue, for: handleFieldFeatures[slot]?.id, slot: slot) else {
+                        NSSound.beep()
+                        field.textColor = .systemRed
+                        refreshOverlay()
+                        return true
+                    }
+                    handleFieldFeatures[slot]?.text = field.stringValue  // stored: nothing left to commit
+                }
+                if let next = handleFields[order[(i + (tab ? 1 : order.count - 1)) % order.count]] {
+                    window?.makeFirstResponder(next)
+                    next.selectText(nil)
+                }
             } else {
                 return false
             }
@@ -1388,8 +1429,18 @@ enum ContextMenuBuilder {
 
 /// A small editable number field in the viewport (a handle's size, a typed sketch value).
 final class ValueField: NSTextField {
-    /// The sketch value this field edits; nil for the drag handle's field.
+    /// The sketch value this field edits; nil for a drag handle's field.
     var input: SketchInput?
+    /// Which of the selected feature's arrows this field sizes; nil for a sketch field.
+    var handleSlot: Int?
+    /// Called when typing moves into this field (by a click or Tab).
+    var onFocus: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { onFocus?() }
+        return ok
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)

@@ -11,7 +11,8 @@ import simd
 ///   body edge  0x8000_0000 | (body+1) << 20 | edge
 ///   sketch     0x4000_0000 point, 0x5000_0000 curve, 0x6000_0000 profile region | slot << 16 | index
 ///              (slot 0 = the sketch being edited, n = the n-th sketch in the document)
-///   handle     0x7000_0000 (the extrude drag handle), 0x7000_0001 (the dot that moves a hole)
+///   handle     0x7000_0000 (the extrude drag handle), 0x7000_0001 (the dot that moves a hole),
+///              0x7000_0002 (a hole's diameter arrow)
 ///   plane      0x7100_0000 | index (an origin plane offered when choosing where to sketch)
 struct PickID: Hashable, Sendable {
     enum Kind: Sendable { case none, face, edge, sketchPoint, sketchCurve, region, handle, plane }
@@ -34,6 +35,10 @@ struct PickID: Hashable, Sendable {
     static let handle = PickID(raw: 0x7000_0000)
     /// The dot at a selected hole's centre, dragged to slide the hole over its face.
     static let moveHandle = PickID(raw: 0x7000_0001)
+    /// A hole's second arrow, for its diameter (the first, `handle`, is its depth).
+    static let diameterHandle = PickID(raw: 0x7000_0002)
+    /// Which of a feature's arrows this picks (0 for any other pick).
+    var handleSlot: Int { self == PickID.diameterHandle ? 1 : 0 }
 
     var kind: Kind {
         if raw == 0 { return .none }
@@ -234,6 +239,8 @@ enum DrawStyle {
     static let dashed: UInt32 = 2
     /// A face in its plain colour, without lighting.
     static let flat: UInt32 = 4
+    /// A segment drawn as an arrowhead: a triangle whose tip is the segment's end.
+    static let arrowHead: UInt32 = 8
 }
 
 /// How bodies are drawn (View ▸ Visual Style), as in Fusion.
@@ -893,11 +900,13 @@ final class Renderer {
                             thickness: 3 * scale, depthBias: 0, pickable: 1))
         if let handle = overlay.handle, overlay.handleCount > 1 {
             var tip = DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: select,
-                                 thickness: 11 * scale, depthBias: 0, pickable: 1)
-            enc.setVertexBuffer(handle, offset: MemoryLayout<SegmentInstance>.stride * (overlay.handleCount - 1), index: 0)
+                                 thickness: 20 * scale, depthBias: 0, pickable: 1, style: DrawStyle.arrowHead)
             enc.setVertexBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.setFragmentBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
-            enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: 1)
+            for head in stride(from: 1, to: overlay.handleCount, by: 2) {  // every arrow's second segment
+                enc.setVertexBuffer(handle, offset: MemoryLayout<SegmentInstance>.stride * head, index: 0)
+                enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: 1)
+            }
         }
         segments(overlay.moveHandle, overlay.moveHandleCount,
                  DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: select,

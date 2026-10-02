@@ -49,4 +49,27 @@ import Testing
         #expect(model.markerPosition == 3 && model.document.features.count == 6)
         try await settle(model)
     }
+
+    @Test func theTimelineLightsTheFeaturesBehindWhatIsSelected() async throws {
+        let model = DocumentModel(document: .demo())
+        try await settle(model)
+        #expect(model.timelineMarks.isEmpty)
+
+        model.selectBody("plate")  // a body clicked in the browser: its feature
+        #expect(model.selectedFeature == nil && model.timelineMarks == ["plate"])
+
+        model.selectedFeature = "base"  // a feature picked directly wins
+        #expect(model.timelineMarks == ["base"])
+
+        // A face or edge lights the feature that made it: here the top edge's fillet or chamfer.
+        model.selectedFeature = nil
+        let mesh = try #require(model.meshes.first?.mesh)
+        let rounded = try #require(mesh.edgeNames.firstIndex { $0.hasPrefix("topedge.") || $0.contains("|topedge.") })
+        model.selection = [PickID(body: 0, edge: rounded)]
+        #expect(model.timelineMarks == ["topedge"])
+        let face = try #require(mesh.faceNames.firstIndex { $0.hasPrefix("topedge.") })
+        model.selection = [PickID(body: 0, face: face)]
+        #expect(model.timelineMarks == ["topedge"])
+        try await settle(model)
+    }
 }

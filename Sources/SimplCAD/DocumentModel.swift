@@ -58,11 +58,14 @@ final class DocumentModel {
     var selection: [PickID] = []
     private(set) var hovered: PickID?
     private var selectedFeatureStorage: FeatureID?
+    /// The arrow being dragged or typed for, when the selected feature has more than one (see `DragHandle.slot`).
+    var activeHandleSlot = 0
     var selectedFeature: FeatureID? {
         get { selectedFeatureStorage }
         set {
             guard newValue != selectedFeatureStorage else { return }
             selectedFeatureStorage = newValue
+            activeHandleSlot = 0
             if newValue != newFeature { newFeature = nil }  // moved on: Cancel no longer removes it
             overlayRevision += 1
         }
@@ -245,6 +248,27 @@ final class DocumentModel {
         } else {
             selection = [pick]
         }
+    }
+
+    /// The feature that made a picked face or edge, from its name (every face is named "<feature>.…", and an
+    /// edge "<face>|<face>"): for an edge, the later of its two faces' features, since that is the one that
+    /// cut it. Nil for anything else, or when that feature is gone.
+    func creatingFeature(of pick: PickID) -> FeatureID? {
+        guard let name = name(of: pick) else { return nil }
+        let owners = name.split(separator: "|").compactMap { face -> (id: FeatureID, index: Int)? in
+            let id = String(face.prefix { $0 != "." })
+            return document.index(of: id).map { (id, $0) }
+        }
+        return owners.max { $0.index < $1.index }?.id
+    }
+
+    /// The features the timeline lights up, in timeline order: the one open for editing, the one that made
+    /// the body selected in the browser (a body's id is its feature's), and the ones that made the faces
+    /// and edges picked in the viewport (a chamfered edge lights its chamfer).
+    var timelineMarks: [FeatureID] {
+        var ids = Set(selection.compactMap { creatingFeature(of: $0) })
+        if let id = selectedFeature ?? selectedBody { ids.insert(id) }
+        return document.features.map(\.id).filter(ids.contains)
     }
 
     var browserHighlights: Set<FeatureID> {
@@ -909,13 +933,16 @@ final class DocumentModel {
             guard let frame = result?.planes[f.id] else { continue }
             SketchOverlayBuilder.constructionPlane(frame, size: planeSize, id: PickID(plane: OriginPlane.allCases.count + slot).raw, into: &o)
         }
-        if let h = dragHandle, manipulatedFeature == nil {
-            let a = h.base, b = h.base + h.direction * h.value
-            let fa = SIMD3<Float>(Float(a.x), Float(a.y), Float(a.z)), fb = SIMD3<Float>(Float(b.x), Float(b.y), Float(b.z))
-            let id = PickID.handle.raw
-            o.handle = [SegmentInstance(ax: fa.x, ay: fa.y, az: fa.z, bx: fb.x, by: fb.y, bz: fb.z, id: id),
-                        SegmentInstance(ax: fb.x, ay: fb.y, az: fb.z, bx: fb.x, by: fb.y, bz: fb.z, id: id)]
-            o.handleInvalid = previewInvalid
+        if manipulatedFeature == nil {
+            // Each arrow is its shaft and then its head (the same segment again, drawn as a triangle).
+            for h in dragHandles {
+                let a = h.base, b = h.base + h.direction * h.value
+                let fa = SIMD3<Float>(Float(a.x), Float(a.y), Float(a.z)), fb = SIMD3<Float>(Float(b.x), Float(b.y), Float(b.z))
+                let id = (h.slot == 0 ? PickID.handle : PickID.diameterHandle).raw
+                let segment = SegmentInstance(ax: fa.x, ay: fa.y, az: fa.z, bx: fb.x, by: fb.y, bz: fb.z, id: id)
+                o.handle += [segment, segment]
+                o.handleInvalid = previewInvalid
+            }
         }
         if let p = holeMoveDot {
             let f = SIMD3<Float>(Float(p.x), Float(p.y), Float(p.z)), id = PickID.moveHandle.raw
@@ -977,6 +1004,8 @@ final class DocumentModel {
         var maxValue: Double?
         /// The arrow can be dragged back through its base (an extrude going the other way).
         var allowsNegative = false
+        /// Which of the feature's arrows this is: a hole has one for its depth (0) and one for its diameter (1).
+        var slot = 0
 
         /// The value written to the feature for an arrow length.
         func featureValue(_ length: Double) -> Double {
@@ -994,6 +1023,8 @@ final class DocumentModel {
         var expression: String
         var value: Double
         var startValue: Double?
+        /// Which of the feature's arrows was dragged (see `DragHandle.slot`).
+        var slot = 0
         /// A hole dragged over its face (X and Y together), instead of one size.
         var holePosition: SIMD2<Double>?
         /// A move or turn dragged with the manipulator: the values that changed, by `TransformKey` index.
@@ -1040,15 +1071,18 @@ final class DocumentModel {
     /// Bumped when a new feature wants its size typed right away: the viewport focuses the handle's field.
     var handleFocusRequest = 0
 
-    /// What the handle's field shows: the stored expression, or the size being dragged.
-    var handleFieldText: String? {
-        guard let h = dragHandle else { return nil }
-        if handleDragStart != nil { return formatDimension(h.featureValue(h.value), kind: h.unit) }
+    /// What an arrow's field shows: the stored expression, or the size being dragged.
+    func handleFieldText(for slot: Int) -> String? {
+        guard let h = selectedHandle(slot) else { return nil }
+        if handleDragStart != nil, slot == activeHandleSlot { return formatDimension(h.featureValue(h.value), kind: h.unit) }
         if manipulatorStart != nil, let live = manipulatorLive, let (_, m) = manipulatedFeature {
             return m.rotating ? formatDimension(live.turn[m.arrow.index], kind: .angle) : formatDimension(live.move[m.arrow.index], kind: .length)
         }
         return h.expression
     }
+
+    /// What the active arrow's field shows.
+    var handleFieldText: String? { handleFieldText(for: activeHandleSlot) }
 
     /// The selected feature that is being edited but has no drag handle to carry the OK button (a thread
     /// that runs the full length, a shell, a mirror…). Its OK and Cancel float at the bottom instead.
@@ -1061,21 +1095,33 @@ final class DocumentModel {
         }
     }
 
-    var dragHandle: DragHandle? {
+    /// The arrow in hand: the one being dragged or typed for.
+    var dragHandle: DragHandle? { selectedHandle(activeHandleSlot) }
+
+    /// Every arrow the selected feature shows, by slot: a hole's depth and diameter, or the one arrow of the rest.
+    var dragHandles: [DragHandle] {
+        guard let id = selectedFeature, sketchSession == nil, pendingTool == nil, holeMoveStart == nil,
+              let f = document.features.first(where: { $0.id == id }) else { return [] }
+        let count: Int
+        if case .hole(let h) = f.kind { count = h.depth == nil ? 1 : 2 } else { count = 1 }
+        return (0..<count).compactMap { handle(for: id, slot: $0) }
+    }
+
+    private func selectedHandle(_ slot: Int) -> DragHandle? {
         guard sketchSession == nil, pendingTool == nil, holeMoveStart == nil, let id = selectedFeature else { return nil }
-        return handle(for: id)
+        return handle(for: id, slot: slot) ?? (slot > 0 ? handle(for: id, slot: 0) : nil)
     }
 
     /// The drag handle a feature shows while it's selected.
-    func handle(for id: FeatureID) -> DragHandle? {
+    func handle(for id: FeatureID, slot: Int = 0) -> DragHandle? {
         guard let f = document.features.first(where: { $0.id == id }), !f.suppressed, let result else { return nil }
         let params = parameterValues
         func handle(_ label: String, _ base: SIMD3<Double>, _ direction: SIMD3<Double>, _ expression: String,
                     unit: UnitKind = .length, per: Double = 1, max: Double? = nil, negative: Bool = false) -> DragHandle {
             let v = (try? params.value(of: expression, kind: unit)) ?? 0
             return DragHandle(featureID: id, label: label, base: base, direction: direction,
-                              value: handlePreviewValue ?? v * per, expression: expression, unit: unit,
-                              lengthPerUnit: per, maxValue: max, allowsNegative: negative)
+                              value: slot == activeHandleSlot ? handlePreviewValue ?? v * per : v * per, expression: expression,
+                              unit: unit, lengthPerUnit: per, maxValue: max, allowsNegative: negative, slot: slot)
         }
         switch f.kind {
         case .extrude(let e):
@@ -1128,8 +1174,11 @@ final class DocumentModel {
                 return handle("Pitch", frame.origin, frame.normal, pf.pitch, per: turns)  // the arrow spans the coil
             }
         case .hole(let hf):
-            guard let depth = hf.depth, let frame = try? Regenerator.holeFrame(hf, result) else { return nil }
-            return handle("Depth", frame.origin, -frame.normal, depth)
+            guard let frame = try? Regenerator.holeFrame(hf, result) else { return nil }
+            // Down into the material for the depth (unless the hole goes right through), and out along the face for
+            // the diameter: the arrow spans the radius.
+            if let depth = hf.depth, slot == 0 { return handle("Depth", frame.origin, -frame.normal, depth) }
+            return handle("Diameter", frame.origin, frame.xAxis, hf.diameter, per: 0.5)
         case .thread(let tf):
             // Along the axis from the end the thread starts at (on the face as it was before).
             guard let length = tf.length, let body = result.featureInputs[id]?[tf.face.body],
@@ -1311,7 +1360,8 @@ final class DocumentModel {
         return (sk.frame.point(p.x, p.y), side.x * sk.frame.xAxis + side.y * sk.frame.yAxis, sk.frame.normal)
     }
 
-    func beginHandleDrag() {
+    func beginHandleDrag(slot: Int = 0) {
+        activeHandleSlot = slot
         guard let h = dragHandle else { return }
         handleDragStart = document
         handleStartValue = h.featureValue(h.value)
@@ -1342,7 +1392,7 @@ final class DocumentModel {
         if let m = h.maxValue { length = min(length, m * h.lengthPerUnit) }
         handlePreviewValue = length
         var preview = start
-        Self.set(expression: formatDimension(h.featureValue(length), kind: h.unit), of: h.featureID, in: &preview)
+        Self.set(expression: formatDimension(h.featureValue(length), kind: h.unit), of: h.featureID, slot: h.slot, in: &preview)
         Self.turnRound(h.featureID, from: handleStartValue, to: h.featureValue(length), in: &preview)
         regenerate(preview: preview, previewFeature: h.featureID)
         overlayRevision += 1
@@ -1361,10 +1411,10 @@ final class DocumentModel {
         let value = h.featureValue(length)
         if Self.isParametric(h.expression) {
             unlinkPrompt = UnlinkPrompt(featureID: h.featureID, label: h.label, unit: h.unit, expression: h.expression,
-                                        value: value, startValue: handleStartValue)
+                                        value: value, startValue: handleStartValue, slot: h.slot)
             return  // the preview stays on screen until the user answers
         }
-        commitHandle(h.featureID, h.label, formatDimension(value, kind: h.unit), from: handleStartValue, to: value)
+        commitHandle(h.featureID, h.label, formatDimension(value, kind: h.unit), slot: h.slot, from: handleStartValue, to: value)
     }
 
     /// Answer to the unlink prompt: use the dragged number, or keep the expression.
@@ -1377,15 +1427,16 @@ final class DocumentModel {
         } else if useValue, let uv = p.holePosition {
             commitHoleMove(p.featureID, to: uv)
         } else if useValue {
-            commitHandle(p.featureID, p.label, formatDimension(p.value, kind: p.unit), from: p.startValue, to: p.value)
+            commitHandle(p.featureID, p.label, formatDimension(p.value, kind: p.unit), slot: p.slot, from: p.startValue, to: p.value)
         } else {
             regenerate()
         }
     }
 
-    private func commitHandle(_ id: FeatureID, _ label: String, _ expression: String, from old: Double? = nil, to new: Double? = nil) {
+    private func commitHandle(_ id: FeatureID, _ label: String, _ expression: String, slot: Int = 0, from old: Double? = nil,
+                              to new: Double? = nil) {
         mutate("Change \(label)") { doc in
-            Self.set(expression: expression, of: id, in: &doc)
+            Self.set(expression: expression, of: id, slot: slot, in: &doc)
             if let new { Self.turnRound(id, from: old, to: new, in: &doc) }
         }
     }
@@ -1444,7 +1495,7 @@ final class DocumentModel {
         handleProblem = nil
         handlePreviewValue = size.value * h.lengthPerUnit
         var preview = document
-        Self.set(expression: size.expression, of: h.featureID, in: &preview)
+        Self.set(expression: size.expression, of: h.featureID, slot: h.slot, in: &preview)
         Self.turnRound(h.featureID, from: h.featureValue((try? parameterValues.value(of: h.expression, kind: h.unit)) ?? 0), to: size.value, in: &preview)
         regenerate(preview: preview, previewFeature: h.featureID)
         overlayRevision += 1
@@ -1455,8 +1506,9 @@ final class DocumentModel {
     /// `feature` is the feature the field was for, which may no longer be selected (OK, or a
     /// click elsewhere, closes the handle before the field hands over its text).
     @discardableResult
-    func commitHandle(_ text: String, for feature: FeatureID? = nil) -> Bool {
-        guard let h = feature.flatMap({ handle(for: $0) }) ?? dragHandle else { return false }
+    func commitHandle(_ text: String, for feature: FeatureID? = nil, slot: Int? = nil) -> Bool {
+        let slot = slot ?? activeHandleSlot
+        guard let h = feature.flatMap({ handle(for: $0, slot: slot) }) ?? selectedHandle(slot) else { return false }
         guard let size = handleSize(text, h) else {
             handleProblem = handleSizeProblem(text, h)
             return false
@@ -1465,7 +1517,7 @@ final class DocumentModel {
         handleDraft = nil
         handlePreviewValue = nil
         let old = (try? parameterValues.value(of: h.expression, kind: h.unit)) ?? 0
-        if size.expression == h.expression { regenerate() } else { commitHandle(h.featureID, h.label, size.expression, from: old, to: size.value) }
+        if size.expression == h.expression { regenerate() } else { commitHandle(h.featureID, h.label, size.expression, slot: h.slot, from: old, to: size.value) }
         overlayRevision += 1
         return true
     }
@@ -1486,7 +1538,7 @@ final class DocumentModel {
     }
 
     /// Writes the size a feature's drag handle controls.
-    static func set(expression text: String, of id: FeatureID, in doc: inout CADDocument) {
+    static func set(expression text: String, of id: FeatureID, slot: Int = 0, in doc: inout CADDocument) {
         guard let i = doc.index(of: id) else { return }
         switch doc.features[i].kind {
         case .extrude(var e):
@@ -1514,7 +1566,7 @@ final class DocumentModel {
             }
             doc.features[i].kind = .primitive(p)
         case .hole(var h):
-            if h.depth != nil { h.depth = text }
+            if h.depth != nil, slot == 0 { h.depth = text } else { h.diameter = text }
             doc.features[i].kind = .hole(h)
         case .thread(var t):
             if t.length != nil { t.length = text }

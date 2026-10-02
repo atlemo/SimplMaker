@@ -30,7 +30,7 @@ enum Shaders {
         float depthBias;
         uint pickable;
         float selectedThickness; // pixels; a selected body edge's width when set (see segmentFragment)
-        uint style;            // DrawStyle bits: 1 only when hovered or selected, 2 dashed, 4 flat (unlit)
+        uint style;            // DrawStyle bits: 1 only when hovered or selected, 2 dashed, 4 flat (unlit), 8 arrowhead
     };
 
     struct FaceOut {
@@ -195,6 +195,14 @@ enum Shaders {
         float side = (vid % 2 == 0) ? -1.0 : 1.0;
         float4 c = atB ? cb : ca;
         float2 offset = (nrm * side + d * (atB ? 1.0 : -1.0)) * thickness * 0.5;
+        if ((p.style & 8u) != 0) {
+            // An arrowhead: a triangle pointing along a to b. `thickness` is its width on screen, and it is a
+            // little longer than wide. It stands mostly past b, so the tip is well beyond where the shaft
+            // ends (and the shaft's square end stays hidden inside the head). The two back corners come
+            // from vertices 0 and 1.
+            c = cb;
+            offset = (atB ? d * 0.6 : nrm * side * 0.5 - d * 0.55) * thickness;
+        }
         c.xy += offset / halfSize * c.w;
         c.z -= p.depthBias;  // constant in clip space: a fixed fraction of the view depth (see Camera.depthBiasScale)
         LineOut o;

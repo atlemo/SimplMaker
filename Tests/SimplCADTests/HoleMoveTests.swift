@@ -53,6 +53,48 @@ import Testing
         #expect(DocumentModel.snap(SIMD2(10, 12), to: c, tolerance: 1) == SIMD2(10, 12))
     }
 
+    @Test func aHoleHasADepthArrowAndADiameterArrow() async throws {
+        let model = try await loaded(plate())
+        try placeHole(model, x: 30, y: 20)
+        let id = try #require(model.document.features.last?.id)
+        let handles = model.dragHandles
+        #expect(handles.map(\.label) == ["Depth", "Diameter"] && handles.map(\.slot) == [0, 1])
+        #expect(handles[0].expression == "10 mm" && handles[1].expression == "5 mm")
+        #expect(abs(handles[1].value - 2.5) < 1e-9, "the diameter arrow spans the radius")
+        #expect(model.dragHandle?.label == "Depth", "the depth arrow is the first in hand")
+        let drawn = model.sketchOverlay().handle
+        #expect(drawn.count == 4 && drawn[0].id == PickID.handle.raw && drawn[2].id == PickID.diameterHandle.raw,
+                "each arrow is a shaft and a head, and the two can be picked apart")
+        #expect(PickID.diameterHandle.kind == .handle && PickID.diameterHandle.handleSlot == 1 && PickID.handle.handleSlot == 0)
+
+        // Typing the diameter (the second field) sets the diameter, not the depth.
+        model.activeHandleSlot = 1
+        #expect(model.commitHandle("8 mm", slot: 1))
+        guard case .hole(let h) = model.document.features.last?.kind else { throw HoleMissing() }
+        #expect(h.diameter == "8 mm" && h.depth == "10 mm")
+        try await settle(model)
+        #expect(model.result?.errors[id] == nil)
+        #expect(model.handleFieldText(for: 1) == "8 mm" && model.handleFieldText(for: 0) == "10 mm")
+
+        // Dragging the diameter arrow sizes the diameter too.
+        model.beginHandleDrag(slot: 1)
+        #expect(model.activeHandleSlot == 1)
+        model.endHandleDrag()
+        try await settle(model)
+
+        // A hole through everything has only the diameter to size.
+        model.updateFeature(id, "Through All") { f in
+            if case .hole(var h) = f.kind { h.depth = nil; f.kind = .hole(h) }
+        }
+        try await settle(model)
+        model.activeHandleSlot = 0
+        #expect(model.dragHandles.map(\.label) == ["Diameter"])
+        #expect(model.commitHandle("6 mm", slot: 0))
+        guard case .hole(let t) = model.document.features.last?.kind else { throw HoleMissing() }
+        #expect(t.diameter == "6 mm" && t.depth == nil)
+        try await settle(model)
+    }
+
     @Test func aClickNearTheMiddleOfAFaceLandsOnIt() async throws {
         // The pin hole pulls the face's own centroid aside; the middle of its outline stays at (30, 20).
         let model = try await loaded(plate())

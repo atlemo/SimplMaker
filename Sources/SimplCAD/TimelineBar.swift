@@ -56,7 +56,8 @@ struct TimelineBar: View {
     private var marker: Int { dragPosition ?? model.markerPosition }
 
     var body: some View {
-        HStack(spacing: DS.Spacing.space4) {
+        let marks = model.timelineMarks
+        return HStack(spacing: DS.Spacing.space4) {
             playback
             Divider().frame(height: 22)
             ScrollViewReader { proxy in
@@ -64,7 +65,7 @@ struct TimelineBar: View {
                     HStack(spacing: Self.spacing) {
                         ForEach(Array(model.document.features.enumerated()), id: \.element.id) { i, f in
                             if i == marker { markerView }
-                            item(f, index: i)
+                            item(f, index: i, marks: marks)
                         }
                         if marker >= model.document.features.count { markerView }
                     }
@@ -73,6 +74,10 @@ struct TimelineBar: View {
                 }
                 .onChange(of: model.document.features.count) {
                     if let last = model.document.features.last?.id { withAnimation { proxy.scrollTo(last) } }
+                }
+                // A click brings its feature into view on the timeline.
+                .onChange(of: marks) {
+                    if let id = marks.first { withAnimation { proxy.scrollTo(id) } }
                 }
             }
             if model.document.features.isEmpty {
@@ -107,14 +112,16 @@ struct TimelineBar: View {
         .frame(height: Self.item)
     }
 
-    private func item(_ f: Feature, index: Int) -> some View {
-        let selected = model.selectedFeature == f.id
+    private func item(_ f: Feature, index: Int, marks: [FeatureID]) -> some View {
+        let selected = marks.contains(f.id)
+        // What's picked in the viewport comes from this body or sketch: a fainter mark.
+        let related = !selected && model.browserHighlights.contains(f.id)
         let error = model.result?.errors[f.id]
         let rolledBack = index >= marker
         let dx = moving?.id == f.id ? moving?.dx ?? 0 : 0
         return Icon(f.iconName, size: 17)
             .frame(width: Self.item, height: Self.item)
-            .background(selected ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.05),
+            .background(selected ? Color.accentColor.opacity(0.28) : related ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.05),
                         in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
             .overlay(alignment: .bottomTrailing) {
                 if error != nil {

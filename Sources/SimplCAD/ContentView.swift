@@ -362,7 +362,7 @@ struct StatusBar: View {
         } else if let h = model.dragHandle, model.hovered == nil || model.hovered?.kind == .handle {
             Text(model.previewInvalid ? "That size doesn't fit — let go to keep the previous size"
                                       : model.selectedHole != nil
-                                        ? "Drag the orange dot to move the hole, or the arrow to change its depth"
+                                        ? "Drag the orange dot to move the hole, or an arrow to change its depth or diameter · Tab moves between the fields"
                                         : model.manipulatedFeature != nil
                                         ? "Drag an arrow, square or ring dot · or type the \(h.label.lowercased()) in the field"
                                         : "Drag the orange arrow to change the \(h.label.lowercased()), or type it in the field next to it")
