@@ -1697,6 +1697,65 @@ SKHandle sk_chamfer(SKHandle body, const char *const *edgeNames, int count, doub
   SK_CATCH(0)
 }
 
+/// The two faces at an edge, the one the first chamfer distance is measured on first: the named one when it is
+/// one of them, else the one with the smaller name (so the choice survives a rebuild); `flip` takes the other.
+static bool edgeSides(const Body &b, const TopoDS_Edge &e, const char *named, bool flip, TopoDS_Face &first, TopoDS_Face &second) {
+  ShapeToShapes edgeFaces;
+  TopExp::MapShapesAndUniqueAncestors(b.shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+  if (!edgeFaces.Contains(e) || edgeFaces.FindFromKey(e).Extent() != 2) return false;
+  std::vector<std::pair<std::string, TopoDS_Face>> sides;
+  for (const TopoDS_Shape &fs : edgeFaces.FindFromKey(e)) {
+    const int idx = b.faces.FindIndex(fs);
+    sides.push_back({idx > 0 ? b.faceNames[idx - 1] : std::string(), TopoDS::Face(fs)});
+  }
+  std::sort(sides.begin(), sides.end(), [](const auto &x, const auto &y) { return x.first < y.first; });
+  int pick = (named && *named && sides[1].first == named) ? 1 : 0;
+  if (flip) pick = 1 - pick;
+  first = sides[pick].second;
+  second = sides[1 - pick].second;
+  return true;
+}
+
+SKHandle sk_chamfer_ex(SKHandle body, const char *const *edgeNames, const char *const *faceNames, int count,
+                       SKChamferMode mode, double first, double second, bool flip, const char *featureId) {
+  SK_TRY
+  if (mode == SK_CHAMFER_EQUAL) return sk_chamfer(body, edgeNames, count, first, featureId);
+  if (first <= Precision::Confusion() || (mode == SK_CHAMFER_TWO_DISTANCES && second <= Precision::Confusion())) {
+    setError("chamfer distance must be positive");
+    return 0;
+  }
+  if (mode == SK_CHAMFER_DISTANCE_ANGLE && (second <= 1e-6 || second >= M_PI / 2 - 1e-6)) {
+    setError("chamfer angle must be between 0 and 90 degrees");
+    return 0;
+  }
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  // Which face each edge's first distance is on, worked out first: an edge that isn't between two faces is an error.
+  std::vector<TopoDS_Face> onFirst;
+  for (int k = 0; k < count; ++k) {
+    auto it = b->edgeIndex.find(edgeNames[k]);
+    if (it == b->edgeIndex.end()) {
+      setError(std::string("edge not found: ") + edgeNames[k]);
+      return 0;
+    }
+    TopoDS_Face f1, f2;
+    if (!edgeSides(*b, TopoDS::Edge(b->edges(it->second + 1)), faceNames ? faceNames[k] : nullptr, flip, f1, f2)) {
+      setError("the edge must join two faces");
+      return 0;
+    }
+    onFirst.push_back(f1);
+  }
+  int k = 0;
+  return edgeFeature<BRepFilletAPI_MakeChamfer>(
+      body, edgeNames, count, featureOrDefault(featureId, "chamfer"), "chamfer", [&](BRepFilletAPI_MakeChamfer &mk, const TopoDS_Edge &e) {
+        if (mode == SK_CHAMFER_TWO_DISTANCES) mk.Add(first, second, e, onFirst[k]);
+        else mk.AddDA(first, second, e, onFirst[k]);
+        ++k;
+      });
+  SK_CATCH(0)
+}
+
 // ----------------------------------------------------------------- queries ---
 
 int sk_body_face_count(SKHandle body) {
@@ -1975,6 +2034,77 @@ bool sk_body_edge_handle(SKHandle body, const char *edgeName, double out[6]) {
   gp_Vec dir = sum.Normalized() * (concave ? 1.0 : -1.0);
   out[0] = mid.X(); out[1] = mid.Y(); out[2] = mid.Z();
   out[3] = dir.X(); out[4] = dir.Y(); out[5] = dir.Z();
+  return true;
+  SK_CATCH(false)
+}
+
+/// Where a face lies from one of its edges, at parameter `t` along it: the face's outward normal there, and the
+/// direction across the face away from the edge.
+static bool faceSideAt(const TopoDS_Edge &e, const TopoDS_Face &f, double t, gp_Vec &normal, gp_Vec &inward) {
+  BRepAdaptor_Curve curve(e);
+  const gp_Pnt mid = curve.Value(t);
+  BRepAdaptor_Surface surf(f);
+  double f0, l0;
+  Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(e, f, f0, l0);
+  gp_Pnt2d uv;
+  if (!pc.IsNull()) {
+    uv = pc->Value(t);
+  } else {
+    GeomAPI_ProjectPointOnSurf proj(mid, BRep_Tool::Surface(f));
+    if (proj.NbPoints() == 0) return false;
+    double u, v;
+    proj.LowerDistanceParameters(u, v);
+    uv = gp_Pnt2d(u, v);
+  }
+  gp_Pnt p;
+  gp_Vec du, dv;
+  surf.D1(uv.X(), uv.Y(), p, du, dv);
+  normal = du.Crossed(dv);
+  if (normal.Magnitude() < 1e-12) return false;
+  normal.Normalize();
+  if (f.Orientation() == TopAbs_REVERSED) normal.Reverse();
+  // The face is on the left of its boundary edges, seen from outside: so across the face is normal x direction,
+  // with the direction the edge runs round this face.
+  gp_Vec along = curve.DN(t, 1);
+  if (along.Magnitude() < 1e-12) return false;
+  along.Normalize();
+  for (TopExp_Explorer ex(f, TopAbs_EDGE); ex.More(); ex.Next())
+    if (ex.Current().IsSame(e)) {
+      if (ex.Current().Orientation() == TopAbs_REVERSED) along.Reverse();
+      break;
+    }
+  inward = normal.Crossed(along);
+  if (inward.Magnitude() < 1e-12) return false;
+  inward.Normalize();
+  return true;
+}
+
+bool sk_body_chamfer_handle(SKHandle body, const char *edgeName, const char *faceName, bool flip, double out[12]) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->edgeIndex.find(edgeName);
+  if (it == b->edgeIndex.end()) {
+    setError(std::string("edge not found: ") + edgeName);
+    return false;
+  }
+  const TopoDS_Edge &e = TopoDS::Edge(b->edges(it->second + 1));
+  TopoDS_Face f1, f2;
+  if (!edgeSides(*b, e, faceName, flip, f1, f2)) {
+    setError("the edge must join two faces");
+    return false;
+  }
+  BRepAdaptor_Curve curve(e);
+  const double t = 0.5 * (curve.FirstParameter() + curve.LastParameter());
+  const gp_Pnt mid = curve.Value(t);
+  gp_Vec n1, in1, n2, in2;
+  if (!faceSideAt(e, f1, t, n1, in1) || !faceSideAt(e, f2, t, n2, in2)) {
+    setError("could not evaluate the faces at this edge");
+    return false;
+  }
+  const double v[12] = {mid.X(), mid.Y(), mid.Z(), in1.X(), in1.Y(), in1.Z(), in2.X(), in2.Y(), in2.Z(), n1.X(), n1.Y(), n1.Z()};
+  std::copy(v, v + 12, out);
   return true;
   SK_CATCH(false)
 }

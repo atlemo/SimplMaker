@@ -54,7 +54,10 @@ extension Feature.Kind {
             }
             self = .extrude(f)
         case .fillet(var f): f.size = change(f.size); self = .fillet(f)
-        case .chamfer(var f): f.size = change(f.size); self = .chamfer(f)
+        case .chamfer(var f):
+            f.size = change(f.size)
+            if !f.second.isEmpty { f.second = change(f.second) }
+            self = .chamfer(f)
         case .revolve(var f): f.angle = change(f.angle); self = .revolve(f)
         case .sweep, .loft, .combine: break
         case .rib(var f): f.thickness = change(f.thickness); self = .rib(f)

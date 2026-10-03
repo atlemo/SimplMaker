@@ -134,6 +134,15 @@ SKHandle sk_fillet(SKHandle body, const char *const *edgeNames, int count, doubl
 /// Equal-distance chamfer on the named edges. New faces: "<featureId>.chamfer.<edgeName>".
 SKHandle sk_chamfer(SKHandle body, const char *const *edgeNames, int count, double distance, const char *featureId);
 
+typedef enum SKChamferMode { SK_CHAMFER_EQUAL = 0, SK_CHAMFER_TWO_DISTANCES = 1, SK_CHAMFER_DISTANCE_ANGLE = 2 } SKChamferMode;
+/// Chamfer with its sides measured separately. Of the two faces at an edge, `faceNames[i]` (when it is one of them)
+/// is the face the first distance is measured on; otherwise the face with the smaller name is. `flip` takes the other.
+///   SK_CHAMFER_TWO_DISTANCES: `first` on that face, `second` on the other.
+///   SK_CHAMFER_DISTANCE_ANGLE: `first` on that face, at `second` (radians, 0 to 90 degrees exclusive) to it.
+/// SK_CHAMFER_EQUAL ignores the faces and `second`. New faces: "<featureId>.chamfer.<edgeName>".
+SKHandle sk_chamfer_ex(SKHandle body, const char *const *edgeNames, const char *const *faceNames, int count,
+                       SKChamferMode mode, double first, double second, bool flip, const char *featureId);
+
 // ----------------------------------------------------------------- queries ---
 int sk_body_face_count(SKHandle body);
 const char *sk_body_face_name(SKHandle body, int i);  // i matches SKMesh.triangleFace
@@ -161,6 +170,10 @@ bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out);
 /// direction the rounding grows in (into the material for outside corners, into the air for
 /// inside corners). False if the edge doesn't join two faces at an angle.
 bool sk_body_edge_handle(SKHandle body, const char *edgeName, double out[6]);
+/// Drag handles for a chamfer measured on each face (sides picked as in sk_chamfer_ex): out[0..2] = edge midpoint,
+/// out[3..5] = unit direction along the first face, away from the edge, out[6..8] = the same along the other face,
+/// out[9..11] = the first face's outward normal. False if the edge doesn't join two faces.
+bool sk_body_chamfer_handle(SKHandle body, const char *edgeName, const char *faceName, bool flip, double out[12]);
 double sk_body_volume(SKHandle body);
 bool sk_body_bounds(SKHandle body, double out[6]);  // xmin ymin zmin xmax ymax zmax
 bool sk_body_is_valid(SKHandle body);

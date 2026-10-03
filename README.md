@@ -62,6 +62,7 @@ SimplCAD is a normal Mac document app, with New, Open Recent, autosave, versions
   1. Click edges in the viewport (⇧-click to add more).
   2. Press **Fillet** or **Chamfer** in the toolbar.
   3. Set the radius or distance in the inspector. It can be an expression like `corner_r / 2`.
+  - **Chamfer types:** the small arrow beside the Chamfer button picks how it is measured: **Equal Distance Chamfer**, **Distance and Angle Chamfer** (a distance on one face and the angle to it) or **Two Distance Chamfer** (a distance on each face). The button then works that way until you pick another. The last two show an arrow and a size field for each value (Tab moves between them), and a Flip button (or the inspector's switch) puts the first distance on the edge's other face. With faces picked, the first distance is on the picked face.
 - **Navigation:**
   - Trackpad: two-finger scroll pans, ⇧ + scroll orbits, pinch zooms, rotate spins the view. You can swap pan and orbit in **Settings** (⌘,).
   - Mouse: drag on empty space orbits, right- or middle-drag pans, the wheel zooms.

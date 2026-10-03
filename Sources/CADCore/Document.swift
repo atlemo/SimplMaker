@@ -396,21 +396,86 @@ public struct RotateFeature: Codable, Hashable, Sendable {
     }
 }
 
+/// How a chamfer is measured.
+public enum ChamferMode: String, Codable, CaseIterable, Sendable {
+    /// The same distance from the edge on both faces.
+    case equalDistance
+    /// A distance on one face, and the angle the chamfer makes with it.
+    case distanceAngle
+    /// A distance on each face.
+    case twoDistances
+
+    public var title: String {
+        switch self {
+        case .equalDistance: return "Equal Distance Chamfer"
+        case .distanceAngle: return "Distance and Angle Chamfer"
+        case .twoDistances: return "Two Distance Chamfer"
+        }
+    }
+
+    /// The title under its icon in the toolbar.
+    public var shortTitle: String {
+        switch self {
+        case .equalDistance: return "Equal Distance"
+        case .distanceAngle: return "Distance and Angle"
+        case .twoDistances: return "Two Distance"
+        }
+    }
+
+    /// What the second value is: an angle, a length, or nothing.
+    public var secondKind: UnitKind? {
+        switch self {
+        case .equalDistance: return nil
+        case .distanceAngle: return .angle
+        case .twoDistances: return .length
+        }
+    }
+}
+
 /// Fillet (size = radius) or chamfer (size = distance) on a set of edges, and on every edge
 /// around a set of faces (found again at each rebuild, so they follow the face as it changes).
+/// A chamfer can also be measured two ways (`mode`): `size` is then the distance on one face, and
+/// `second` the distance on the other face or the angle to the first.
 public struct EdgeFeature: Codable, Hashable, Sendable {
     public var edges: [EdgeRef]
     public var faces: [FaceRef]
     public var size: String
-    public init(edges: [EdgeRef], faces: [FaceRef] = [], size: String) { self.edges = edges; self.faces = faces; self.size = size }
+    public var mode: ChamferMode
+    /// The chamfer's second distance or angle (see `mode`); empty for an equal-distance chamfer.
+    public var second: String
+    /// The first distance goes on the other of the edge's two faces. Without it: on the picked face when
+    /// faces were picked, else on the face with the smaller name.
+    public var flipped: Bool
 
-    private enum CodingKeys: String, CodingKey { case edges, faces, size }
+    public init(edges: [EdgeRef], faces: [FaceRef] = [], size: String, mode: ChamferMode = .equalDistance, second: String = "",
+                flipped: Bool = false) {
+        self.edges = edges; self.faces = faces; self.size = size; self.mode = mode; self.second = second; self.flipped = flipped
+    }
+
+    /// Switches how the chamfer is measured. The second value starts afresh when what it measures changes
+    /// (a length or an angle): the first distance again, or 45 degrees.
+    public mutating func setMode(_ new: ChamferMode) {
+        guard new != mode else { return }
+        let changesKind = new.secondKind != mode.secondKind
+        mode = new
+        guard changesKind else { return }
+        switch new {
+        case .equalDistance: second = ""
+        case .twoDistances: second = size
+        case .distanceAngle: second = "45 deg"
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey { case edges, faces, size, mode, second, flipped }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         edges = try c.decode([EdgeRef].self, forKey: .edges)
         faces = try c.decodeIfPresent([FaceRef].self, forKey: .faces) ?? []  // older files: edges only
         size = try c.decode(String.self, forKey: .size)
+        mode = try c.decodeIfPresent(ChamferMode.self, forKey: .mode) ?? .equalDistance
+        second = try c.decodeIfPresent(String.self, forKey: .second) ?? ""
+        flipped = try c.decodeIfPresent(Bool.self, forKey: .flipped) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -418,6 +483,9 @@ public struct EdgeFeature: Codable, Hashable, Sendable {
         try c.encode(edges, forKey: .edges)
         if !faces.isEmpty { try c.encode(faces, forKey: .faces) }
         try c.encode(size, forKey: .size)
+        if mode != .equalDistance { try c.encode(mode, forKey: .mode) }
+        if !second.isEmpty { try c.encode(second, forKey: .second) }
+        if flipped { try c.encode(flipped, forKey: .flipped) }
     }
 }
 

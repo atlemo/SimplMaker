@@ -1028,8 +1028,14 @@ struct DesignToolbar: View {
 
     private func group(_ title: String, id: String, _ tools: [DesignTool], defaults: [DesignTool]) -> some View {
         ToolGroup(title, id: id, defaults: defaults.map(\.rawValue), tools: tools.map { tool in
-            GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool.symbol, help: tool.help, shortcut: tool.key,
-                      active: model.pendingTool == tool) { model.run(tool) }
+            // Chamfer has three ways of measuring: its button works the way chosen last, and the arrow beside it chooses.
+            let modes = tool != .chamfer ? [] : ChamferMode.allCases.map { mode in
+                GroupTool(id: mode.rawValue, title: mode.shortTitle, icon: mode.symbol, help: mode.help,
+                          active: model.chamferMode == mode) { model.chooseChamferMode(mode) }
+            }
+            return GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool == .chamfer ? model.chamferMode.symbol : tool.symbol,
+                             help: tool == .chamfer ? model.chamferMode.help : tool.help, shortcut: tool.key,
+                             active: model.pendingTool == tool, modes: modes) { model.run(tool) }
         })
     }
 }

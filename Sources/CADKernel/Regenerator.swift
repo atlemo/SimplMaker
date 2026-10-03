@@ -807,30 +807,41 @@ public enum Regenerator {
         // Group edges per body, keeping order.
         var order: [FeatureID] = []
         var byBody: [FeatureID: [String]] = [:]
-        func add(_ body: FeatureID, _ edge: String) {
+        // The face an edge came with (a picked face's edges), where a chamfer measures its first distance.
+        var pickedFace: [FeatureID: [String: String]] = [:]
+        func add(_ body: FeatureID, _ edge: String, from face: String? = nil) {
             if byBody[body] == nil { order.append(body) }
             if byBody[body]?.contains(edge) != true { byBody[body, default: []].append(edge) }
+            if let face, pickedFace[body]?[edge] == nil { pickedFace[body, default: [:]][edge] = face }
         }
         for e in f.edges { add(e.body, e.edge) }
         // A face stands for every edge around it, as the face is now.
         for face in f.faces {
             guard let b = r.body(face.body) else { throw KernelError(message: "body is missing") }
-            for edge in try b.faceEdges(face.face) { add(face.body, edge) }
+            for edge in try b.faceEdges(face.face) { add(face.body, edge, from: face.face) }
         }
         // Record the inputs first, so the drag handle still shows when the size is invalid.
         for bodyID in order {
             if let b = r.body(bodyID) { r.edgeFeatureInputs[feature.id, default: [:]][bodyID] = b }
         }
         let size = try r.parameters.value(of: f.size, kind: .length)
+        // A chamfer measured two ways has a second value: a distance on the other face, or an angle.
+        var second = 0.0
+        if !fillet, let kind = f.mode.secondKind { second = try r.parameters.value(of: f.second, kind: kind) }
         for bodyID in order {
             guard let i = r.bodies.firstIndex(where: { $0.id == bodyID }) else {
                 throw KernelError(message: "body is missing")
             }
             let edges = byBody[bodyID]!
             let b = r.bodies[i].body
-            r.bodies[i].body = try fillet
-                ? b.fillet(edges: edges, radius: size, featureID: feature.id)
-                : b.chamfer(edges: edges, distance: size, featureID: feature.id)
+            if fillet {
+                r.bodies[i].body = try b.fillet(edges: edges, radius: size, featureID: feature.id)
+            } else if f.mode == .equalDistance {
+                r.bodies[i].body = try b.chamfer(edges: edges, distance: size, featureID: feature.id)
+            } else {
+                r.bodies[i].body = try b.chamfer(edges: edges, faces: edges.map { pickedFace[bodyID]?[$0] ?? "" }, mode: f.mode,
+                                                 first: size, second: second, flipped: f.flipped, featureID: feature.id)
+            }
         }
         if fillet { r.rounds.append((feature.name, size)) }
     }

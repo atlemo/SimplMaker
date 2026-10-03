@@ -322,14 +322,18 @@ extension DocumentModel {
 
     /// Whether an extrude goes against its sketch's (or face's) normal; nil for other features.
     func isFlipped(_ id: FeatureID) -> Bool? {
-        if case .extrude(let e)? = document.features.first(where: { $0.id == id })?.kind { return e.flipped }
-        return nil
+        switch document.features.first(where: { $0.id == id })?.kind {
+        case .extrude(let e)?: return e.flipped
+        case .chamfer(let e)? where e.mode != .equalDistance: return e.flipped  // which face the first distance is on
+        default: return nil
+        }
     }
 
     func toggleFlip(_ id: FeatureID) {
         storeTypedSize()
         updateFeature(id, "Flip") { f in
             if case .extrude(var e) = f.kind { e.flipped.toggle(); f.kind = .extrude(e) }
+            if case .chamfer(var e) = f.kind { e.flipped.toggle(); f.kind = .chamfer(e) }
         }
     }
 

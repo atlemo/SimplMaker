@@ -345,9 +345,19 @@ struct EdgeInspector: View {
         }
     }
 
+    private var firstLabel: String {
+        if fillet { return "Radius" }
+        return edges.mode == .twoDistances ? "Distance 1" : "Distance"
+    }
+
     var body: some View {
         Section(fillet ? "Fillet" : "Chamfer") {
-            LabeledContent(fillet ? "Radius" : "Distance") {
+            if !fillet {
+                Picker("Type", selection: Binding(get: { edges.mode }, set: { model.setChamferMode($0, of: id) })) {
+                    ForEach(ChamferMode.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+            }
+            LabeledContent(firstLabel) {
                 ExpressionField(text: edges.size, preview: { v in
                     model.preview(id) { f in
                         switch f.kind {
@@ -358,12 +368,26 @@ struct EdgeInspector: View {
                     }
                 }) { v in update(fillet ? "Edit Radius" : "Edit Distance") { $0.size = v } }
             }
+            if !fillet, edges.mode != .equalDistance {
+                LabeledContent(edges.mode == .twoDistances ? "Distance 2" : "Angle") {
+                    ExpressionField(text: edges.second, preview: { v in
+                        model.preview(id) { f in
+                            if case .chamfer(var e) = f.kind { e.second = v; f.kind = .chamfer(e) }
+                        }
+                    }) { v in update(edges.mode == .twoDistances ? "Edit Distance" : "Edit Angle") { $0.second = v } }
+                }
+                Toggle(edges.mode == .twoDistances ? "Swap the two faces" : "Measure on the other face", isOn: Binding(get: { edges.flipped }, set: { v in
+                    update("Flip Chamfer") { $0.flipped = v }
+                }))
+                .help(edges.mode == .twoDistances ? "Swap which face each distance is measured on"
+                      : "Measure the distance, and the angle, on the edge's other face")
+            }
             if model.previewInvalid, model.dragHandle?.featureID == id {
                 Label("Too large for the neighbouring faces", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
                     .font(.caption)
             } else {
-                Text("Or drag the orange arrow in the viewport.").font(.caption).foregroundStyle(.secondary)
+                Text(!fillet && edges.mode != .equalDistance ? "Or drag the orange arrows in the viewport." : "Or drag the orange arrow in the viewport.").font(.caption).foregroundStyle(.secondary)
             }
         }
         let last = edges.edges.count + edges.faces.count == 1  // keep at least one thing to round

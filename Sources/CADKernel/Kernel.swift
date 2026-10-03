@@ -1,5 +1,6 @@
 // Swift wrappers around the SimplKernel C API. Handles are released in deinit.
 // SPDX-License-Identifier: GPL-3.0-or-later
+import CADCore
 import CKernel
 import Foundation
 
@@ -289,6 +290,28 @@ public final class KBody: @unchecked Sendable {
 
     public func chamfer(edges: [String], distance: Double, featureID: String) throws -> KBody {
         try withCStrings(edges) { try KBody.wrap(sk_chamfer(handle, $0, Int32(edges.count), distance, featureID), "chamfer") }
+    }
+
+    /// A chamfer measured on each side. The first distance is on `faces[i]` (when that is one of the edge's two
+    /// faces, else on the one with the smaller name), the second on the other: a second distance, or an angle.
+    public func chamfer(edges: [String], faces: [String], mode: ChamferMode, first: Double, second: Double, flipped: Bool,
+                        featureID: String) throws -> KBody {
+        precondition(edges.count == faces.count)
+        let raw: SKChamferMode = mode == .twoDistances ? SK_CHAMFER_TWO_DISTANCES : mode == .distanceAngle ? SK_CHAMFER_DISTANCE_ANGLE : SK_CHAMFER_EQUAL
+        return try withCStrings(edges) { e in
+            try withCStrings(faces) { f in
+                try KBody.wrap(sk_chamfer_ex(handle, e, f, Int32(edges.count), raw, first, second, flipped, featureID), "chamfer")
+            }
+        }
+    }
+
+    /// Where a chamfer's drag handles go on an edge: its midpoint, the directions across the two faces away from
+    /// the edge (the first is the one the first distance is measured on) and that face's outward normal.
+    public func chamferHandle(_ edge: String, face: String = "", flipped: Bool = false)
+        throws -> (origin: SIMD3<Double>, first: SIMD3<Double>, second: SIMD3<Double>, normal: SIMD3<Double>) {
+        var o = [Double](repeating: 0, count: 12)
+        guard sk_body_chamfer_handle(handle, edge, face, flipped, &o) else { throw KernelError.last("chamfer handle") }
+        return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]), SIMD3(o[6], o[7], o[8]), SIMD3(o[9], o[10], o[11]))
     }
 
     public var faceNames: [String] {

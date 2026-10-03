@@ -669,3 +669,24 @@ extension DocumentModel {
         return chain
     }
 }
+
+extension ChamferMode {
+    /// A glyph name from IconGlyphs.swift.
+    var symbol: String {
+        switch self {
+        case .equalDistance: return "chamfer-equal"
+        case .distanceAngle: return "chamfer-angle"
+        case .twoDistances: return "chamfer-two"
+        }
+    }
+
+    /// The tooltip: what it does, and how it is worked.
+    var help: String {
+        let how = "bevel the selected edges, or every edge around a selected face"
+        switch self {
+        case .equalDistance: return "\(title) (C): \(how), the same distance on both faces"
+        case .distanceAngle: return "\(title) (C): \(how), by a distance on one face and the angle to it"
+        case .twoDistances: return "\(title) (C): \(how), with a distance on each face"
+        }
+    }
+}

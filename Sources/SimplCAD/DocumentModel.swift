@@ -451,6 +451,25 @@ final class DocumentModel {
         if selectedFeature == id { selectedFeature = nil }
     }
 
+    /// How the next chamfer is measured: the way the Chamfer button works, until another is chosen from its arrow.
+    var chamferMode = ChamferMode.equalDistance
+
+    /// A way of chamfering chosen from the toolbar: it becomes the Chamfer button's way, and starts the tool
+    /// (or, with the tool already waiting for edges, only changes how it will measure).
+    func chooseChamferMode(_ mode: ChamferMode) {
+        chamferMode = mode
+        if pendingTool == .chamfer { overlayRevision += 1 } else { run(.chamfer) }
+    }
+
+    /// Changes how a chamfer feature is measured.
+    func setChamferMode(_ mode: ChamferMode, of id: FeatureID) {
+        updateFeature(id, "Change Chamfer Type") { f in
+            guard case .chamfer(var e) = f.kind else { return }
+            e.setMode(mode)
+            f.kind = .chamfer(e)
+        }
+    }
+
     /// Creates a fillet or chamfer on the selected edges, and all round the selected faces.
     func addEdgeFeature(fillet: Bool) {
         let edges: [EdgeRef] = selection.compactMap { pick in
@@ -462,7 +481,11 @@ final class DocumentModel {
         let faces = selection.compactMap { faceRef($0) }
         guard !edges.isEmpty || !faces.isEmpty else { return }
         let base = fillet ? "Fillet" : "Chamfer"
-        let edgeFeature = EdgeFeature(edges: edges, faces: faces, size: fillet ? "2 mm" : "1 mm")
+        var edgeFeature = EdgeFeature(edges: edges, faces: faces, size: fillet ? "2 mm" : "1 mm")
+        if !fillet {
+            edgeFeature.setMode(chamferMode)
+            if chamferMode == .twoDistances { edgeFeature.second = "2 mm" }  // a different start, so the two arrows tell apart
+        }
         add(Feature(name: document.nextName(base), fillet ? .fillet(edgeFeature) : .chamfer(edgeFeature)))
     }
 
@@ -1103,7 +1126,11 @@ final class DocumentModel {
         guard let id = selectedFeature, sketchSession == nil, pendingTool == nil, holeMoveStart == nil,
               let f = document.features.first(where: { $0.id == id }) else { return [] }
         let count: Int
-        if case .hole(let h) = f.kind { count = h.depth == nil ? 1 : 2 } else { count = 1 }
+        switch f.kind {
+        case .hole(let h): count = h.depth == nil ? 1 : 2
+        case .chamfer(let e): count = e.mode == .equalDistance ? 1 : 2  // two distances, or a distance and an angle
+        default: count = 1
+        }
         return (0..<count).compactMap { handle(for: id, slot: $0) }
     }
 
@@ -1148,8 +1175,18 @@ final class DocumentModel {
             let ref = ef.edges.first ?? ef.faces.first.flatMap { face in
                 (try? result.edgeFeatureInputs[id]?[face.body]?.faceEdges(face.face))?.first.map { EdgeRef(body: face.body, edge: $0) }
             }
-            guard let ref, let body = result.edgeFeatureInputs[id]?[ref.body],
-                  let h = try? body.edgeHandle(ref.edge) else { return nil }
+            guard let ref, let body = result.edgeFeatureInputs[id]?[ref.body] else { return nil }
+            if case .chamfer = f.kind, ef.mode != .equalDistance {
+                // Measured on each face: an arrow along each face away from the edge (the first on the face the
+                // first distance is on); for an angle, the second arrow sets it, standing off the edge.
+                let face = ef.edges.isEmpty ? (ef.faces.first { (try? body.faceEdges($0.face))?.contains(ref.edge) == true }?.face ?? "") : ""
+                guard let c = try? body.chamferHandle(ref.edge, face: face, flipped: ef.flipped) else { return nil }
+                if slot == 0 { return handle(ef.mode == .twoDistances ? "Distance 1" : "Distance", c.origin, c.first, ef.size) }
+                if ef.mode == .twoDistances { return handle("Distance 2", c.origin, c.second, ef.second) }
+                let first = (try? params.value(of: ef.size, kind: .length)) ?? 1
+                return handle("Angle", c.origin, -c.normal, ef.second, unit: .angle, per: max(2 * first, 6), max: .pi / 2 - 0.01)
+            }
+            guard let h = try? body.edgeHandle(ref.edge) else { return nil }
             if case .fillet = f.kind { return handle("Radius", h.origin, h.direction, ef.size) }
             return handle("Distance", h.origin, h.direction, ef.size)
         case .revolve(let rv):
@@ -1553,7 +1590,7 @@ final class DocumentModel {
             ef.size = text
             doc.features[i].kind = .fillet(ef)
         case .chamfer(var ef):
-            ef.size = text
+            if slot == 1, ef.mode != .equalDistance { ef.second = text } else { ef.size = text }
             doc.features[i].kind = .chamfer(ef)
         case .revolve(var r):
             r.angle = text
