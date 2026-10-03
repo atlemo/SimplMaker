@@ -366,8 +366,8 @@ final class Renderer {
     static let colorFormat = MTLPixelFormat.bgra8Unorm
     /// How wide (in points) a body edge is for clicking and hovering; it is drawn 1.6 wide.
     static let edgePickWidth: Float = 5
-    /// A selected body edge: 1 pt black, 1 pt selection colour, 1 pt black.
-    static let selectedEdgeWidth: Float = 3
+    /// A selected body edge: 2 pt black, 2 pt selection colour, 2 pt black.
+    static let selectedEdgeWidth: Float = 6
     static let depthFormat = MTLPixelFormat.depth32Float
 
     init?() {
