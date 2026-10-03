@@ -19,8 +19,8 @@ extension Feature {
         case .hole: return DesignTool.hole.symbol
         case .thread: return DesignTool.thread.symbol
         case .pipe: return DesignTool.pipe.symbol
-        case .move(let m): return m.rotating ? DesignTool.rotate.symbol : DesignTool.move.symbol
-        case .rotate: return DesignTool.rotate.symbol
+        case .move: return DesignTool.move.symbol
+        case .rotate: return "rotate-cw"  // from older files
         case .scale: return DesignTool.scale.symbol
         case .combine: return DesignTool.combine.symbol
         case .plane: return DesignTool.plane.symbol

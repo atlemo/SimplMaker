@@ -1127,7 +1127,7 @@ struct ImportInspector: View {
             LabeledContent("Size", value: imported.data.count.formatted(.byteCount(style: .file)))
             Button("Replace File…") { model.replaceImport(id) }
                 .disabled(model.isImporting)
-            Text("The file is kept in the part, so it rebuilds without the original. Move or Rotate places it.")
+            Text("The file is kept in the part, so it rebuilds without the original. Move places it.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

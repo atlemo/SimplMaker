@@ -5,7 +5,7 @@ import Foundation
 import Testing
 @testable import SimplCAD
 
-/// The sketch toolbar's Move, Rotate and Scale.
+/// The sketch toolbar's Move (which also rotates) and Scale.
 @Suite @MainActor struct SketchTransformToolTests {
     private func settle(_ model: DocumentModel) async throws {
         try await Task.sleep(for: .milliseconds(5))
@@ -42,7 +42,7 @@ import Testing
         #expect(session.canTransform && session.transformTargetDescription == "the whole sketch")
         session.beginTransform(.move)
         #expect(session.manipulating == .move && session.transformRequested == nil, "Move shows the manipulator, not a popover")
-        #expect(session.inputFields == [.moveX, .moveY])
+        #expect(session.inputFields == [.moveX, .moveY, .turn], "one tool slides and turns")
         type(model, [.moveX: "5", .moveY: "-2 mm"])
         #expect(session.message == nil)
         let s = try #require(committed(model))
@@ -80,7 +80,7 @@ import Testing
     @Test func letGoWithoutMovingChangesNothing() async throws {
         let (model, session, _) = try await editing()
         let before = try #require(committed(model))
-        session.beginTransform(.rotate)
+        session.beginTransform(.move)
         #expect(session.beginManipulatorDrag(.axis(.x)))
         model.endManipulatorDrag()
         #expect(committed(model) == before && session.sketch == before)
@@ -89,7 +89,7 @@ import Testing
     @Test func aDragTheConstraintsForbidGoesBackWithAReason() async throws {
         let (model, session, _) = try await editing()
         let before = try #require(committed(model))
-        session.beginTransform(.rotate)
+        session.beginTransform(.move)
         #expect(session.beginManipulatorDrag(.axis(.x)))
         var v = TransformValues()
         v.turn = SIMD3(0, 0, 0.5)  // a tilt the rectangle's horizontal and vertical lines forbid
@@ -132,8 +132,8 @@ import Testing
     @Test func rotateTurnsTheSelectionAboutItsMiddle() async throws {
         let (model, session, lines) = try await editing()
         session.selection = lines
-        session.beginTransform(.rotate)
-        #expect(session.inputFields == [.turn])
+        session.beginTransform(.move)
+        #expect(session.inputFields == [.moveX, .moveY, .turn])
         type(model, [.turn: "90"])  // a bare number is degrees
         let s = try #require(committed(model))
         // 10 × 4 about (25, 22) becomes 4 × 10 about the same middle.
@@ -145,7 +145,7 @@ import Testing
     @Test func aTiltThatTheRectanglesConstraintsForbidIsRefused() async throws {
         let (model, session, _) = try await editing()
         let before = try #require(committed(model))
-        session.beginTransform(.rotate)
+        session.beginTransform(.move)
         type(model, [.turn: "30"])
         #expect(session.message?.contains("horizontal, vertical") == true)
         #expect(committed(model) == before && session.sketch == before, "the preview is taken back")
@@ -169,7 +169,7 @@ import Testing
         type(model, [.moveX: "0", .moveY: "0"])
         #expect(session.message?.contains("zero") == true)
         session.beginTransform(.move)  // off
-        session.beginTransform(.rotate)
+        session.beginTransform(.move)
         type(model, [.turn: "360"])
         #expect(session.message?.contains("zero") == true)
         #expect(committed(model) == before, "nothing changed")
@@ -217,7 +217,7 @@ import Testing
         session.beginTransform(.move)
         session.beginTransform(.move)
         #expect(session.manipulating == nil)
-        session.beginTransform(.rotate)
+        session.beginTransform(.move)
         session.setTool(.line)
         #expect(session.manipulating == nil)
         session.beginTransform(.scale)

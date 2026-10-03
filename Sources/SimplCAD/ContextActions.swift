@@ -69,8 +69,7 @@ extension DocumentModel {
             .action("Fillet Face Edges", symbol: DesignTool.fillet.symbol) { self.selection = [pick]; self.run(.fillet) },
             .action("Chamfer Face Edges", symbol: DesignTool.chamfer.symbol) { self.selection = [pick]; self.run(.chamfer) },
             .separator,
-            .action("Move Body", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.selection = [pick]; self.run(.move) },
-            .action("Rotate Body", symbol: "rotate.right") { self.selection = [pick]; self.run(.rotate) },
+            .action("Move or Rotate Body", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.selection = [pick]; self.run(.move) },
             .action("Combine with Other Bodies…", symbol: "square.on.square.intersection.dashed") {
                 self.selection = [pick]
                 self.run(.combine)
@@ -114,7 +113,7 @@ extension DocumentModel {
     private func sketchOwnerItems(_ sketch: FeatureID) -> [ContextItem] {
         [.separator,
          .action("Edit \(featureName(sketch))", symbol: "pencil") { self.editSketch(sketch) },
-         .action("Move \(featureName(sketch))", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.move(sketches: [sketch]) },
+         .action("Move or Rotate \(featureName(sketch))", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.move(sketches: [sketch]) },
          .action("Scale \(featureName(sketch))", symbol: "arrow.up.left.and.arrow.down.right") { self.scale(sketches: [sketch]) },
          .action("Hide \(featureName(sketch))", symbol: "eye.slash") { self.setHidden([sketch], true) }]
     }

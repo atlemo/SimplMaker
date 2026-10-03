@@ -9,13 +9,12 @@ import Observation
 
 /// The sketch tools that change existing geometry as a whole, each with a popover for its values.
 enum SketchTransformTool: String, CaseIterable, Identifiable {
-    case move = "Move", rotate = "Rotate", scale = "Scale", pattern = "Pattern"
+    case move = "Move", scale = "Scale", pattern = "Pattern"
     var id: String { rawValue }
 
     var symbol: String {
         switch self {
         case .move: return "move"
-        case .rotate: return "rotate-cw"
         case .scale: return "scaling"
         case .pattern: return "pattern"
         }
@@ -23,8 +22,7 @@ enum SketchTransformTool: String, CaseIterable, Identifiable {
 
     var help: String {
         switch self {
-        case .move: return "Move the selected curves (or the whole sketch): drag the arrows or the square, or type a distance"
-        case .rotate: return "Turn the selected curves (or the whole sketch): drag the ring, or type an angle"
+        case .move: return "Move or rotate the selected curves (or the whole sketch): drag the arrows, the square or the ring, or type a distance or an angle"
         case .scale: return "Make the selected curves (or the whole sketch) bigger or smaller"
         case .pattern: return "Copy the selected curves (or the whole sketch) in a grid or around a point: drag the arrows or the ring, or type the counts and spacing"
         }
@@ -178,7 +176,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
 enum SketchInput: String, CaseIterable, Identifiable {
     case length = "Length", angle = "Angle", width = "Width", height = "Height"
     case diameter = "Diameter", radius = "Radius", sweep = "Sweep"
-    /// What Move and Rotate take, for the manipulator: how far along x and y, and how far to turn.
+    /// What Move takes, for the manipulator: how far along x and y, and how far to turn.
     case moveX = "Move X", moveY = "Move Y", turn = "Rotate"
     /// What Pattern takes: how many copies (the original counts) and how far apart.
     case countX = "Count X", spacingX = "Spacing X", countY = "Count Y", spacingY = "Spacing Y"
@@ -274,9 +272,9 @@ final class SketchSession {
     private(set) var hover: EntityID?
     /// Set by the Offset command to ask the toolbar to show the offset distance popover.
     var offsetRequested = false
-    /// Set by Move, Rotate and Scale to ask the toolbar to show that tool's popover.
+    /// Set by Scale to ask the toolbar to show that tool's popover.
     var transformRequested: SketchTransformTool?
-    /// Move or Rotate is on: the manipulator sits on the selection (or the whole sketch) for dragging it.
+    /// Move is on (it slides and turns): the manipulator sits on the selection (or the whole sketch) for dragging it.
     private(set) var manipulating: SketchTransformTool?
     /// How far the manipulator has moved (x, y, mm) and turned (z, radians) the selection, while dragging or typing.
     private(set) var manipulatorValues = TransformValues()
@@ -747,7 +745,7 @@ final class SketchSession {
     /// The fields for the current drawing step.
     var inputFields: [SketchInput] {
         if let patternSetup { return patternSetup.kind == .rectangular ? [.countX, .spacingX, .countY, .spacingY] : [.copies, .spread] }
-        if let manipulating { return manipulating == .rotate ? [.turn] : [.moveX, .moveY] }
+        if manipulating != nil { return [.moveX, .moveY, .turn] }
         switch (tool, clicks.count) {
         case (.line, 1): return [.length, .angle]
         case (.rectangle, 1), (.centerRectangle, 1): return [.width, .height]
@@ -903,7 +901,7 @@ final class SketchSession {
     /// Whether there is anything to move: the selection, or with none, the whole sketch.
     var canTransform: Bool { sketch.points.contains { !$0.fixed } }
 
-    /// The Move and Rotate buttons turn the manipulator on (or off, pressed again); Scale asks for a factor.
+    /// The Move button turns the manipulator on (or off, pressed again); Scale asks for a factor.
     func beginTransform(_ tool: SketchTransformTool) {
         guard canTransform else { return }
         if tool == .scale { transformRequested = tool; return }
@@ -1004,12 +1002,12 @@ final class SketchSession {
         return v
     }
 
-    /// Return in a Move or Rotate field: keep the typed move and turn.
+    /// Return in a Move field: keep the typed move and turn.
     private func commitTypedTransform() -> String? {
         guard !inputFields.contains(where: typedIsInvalid) else { return failTransform("That isn't a distance or an angle") }
         let v = typedTransform
         cancelManipulatorPreview()
-        guard !isIdentity(v) else { return failTransform(manipulating == .rotate ? "The angle is zero" : "The move is zero") }
+        guard !isIdentity(v) else { return failTransform("The move and the angle are zero") }
         guard captureManipulatorBase() else { return nil }
         manipulatorBase = nil
         return commitTransform(v)
@@ -1034,7 +1032,7 @@ final class SketchSession {
         return adopt(trial, turns && moves ? "Move and Rotate" : turns ? "Rotate" : "Move")
     }
 
-    /// What Move, Rotate and Scale work on, for the popover: "3 selected" or "the whole sketch".
+    /// What Move and Scale work on, for the popover: "3 selected" or "the whole sketch".
     var transformTargetDescription: String {
         let n = selection.filter { sketch.kind(of: $0) != nil }.count
         return n == 0 ? "the whole sketch" : "\(n) selected"
@@ -1740,7 +1738,7 @@ final class SketchSession {
     var statusText: String {
         if let message { return message }
         if patternSetup != nil { return message ?? patternHint }
-        var s = manipulating == nil ? tool.hint : "Drag an arrow, the square or the ring to \(manipulating == .rotate ? "turn" : "move") \(selection.isEmpty ? "the sketch" : "the selection") · or type the values · Esc to stop"
+        var s = manipulating == nil ? tool.hint : "Drag an arrow, the square or the ring to move or turn \(selection.isEmpty ? "the sketch" : "the selection") · or type the values · Esc to stop"
         if let snap = lastSnap { s = "Snap: \(snap.kind.rawValue)\(snap.kind == .grid ? " \(gridStep.map { formatDimension($0, kind: .length) } ?? "")" : "") · " + s }
         if !inputFields.isEmpty, manipulating == nil {
             s = "Type a value, Tab for the next one, Return to place it · " + s

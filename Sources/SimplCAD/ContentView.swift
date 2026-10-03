@@ -522,7 +522,7 @@ struct Sidebar: View {
                     if model.sketchSession?.featureID == id { model.finishSketch() } else { model.editSketch(id) }
                 }
                 Button(model.isHidden(id) ? "Show Sketch" : "Hide Sketch") { model.setHidden([id], !model.isHidden(id)) }
-                Button("Move Sketch") { model.move(sketches: [id]) }
+                Button("Move or Rotate Sketch") { model.move(sketches: [id]) }
                 Button("Scale Sketch") { model.scale(sketches: [id]) }
                 Button("Rename Sketch") { renaming = id }
             } else if case .plane = f.kind {
@@ -535,7 +535,7 @@ struct Sidebar: View {
                 Button("Rename Canvas") { renaming = id }
             } else if model.bodies.contains(where: { $0.id == id }) {
                 Button(model.isHidden(id) ? "Show Body" : "Hide Body") { model.setHidden([id], !model.isHidden(id)) }
-                Button("Move Body") { model.move(bodies: [id]) }
+                Button("Move or Rotate Body") { model.move(bodies: [id]) }
                 Button("Rename Body") { renaming = id }
                 Button("Appearance…") { model.openAppearance(for: id) }
                 Menu("Export Body") {
@@ -953,7 +953,7 @@ struct SketchToolbar: View {
     }
 
     private func transform(_ tool: SketchTransformTool) -> GroupTool {
-        // Move and Rotate show the manipulator to drag (or type into); Scale asks for a factor.
+        // Move shows the manipulator to drag (or type into); Scale asks for a factor.
         GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool.symbol, help: tool.help,
                   active: session.manipulating == tool || (tool == .pattern && session.isPatterning),
                   enabled: tool == .pattern ? session.canPattern : session.canTransform,
@@ -1103,8 +1103,8 @@ struct DimensionEditor: View {
     }
 }
 
-/// Asks for the factor of Scale, and applies it to the selection (or the whole sketch). Move and Rotate
-/// have the manipulator in the viewport instead.
+/// Asks for the factor of Scale, and applies it to the selection (or the whole sketch). Move
+/// has the manipulator in the viewport instead.
 struct TransformPopover: View {
     let model: DocumentModel
     let session: SketchSession

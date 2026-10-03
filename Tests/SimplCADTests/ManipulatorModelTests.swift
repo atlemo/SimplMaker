@@ -146,7 +146,7 @@ import Testing
         d.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s)))]
         let model = DocumentModel(document: d)
         try await settle(model)
-        model.move(sketches: ["sk"], rotating: true)
+        model.move(sketches: ["sk"])
         try await settle(model)
         let mid = try #require(model.manipulatorMiddle)
         #expect(abs(mid.x - 5) < 1e-6 && abs(mid.y - 2) < 1e-6, "the sketch's own middle: \(mid)")

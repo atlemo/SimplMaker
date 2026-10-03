@@ -71,8 +71,9 @@ import Testing
         let model = DocumentModel(document: d)
         try await settle(model)
         model.click(PickID(body: 0, face: 0), additive: false)
-        model.run(.rotate)
+        model.run(.move)
         try await settle(model)
+        model.setRotating(true, of: try #require(model.selectedFeature))
         #expect(!model.previewHandle("p1"))
         #expect(model.handleProblem == "That's a length (13 mm), but this needs an angle")
         #expect(!model.commitHandle("p2"))
@@ -143,10 +144,12 @@ import Testing
 
     @Test func rotatePreviewsWhileTyping() async throws {
         let m = try await model()
-        m.run(.rotate)
+        m.run(.move)
         #expect(m.picksWholeBodies)
         m.click(PickID(body: 0, face: 0), additive: false)
         try await settle(m)
+        m.setRotating(true, of: try #require(m.selectedFeature))
+        m.setTransformAxis(.z, of: try #require(m.selectedFeature))
         let before = try #require(m.result?.body("b")?.bounds)
         m.handleDraft = "90"
         #expect(m.previewHandle("90"))

@@ -1,4 +1,4 @@
-// The Move/Rotate manipulator's side of the model: which feature it is on, where it sits, and what
+// The Move manipulator's side of the model: which feature it is on, where it sits, and what
 // dragging one of its parts does to the feature (a live preview, then one undo step).
 // SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
@@ -74,7 +74,7 @@ extension DocumentModel {
     var manipulatorMiddle: SIMD3<Double>? { manipulatedFeature.flatMap { manipulatorMiddle($0.id, $0.move) } }
 
     /// Where the manipulator is drawn and how it is laid out: on the selected Move feature, or, in a
-    /// sketch, on what the Move or Rotate tool works on, in the sketch's plane.
+    /// sketch, on what the Move tool works on, in the sketch's plane.
     var manipulatorPlacement: (middle: SIMD3<Double>, turn: SIMD3<Double>, frame: ManipulatorFrame)? {
         if let session = sketchSession {
             guard let m = session.manipulatorMiddle else { return nil }
@@ -96,7 +96,7 @@ extension DocumentModel {
 
     /// The part the typed field is for.
     var manipulatorActivePart: ManipulatorPart? {
-        if let session = sketchSession { return session.manipulating == .rotate ? .ring(.z) : nil }
+        if sketchSession != nil { return nil }
         return manipulatedFeature.map { $0.move.rotating ? .ring($0.move.arrow) : .axis($0.move.arrow) }
     }
 

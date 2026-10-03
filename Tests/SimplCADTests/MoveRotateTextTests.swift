@@ -41,13 +41,13 @@ import Testing
     @Test func rotateTurnsAboutTheMiddle() async throws {
         let model = DocumentModel(document: boxDoc())
         try await settle(model)
-        model.run(.rotate)
-        #expect(model.pendingTool == .rotate && model.toolPrompt == "Click the bodies or sketches to rotate")
+        model.run(.move)
+        #expect(model.pendingTool == .move && model.toolPrompt == "Click the bodies or sketches to move or rotate")
         model.click(PickID(body: 0, face: 0), additive: false)
-        // The same feature and manipulator as Move, with the Z ring ready for an angle.
         guard case .move(let r)? = model.document.features.last?.kind else { Issue.record("expected a move"); return }
-        #expect(r.rotating && r.arrow == .z && r.bodies == ["b"] && model.document.features.last?.name == "Rotate1")
+        #expect(!r.rotating && r.arrow == .x && r.bodies == ["b"] && model.document.features.last?.name == "Move1")
         try await settle(model)
+        model.activateManipulatorPart(.ring(.z))  // the same tool: grabbing the Z ring makes the field an angle
         #expect(model.dragHandle?.label == "Rotate Z")
         #expect(model.commitHandle("90"))
         try await settle(model)
