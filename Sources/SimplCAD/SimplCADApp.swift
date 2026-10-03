@@ -12,6 +12,7 @@ struct SimplCADApp: App {
         // Lets `swift run SimplCAD` show a normal, focusable app without an .app bundle.
         // (Use scripts/bundle-app.sh or Xcode for the full document experience.)
         NSApplication.shared.setActivationPolicy(.regular)
+        _ = ParameterCompleter.shared  // starts listening to the number fields
     }
 
     var body: some Scene {

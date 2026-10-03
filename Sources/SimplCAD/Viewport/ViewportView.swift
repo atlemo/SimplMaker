@@ -946,6 +946,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         for slot in slots where handleFields[slot] == nil {
             let field = ValueField(frame: .zero)
             field.handleSlot = slot
+            field.completions = { [weak self] in self?.model?.completionCandidates() ?? [] }
             field.delegate = self
             field.onFocus = { [weak self] in self?.model?.activeHandleSlot = slot }
             layer.addSubview(field)
@@ -1091,6 +1092,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             label.toolTip = input.rawValue
             let field = ValueField(frame: .zero)
             field.input = input
+            field.completions = { [weak self] in self?.model?.completionCandidates() ?? [] }
             field.delegate = self
             field.toolTip = "\(input.rawValue): type a value or an expression · Tab for the next · Return to place it"
             field.widthAnchor.constraint(equalToConstant: 92).isActive = true
@@ -1428,7 +1430,10 @@ enum ContextMenuBuilder {
 }
 
 /// A small editable number field in the viewport (a handle's size, a typed sketch value).
-final class ValueField: NSTextField {
+final class ValueField: NSTextField, ParameterCompleting {
+    /// The words typed here that may be completed (the document's parameters); nil for a field of plain text.
+    var completions: (() -> [CompletionCandidate])?
+    var completionSource: (() -> [CompletionCandidate])? { completions }
     /// The sketch value this field edits; nil for a drag handle's field.
     var input: SketchInput?
     /// Which of the selected feature's arrows this field sizes; nil for a sketch field.

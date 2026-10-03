@@ -12,11 +12,11 @@ struct InspectorView: View {
             Form {
                 Section {
                     LabeledContent("Name") {
-                        ExpressionField(text: feature.name, monospaced: false) { model.renameFeature(id, to: $0) }
+                        ExpressionField(text: feature.name, monospaced: false, completes: false) { model.renameFeature(id, to: $0) }
                     }
                     if feature.createsBody, let body = model.bodies.first(where: { $0.id == id }) {
                         LabeledContent("Body name") {
-                            ExpressionField(text: body.name, monospaced: false) { model.renameBody(id, to: $0) }
+                            ExpressionField(text: body.name, monospaced: false, completes: false) { model.renameBody(id, to: $0) }
                         }
                     }
                     LabeledContent("Type", value: feature.typeName)
@@ -63,7 +63,7 @@ struct InspectorView: View {
             Form {
                 Section("Body") {
                     LabeledContent("Name") {
-                        ExpressionField(text: b.name, monospaced: false) { model.renameBody(body, to: $0) }
+                        ExpressionField(text: b.name, monospaced: false, completes: false) { model.renameBody(body, to: $0) }
                     }
                     LabeledContent("Volume", value: String(format: "%.2f mm³", b.body.volume))
                     LabeledContent("Made by") {
@@ -138,7 +138,7 @@ struct SketchInspector: View {
             Section("Text") {
                 ForEach(sketch.sketch.texts) { t in
                     LabeledContent("Text") {
-                        ExpressionField(text: t.text) { v in updateText(t.id) { $0.text = v } }
+                        ExpressionField(text: t.text, completes: false) { v in updateText(t.id) { $0.text = v } }
                     }
                     LabeledContent("Height") {
                         ExpressionField(text: t.height) { v in updateText(t.id) { $0.height = v } }

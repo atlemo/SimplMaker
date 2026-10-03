@@ -153,6 +153,7 @@ struct DocumentWindow: View {
             }
         }
         .focusedSceneValue(\.documentModel, model)
+        .environment(\.completionModel, model)
         .onAppear {
             model.undoManager = undoManager
             model.fileURL = fileURL
@@ -747,7 +748,7 @@ struct ParameterRow: View {
             if let renameError {
                 Text(renameError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
-            ExpressionField(text: parameter.expression) { model.setParameter(parameter.name, expression: $0) }
+            ExpressionField(text: parameter.expression, excluding: parameter.name) { model.setParameter(parameter.name, expression: $0) }
             let users = model.document.features(using: parameter.name).map(\.name)
             Text(users.isEmpty ? "Not used yet · type \(parameter.name) in any size field" : "Used by \(users.joined(separator: ", "))")
                 .font(.caption)
@@ -770,13 +771,21 @@ struct ExpressionField: View {
     let commit: (String) -> Void
     /// Expressions are monospaced; plain text (a name) isn't.
     var monospaced = true
+    /// Whether typing a parameter's name is completed: for values, not for names and words.
+    var completes = true
+    /// A parameter's own name, which its expression can't use.
+    var excluding: String?
+    @Environment(\.completionModel) private var completionModel
     @State private var draft = ""
     @State private var edited = false
     @FocusState private var focused: Bool
 
-    init(text: String, monospaced: Bool = true, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
+    init(text: String, monospaced: Bool = true, completes: Bool = true, excluding: String? = nil,
+         preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
         self.text = text
         self.monospaced = monospaced
+        self.completes = completes
+        self.excluding = excluding
         self.preview = preview
         self.commit = commit
     }
@@ -787,6 +796,7 @@ struct ExpressionField: View {
             .textFieldStyle(.roundedBorder)
             .font(monospaced ? .body.monospaced() : .body)
             .focused($focused)
+            .completesParameters(completes ? completionModel : nil, excluding: excluding, focused: focused)
             .onSubmit { edited = false; commit(draft) }
             .onAppear { draft = text }
             .onChange(of: text) { draft = text; edited = false }
@@ -1041,6 +1051,7 @@ struct DimensionEditor: View {
                     .font(.body.monospaced())
                     .frame(width: 180)
                     .focused($focused)
+                    .completesParameters(model, focused: focused)
                     .onSubmit(commit)
                     .onExitCommand(perform: onDone)
                 Button("Set", action: commit).keyboardShortcut(.defaultAction)
@@ -1110,6 +1121,7 @@ struct TransformPopover: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.body.monospaced())
                 .frame(width: 140)
+                .completesParameters(model, focused: focus && focused)
                 .onSubmit(commit)
             if focus { box.focused($focused) } else { box }
         }
@@ -1143,6 +1155,7 @@ struct OffsetPopover: View {
                     .font(.body.monospaced())
                     .frame(width: 160)
                     .focused($focused)
+                    .completesParameters(model, focused: focused)
                     .onSubmit(commit)
                 Button("Offset", action: commit).keyboardShortcut(.defaultAction)
             }
