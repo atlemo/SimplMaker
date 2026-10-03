@@ -43,6 +43,10 @@ struct SimplCADApp: App {
 /// Launch and Dock behaviour for a document app with a welcome window.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        Updater.shared.start()
+    }
+
     /// No empty document at launch while the welcome window is on; the Window scene presents it.
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
         !Preferences.showsWelcome
@@ -61,6 +65,7 @@ struct SimplCADCommands: Commands {
     @FocusedValue(\.documentModel) private var model
     @Environment(\.newDocument) private var newDocument
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject private var updater = Updater.shared
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     @AppStorage(Preferences.snapToGrid) private var snapToGrid = true
     @AppStorage(Preferences.showGrid) private var showGrid = true
@@ -69,6 +74,10 @@ struct SimplCADCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About SimplCAD") { AboutPanel.show() }
+            if updater.isAvailable {
+                Button("Check for Updates…") { updater.checkForUpdates() }
+                    .disabled(!updater.canCheckForUpdates)
+            }
         }
         CommandGroup(after: .newItem) {
             Button("New Demo Part") { newDocument { CADFile(document: .demo()) } }

@@ -33,6 +33,8 @@ scripts/test-kernel.sh     # C-level kernel regression test (also runs on Linux)
 scripts/bundle-app.sh      # release build → dist/SimplCAD.app
 ```
 
+The version comes from `VERSION`, and the build number from the commit count. The bundle embeds Sparkle for updates: it turns the updater on only when `Packaging/sparkle-public-key.txt` exists (the public EdDSA key from Sparkle's `generate_keys`), and reads the feed from `SPARKLE_FEED_URL` or `https://simplcad.com/updates/appcast.xml`. `scripts/bundle-app.sh --release` signs with a Developer ID certificate for distribution.
+
 Launch the bundled app rather than using `swift run`. The bundle declares the `.simplcad` document type, which Open Recent, autosave and versions depend on. You can also open `Package.swift` in Xcode.
 
 ## Using it

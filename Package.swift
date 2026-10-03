@@ -17,6 +17,10 @@ let package = Package(
         .library(name: "CADCore", targets: ["CADCore"]),
         .library(name: "CADKernel", targets: ["CADKernel"]),
     ],
+    dependencies: [
+        // Auto-updates (appcast + EdDSA-signed archives). A binary framework, embedded by scripts/bundle-app.sh.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
+    ],
     targets: [
         // C API over OpenCASCADE (C++ inside, plain C header outside).
         .target(
@@ -38,8 +42,10 @@ let package = Package(
         // The macOS app (SwiftUI + Metal).
         .executableTarget(
             name: "SimplCAD",
-            dependencies: ["CADCore", "CADKernel"],
-            path: "Sources/SimplCAD"
+            dependencies: ["CADCore", "CADKernel", .product(name: "Sparkle", package: "Sparkle")],
+            path: "Sources/SimplCAD",
+            // SwiftPM executables only look for frameworks next to the binary; an .app keeps them in Contents/Frameworks.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(name: "CADCoreTests", dependencies: ["CADCore"], path: "Tests/CADCoreTests"),
         .testTarget(name: "CADKernelTests", dependencies: ["CADCore", "CADKernel"], path: "Tests/CADKernelTests"),

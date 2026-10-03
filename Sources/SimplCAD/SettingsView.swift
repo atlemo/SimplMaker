@@ -121,6 +121,7 @@ struct SettingsView: View {
     @AppStorage(Preferences.gridSizeMetric) private var gridSizeMetric = 0.0
     @AppStorage(Preferences.gridSizeUS) private var gridSizeUS = 0.0
     @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
+    @ObservedObject private var updater = Updater.shared
 
     var body: some View {
         TabView {
@@ -130,6 +131,11 @@ struct SettingsView: View {
                     Text("Off, SimplCAD opens an empty part at launch instead. The window is always available under Window → Welcome to SimplCAD.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if updater.isAvailable {
+                        Toggle("Check for updates automatically", isOn: Binding(
+                            get: { updater.automaticallyChecksForUpdates },
+                            set: { updater.automaticallyChecksForUpdates = $0 }))
+                    }
                 }
                 .formStyle(.grouped)
             }
