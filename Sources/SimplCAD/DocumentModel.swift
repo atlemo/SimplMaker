@@ -1804,20 +1804,32 @@ final class DocumentModel {
         return true
     }
 
-    func export(stl: Bool) {
-        guard let bodies = result?.bodies.map(\.body), !bodies.isEmpty else {
+    /// Exports the bodies, or just the ones with these ids, to an STL or STEP file the user picks.
+    func export(bodies ids: [FeatureID]? = nil, stl: Bool) {
+        let wanted = result?.bodies.filter { ids?.contains($0.id) ?? true } ?? []
+        guard !wanted.isEmpty else {
             alert = AlertInfo(title: "There's nothing to export", message: "Create a body first, for example by extruding a sketch.")
             return
         }
         let panel = NSSavePanel()
         let ext = stl ? "stl" : "step"
         if let type = UTType(filenameExtension: ext) { panel.allowedContentTypes = [type] }
-        panel.nameFieldStringValue = (fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled") + ".\(ext)"
+        let base = ids == nil ? (fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled")
+            : (wanted.count == 1 ? bodies.first { $0.id == wanted[0].id }?.name : nil) ?? fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled"
+        panel.nameFieldStringValue = "\(base).\(ext)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        write(wanted.map(\.body), stl: stl, to: url)
+    }
+
+    /// Writes bodies to a file, alerting if that fails. False if it did.
+    @discardableResult
+    func write(_ bodies: [KBody], stl: Bool, to url: URL) -> Bool {
         do {
             if stl { try KBody.exportSTL(bodies, to: url) } else { try KBody.exportSTEP(bodies, to: url) }
+            return true
         } catch {
             alert = AlertInfo(title: "The export failed", message: "\(error)")
+            return false
         }
     }
 }

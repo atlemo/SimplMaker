@@ -126,6 +126,10 @@ extension DocumentModel {
         let bodyName = bodies.first { $0.id == body }?.name ?? "Body"
         items.append(.action("Appearance…", symbol: "paintpalette") { self.openAppearance(for: body) })
         items.append(.action("Hide \(bodyName)", symbol: "eye.slash") { self.setHidden([body], true) })
+        items.append(.submenu("Export \(bodyName)", [
+            .action("STEP…") { self.export(bodies: [body], stl: false) },
+            .action("STL…") { self.export(bodies: [body], stl: true) },
+        ]))
         return items
     }
 

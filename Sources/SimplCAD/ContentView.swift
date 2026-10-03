@@ -538,6 +538,10 @@ struct Sidebar: View {
                 Button("Move Body") { model.move(bodies: [id]) }
                 Button("Rename Body") { renaming = id }
                 Button("Appearance…") { model.openAppearance(for: id) }
+                Menu("Export Body") {
+                    Button("STEP…") { model.export(bodies: [id], stl: false) }
+                    Button("STL…") { model.export(bodies: [id], stl: true) }
+                }
             }
             Divider()
             Button(f.suppressed ? "Unsuppress" : "Suppress") {
@@ -748,7 +752,7 @@ struct ParameterRow: View {
             if let renameError {
                 Text(renameError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
-            ExpressionField(text: parameter.expression, excluding: parameter.name) { model.setParameter(parameter.name, expression: $0) }
+            ExpressionField(text: parameter.expression, excluding: parameter.name, whiteWhenFocused: true) { model.setParameter(parameter.name, expression: $0) }
             let users = model.document.features(using: parameter.name).map(\.name)
             Text(users.isEmpty ? "Not used yet · type \(parameter.name) in any size field" : "Used by \(users.joined(separator: ", "))")
                 .font(.caption)
@@ -775,17 +779,20 @@ struct ExpressionField: View {
     var completes = true
     /// A parameter's own name, which its expression can't use.
     var excluding: String?
+    /// Focusing the field highlights its row (as in the Parameters list), so its text turns white.
+    var whiteWhenFocused = false
     @Environment(\.completionModel) private var completionModel
     @State private var draft = ""
     @State private var edited = false
     @FocusState private var focused: Bool
 
     init(text: String, monospaced: Bool = true, completes: Bool = true, excluding: String? = nil,
-         preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
+         whiteWhenFocused: Bool = false, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
         self.text = text
         self.monospaced = monospaced
         self.completes = completes
         self.excluding = excluding
+        self.whiteWhenFocused = whiteWhenFocused
         self.preview = preview
         self.commit = commit
     }
@@ -795,6 +802,7 @@ struct ExpressionField: View {
             .labelsHidden()  // in a Form row the label beside the field would read "expression"
             .textFieldStyle(.roundedBorder)
             .font(monospaced ? .body.monospaced() : .body)
+            .foregroundStyle(whiteWhenFocused && focused ? Color.white : Color.primary)
             .focused($focused)
             .completesParameters(completes ? completionModel : nil, excluding: excluding, focused: focused)
             .onSubmit { edited = false; commit(draft) }
