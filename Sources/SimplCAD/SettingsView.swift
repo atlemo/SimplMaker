@@ -13,6 +13,7 @@ enum Preferences {
     static let unitSystem = "unitSystem"
     static let gridSizeMetric = "gridSizeMetric"
     static let gridSizeUS = "gridSizeUS"
+    static let sketchPaper = "sketchPaper"
 
     /// The tools pinned to a toolbar group (see ToolGroups.swift), by the group's id.
     static func toolbarPins(_ group: String) -> String { "toolbarPins.\(group)" }
@@ -32,6 +33,42 @@ enum Preferences {
     static var showsWelcome: Bool { UserDefaults.standard.object(forKey: showWelcome) as? Bool ?? true }
     /// Sketch points snap to a grid that follows the zoom (on by default; ⌥ turns all snapping off).
     static var snapsToGrid: Bool { UserDefaults.standard.object(forKey: snapToGrid) as? Bool ?? true }
+
+    /// The colour of the background while a sketch is open, like tinted drafting paper, so it's obvious
+    /// you're sketching. Soft blue by default; "None" keeps the model's background.
+    enum SketchPaper: String, CaseIterable, Identifiable {
+        case blue, green, cream, none
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .blue: return "Soft blue"
+            case .green: return "Soft green"
+            case .cream: return "Cream"
+            case .none: return "None (same as the model)"
+            }
+        }
+        /// The paper colour in a light and in a dark window; nil for None.
+        func color(dark: Bool) -> SIMD3<Float>? {
+            switch self {
+            case .blue: return dark ? SIMD3(0.10, 0.17, 0.29) : SIMD3(0.78, 0.87, 0.96)
+            case .green: return dark ? SIMD3(0.10, 0.20, 0.17) : SIMD3(0.78, 0.92, 0.84)
+            case .cream: return dark ? SIMD3(0.19, 0.17, 0.12) : SIMD3(0.96, 0.93, 0.82)
+            case .none: return nil
+            }
+        }
+        /// The toolbar's colour while sketching (it carries white controls): a deeper shade of the paper,
+        /// or the system accent colour, which is itself blue, for blue and None.
+        var toolbarTint: Color {
+            switch self {
+            case .green: return Color(red: 0.16, green: 0.46, blue: 0.33)
+            case .cream: return Color(red: 0.55, green: 0.47, blue: 0.27)
+            case .blue, .none: return .accentColor
+            }
+        }
+    }
+    static var sketchPaperSetting: SketchPaper {
+        SketchPaper(rawValue: UserDefaults.standard.string(forKey: sketchPaper) ?? "") ?? .blue
+    }
 
     /// Which units the grid is laid out in. By default whatever macOS is set to (System Settings ▸
     /// General ▸ Language & Region ▸ Measurement System); everything inside a model stays in mm.
@@ -83,6 +120,7 @@ struct SettingsView: View {
     @AppStorage(Preferences.unitSystem) private var unitSystem = Preferences.UnitSystem.system
     @AppStorage(Preferences.gridSizeMetric) private var gridSizeMetric = 0.0
     @AppStorage(Preferences.gridSizeUS) private var gridSizeUS = 0.0
+    @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
 
     var body: some View {
         TabView {
@@ -125,12 +163,18 @@ struct SettingsView: View {
                     Text("The size of one square of the sketch grid, which \"Snap to Grid\" snaps to. Automatic picks a round size that follows the zoom; a fixed size is thinned out only when zoomed far out.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Picker("Sketch background", selection: $sketchPaper) {
+                        ForEach(Preferences.SketchPaper.allCases) { Text($0.title).tag($0) }
+                    }
+                    Text("While a sketch is open the background is tinted like drafting paper, so it's clear you're in sketch mode.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Toggle("Show axes", isOn: $showAxes)
                     Toggle("Show sketch constraints", isOn: $showConstraints)
                 }
                 .formStyle(.grouped)
             }
         }
-        .frame(width: 460, height: 380)
+        .frame(width: 460, height: 440)
     }
 }

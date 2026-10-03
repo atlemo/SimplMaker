@@ -169,7 +169,7 @@ struct ViewportPalette: Equatable {
         a.background == b.background && a.face == b.face && a.lineScale == b.lineScale && a.sketch == b.sketch
     }
 
-    static func make(dark: Bool, increaseContrast: Bool) -> ViewportPalette {
+    static func make(dark: Bool, increaseContrast: Bool, paper: SIMD3<Float>? = nil) -> ViewportPalette {
         var p: ViewportPalette
         if dark {
             p = ViewportPalette(
@@ -206,6 +206,17 @@ struct ViewportPalette: Equatable {
             p.wireEdge = dark ? SIMD4(0.96, 0.96, 0.98, 1) : SIMD4(0, 0, 0, 1)
             p.region.w = 0.3
             p.plane.w = 0.35
+        }
+        if let paper {
+            // Tinted drafting paper: the grid is the paper itself, a little darker (lighter in a dark window).
+            func line(_ strength: Float) -> SIMD4<Float> {
+                let ink: SIMD3<Float> = dark ? SIMD3(1, 1, 1) : SIMD3(0.1, 0.2, 0.4)
+                let s = increaseContrast ? strength * 1.8 : strength
+                return SIMD4(simd_mix(paper, ink, SIMD3(repeating: s)), 1)
+            }
+            p.background = SIMD4(paper, 1)
+            p.gridMinor = line(dark ? 0.07 : 0.12)
+            p.grid = line(dark ? 0.15 : 0.25)
         }
         return p
     }

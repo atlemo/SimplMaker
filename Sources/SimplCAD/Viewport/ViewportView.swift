@@ -102,11 +102,22 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     // MARK: appearance
 
+    /// While a sketch is open the background is tinted like drafting paper (a setting).
+    var sketching = false
+    /// The viewport is in a dark appearance. The labels over it pick their own colours from this, so
+    /// they stay readable over the sketch paper whatever the window around them is doing.
+    private(set) var isDark = false
+    var sketchPaper = Preferences.SketchPaper.blue
+
     /// Picks viewport colours for light/dark mode and Increase Contrast.
     func applyAppearance() {
         guard let renderer else { return }
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        renderer.palette = .make(dark: dark, increaseContrast: NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast)
+        isDark = dark
+        labels.values.forEach { $0.dark = dark }
+        glyphViews.values.forEach { $0.dark = dark }
+        renderer.palette = .make(dark: dark, increaseContrast: NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast,
+                                 paper: sketching ? sketchPaper.color(dark: dark) : nil)
         let b = renderer.palette.background
         clearColor = MTLClearColor(red: Double(b.x), green: Double(b.y), blue: Double(b.z), alpha: 1)
         needsDisplay = true
@@ -822,6 +833,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 view = existing
             } else {
                 view = DimensionLabelView(frame: .zero)
+                view.dark = isDark
                 let id = l.id
                 view.onClick = { [weak self] in self?.labelClicked(id) }
                 addSubview(view)
@@ -1288,6 +1300,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 view = existing
             } else {
                 view = ConstraintGlyphView(frame: .zero)
+                view.dark = isDark
                 let constraint = g.constraint
                 view.onClick = { [weak self] additive in
                     self?.model?.selectSketchItem(constraint, additive: additive)
@@ -1323,11 +1336,19 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 /// A small clickable constraint symbol.
 final class ConstraintGlyphView: NSTextField {
     var onClick: ((_ additive: Bool) -> Void)?
-    var isSelectedGlyph = false {
-        didSet {
-            backgroundColor = isSelectedGlyph ? .selectedContentBackgroundColor : .controlBackgroundColor
-            textColor = isSelectedGlyph ? .alternateSelectedControlTextColor : .secondaryLabelColor
+    var isSelectedGlyph = false { didSet { updateAppearance() } }
+    var dark = false { didSet { updateAppearance() } }
+
+    /// Fixed colours (not the system's dynamic ones), so the symbol keeps its contrast over any sketch paper.
+    private func updateAppearance() {
+        if isSelectedGlyph {
+            backgroundColor = .selectedContentBackgroundColor
+            textColor = .alternateSelectedControlTextColor
+        } else {
+            backgroundColor = dark ? NSColor(white: 0.14, alpha: 0.92) : NSColor(white: 1, alpha: 0.92)
+            textColor = dark ? NSColor(white: 0.85, alpha: 1) : NSColor(white: 0.2, alpha: 1)
         }
+        layer?.borderColor = (dark ? NSColor(white: 1, alpha: 0.3) : NSColor(white: 0, alpha: 0.3)).cgColor
     }
 
     override init(frame: NSRect) {
@@ -1337,13 +1358,11 @@ final class ConstraintGlyphView: NSTextField {
         isBordered = false
         drawsBackground = true
         alignment = .center
-        backgroundColor = .controlBackgroundColor
-        textColor = .secondaryLabelColor
         font = .systemFont(ofSize: 10, weight: .semibold)
         wantsLayer = true
         layer?.cornerRadius = DS.Radius.xs
         layer?.borderWidth = 0.5
-        layer?.borderColor = NSColor.separatorColor.cgColor
+        updateAppearance()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -1356,8 +1375,10 @@ final class ConstraintGlyphView: NSTextField {
 /// A small clickable value label for a sketch dimension (or, lighter, a measured size).
 final class DimensionLabelView: NSTextField {
     var onClick: (() -> Void)?
-    var isReference = false
+    var isReference = false { didSet { updateAppearance() } }
     var isEditingHighlight = false { didSet { updateAppearance() } }
+    /// See ConstraintGlyphView.dark: the colours are fixed, chosen for the viewport's light or dark look.
+    var dark = false { didSet { updateAppearance() } }
     /// The pointer is over the label (or the margin around it that answers a click): it lights up as a button.
     private var isHovered = false { didSet { updateAppearance() } }
     private var tracking: NSTrackingArea?
@@ -1368,14 +1389,17 @@ final class DimensionLabelView: NSTextField {
             textColor = .alternateSelectedControlTextColor
             layer?.borderWidth = 0
         } else if isHovered {
-            backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.3)
-            textColor = .labelColor
+            backgroundColor = dark ? NSColor(white: 0.14, alpha: 0.95).blended(withFraction: 0.35, of: .controlAccentColor)
+                : NSColor(white: 1, alpha: 0.95).blended(withFraction: 0.3, of: .controlAccentColor)
+            textColor = dark ? .white : .black
             layer?.borderColor = NSColor.controlAccentColor.cgColor
             layer?.borderWidth = 1
         } else {
-            backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(isReference ? 0.5 : 0.85)
-            textColor = isReference ? .secondaryLabelColor : .labelColor
-            layer?.borderWidth = 0
+            // Opaque enough to read over the grid and a tinted paper; a measured size is the quieter of the two.
+            backgroundColor = dark ? NSColor(white: 0.12, alpha: isReference ? 0.8 : 0.92) : NSColor(white: 1, alpha: isReference ? 0.8 : 0.92)
+            textColor = dark ? NSColor(white: isReference ? 0.78 : 1, alpha: 1) : NSColor(white: isReference ? 0.3 : 0, alpha: 1)
+            layer?.borderColor = (dark ? NSColor(white: 1, alpha: 0.25) : NSColor(white: 0, alpha: 0.25)).cgColor
+            layer?.borderWidth = 0.5
         }
     }
 
@@ -1398,11 +1422,10 @@ final class DimensionLabelView: NSTextField {
         isSelectable = false
         isBordered = false
         drawsBackground = true
-        backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.85)
         font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        textColor = .labelColor
         wantsLayer = true
         layer?.cornerRadius = DS.Radius.xs
+        updateAppearance()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -1506,6 +1529,7 @@ struct ViewportView: NSViewRepresentable {
     let showGrid: Bool
     /// Grid square and unit setting, so a change in Settings redraws the sketch grid.
     var gridSetting = ""
+    var sketchPaper = Preferences.SketchPaper.blue
     var showAxes = true
     let showConstraints: Bool
     /// Widths covered by the floating panels, so the camera centres on what's left.
@@ -1566,6 +1590,11 @@ struct ViewportView: NSViewRepresentable {
         if view.gridSetting != gridSetting {
             view.gridSetting = gridSetting
             view.needsDisplay = true
+        }
+        if view.sketching != (model.sketchSession != nil) || view.sketchPaper != sketchPaper {
+            view.sketching = model.sketchSession != nil
+            view.sketchPaper = sketchPaper
+            view.applyAppearance()
         }
         view.showConstraints = showConstraints
         if let before { view.animateCamera(to: before) }

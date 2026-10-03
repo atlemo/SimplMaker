@@ -25,6 +25,7 @@ struct DocumentWindow: View {
     @AppStorage(Preferences.unitSystem) private var unitSystem = Preferences.UnitSystem.system
     @AppStorage(Preferences.gridSizeMetric) private var gridSizeMetric = 0.0
     @AppStorage(Preferences.gridSizeUS) private var gridSizeUS = 0.0
+    @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
     @AppStorage(Preferences.showAxes) private var showAxes = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     /// The window's width: below this, the Finish Sketch button drops its title so the sketch
@@ -53,12 +54,12 @@ struct DocumentWindow: View {
                          highlighted: model.highlighted, fitRevision: model.fitRevision,
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
                          visualStyle: model.visualStyle,
-                         showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
+                         showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                        Panel.bottomInset(timeline: model.showTimeline)))
                 .ignoresSafeArea()
-            ToolbarFade(tint: sketchTint ? .accentColor : Color(nsColor: .windowBackgroundColor),
+            ToolbarFade(tint: sketchTint ? sketchPaper.toolbarTint : Color(nsColor: .windowBackgroundColor),
                         height: toolbarHeight, visible: toolbarHovered || sketchTint)
             VStack(spacing: Panel.inset) {
             HStack(alignment: .top, spacing: 0) {
