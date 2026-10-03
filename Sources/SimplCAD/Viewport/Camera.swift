@@ -33,6 +33,51 @@ enum CameraCommand {
     case standard(StandardView)
 }
 
+/// Where a camera stands and where it looks: what a view change animates between.
+struct CameraPose: Equatable {
+    var target: SIMD3<Float>
+    var distance: Float
+    var yaw: Float
+    var pitch: Float
+
+    /// The pose a fraction `t` (0...1) of the way from this one to `goal`: turning the short way round, and
+    /// zooming by the same factor each step, so a big change in distance doesn't rush at the end.
+    func blended(to goal: CameraPose, _ t: Float) -> CameraPose {
+        CameraPose(target: target + (goal.target - target) * t,
+                   distance: distance * pow(goal.distance / distance, t),
+                   yaw: yaw + remainder(goal.yaw - yaw, 2 * .pi) * t,
+                   pitch: pitch + (goal.pitch - pitch) * t)
+    }
+
+    /// Whether the two are the same view, give or take rounding.
+    func isClose(to other: CameraPose) -> Bool {
+        simd_length(target - other.target) < 1e-3 * max(distance, 1) && abs(distance / other.distance - 1) < 1e-3
+            && abs(remainder(yaw - other.yaw, 2 * .pi)) < 1e-4 && abs(pitch - other.pitch) < 1e-4
+    }
+
+    /// Slow at both ends: 0...1 in, 0...1 out.
+    static func eased(_ t: Float) -> Float { t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2 }
+}
+
+/// Remembers the view from before a sketch was opened, so closing the sketch can go back to it.
+struct SketchCameraMemory {
+    private var sketching = false
+    private var saved: CameraPose?
+
+    /// Tell it, on every update, whether a sketch is open and where the camera is now. Returns the view to
+    /// return to when that update closed the sketch.
+    mutating func update(sketching now: Bool, camera: CameraPose) -> CameraPose? {
+        guard now != sketching else { return nil }
+        sketching = now
+        if now {
+            saved = camera
+            return nil
+        }
+        defer { saved = nil }
+        return saved
+    }
+}
+
 struct Camera {
     var target = SIMD3<Float>(30, 20, 0)
     var distance: Float = 220
@@ -45,6 +90,11 @@ struct Camera {
     var centerShift = SIMD2<Float>(0, 0)
     /// How much of the view's width and height is uncovered, 0...1 (used to fit the model into it).
     var visibleFraction = SIMD2<Float>(1, 1)
+
+    var pose: CameraPose {
+        get { CameraPose(target: target, distance: distance, yaw: yaw, pitch: pitch) }
+        set { target = newValue.target; distance = newValue.distance; yaw = newValue.yaw; pitch = newValue.pitch }
+    }
 
     /// Half the visible height at the target, in mm (used for orthographic size and panning).
     var halfHeight: Float { distance * tan(fovY / 2) }

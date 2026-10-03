@@ -165,6 +165,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     private var viewCube: ViewCubeView?
     private var cameraAnimation: Task<Void, Never>?
+    /// Whether the view is moving by itself (a turn to a view, leaving a sketch).
+    var isAnimatingCamera: Bool { cameraAnimation != nil }
+
+    func stopCameraAnimation() {
+        cameraAnimation?.cancel()
+        cameraAnimation = nil
+    }
 
     /// The navigation cube, in the top-right corner of the part of the view the panels leave free.
     private func layoutViewCube() {
@@ -193,23 +200,37 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// eye), about the same target and at the same distance.
     private func animateCamera(along direction: SIMD3<Float>) {
         guard let renderer else { return }
-        cameraAnimation?.cancel()
         var goal = renderer.camera
         goal.look(along: direction, at: goal.target)
-        let yaw0 = renderer.camera.yaw, pitch0 = renderer.camera.pitch
-        let dYaw = remainder(goal.yaw - yaw0, 2 * .pi), dPitch = goal.pitch - pitch0  // the short way round
-        let start = Date(), duration = 0.3
+        animateCamera(to: goal.pose, duration: 0.3)
+    }
+
+    /// Moves the camera smoothly to `goal`. The user taking hold of the view (orbit, pan, zoom, a new view)
+    /// ends it where it is; with Reduce Motion on, it jumps.
+    func animateCamera(to goal: CameraPose, duration: TimeInterval = 0.5) {
+        guard let renderer else { return }
+        stopCameraAnimation()
+        let start = renderer.camera.pose
+        guard !start.isClose(to: goal) else { return }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            renderer.camera.pose = goal
+            needsDisplay = true
+            return
+        }
+        let began = Date()
         cameraAnimation = Task { @MainActor [weak self] in
+            var last = start
             while !Task.isCancelled {
                 guard let self, let renderer = self.renderer else { return }
-                let t = min(Date().timeIntervalSince(start) / duration, 1)
-                let e = Float(t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2)  // ease in and out
-                renderer.camera.yaw = yaw0 + dYaw * e
-                renderer.camera.pitch = pitch0 + dPitch * e
+                if renderer.camera.pose != last { break }  // moved by something else in between: let it be
+                let t = Float(min(Date().timeIntervalSince(began) / duration, 1))
+                last = start.blended(to: goal, CameraPose.eased(t))
+                renderer.camera.pose = last
                 self.needsDisplay = true
-                if t >= 1 { return }
+                if t >= 1 { break }
                 try? await Task.sleep(for: .milliseconds(16))
             }
+            if !Task.isCancelled { self?.cameraAnimation = nil }  // a newer animation is not ours to clear
         }
     }
 
@@ -1494,6 +1515,7 @@ struct ViewportView: NSViewRepresentable {
         var sceneRevision = -1
         var fitRevision = -1
         var cameraRevision = 0
+        var sketchCamera = SketchCameraMemory()
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -1517,6 +1539,9 @@ struct ViewportView: NSViewRepresentable {
         guard let renderer = view.renderer else { return }
         view.panelInsets = panelInsets  // before any fit below
         let c = context.coordinator
+        // Closing a sketch turns the flat view back to the one it was opened from. Noted before any camera
+        // command below, which moves the camera to the new sketch.
+        let before = c.sketchCamera.update(sketching: model.sketchSession != nil, camera: renderer.camera.pose)
         if c.sceneRevision != sceneRevision {
             c.sceneRevision = sceneRevision
             renderer.setScene(model.visibleMeshes)
@@ -1543,8 +1568,10 @@ struct ViewportView: NSViewRepresentable {
             view.needsDisplay = true
         }
         view.showConstraints = showConstraints
+        if let before { view.animateCamera(to: before) }
         if c.cameraRevision != cameraRevision, let cmd = model.cameraCommand {
             c.cameraRevision = cameraRevision
+            view.stopCameraAnimation()
             switch cmd.command {
             case .look(let target, let normal):
                 renderer.camera.look(along: normal, at: target)
