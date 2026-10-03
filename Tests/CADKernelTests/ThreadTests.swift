@@ -174,4 +174,51 @@ import Testing
         doc.features = [NewFeatureTests.box("b", "10", "10", "10"), Self.thread(FaceRef(body: "b", face: "b.top"), "M8x1.25")]
         #expect(Regenerator.regenerate(doc).errors["th"]?.contains("round face") == true)
     }
+
+    /// A block with two holes of one size side by side, and their walls.
+    static func twoHoles() throws -> (features: [Feature], walls: [FaceRef]) {
+        let block = NewFeatureTests.box("b", "30", "30", "15")
+        var doc = CADDocument()
+        doc.features = [block]
+        let top = try Regenerator.regenerate(doc).body("b")!.faceFrame("b.top")
+        let d = SIMD3<Double>(0, 0, 15) - top.origin
+        let u = (d * top.xAxis).sum(), v = (d * top.yAxis).sum()
+        let holes = [("h1", -8.0), ("h2", 8.0)].map { id, dx in
+            Feature(id: id, name: id, .hole(HoleFeature(face: FaceRef(body: "b", face: "b.top"), u: "\(u + dx)", v: "\(v)",
+                                                        diameter: "6.8", depth: nil)))
+        }
+        doc.features = [block] + holes
+        let drilled = try #require(Regenerator.regenerate(doc).body("b"))
+        let walls = try ["h1", "h2"].map { id in
+            FaceRef(body: "b", face: try #require(drilled.faceNames.first { $0.hasPrefix("\(id).hole.wall") }))
+        }
+        return ([block] + holes, walls)
+    }
+
+    @Test func oneThreadCanCutSeveralHoles() throws {
+        let (features, walls) = try Self.twoHoles()
+        let single = try NewFeatureTests.regen(features + [Self.thread(walls[0], "M8x1.25")])
+        let both = Feature(id: "th", name: "th", .thread(ThreadFeature(face: walls[0], moreFaces: [walls[1]], size: "M8x1.25")))
+        let r = try NewFeatureTests.regen(features + [both])
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let body = try #require(r.body("b"))
+        #expect(body.isValid)
+        #expect(body.faceNames.contains { $0.hasPrefix("th.thread") } && body.faceNames.contains { $0.hasPrefix("th.2.thread") })
+        // Each hole is bored out and grooved the same way, so the second one removes as much as the first.
+        let drilled = try #require(NewFeatureTests.regen(features).body("b")).volume
+        let first = drilled - (try #require(single.body("b"))).volume
+        let total = drilled - body.volume
+        #expect(first > 0 && abs(total - 2 * first) / (2 * first) < 0.02, "one hole \(first), both \(total)")
+    }
+
+    @Test func threadsFromBeforeSeveralFacesStillOpen() throws {
+        // A file from before the key existed: the same thing without `moreFaces`.
+        let face = FaceRef(body: "b", face: "b.side")
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(ThreadFeature(face: face))) as? [String: Any])
+        #expect(json.removeValue(forKey: "moreFaces") != nil)
+        let t = try JSONDecoder().decode(ThreadFeature.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(t.faces == [FaceRef(body: "b", face: "b.side")])
+        let again = try JSONDecoder().decode(ThreadFeature.self, from: try JSONEncoder().encode(t))
+        #expect(again == t)
+    }
 }

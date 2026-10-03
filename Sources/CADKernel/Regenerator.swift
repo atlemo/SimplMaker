@@ -660,17 +660,22 @@ public enum Regenerator {
     }
 
     static func thread(_ f: ThreadFeature, _ feature: Feature, _ r: inout RegenResult) throws {
-        guard let i = r.bodies.firstIndex(where: { $0.id == f.face.body }) else {
-            throw KernelError(message: "the body with the thread's face is missing")
-        }
         guard let size = f.standard.size(f.size) else { throw KernelError(message: "there is no \(f.standard.rawValue) size \(f.size)") }
         let length = try f.length.map { try r.parameters.value(of: $0, kind: .length) }
         if let length, length <= 0 { throw KernelError(message: "the thread length must be positive") }
-        // The body as it was: the face (and so the length handle) is found on it.
-        r.featureInputs[feature.id] = [f.face.body: r.bodies[i].body]
-        r.bodies[i].body = try r.bodies[i].body.thread(face: f.face.face, majorDiameter: size.diameter, pitch: size.pitch,
-                                                       length: length, flipped: f.flipped, leftHanded: f.leftHanded,
-                                                       featureID: feature.id)
+        for (n, face) in f.faces.enumerated() {
+            guard let i = r.bodies.firstIndex(where: { $0.id == face.body }) else {
+                throw KernelError(message: "the body with the thread's face is missing")
+            }
+            // The body as it was: the faces (and so the length handle) are found on it.
+            if r.featureInputs[feature.id]?[face.body] == nil {
+                r.featureInputs[feature.id, default: [:]][face.body] = r.bodies[i].body
+            }
+            // The first face names its new faces after the feature, the rest "<id>.2", "<id>.3"...
+            r.bodies[i].body = try r.bodies[i].body.thread(face: face.face, majorDiameter: size.diameter, pitch: size.pitch,
+                                                           length: length, flipped: f.flipped, leftHanded: f.leftHanded,
+                                                           featureID: n == 0 ? feature.id : "\(feature.id).\(n + 1)")
+        }
     }
 
     /// The frame a primitive stands on: its plane, moved to (u, v).

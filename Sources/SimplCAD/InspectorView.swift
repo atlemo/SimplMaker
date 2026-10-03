@@ -702,6 +702,7 @@ struct ThreadInspector: View {
             if let cylinder {
                 LabeledContent("Kind", value: cylinder.isHole ? "Internal (in a hole)" : "External (on a shaft)")
             }
+            if !thread.moreFaces.isEmpty { LabeledContent("Faces", value: "\(thread.faces.count) threaded the same way") }
             Picker("Standard", selection: Binding(get: { thread.standard }, set: { standard in
                 // Keep about the same diameter in the new standard.
                 let d = size?.diameter ?? 6

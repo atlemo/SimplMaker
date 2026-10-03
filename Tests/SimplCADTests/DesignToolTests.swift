@@ -157,6 +157,56 @@ import Testing
         #expect(model.dragHandle?.label == "Length")
     }
 
+    /// A 30 × 30 × 15 block with two 6.8 mm holes side by side.
+    private func twoHoleBlock() throws -> CADDocument {
+        let block = Feature(id: "b", name: "b", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "30", length: "30", height: "15")))
+        var doc = CADDocument()
+        doc.features = [block]
+        let top = try #require(Regenerator.regenerate(doc).body("b")).faceFrame("b.top")
+        let d = SIMD3<Double>(0, 0, 15) - top.origin
+        let u = (d * top.xAxis).sum(), v = (d * top.yAxis).sum()
+        doc.features += [("h1", -8.0), ("h2", 8.0)].map { id, dx in
+            Feature(id: id, name: id, .hole(HoleFeature(face: FaceRef(body: "b", face: "b.top"), u: "\(u + dx)", v: "\(v)",
+                                                        diameter: "6.8", depth: nil)))
+        }
+        return doc
+    }
+
+    @Test func shiftClickPicksSeveralHolesToThreadTogether() async throws {
+        let doc = try twoHoleBlock()
+        let model = try await loaded(doc)
+        let names = try #require(model.meshes.first?.mesh.faceNames)
+        let walls = names.indices.filter { names[$0].contains(".hole.wall") }.map { PickID(body: 0, face: $0) }
+        #expect(walls.count == 2)
+        model.run(.thread)
+        model.click(walls[0], additive: true)
+        #expect(model.pendingTool == .thread && model.selection == [walls[0]] && model.document.features.count == 3)
+        #expect(model.cursorPrompt?.contains("Return") == true)
+        model.click(walls[1], additive: true)
+        model.click(walls[0], additive: true)  // ⇧-click again takes it back out
+        model.click(walls[0], additive: true)
+        #expect(model.selection.count == 2)
+        model.confirmTool()
+        #expect(model.pendingTool == nil && model.document.features.count == 4, "one feature for both holes")
+        guard case .thread(let t) = try lastFeature(model).kind else { Issue.record("expected a thread"); return }
+        #expect(t.faces.count == 2 && t.size == "M8x1.25")
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+    }
+
+    @Test func clickingAHoleThreadsItAndTheOnesAlreadyPicked() async throws {
+        let doc = try twoHoleBlock()
+        let model = try await loaded(doc)
+        let names = try #require(model.meshes.first?.mesh.faceNames)
+        let walls = names.indices.filter { names[$0].contains(".hole.wall") }.map { PickID(body: 0, face: $0) }
+        model.run(.thread)
+        model.click(walls[0], additive: true)
+        model.click(walls[1], additive: false)
+        #expect(model.pendingTool == nil)
+        guard case .thread(let t) = try lastFeature(model).kind else { Issue.record("expected a thread"); return }
+        #expect(t.faces.count == 2)
+    }
+
     @Test func editingAFeatureLightsUpTheFacesItMade() async throws {
         let model = try await loaded(.demo())
         var lit = 0

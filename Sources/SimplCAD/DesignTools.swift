@@ -193,7 +193,7 @@ extension DocumentModel {
     }
 
     /// A viewport click while a tool waits for input.
-    func toolClick(_ tool: DesignTool, _ pick: PickID?) {
+    func toolClick(_ tool: DesignTool, _ pick: PickID?, additive: Bool = false) {
         guard let pick, tool.accepts(pick.kind), !pick.isWholeBody || tool.picksBodies else { return }
         // Re-picking: only the feature's own sketch counts.
         if let id = reselecting, let source = profileSource(id) {
@@ -205,7 +205,7 @@ extension DocumentModel {
             return
         }
         if tool == .thread {
-            if addThread(on: pick) { pendingTool = nil } else { toolMissed = true }
+            threadClick(pick, additive: additive)
             overlayRevision += 1
             return
         }
@@ -235,8 +235,10 @@ extension DocumentModel {
         case .pipe: return "Select sketch curves for the pipe's path"
         case .hole: return "Click a flat face where the hole goes"
         case .thread:
-            return toolMissed ? "That face isn't round · click the side of a shaft, the wall of a hole, or a face next to one"
-                : "Click the side of a shaft or the wall of a hole to thread"
+            let n = selection.filter(\.isFace).count
+            if toolMissed { return "That face isn't round · click the side of a shaft, the wall of a hole, or a face next to one" }
+            return n == 0 ? "Click the side of a shaft or the wall of a hole to thread · ⇧-click to pick several"
+                : "Click another round face to add it and thread, or press Return to thread \(n) picked"
         case .box, .cylinder, .sphere, .torus, .coil:
             return "Click a plane or flat face to place the \(tool.rawValue.lowercased())"
         case .move: return "Click the bodies or sketches to move"
@@ -321,8 +323,9 @@ extension DocumentModel {
             guard selection.count == 1, let pick = selection.first, pick.isFace else { return false }
             return place(tool, on: pick)
         case .thread:
-            guard selection.count == 1, let pick = selection.first, pick.isFace, roundFace(pick) != nil else { return false }
-            return addThread(on: pick)
+            // Every picked face with a round face of its own to thread (a flat one standing for the hole beside it).
+            let faces = selection.filter(\.isFace)
+            return !faces.isEmpty && addThreads(on: faces)
         case .fillet, .chamfer:
             guard selectedEdgeCount + selection.filter(\.isFace).count > 0, !waiting else { return false }
             addEdgeFeature(fillet: tool == .fillet)
@@ -506,14 +509,52 @@ extension DocumentModel {
         return true
     }
 
+    /// A click while the Thread tool waits: threads that face, along with any already picked. ⇧-click
+    /// (or ⌘) only picks it, or takes it out again, to thread several together with Return.
+    private func threadClick(_ pick: PickID, additive: Bool) {
+        defer { clickRay = nil; clickRayNext = nil }
+        toolMissed = false
+        guard let ref = roundFace(pick), let index = meshes.firstIndex(where: { $0.id == ref.body }),
+              let element = meshes[index].mesh.faceNames.firstIndex(of: ref.face) else {
+            toolMissed = true
+            return
+        }
+        // Picked as the round face itself, so a flat face's neighbour stays the one that was meant.
+        let round = PickID(body: index, face: element)
+        if additive {
+            if let i = selection.firstIndex(of: round) { selection.remove(at: i) } else { selection.append(round) }
+        } else if !selection.contains(round) {
+            selection.append(round)
+        }
+        guard !additive else { return }
+        if addThreads(on: selection.filter(\.isFace)) { pendingTool = nil } else { toolMissed = true }
+    }
+
     /// Threads a picked round face, in the size that suits it (see ThreadSize.best). False if the
     /// face isn't round and doesn't border a round face (see roundFace).
     @discardableResult
-    func addThread(on pick: PickID) -> Bool {
+    func addThread(on pick: PickID) -> Bool { addThreads(on: [pick]) }
+
+    /// Threads the round faces behind these picks. Faces that suit the same size share one Thread
+    /// feature (a plate of identical holes); others each get their own. False if none is round.
+    @discardableResult
+    func addThreads(on picks: [PickID]) -> Bool {
         defer { clickRay = nil; clickRayNext = nil }
-        guard let ref = roundFace(pick), let cyl = try? result?.body(ref.body)?.faceCylinder(ref.face),
-              let (standard, size) = ThreadSize.best(forDiameter: 2 * cyl.radius, hole: cyl.isHole) else { return false }
-        add(Feature(name: document.nextName("Thread"), .thread(ThreadFeature(face: ref, standard: standard, size: size.name))))
+        var groups: [(standard: ThreadStandard, size: ThreadSize, faces: [FaceRef])] = []
+        for pick in picks {
+            guard let ref = roundFace(pick), let cyl = try? result?.body(ref.body)?.faceCylinder(ref.face),
+                  let (standard, size) = ThreadSize.best(forDiameter: 2 * cyl.radius, hole: cyl.isHole) else { continue }
+            if let g = groups.firstIndex(where: { $0.standard == standard && $0.size.name == size.name }) {
+                if !groups[g].faces.contains(ref) { groups[g].faces.append(ref) }
+            } else {
+                groups.append((standard, size, [ref]))
+            }
+        }
+        guard !groups.isEmpty else { return false }
+        for g in groups {
+            add(Feature(name: document.nextName("Thread"), .thread(ThreadFeature(
+                face: g.faces[0], moreFaces: Array(g.faces.dropFirst()), standard: g.standard, size: g.size.name))))
+        }
         return true
     }
 

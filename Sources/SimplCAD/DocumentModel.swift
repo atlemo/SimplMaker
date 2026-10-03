@@ -618,7 +618,7 @@ final class DocumentModel {
             return
         }
         if let tool = pendingTool {
-            toolClick(tool, pick)
+            toolClick(tool, pick, additive: additive)
             return
         }
         if let pick, let id = constructionPlane(of: pick) {  // a construction plane: select it, with its offset handle

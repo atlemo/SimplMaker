@@ -107,6 +107,8 @@ public struct ThreadSize: Hashable, Sendable {
 /// bored or filled to its minor one.
 public struct ThreadFeature: Codable, Hashable, Sendable {
     public var face: FaceRef
+    /// More round faces (other holes) threaded the same way, in the same size.
+    public var moreFaces: [FaceRef]
     public var standard: ThreadStandard
     /// The size's name in the standard ("M8x1.25", "1/4-20").
     public var size: String
@@ -116,9 +118,24 @@ public struct ThreadFeature: Codable, Hashable, Sendable {
     public var flipped: Bool
     public var leftHanded: Bool
 
-    public init(face: FaceRef, standard: ThreadStandard = .metric, size: String = "M6x1", length: String? = nil,
-                flipped: Bool = false, leftHanded: Bool = false) {
-        self.face = face; self.standard = standard; self.size = size; self.length = length
+    /// Every face the thread is cut into, `face` first.
+    public var faces: [FaceRef] { [face] + moreFaces }
+
+    public init(face: FaceRef, moreFaces: [FaceRef] = [], standard: ThreadStandard = .metric, size: String = "M6x1",
+                length: String? = nil, flipped: Bool = false, leftHanded: Bool = false) {
+        self.face = face; self.moreFaces = moreFaces; self.standard = standard; self.size = size; self.length = length
         self.flipped = flipped; self.leftHanded = leftHanded
+    }
+
+    // Files from before several faces can share a thread have no `moreFaces`.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        face = try c.decode(FaceRef.self, forKey: .face)
+        moreFaces = try c.decodeIfPresent([FaceRef].self, forKey: .moreFaces) ?? []
+        standard = try c.decode(ThreadStandard.self, forKey: .standard)
+        size = try c.decode(String.self, forKey: .size)
+        length = try c.decodeIfPresent(String.self, forKey: .length)
+        flipped = try c.decode(Bool.self, forKey: .flipped)
+        leftHanded = try c.decode(Bool.self, forKey: .leftHanded)
     }
 }
