@@ -154,6 +154,8 @@ struct ViewportPalette: Equatable {
     var axes: (x: SIMD4<Float>, y: SIMD4<Float>, z: SIMD4<Float>)
     var face, faceHover, faceSelected: SIMD4<Float>
     var edge, hover, selection: SIMD4<Float>
+    /// A selected sketch curve or point: not a blue, so it stands out from the sketch's own and the hover colour.
+    var sketchSelected: SIMD4<Float>
     /// Edges in the wireframe styles, where they're drawn over the background instead of a face.
     var wireEdge: SIMD4<Float>
     var sketch, sketchConstrained, construction, preview, point, inactiveSketch, handle, invalid: SIMD4<Float>
@@ -176,6 +178,7 @@ struct ViewportPalette: Equatable {
                 axes: (SIMD4(0.9, 0.35, 0.35, 1), SIMD4(0.4, 0.8, 0.45, 1), SIMD4(0.4, 0.55, 1, 1)),
                 face: SIMD4(0.56, 0.59, 0.64, 1), faceHover: SIMD4(0.52, 0.66, 0.88, 1), faceSelected: SIMD4(0.25, 0.52, 1, 1),
                 edge: SIMD4(0.04, 0.04, 0.05, 1), hover: SIMD4(0.45, 0.72, 1, 1), selection: SIMD4(0.2, 0.55, 1, 1),
+                sketchSelected: SIMD4(1, 0.4, 0.75, 1),
                 wireEdge: SIMD4(0.8, 0.82, 0.86, 1),
                 sketch: SIMD4(0.45, 0.68, 1, 1), sketchConstrained: SIMD4(0.93, 0.93, 0.95, 1),
                 construction: SIMD4(1, 0.62, 0.25, 1), preview: SIMD4(0.65, 0.65, 0.7, 1), point: SIMD4(0.85, 0.87, 0.92, 1),
@@ -188,6 +191,7 @@ struct ViewportPalette: Equatable {
                 axes: (SIMD4(0.85, 0.25, 0.25, 1), SIMD4(0.25, 0.7, 0.3, 1), SIMD4(0.3, 0.45, 0.9, 1)),
                 face: SIMD4(0.64, 0.67, 0.72, 1), faceHover: SIMD4(0.55, 0.72, 0.95, 1), faceSelected: SIMD4(0.3, 0.56, 1, 1),
                 edge: SIMD4(0.12, 0.13, 0.16, 1), hover: SIMD4(0.1, 0.55, 1, 1), selection: SIMD4(0, 0.4, 1, 1),
+                sketchSelected: SIMD4(0.85, 0.08, 0.55, 1),
                 wireEdge: SIMD4(0.12, 0.13, 0.16, 1),
                 sketch: SIMD4(0.1, 0.3, 0.85, 1), sketchConstrained: SIMD4(0.08, 0.08, 0.1, 1),
                 construction: SIMD4(0.9, 0.55, 0.15, 1), preview: SIMD4(0.45, 0.45, 0.5, 1), point: SIMD4(0.15, 0.2, 0.35, 1),
@@ -226,7 +230,7 @@ struct DrawParams {
     var thickness: Float
     var depthBias: Float
     var pickable: UInt32
-    /// A selected body edge's width, in pixels; 0 for everything else.
+    /// A selected body edge's, sketch curve's or point's width, in pixels; 0 = it keeps its width.
     var selectedThickness: Float = 0
     /// How to draw (DrawStyle bits).
     var style: UInt32 = 0
@@ -859,7 +863,7 @@ final class Renderer {
         }
         enc.setDepthStencilState(depthState)
         // Sketch overlay, drawn last with increasing depth bias so it sits on top of faces it lies on.
-        let hover = p.hover, select = p.selection
+        let hover = p.hover, select = p.sketchSelected
         let planeLine = SIMD4(p.plane.x, p.plane.y, p.plane.z, 1)
         segments(overlay.planeOutline, overlay.planeOutlineCount,
                  DrawParams(color: planeLine, hoverColor: planeLine, selectColor: planeLine,
@@ -875,20 +879,20 @@ final class Renderer {
         }
         segments(overlay.inactive, overlay.inactiveCount,
                  DrawParams(color: p.inactiveSketch, hoverColor: hover, selectColor: select,
-                            thickness: 1.6 * scale, depthBias: 0.0006, pickable: 1))
+                            thickness: 1.6 * scale, depthBias: 0.0006, pickable: 1, selectedThickness: 3.6 * scale))
         let curveColor = overlay.fullyConstrained ? p.sketchConstrained : p.sketch
         segments(overlay.curves, overlay.curveCount,
                  DrawParams(color: curveColor, hoverColor: hover, selectColor: select,
-                            thickness: 2 * scale, depthBias: 0.0008, pickable: 1))
+                            thickness: 2 * scale, depthBias: 0.0008, pickable: 1, selectedThickness: 4.5 * scale))
         segments(overlay.construction, overlay.constructionCount,
                  DrawParams(color: p.construction, hoverColor: hover, selectColor: select,
-                            thickness: 1.4 * scale, depthBias: 0.0008, pickable: 1))
+                            thickness: 1.4 * scale, depthBias: 0.0008, pickable: 1, selectedThickness: 3.4 * scale))
         segments(overlay.preview, overlay.previewCount,
                  DrawParams(color: p.preview, hoverColor: hover, selectColor: select,
                             thickness: 1.5 * scale, depthBias: 0.0009, pickable: 0))
         segments(overlay.points, overlay.pointCount,
                  DrawParams(color: p.point, hoverColor: hover, selectColor: select,
-                            thickness: 7 * scale, depthBias: 0.0012, pickable: 1))
+                            thickness: 7 * scale, depthBias: 0.0012, pickable: 1, selectedThickness: 11 * scale))
         segments(overlay.snap, overlay.snapCount,
                  DrawParams(color: p.handle, hoverColor: p.handle, selectColor: p.handle,
                             thickness: 9 * scale, depthBias: 0.0014, pickable: 0))
@@ -896,10 +900,10 @@ final class Renderer {
         enc.setDepthStencilState(onTopDepthState)
         let handleColor = overlay.handleInvalid ? p.invalid : p.handle
         segments(overlay.handle, overlay.handleCount,
-                 DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: select,
+                 DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: p.selection,
                             thickness: 3 * scale, depthBias: 0, pickable: 1))
         if let handle = overlay.handle, overlay.handleCount > 1 {
-            var tip = DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: select,
+            var tip = DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: p.selection,
                                  thickness: 20 * scale, depthBias: 0, pickable: 1, style: DrawStyle.arrowHead)
             enc.setVertexBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.setFragmentBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
@@ -909,7 +913,7 @@ final class Renderer {
             }
         }
         segments(overlay.moveHandle, overlay.moveHandleCount,
-                 DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: select,
+                 DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: p.selection,
                             thickness: 12 * scale, depthBias: 0, pickable: 1))
         enc.endEncoding()
 

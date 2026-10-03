@@ -29,7 +29,7 @@ enum Shaders {
         float thickness;       // pixels
         float depthBias;
         uint pickable;
-        float selectedThickness; // pixels; a selected body edge's width when set (see segmentFragment)
+        float selectedThickness; // pixels; a selected body edge's or sketch curve's width when set (see segmentFragment)
         uint style;            // DrawStyle bits: 1 only when hovered or selected, 2 dashed, 4 flat (unlit), 8 arrowhead
     };
 
@@ -179,9 +179,10 @@ enum Shaders {
                                  constant DrawParams& p [[buffer(3)]]) {
         Segment s = segs[iid];
         // A selected body edge (top bit set) draws wider, and so does every edge of a selected body's
-        // border, to make room for its black-colour-black stripes.
+        // border, to make room for its black-colour-black stripes. A selected sketch curve or point is wider too.
         float thickness = p.thickness;
-        if (p.pickable != 0 && p.selectedThickness > 0.0 && edgeSelected(s.id, sel, u.selectedCount))
+        if (p.pickable != 0 && p.selectedThickness > 0.0
+            && (edgeSelected(s.id, sel, u.selectedCount) || isSelected(s.id, sel, u.selectedCount)))
             thickness = p.selectedThickness;
         float4 ca = u.viewProj * float4(float3(s.a), 1.0);
         float4 cb = u.viewProj * float4(float3(s.b), 1.0);
