@@ -42,15 +42,17 @@ How it behaves (see `Sources/SimplMaker/Licensing/`):
    Polar **discount code** for 2 and email it to them (the app does not know who bought what).
 3. **Make a checkout link** for the product (Polar dashboard ▸ Checkout Links). It looks like `https://buy.polar.sh/polar_cl_…`.
 4. **Copy the organization id** (dashboard ▸ Settings ▸ General). Find the **benefit id** of the License Keys
-   benefit: after buying once (sandbox or real), ask Polar about that key; this does not use up an activation:
+   benefit. Polar's public customer-portal page for the organization lists its products and their benefits, so no
+   purchase is needed (use `sandbox-api.polar.sh` for the sandbox):
 
    ```bash
-   curl -s -X POST https://api.polar.sh/v1/customer-portal/license-keys/validate \
-        -H 'Content-Type: application/json' \
-        -d '{"key":"<the key>","organization_id":"<organization id>"}'
+   curl -s https://api.polar.sh/v1/customer-portal/organizations/<organization slug> | python3 -m json.tool
    ```
 
-   and copy `benefit_id` from the answer. Write the values to `Packaging/licensing.conf` (copy
+   Under `products` ▸ `benefits`, copy the `id` of the `license_keys` benefit; the same answer shows the product's
+   price, which is a good check. (After a purchase you can also ask about a key: `POST
+   /v1/customer-portal/license-keys/validate` with `key` and `organization_id` returns `benefit_id`; it does not
+   use up an activation.) Write the values to `Packaging/licensing.conf` (copy
    `Packaging/licensing.conf.example`; none of them is secret, so commit it):
 
    ```
@@ -70,20 +72,23 @@ Polar has a separate sandbox (https://sandbox.polar.sh) with its own organizatio
 as a member and read the key in the sandbox customer portal.
 
 1. Make the same organization, product, license-key benefit and checkout link in the sandbox.
-2. Put the sandbox organization id and checkout link in `Packaging/licensing.conf`, and add
-   `POLAR_API_BASE=https://sandbox-api.polar.sh`.
-3. `scripts/bundle-app.sh --debug --open`. Buy with the test card, then enter the key under *SimplMaker ▸ License…*.
+2. Put the sandbox organization id, benefit id and checkout link in `Packaging/licensing.sandbox.conf` (git
+   ignores it), and add `POLAR_API_BASE=https://sandbox-api.polar.sh`. Keep the real values in `Packaging/licensing.conf`.
+3. `LICENSING_CONF=Packaging/licensing.sandbox.conf scripts/bundle-app.sh --debug --licensed --open`. Without
+   `--licensed` a development build does not ask for a license at all (so your own copy never locks); release
+   builds always do. Buy with the test card, then enter the key under *SimplMaker ▸ License…*.
    Check: activating, the Mac showing in the sandbox customer portal, deactivating, a second Mac hitting the limit.
 4. To test the end of the trial without waiting two weeks, move the stored start date back (the item is
    `com.simplmaker.SimplMaker.license` in the login keychain, JSON with `trialStart` and `lastSeen`), then delete the
    `licenseStateBackup` default: `defaults delete com.simplmaker.SimplMaker licenseStateBackup`.
-5. Remove `POLAR_API_BASE` and put the real values back before releasing; `--release` refuses to build while it is set.
+5. A release uses `Packaging/licensing.conf` and refuses to build while `POLAR_API_BASE` is set.
 
 ## Cost (checked October 2026; verify on polar.sh before relying on it)
 
 - Polar: 5 % + $0.50 per sale on the free plan, no monthly fee, so about $2.45 of each $39 (6.3 %). The Pro plan
-  ($20 a month) is 3.8 % + $0.40: it pays for itself above roughly 40 sales a month. Polar adds VAT and sales tax at
-  checkout; check how the price is shown to buyers.
+  ($20 a month) is 3.8 % + $0.40: it pays for itself above roughly 40 sales a month. Prices are
+  tax-inclusive: for a buyer in Norway the checkout shows $39 total, of which $7.80 is 25 % VAT (so you receive
+  less than $39 there; Polar's fee comes off the total and the VAT is passed on). Other countries differ.
 - Already paid for: the Apple Developer Program ($99 a year), the domain and the hosting.
 - No cost for the licensing code itself: there is no server to run.
 

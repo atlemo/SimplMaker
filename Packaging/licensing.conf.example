@@ -5,11 +5,9 @@
 POLAR_ORGANIZATION_ID=00000000-0000-0000-0000-000000000000
 # The checkout link for this major version's product (a Polar "checkout link", https://buy.polar.sh/...).
 BUY_URL=https://buy.polar.sh/polar_cl_XXXXXXXX
-# The id of that product's License Keys benefit. A key for another major version is turned away. To find it,
-# ask Polar about any key of that product (this does not use up an activation):
-#   curl -s -X POST https://api.polar.sh/v1/customer-portal/license-keys/validate -H 'Content-Type: application/json' \
-#        -d '{"key":"<a key>","organization_id":"<the organization id above>"}'
-# and copy "benefit_id" from the answer.
+# The id of that product's License Keys benefit. A key for another major version is turned away. Polar's public page
+# lists it under products > benefits (no purchase needed):
+#   curl -s https://api.polar.sh/v1/customer-portal/organizations/<organization slug> | python3 -m json.tool
 POLAR_BENEFIT_ID=00000000-0000-0000-0000-000000000000
 # The major version this build sells licenses for. Each major version has its own product, trial and update feed
 # (updates/v1/, updates/v2/, ...), so version 1 keeps working, with its updates, when version 2 comes out.
