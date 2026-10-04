@@ -139,6 +139,11 @@ struct SettingsView: View {
                 }
                 .formStyle(.grouped)
             }
+            if LicenseManager.shared.isEnforced {
+                Tab("License", systemImage: "key") {
+                    LicenseView(license: .shared)
+                }
+            }
             Tab("Navigation", systemImage: "hand.draw") {
                 Form {
                     Picker("Two-finger scroll", selection: $trackpadScroll) {

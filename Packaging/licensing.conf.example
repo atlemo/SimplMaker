@@ -1,0 +1,11 @@
+# Copy to Packaging/licensing.conf (and commit it: neither value is secret) once the product exists on Polar.
+# See docs/LICENSING-SETUP.md.
+#
+# Your Polar organization's id (Polar dashboard: Settings, shown as "Organization ID"), a UUID.
+POLAR_ORGANIZATION_ID=00000000-0000-0000-0000-000000000000
+# The checkout link for the SimplCAD product (a Polar "checkout link", https://buy.polar.sh/...).
+BUY_URL=https://buy.polar.sh/polar_cl_XXXXXXXX
+
+# Testing only: Polar's sandbox (own organization, own products, test card 4242 4242 4242 4242). Leave unset for
+# the real thing; scripts/bundle-app.sh --release refuses to build with it set. Can also be given as an env variable.
+# POLAR_API_BASE=https://sandbox-api.polar.sh

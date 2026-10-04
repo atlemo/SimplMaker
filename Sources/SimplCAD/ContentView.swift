@@ -120,6 +120,11 @@ struct DocumentWindow: View {
                 .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset) + DS.ControlHeight.large + Panel.inset)
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.featureWithoutHandle)
+        // Past the trial, the part can be looked at and exported, not edited.
+        .overlay(alignment: .top) {
+            LockedBanner(license: .shared)
+                .padding(.top, toolbarHeight + Panel.inset)
+        }
         // The cursor's prompt goes above everything, panels included.
         .overlay { CursorPrompt(model: model) }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)

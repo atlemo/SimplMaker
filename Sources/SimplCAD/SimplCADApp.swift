@@ -34,6 +34,13 @@ struct SimplCADApp: App {
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(Preferences.showsWelcome ? .presented : .suppressed)
 
+        Window("SimplCAD License", id: AppWindows.licenseID) {
+            LicenseWindow()
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        .restorationBehavior(.disabled)
+
         Settings {
             SettingsView()
         }
@@ -45,6 +52,7 @@ struct SimplCADApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Updater.shared.start()
+        LicenseManager.shared.start()
     }
 
     /// No empty document at launch while the welcome window is on; the Window scene presents it.
@@ -66,6 +74,7 @@ struct SimplCADCommands: Commands {
     @Environment(\.newDocument) private var newDocument
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var updater = Updater.shared
+    private let license = LicenseManager.shared
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     @AppStorage(Preferences.snapToGrid) private var snapToGrid = true
     @AppStorage(Preferences.showGrid) private var showGrid = true
@@ -77,6 +86,11 @@ struct SimplCADCommands: Commands {
             if updater.isAvailable {
                 Button("Check for Updates…") { updater.checkForUpdates() }
                     .disabled(!updater.canCheckForUpdates)
+            }
+            if license.isEnforced {
+                Divider()
+                if !license.isLicensed { Button("Buy SimplCAD…") { license.buy() } }
+                Button("License…") { openWindow(id: AppWindows.licenseID) }
             }
         }
         CommandGroup(after: .newItem) {

@@ -15,6 +15,11 @@
 #   SPARKLE_FEED_URL                   overrides the feed (default https://simplcad.com/updates/appcast.xml)
 # Without the key file the bundle has no updater (no "Check for Updates…").
 #
+# Licensing: the 14-day trial and license keys (Polar) are enforced only when the bundle names an organization.
+#   Packaging/licensing.conf           POLAR_ORGANIZATION_ID and BUY_URL (copy licensing.conf.example)
+# Without it the build is not license-enforced (development builds). --release refuses to build without it,
+# unless ALLOW_UNLICENSED=1.
+#
 # --release signs with a Developer ID Application certificate: SIGN_IDENTITY, or the only one in the keychain.
 # Then notarize and staple (scripts/release.sh):
 #   xcrun notarytool submit … && xcrun stapler staple dist/SimplCAD.app
@@ -45,6 +50,28 @@ PLIST="$APP/Contents/Info.plist"
 plist_set() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"; }
 plist_set CFBundleShortVersionString "$(tr -d '[:space:]' < "$ROOT/VERSION")"
 plist_set CFBundleVersion "${BUILD_NUMBER:-$(git rev-list --count HEAD)}"
+
+# Licensing configuration.
+LICENSING_CONF="$ROOT/Packaging/licensing.conf"
+if [ -f "$LICENSING_CONF" ]; then
+  POLAR_ORGANIZATION_ID="$(sed -n 's/^POLAR_ORGANIZATION_ID=//p' "$LICENSING_CONF" | tr -d '[:space:]')"
+  BUY_URL="$(sed -n 's/^BUY_URL=//p' "$LICENSING_CONF" | tr -d '[:space:]')"
+  POLAR_API_BASE="${POLAR_API_BASE:-$(sed -n 's/^POLAR_API_BASE=//p' "$LICENSING_CONF" | tr -d '[:space:]')}"
+fi
+if [ -n "${POLAR_ORGANIZATION_ID:-}" ] && [ -n "${BUY_URL:-}" ]; then
+  plist_set SCPolarOrganizationID "$POLAR_ORGANIZATION_ID"
+  plist_set SCBuyURL "$BUY_URL"
+  if [ -n "${POLAR_API_BASE:-}" ]; then
+    # Polar's sandbox, for testing. A release must talk to the real API.
+    [ "$RELEASE" != 1 ] || { echo "POLAR_API_BASE is set (a sandbox); a release must use the real Polar API" >&2; exit 1; }
+    plist_set SCPolarAPIBase "$POLAR_API_BASE"
+  fi
+elif [ "$RELEASE" = 1 ] && [ "${ALLOW_UNLICENSED:-0}" != 1 ]; then
+  echo "no Packaging/licensing.conf: a release would not ask for a license (ALLOW_UNLICENSED=1 to build one anyway)" >&2
+  exit 1
+else
+  echo "note: no Packaging/licensing.conf, so this build is not license-enforced"
+fi
 
 # Updater: Sparkle, embedded in Contents/Frameworks (the binary's rpath points there).
 SPARKLE="$(find "$ROOT/.build/artifacts/sparkle" -type d -name Sparkle.framework -path '*macos*' | head -n 1)"

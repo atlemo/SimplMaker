@@ -140,10 +140,17 @@ final class DocumentModel {
     // MARK: editing (every change goes through here: undo + regenerate)
 
     func mutate(_ actionName: String, _ change: (inout CADDocument) -> Void) {
+        // Past the trial (or a lapsed license) parts open and export but do not change.
+        guard LicenseManager.shared.allowsEditing else { reportEditingLocked(); return }
         var doc = document
         change(&doc)
         guard doc != document else { return }
         replace(with: doc, actionName: actionName)
+    }
+
+    private func reportEditingLocked() {
+        alert = AlertInfo(title: "Editing is turned off",
+                          message: LicenseManager.shared.status.summary + "\n\nChoose SimplCAD ▸ License… to buy or enter a license.")
     }
 
     /// Changes something that isn't part of the model (which handle a feature's typed field is for): no undo

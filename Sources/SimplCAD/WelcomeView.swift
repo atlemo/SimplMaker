@@ -9,6 +9,7 @@ import SwiftUI
 @MainActor
 enum AppWindows {
     static let welcomeID = "welcome"
+    static let licenseID = "license"
     static var openWindow: OpenWindowAction?
 
     /// Shows the welcome window, or a new document if no SwiftUI view has appeared yet.
@@ -83,6 +84,10 @@ struct WelcomeView: View {
             .padding(.horizontal, 52)
 
             Spacer(minLength: DS.Spacing.space6)
+
+            LicenseNotice(license: .shared)
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, DS.Spacing.space3)
 
             Toggle("Show this window when SimplCAD launches", isOn: $showWelcome)
                 .toggleStyle(.checkbox)
