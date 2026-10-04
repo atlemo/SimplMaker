@@ -73,6 +73,9 @@ public struct RegenResult: Sendable {
     public var planes: [FeatureID: Frame] = [:]
     /// Reference images, by the id of their Canvas feature.
     public var images: [FeatureID: ImagePlacement] = [:]
+    /// For projections: a point on the surface where the first profile landed and the way the surface faces
+    /// there, for the height handle.
+    public var projectionHandles: [FeatureID: (origin: SIMD3<Double>, normal: SIMD3<Double>)] = [:]
     public var duration: TimeInterval = 0
     /// The fillets built so far (feature name and radius), so a shell that fails can say which rounded
     /// edge its walls can't follow.
@@ -175,6 +178,7 @@ public enum Regenerator {
                 case .mirror(let f): try mirror(f, feature, &r)
                 case .pattern(let f): try pattern(f, feature, &r)
                 case .shell(let f): try shell(f, feature, &r)
+                case .project(let f): try project(f, feature, &r)
                 case .importBody(let f): try importBody(f, feature, &r)
                 case .image(let f): r.images[feature.id] = try image(f, &r)
                 }
@@ -331,6 +335,33 @@ public enum Regenerator {
         let detail = kernel.replacingOccurrences(of: "shell: ", with: "")
         if !detail.isEmpty, !detail.hasPrefix("shell failed") { text += " (Kernel: \(detail))" }
         return text
+    }
+
+    /// Projects sketch profiles onto a body and raises them out of its surface or cuts them into it.
+    static func project(_ f: ProjectFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        guard let i = r.bodies.firstIndex(where: { $0.id == f.target }) else {
+            throw KernelError(message: "The body to project onto is missing. Pick it again.")
+        }
+        let sk = try sketchResult(f.sketch, r)
+        let profiles = try Self.profiles(f.profiles, in: sk)
+        let height = try r.parameters.value(of: f.height, kind: .length)
+        guard height > 1e-9 else { throw KernelError(message: "The height must be more than zero.") }
+        let direction = f.flipped ? -sk.frame.normal : sk.frame.normal
+        let faces = f.faces.filter { $0.body == f.target }.map(\.face)
+        let target = r.bodies[i].body
+        for face in faces where !target.hasFace(face) {
+            throw KernelError(message: "A face it projects onto is gone. Pick the faces again.")
+        }
+        let relief: (body: KBody, origin: SIMD3<Double>, normal: SIMD3<Double>)
+        do {
+            relief = try target.projectRelief(profiles, onto: faces, direction: direction,
+                                              height: f.mode == .emboss ? height : -height, featureID: feature.id)
+        } catch let error as KernelError where error.message.contains("nothing to project onto") {
+            throw KernelError(message: "Nothing to project onto: no face that faces the sketch is under the profiles. "
+                              + "Flip the direction, or move the sketch to the other side of the body.")
+        }
+        r.projectionHandles[feature.id] = (relief.origin, relief.normal)
+        try combine(relief.body, f.mode == .emboss ? .join : .cut, target: f.target, feature, &r)
     }
 
     /// Reads a STEP file's contents into a body, the way an Import feature does, and keeps it

@@ -159,6 +159,36 @@ public struct ExtrudeFeature: Codable, Hashable, Sendable {
     }
 }
 
+/// How a projection meets the surface it lands on.
+public enum ProjectMode: String, Codable, CaseIterable, Sendable {
+    /// Stands out of the surface and joins the body (raised lettering).
+    case emboss = "Emboss"
+    /// Goes into the surface and is cut out of the body (engraved lettering).
+    case deboss = "Deboss"
+}
+
+/// Sketch profiles (text, shapes) projected onto a body the way a projector throws them on a wall: along the
+/// sketch's normal (or against it, flipped), landing on the faces that face the sketch. What lands follows the
+/// surface, curved or flat, and is `height` thick along the surface's normals: raised (emboss) or cut in (deboss).
+public struct ProjectFeature: Codable, Hashable, Sendable {
+    public var sketch: FeatureID
+    public var profiles: [ProfileRef]
+    /// The body projected onto, by the id of the feature that made it.
+    public var target: FeatureID
+    /// The faces projected onto; none = every face of the body that faces the sketch.
+    public var faces: [FaceRef]
+    public var mode: ProjectMode
+    /// How far it stands out of the surface or sinks into it (always more than zero; `mode` says which way).
+    public var height: String
+    /// Project against the sketch's normal, as for an extrude.
+    public var flipped: Bool
+    public init(sketch: FeatureID, profiles: [ProfileRef], target: FeatureID, faces: [FaceRef] = [], mode: ProjectMode = .emboss,
+                height: String = "1 mm", flipped: Bool = false) {
+        self.sketch = sketch; self.profiles = profiles; self.target = target; self.faces = faces
+        self.mode = mode; self.height = height; self.flipped = flipped
+    }
+}
+
 /// Connected sketch curves used as a path (sweep, pipe) or a rib's centre line.
 public struct CurveRef: Codable, Hashable, Sendable {
     public var sketch: FeatureID
@@ -610,6 +640,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case mirror(MirrorFeature)
         case pattern(PatternFeature)
         case shell(ShellFeature)
+        case project(ProjectFeature)
         case importBody(ImportFeature)
         case image(ImageFeature)
     }
@@ -644,6 +675,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .mirror: return "Mirror"
         case .pattern(let p): return p.kind == .linear ? "Pattern" : "Circular Pattern"
         case .shell: return "Shell"
+        case .project: return "Project"
         case .importBody: return "Import"
         case .image: return "Canvas"
         }
@@ -654,6 +686,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         switch kind {
         case .sketch, .fillet, .chamfer, .hole, .thread, .primitive, .move, .rotate, .scale, .combine, .plane, .mirror, .pattern,
              .shell, .importBody, .image: return []
+        case .project(let p): return [p.sketch]
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
         case .sweep(let s): return [s.sketch, s.path.sketch]
@@ -675,7 +708,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .mirror(let m): return m.operation == .newBody
         case .pattern(let p): return p.operation == .newBody
         case .importBody: return true
-        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .plane, .shell, .image: return false
+        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .plane, .shell, .project, .image: return false
         }
     }
 }

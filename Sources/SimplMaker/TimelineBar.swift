@@ -27,6 +27,7 @@ extension Feature {
         case .mirror: return DesignTool.mirror.symbol
         case .pattern: return DesignTool.pattern.symbol
         case .shell: return DesignTool.shell.symbol
+        case .project: return DesignTool.project.symbol
         case .importBody: return "file-box"
         case .image: return DesignTool.canvas.symbol
         case .primitive(let p):

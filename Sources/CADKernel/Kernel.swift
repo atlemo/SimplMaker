@@ -341,6 +341,22 @@ public final class KBody: @unchecked Sendable {
         try withCStrings(faces) { try KBody.wrap(sk_shell(handle, $0, Int32(faces.count), thickness, inside, featureID), "shell") }
     }
 
+    /// The relief made by projecting profiles onto this body along `direction` (see sk_project_relief): a solid that
+    /// follows the surface, `height` thick, standing out of it when positive and going into it when negative. `faces`
+    /// are the faces to project onto (every face when empty). `origin` and `normal` give a point on the surface where
+    /// the first patch is and the way the surface faces there.
+    public func projectRelief(_ profiles: [KProfile], onto faces: [String], direction d: SIMD3<Double>, height: Double,
+                              featureID: String) throws -> (body: KBody, origin: SIMD3<Double>, normal: SIMD3<Double>) {
+        let hs = profiles.map(\.handle)
+        var out = [Double](repeating: 0, count: 6)
+        func project(_ names: UnsafePointer<UnsafePointer<CChar>?>?) throws -> KBody {
+            try KBody.wrap(sk_project_relief(handle, names, Int32(faces.count), hs, Int32(hs.count), d.x, d.y, d.z, height, featureID, &out),
+                           "project")
+        }
+        let made = faces.isEmpty ? try project(nil) : try withCStrings(faces) { try project($0) }
+        return (made, SIMD3(out[0], out[1], out[2]), SIMD3(out[3], out[4], out[5]))
+    }
+
     /// A straight edge's line (a point on it and its direction); throws for a curved edge.
     public func edgeLine(_ edge: String) throws -> (origin: SIMD3<Double>, direction: SIMD3<Double>) {
         var o = [Double](repeating: 0, count: 6)

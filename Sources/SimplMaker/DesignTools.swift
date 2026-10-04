@@ -14,6 +14,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
     case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", scale = "Scale", combine = "Combine"
     case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell", canvas = "Canvas"
+    case project = "Project"
     case measure = "Measure"
 
     var id: String { rawValue }
@@ -22,7 +23,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// change an existing body.
     static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
-    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .move, .scale, .combine]
+    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .project, .move, .scale, .combine]
     /// Construction planes, copies of bodies, and reference images.
     static let construct: [DesignTool] = [.plane, .mirror, .pattern, .canvas]
     /// Tools that read the model without changing it.
@@ -54,6 +55,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .pattern: return "pattern"
         case .shell: return "shell"
         case .canvas: return "image"
+        case .project: return "square-dashed"
         case .measure: return "ruler"
         }
     }
@@ -85,6 +87,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .mirror: return "q"
         case .pattern: return "t"
         case .canvas: return "v"
+        case .project: return "o"
         case .measure: return "i"
         }
     }
@@ -114,6 +117,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .pattern: return "Pattern (T): copy bodies in a row or around an axis"
         case .shell: return "Shell (S): hollow a body, leaving the picked faces open"
         case .canvas: return "Canvas (V): place a reference image on a plane or flat face, to trace over; its opacity is adjustable"
+        case .project: return "Project (O): throw sketch profiles, like text, onto a body so they follow its surface, raised out of it or cut into it"
         case .measure: return "Measure (I): click a face, an edge or a body for its size, or two for the distance and angle between them"
         }
     }
@@ -163,6 +167,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .mirror: return kind == .face || kind == .edge || kind == .plane  // bodies, then the plane
         case .pattern: return kind == .face || kind == .edge  // bodies (faces), and a straight edge for the direction
         case .shell: return kind == .face  // the faces to leave open
+        case .project: return kind == .region || kind == .face  // the profiles, and the faces they land on
         case .measure: return kind == .face || kind == .edge  // and bodies, from the browser
         }
     }
@@ -264,6 +269,10 @@ extension DocumentModel {
             let n = faceBodies.count
             return n == 0 ? "Click the bodies to copy" : "Click more bodies, or a straight edge for the direction · Return makes the pattern (\(n) picked)"
         case .measure: return measurePrompt()
+        case .project:
+            if profiles == 0 { return "Select the profiles to project, like the letters of a text" }
+            return result?.bodies.count == 1 ? "Click the face to project onto · Return projects onto the whole body"
+                                             : "Click the face to project onto"
         case .shell:
             let n = selection.filter(\.isFace).count
             return n == 0 ? "Click the faces to leave open" : "Click more faces, or press Return to shell (\(n) open)"
@@ -381,6 +390,20 @@ extension DocumentModel {
             let faces = selection.compactMap { faceRef($0) }
             guard let body = faces.first?.body, !waiting else { return false }
             add(Feature(name: document.nextName("Shell"), .shell(ShellFeature(body: body, faces: faces.filter { $0.body == body }))))
+        case .project:
+            guard let first = profiles.first else { return false }
+            let faces = selection.compactMap { faceRef($0) }
+            // The body of the face picked; with none, Return takes the only body there is.
+            var target = faces.first?.body
+            if target == nil, confirmed, result?.bodies.count == 1 { target = result?.bodies.first?.id }
+            guard let target else {
+                if confirmed { alert = AlertInfo(title: "Pick a face to project onto", message: "Click a face of the body the profiles should land on.") }
+                return false
+            }
+            let refs = profiles.filter { $0.sketch == first.sketch }.map(\.ref)
+            add(Feature(name: document.nextName("Project"), .project(ProjectFeature(
+                sketch: first.sketch, profiles: refs, target: target, faces: faces.filter { $0.body == target },
+                flipped: projectsAgainstNormal(sketch: first.sketch, onto: target)))))
         case .combine:
             // The first body picked is the target; the rest are the tools. Return combines them.
             let bodies = pickedBodies
@@ -393,6 +416,14 @@ extension DocumentModel {
         return true
     }
 
+    /// Whether a projection of this sketch should run against its normal to reach the body: when the body is on the
+    /// side the normal points away from, or the sketch passes through its middle (within half a millimetre; the normal
+    /// points at the viewer who looks at the sketch, so against it is into the screen).
+    func projectsAgainstNormal(sketch: FeatureID, onto target: FeatureID) -> Bool {
+        guard let frame = result?.sketches[sketch]?.frame, let box = result?.body(target)?.bounds else { return true }
+        return simd_dot((box.min + box.max) / 2 - frame.origin, frame.normal) <= 0.5
+    }
+
     // MARK: picking a feature's profiles again
 
     /// The sketch and profiles of a feature built from sketch profiles, with the tool that makes it.
@@ -401,6 +432,7 @@ extension DocumentModel {
         case .extrude(let e)? where e.face == nil: return (e.sketch, e.profiles, .extrude)
         case .revolve(let r)?: return (r.sketch, r.profiles, .revolve)
         case .sweep(let s)?: return (s.sketch, s.profiles, .sweep)
+        case .project(let p)?: return (p.sketch, p.profiles, .project)
         default: return nil
         }
     }
@@ -439,6 +471,7 @@ extension DocumentModel {
             case .extrude(var e): e.profiles = refs; f.kind = .extrude(e)
             case .revolve(var r): r.profiles = refs; if let axis { r.axis = .line(axis) }; f.kind = .revolve(r)
             case .sweep(var s): s.profiles = refs; f.kind = .sweep(s)
+            case .project(var p): p.profiles = refs; f.kind = .project(p)
             default: break
             }
         }

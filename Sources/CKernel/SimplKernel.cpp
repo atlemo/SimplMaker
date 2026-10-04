@@ -51,6 +51,10 @@
 #include <TopoDS_Wire.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepOffset_MakeOffset.hxx>
+#include <BRepLProp_SLProps.hxx>
+#include <Geom_Surface.hxx>
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -98,6 +102,7 @@
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Solid.hxx>
+#include <NCollection_Map.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Circ.hxx>
@@ -1727,6 +1732,190 @@ SKHandle sk_shell(SKHandle body, const char *const *faceNames, int count, double
     return 0;
   }
   return store(std::move(out));
+  SK_CATCH(0)
+}
+
+// ------------------------------------------------- projection onto a body ---
+namespace {
+
+/// A face's outward unit normal near `near`, and the point on the face's surface it was taken at.
+bool faceNormalNear(const TopoDS_Face &f, const gp_Pnt &near, gp_Pnt &on, gp_Dir &normal) {
+  Handle(Geom_Surface) surface = BRep_Tool::Surface(f);
+  if (surface.IsNull()) return false;
+  GeomAPI_ProjectPointOnSurf proj(near, surface);
+  if (proj.NbPoints() < 1) return false;
+  double u = 0, v = 0;
+  proj.LowerDistanceParameters(u, v);
+  BRepLProp_SLProps props(BRepAdaptor_Surface(f), u, v, 1, 1e-6);
+  if (!props.IsNormalDefined()) return false;
+  normal = props.Normal();
+  if (f.Orientation() == TopAbs_REVERSED) normal.Reverse();
+  on = props.Value();
+  return true;
+}
+
+/// The solid between a patch of a body's surface pushed `from` and pushed `to` along its outward normal
+/// (from < to; either may be negative, which is into the body).
+TopoDS_Shape thickenPatch(const TopoDS_Face &patch, double from, double to) {
+  TopoDS_Shape base = patch;
+  if (std::fabs(from) > 1e-9) {
+    BRepOffsetAPI_MakeOffsetShape moved;
+    moved.PerformByJoin(patch, from, 1e-5, BRepOffset_Skin, false, false, GeomAbs_Intersection);
+    if (!moved.IsDone()) return TopoDS_Shape();
+    base = moved.Shape();
+  }
+  BRepOffset_MakeOffset thick;
+  thick.Initialize(base, to - from, 1e-5, BRepOffset_Skin, false, false, GeomAbs_Intersection, true, false);
+  thick.MakeOffsetShape();
+  if (!thick.IsDone()) return TopoDS_Shape();
+  return thick.Shape();
+}
+
+/// Whether `p` lies inside `solid`.
+bool solidHolds(const TopoDS_Shape &solid, const gp_Pnt &p) {
+  BRepClass3d_SolidClassifier c(solid, p, 1e-7);
+  return c.State() == TopAbs_IN;
+}
+
+}  // namespace
+
+SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int faceCount, const SKHandle *profiles, int count,
+                           double dx, double dy, double dz, double height, const char *featureId, double handle[6]) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  if (std::fabs(height) <= 1e-6) {
+    setError("the height must be more than zero");
+    return 0;
+  }
+  const std::string feat = featureOrDefault(featureId, "project");
+  std::vector<std::shared_ptr<Object>> keepProfiles;
+  std::vector<Profile *> ps;
+  if (!profilesOf(profiles, count, keepProfiles, ps, "project")) return 0;
+  gp_Dir dir(dx, dy, dz);
+
+  // The faces to project onto: those named, or every face of the body.
+  std::vector<TopoDS_Face> targets;
+  if (faceCount > 0) {
+    for (int k = 0; k < faceCount; ++k) {
+      auto it = b->faceIndex.find(faceNames[k]);
+      if (it == b->faceIndex.end()) {
+        setError(std::string("face not found: ") + faceNames[k]);
+        return 0;
+      }
+      targets.push_back(TopoDS::Face(b->faces(it->second + 1)));
+    }
+  } else {
+    for (int i = 1; i <= b->faces.Extent(); ++i) targets.push_back(TopoDS::Face(b->faces(i)));
+  }
+
+  // Each profile, drawn out as a prism that runs both ways past the whole body along the direction.
+  Bnd_Box box;
+  BRepBndLib::Add(b->shape, box);
+  if (box.IsVoid()) {
+    setError("the body is empty");
+    return 0;
+  }
+  const gp_Pnt lo = box.CornerMin(), hi = box.CornerMax();
+  const double diagonal = lo.Distance(hi);
+  TopoDS_Compound prisms;
+  BRep_Builder builder;
+  builder.MakeCompound(prisms);
+  for (Profile *p : ps) {
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(p->face, props);
+    const double reach = 2 * (diagonal + props.CentreOfMass().Distance(gp_Pnt((lo.X() + hi.X()) / 2, (lo.Y() + hi.Y()) / 2, (lo.Z() + hi.Z()) / 2))) + 1;
+    gp_Trsf back;
+    back.SetTranslation(gp_Vec(dir) * -reach);
+    BRepPrimAPI_MakePrism prism(TopoDS::Face(p->face.Moved(TopLoc_Location(back))), gp_Vec(dir) * (2 * reach));
+    prism.Build();
+    if (!prism.IsDone()) {
+      setError("could not draw the profile through the body");
+      return 0;
+    }
+    builder.Add(prisms, prism.Shape());
+  }
+  Bnd_Box prismBox;
+  BRepBndLib::Add(prisms, prismBox);
+
+  // The parts of the faces inside the prisms that face the sketch: the profile as it lies on the surface.
+  TopoDS_Compound patches;
+  builder.MakeCompound(patches);
+  int patchCount = 0;
+  for (const TopoDS_Face &face : targets) {
+    Bnd_Box faceBox;
+    BRepBndLib::Add(face, faceBox);
+    if (faceBox.IsOut(prismBox)) continue;
+    BRepAlgoAPI_Common common(face, prisms);
+    if (!common.IsDone() || common.HasErrors()) {
+      setError("could not project onto a face of the body");
+      return 0;
+    }
+    NCollection_Map<TopoDS_Shape, TopTools_ShapeMapHasher> seen;
+    for (TopExp_Explorer ex(common.Shape(), TopAbs_FACE); ex.More(); ex.Next()) {
+      const TopoDS_Face piece = TopoDS::Face(ex.Current());
+      if (!seen.Add(piece)) continue;
+      GProp_GProps props;
+      BRepGProp::SurfaceProperties(piece, props);
+      if (props.Mass() < 1e-6) continue;
+      gp_Pnt on;
+      gp_Dir normal;
+      if (!faceNormalNear(piece, props.CentreOfMass(), on, normal)) continue;
+      if (normal.Dot(dir) > -0.02) continue;  // faces away from, or edge-on to, the sketch
+      builder.Add(patches, piece);
+      ++patchCount;
+    }
+  }
+  if (patchCount == 0) {
+    setError("nothing to project onto: no face the sketch looks at is under the profile");
+    return 0;
+  }
+  // The seam of a round face can split a piece in two.
+  TopoDS_Shape merged = patches;
+  {
+    ShapeUpgrade_UnifySameDomain unify(patches, true, true, false);
+    unify.Build();
+    if (!unify.Shape().IsNull()) merged = unify.Shape();
+  }
+
+  // A little past the surface the other way, so the relief overlaps the body instead of just touching it.
+  const double h = std::fabs(height);
+  const double overlap = std::min(0.1, 0.5 * h);
+  const double from = height > 0 ? -overlap : -h, to = height > 0 ? h : overlap;
+  TopoDS_Compound relief;
+  builder.MakeCompound(relief);
+  bool first = true;
+  std::vector<Named> names;
+  for (TopExp_Explorer ex(merged, TopAbs_FACE); ex.More(); ex.Next()) {
+    const TopoDS_Face patch = TopoDS::Face(ex.Current());
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(patch, props);
+    gp_Pnt on;
+    gp_Dir normal;
+    if (!faceNormalNear(patch, props.CentreOfMass(), on, normal)) continue;
+    // The relief is built on the side the orientation says; check that is the side wanted and turn it round if not.
+    const gp_Pnt middle = on.Translated(gp_Vec(normal) * ((from + to) / 2));
+    TopoDS_Shape solid = thickenPatch(patch, from, to);
+    if (solid.IsNull()) solid = thickenPatch(patch, std::min(from, 0.0), to);  // some surfaces won't offset the other way
+    if (!solid.IsNull() && !solidHolds(solid, middle)) {
+      TopoDS_Shape turned = thickenPatch(patch, -to, -from);
+      if (!turned.IsNull() && solidHolds(turned, middle)) solid = turned;
+    }
+    if (solid.IsNull()) continue;
+    builder.Add(relief, solid);
+    if (first) {
+      handle[0] = on.X(); handle[1] = on.Y(); handle[2] = on.Z();
+      handle[3] = normal.X(); handle[4] = normal.Y(); handle[5] = normal.Z();
+      first = false;
+    }
+    for (TopExp_Explorer f(solid, TopAbs_FACE); f.More(); f.Next()) names.push_back({f.Current(), feat + ".relief"});
+  }
+  if (first) {
+    setError("the surface could not be thickened here · try a smaller height");
+    return 0;
+  }
+  return storeChecked(relief, names, feat + ".relief", "the projection produced an invalid solid");
   SK_CATCH(0)
 }
 

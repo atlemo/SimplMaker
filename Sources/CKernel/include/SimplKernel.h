@@ -122,6 +122,14 @@ SKHandle sk_mirror_copy(SKHandle body, double ox, double oy, double oz, double n
 // Hollows a body: removes the named faces and keeps walls `thickness` thick (inside the body when
 // `inside`, else outside it). New wall faces are named "<featureId>.shell…".
 SKHandle sk_shell(SKHandle body, const char *const *faceNames, int count, double thickness, bool inside, const char *featureId);
+// Projects sketch profiles onto a body along (dx, dy, dz), the way a slide projector throws them on a wall, and
+// returns the relief: a solid that follows the surface, `height` thick along its normals. A positive height
+// stands out of the surface (emboss, to join to the body), a negative one goes into it (deboss, to cut out of
+// it). It is built on the faces named (all of them when `faceCount` is 0) that face against the direction, so a
+// round face gets the profile on its sketch side only. handle[0..2] = a point on the surface in the middle of the
+// first patch, handle[3..5] = the unit normal pointing out of the body there. Faces: "<featureId>.relief".
+SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int faceCount, const SKHandle *profiles, int count,
+                           double dx, double dy, double dz, double height, const char *featureId, double handle[6]);
 // A straight edge's line: a point on it and its direction (out[0..2], out[3..5]); false if it's curved.
 bool sk_body_edge_line(SKHandle body, const char *edgeName, double out[6]);
 // A straight edge's two ends (out[0..2] = where it starts, out[3..5] = where it ends); false if it's curved.

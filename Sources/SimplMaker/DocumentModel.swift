@@ -1325,6 +1325,11 @@ final class DocumentModel {
                 return handle("Thickness", center, frame.normal * (sf.inside ? -1 : 1), sf.thickness)
             }
             return nil
+        case .project(let pf):
+            // Out of the surface where the first profile landed (into it, for a deboss).
+            guard let landed = result.projectionHandles[id] else { return nil }
+            return handle(pf.mode == .emboss ? "Height" : "Depth", landed.origin,
+                          pf.mode == .emboss ? landed.normal : -landed.normal, pf.height)
         case .sketch, .sweep, .loft, .combine, .mirror, .pattern, .importBody, .image:
             return nil
         }
@@ -1700,6 +1705,9 @@ final class DocumentModel {
         case .shell(var sf):
             sf.thickness = text
             doc.features[i].kind = .shell(sf)
+        case .project(var pf):
+            pf.height = text
+            doc.features[i].kind = .project(pf)
         case .sketch, .sweep, .loft, .combine, .mirror, .importBody, .image:
             break
         }

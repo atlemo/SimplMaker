@@ -50,6 +50,7 @@ struct InspectorView: View {
                 case .mirror(let f): MirrorInspector(model: model, id: id, mirror: f)
                 case .pattern(let f): PatternInspector(model: model, id: id, pattern: f)
                 case .shell(let f): ShellInspector(model: model, id: id, shell: f)
+                case .project(let f): ProjectInspector(model: model, id: id, project: f)
                 case .importBody(let f): ImportInspector(model: model, id: id, imported: f)
                 case .image(let f): ImageInspector(model: model, id: id, image: f)
                 }
@@ -1080,6 +1081,46 @@ struct ShellInspector: View {
                 }
             }
             BodiesRow(model: model, ids: [shell.body])
+        }
+    }
+}
+
+struct ProjectInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let project: ProjectFeature
+
+    var edit: FeatureEdit<ProjectFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .project(let p) = $0 { p } else { nil } }, wrap: { .project($0) })
+    }
+
+    var body: some View {
+        Section("Project") {
+            Picker("Type", selection: Binding(get: { project.mode }, set: { m in edit.update("Change Type") { $0.mode = m } })) {
+                ForEach(ProjectMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            edit.row(project.mode == .emboss ? "Height" : "Depth", project.height, "Edit Height") { $0.height = $1 }
+            Toggle("Flip direction", isOn: Binding(get: { project.flipped }, set: { v in edit.update("Flip") { $0.flipped = v } }))
+            LabeledContent("Profiles") {
+                HStack {
+                    Text("\(project.profiles.count)")
+                    Button("Reselect…") { model.reselectProfiles(id) }.help("Pick the profiles to project again")
+                }
+            }
+            LabeledContent("Faces", value: project.faces.isEmpty ? "All that face the sketch" : "\(project.faces.count)")
+            let picked = model.selection.compactMap { model.faceRef($0) }.filter { $0.body == project.target }
+            if !picked.isEmpty {
+                Button("Project onto the \(picked.count) Selected Face(s)") {
+                    edit.update("Change Faces") { $0.faces = picked }
+                    model.clearSelection()
+                }
+            }
+            if !project.faces.isEmpty {
+                Button("Project onto Every Face Instead") { edit.update("Change Faces") { $0.faces = [] } }
+            }
+            BodiesRow(model: model, ids: [project.target])
+            Text("The profiles are thrown onto the body along the sketch's direction, like a projector, and follow its surface, flat or curved. Profiles that reach past the body's edge-on side are cut off there.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
