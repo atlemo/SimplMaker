@@ -74,17 +74,20 @@ extension SketchOverlayBuilder {
         }
     }
 
-    /// A construction plane: a translucent, pickable square centred on its origin.
-    static func constructionPlane(_ f: Frame, size s: Double, id: UInt32, into o: inout SketchOverlay) {
+    /// A construction plane: a translucent, pickable rectangle over `extent` in its own frame. Its sides
+    /// also go in as separate pickable segments (`edgeIDs`, bottom, right, top, left) to drag them.
+    static func constructionPlane(_ f: Frame, extent e: PlaneExtent, id: UInt32, edgeIDs: [UInt32]?, into o: inout SketchOverlay) {
         let n = SIMD3<Float>(Float(f.normal.x), Float(f.normal.y), Float(f.normal.z))
-        let h = s / 2
-        let corners = [SIMD2(-h, -h), SIMD2(h, -h), SIMD2(h, h), SIMD2(-h, h)].map { world(f, $0) }
+        let corners = [SIMD2(e.uMin, e.vMin), SIMD2(e.uMax, e.vMin), SIMD2(e.uMax, e.vMax), SIMD2(e.uMin, e.vMax)].map { world(f, $0) }
         let base = UInt32(o.planeVertices.count)
         for c in corners { o.planeVertices.append(FaceVertex(px: c.x, py: c.y, pz: c.z, nx: n.x, ny: n.y, nz: n.z, id: id)) }
         o.planeIndices += [0, 1, 2, 0, 2, 3].map { base + $0 }
         for i in 0..<4 {
             let a = corners[i], b = corners[(i + 1) % 4]
             o.planeOutline.append(SegmentInstance(ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z, id: id))
+            if let edgeIDs {
+                o.planeEdges.append(SegmentInstance(ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z, id: edgeIDs[i]))
+            }
         }
     }
 

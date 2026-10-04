@@ -24,6 +24,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var handleDrag = false
     /// A hole's move dot is being dragged.
     private var holeMoveDrag = false
+    private var planeResizeDrag = false
     /// The Move/Rotate manipulator: what it draws, the part under the pointer, and the drag in progress.
     private var manipulatorView: ManipulatorView?
     private var manipulatorLayout: ManipulatorLayout?
@@ -381,7 +382,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             guard let h = model.hovered, tool.accepts(h.kind) else { return .arrow }
             return .pointingHand
         }
-        if model.hovered?.kind == .handle { return handleDrag || holeMoveDrag ? .closedHand : .openHand }
+        if planeResizeDrag { return .closedHand }
+        if model.hovered?.kind == .handle || model.hovered?.kind == .planeEdge { return handleDrag || holeMoveDrag ? .closedHand : .openHand }
         return .arrow
     }
 
@@ -532,6 +534,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             holeMoveDrag = true
             model?.beginHoleMove()
             updateCursor()
+        } else if let renderer, PickID(raw: renderer.hovered).kind == .planeEdge {
+            planeResizeDrag = true
+            model?.beginPlaneResize(PickID(raw: renderer.hovered))
+            updateCursor()
         } else if let renderer, PickID(raw: renderer.hovered).kind == .handle {
             handleDrag = true
             model?.beginHandleDrag(slot: PickID(raw: renderer.hovered).handleSlot)
@@ -571,6 +577,23 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             refreshOverlay()
             return
         }
+        if planeResizeDrag, let renderer, let model {
+            let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
+            // How long 1 mm in the side's way looks here, so it moves in round steps.
+            var pointsPerMM: Double?
+            if let l = model.planeResizeLine {
+                let a = l.point, b = l.point + l.direction
+                if let pa = renderer.camera.project(SIMD3(Float(a.x), Float(a.y), Float(a.z)), viewSize: bounds.size),
+                   let pb = renderer.camera.project(SIMD3(Float(b.x), Float(b.y), Float(b.z)), viewSize: bounds.size) {
+                    pointsPerMM = Double(hypot(pb.x - pa.x, pb.y - pa.y))
+                }
+            }
+            model.dragPlaneEdge(rayOrigin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                                direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)),
+                                pointsPerMM: pointsPerMM)
+            refreshOverlay()
+            return
+        }
         if handleDrag, let renderer {
             let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
             // How long 1 mm along the arrow looks here, so the size can go in round steps.
@@ -600,7 +623,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     override func mouseUp(with event: NSEvent) {
         if windowDrag { windowDrag = false; return }
-        defer { lastDrag = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; manipulatorDrag = nil; updateCursor() }
+        defer { lastDrag = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; planeResizeDrag = false; manipulatorDrag = nil; updateCursor() }
         if manipulatorDrag != nil {
             model?.endManipulatorDrag()
             refreshOverlay()
@@ -608,6 +631,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }
         if holeMoveDrag {
             model?.endHoleMove()
+            refreshOverlay()
+            return
+        }
+        if planeResizeDrag {
+            model?.endPlaneResize()
             refreshOverlay()
             return
         }

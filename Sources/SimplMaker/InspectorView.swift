@@ -955,6 +955,7 @@ struct PlaneInspector: View {
             Picker("Turned about", selection: Binding(get: { plane.axis }, set: { a in edit.update("Change Axis") { $0.axis = a } })) {
                 ForEach(PlaneAxis.allCases, id: \.self) { Text("\($0.rawValue) axis").tag($0) }
             }
+            if plane.extent != nil { Button("Reset Size") { edit.update("Reset Plane Size") { $0.extent = nil } } }
             Button("New Sketch on This Plane") { model.beginSketch(on: .plane(id)) }
         }
     }

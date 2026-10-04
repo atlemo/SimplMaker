@@ -92,6 +92,7 @@ struct ToolGroup: View {
         GroupLabel(title: title, chevron: true,
                    highlighted: hidden.contains { $0.active }) { listOpen.toggle() }
             .toolTip("All \(title) tools. Pin the ones you use to the toolbar.")
+            .tutorialSpot(anyOf: hidden.map(\.title), cornerRadius: DS.Radius.sm, outset: 1)  // a tool the tutorial wants, not pinned: its group
             .accessibilityLabel("\(title) tools")
             .popover(isPresented: $listOpen, arrowEdge: .bottom) {
                 ToolGroupList(title: title, tools: tools, pins: pins, isDefault: stored == nil,

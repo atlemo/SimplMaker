@@ -393,6 +393,17 @@ public enum PlaneAxis: String, Codable, Hashable, Sendable, CaseIterable {
     case horizontal = "Horizontal", vertical = "Vertical"
 }
 
+/// How far a drawn construction plane reaches from its origin along its own axes, in mm. Only the
+/// drawing: a plane is endless to everything that sketches on it or mirrors across it.
+public struct PlaneExtent: Codable, Hashable, Sendable {
+    public var uMin: Double, uMax: Double, vMin: Double, vMax: Double
+    public init(uMin: Double, uMax: Double, vMin: Double, vMax: Double) {
+        self.uMin = uMin; self.uMax = uMax; self.vMin = vMin; self.vMax = vMax
+    }
+    /// A square centred on the origin.
+    public init(side: Double) { self.init(uMin: -side / 2, uMax: side / 2, vMin: -side / 2, vMax: side / 2) }
+}
+
 /// A construction plane: another plane (an origin plane, a flat face or another construction
 /// plane) turned about one of its axes, then moved along its normal.
 public struct PlaneFeature: Codable, Hashable, Sendable {
@@ -400,8 +411,12 @@ public struct PlaneFeature: Codable, Hashable, Sendable {
     public var offset: String
     public var angle: String
     public var axis: PlaneAxis
-    public init(base: PlaneRef, offset: String = "10 mm", angle: String = "0 deg", axis: PlaneAxis = .horizontal) {
-        self.base = base; self.offset = offset; self.angle = angle; self.axis = axis
+    /// The size it is drawn at, once an edge has been dragged; until then a square sized to the model.
+    /// Changing it rebuilds nothing (see `CADDocument.ignoringPresentation`).
+    public var extent: PlaneExtent?
+    public init(base: PlaneRef, offset: String = "10 mm", angle: String = "0 deg", axis: PlaneAxis = .horizontal,
+                extent: PlaneExtent? = nil) {
+        self.base = base; self.offset = offset; self.angle = angle; self.axis = axis; self.extent = extent
     }
 }
 
@@ -811,6 +826,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         for i in d.features.indices {
             d.features[i].name = ""
             if case .image(var f) = d.features[i].kind { f.opacity = 1; d.features[i].kind = .image(f) }
+            if case .plane(var f) = d.features[i].kind { f.extent = nil; d.features[i].kind = .plane(f) }
         }
         return d
     }

@@ -11,12 +11,13 @@ struct ContentView: View {
     let fileURL: URL?
 
     var body: some View {
-        DocumentWindow(model: file.model, fileURL: fileURL)
+        DocumentWindow(model: file.model, guide: file.guide, fileURL: fileURL)
     }
 }
 
 struct DocumentWindow: View {
     @Bindable var model: DocumentModel
+    let guide: TutorialGuide
     let fileURL: URL?
     @Environment(\.undoManager) private var undoManager
     @Environment(\.openWindow) private var openWindow
@@ -66,12 +67,14 @@ struct DocumentWindow: View {
                 if model.showSidebar {
                     Sidebar(model: model)
                         .floatingPanel(width: Panel.sidebarWidth)
+                        .tutorialSpot("browser", cornerRadius: DS.Radius.window, outset: 0, filled: false)
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 Spacer(minLength: 0)  // empty: clicks go through to the viewport
                 if model.showInspector {
                     InspectorView(model: model)
                         .floatingPanel(width: Panel.inspectorWidth)
+                        .tutorialSpot("inspector", cornerRadius: DS.Radius.window, outset: 0, filled: false)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
@@ -88,12 +91,21 @@ struct DocumentWindow: View {
         // An empty part says how to begin, in the middle of the free space.
         .overlay {
             if model.document.features.isEmpty, model.sketchSession == nil, model.pendingTool == nil,
-               !model.isPickingSketchPlane {
-                StartCard(model: model)
+               !model.isPickingSketchPlane, !guide.isActive {
+                StartCard(model: model, guide: guide)
                     .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
                     .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
                     .transition(.opacity)
             }
+        }
+        // The tutorial's card floats at the bottom of the free space, above the status bar and the OK bar, where it
+        // stays clear of what is built at the middle of the view and of the size fields that appear beside it.
+        .overlay(alignment: .bottom) {
+            TutorialCard(model: model, guide: guide)
+                .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
+                .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
+                .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
+                    + 2 * (DS.ControlHeight.large + Panel.inset) + Panel.inset)
         }
         // The Appearance panel floats at the top, beside the inspector.
         .overlay(alignment: .topTrailing) {
@@ -169,6 +181,8 @@ struct DocumentWindow: View {
             }
         }
         .focusedSceneValue(\.documentModel, model)
+        .focusedSceneValue(\.tutorialGuide, guide)
+        .environment(\.tutorialSpotlight, guide.spotlight)
         .environment(\.completionModel, model)
         .onAppear {
             model.undoManager = undoManager
@@ -285,6 +299,7 @@ struct ToolbarHoverMonitor: NSViewRepresentable {
 /// Shown on an empty part: the two ways to begin.
 struct StartCard: View {
     let model: DocumentModel
+    let guide: TutorialGuide
 
     var body: some View {
         VStack(spacing: DS.Spacing.space5) {
@@ -301,6 +316,8 @@ struct StartCard: View {
                 Button { model.run(.cylinder) } label: { Label("Cylinder", systemImage: "cylinder") }
             }
             .controlSize(.large)
+            Button { guide.start() } label: { Label("New to CAD? Follow the tutorial: a box with a lid", systemImage: "graduationcap") }
+                .buttonStyle(.link)
             Text("Right-click in the view for more · File › New Demo Part for an example")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -487,6 +504,7 @@ struct Sidebar: View {
                 if parametersOpen {
                     ForEach(model.document.parameters) { p in
                         ParameterRow(model: model, parameter: p)
+                            .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
                     }
                 }
             } header: {
@@ -505,6 +523,7 @@ struct Sidebar: View {
                     }
                 }
                 .padding(.trailing, DS.Spacing.space4)  // clear of the panel edge, in line with the rows below
+                .tutorialSpot("parameters", outset: 4)
             }
         }
         .listStyle(.sidebar)
@@ -894,6 +913,7 @@ struct ToolButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .toolTip(help ?? title)
+        .tutorialSpot(title)
         .accessibilityLabel(title)
         .accessibilityAddTraits(active ? .isSelected : [])
     }
@@ -965,6 +985,7 @@ struct SketchToolbar: View {
             }
             .toolTip("Finish the sketch (Return)")
             .buttonStyle(.borderedProminent)
+            .tutorialSpot("Finish Sketch", cornerRadius: 10, outset: 3)
         }
         // Sketch mode tints the tools' glass while the window is active.
         .environment(\.toolsOnTint, activeState != .inactive)

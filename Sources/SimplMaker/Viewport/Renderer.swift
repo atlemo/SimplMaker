@@ -14,11 +14,13 @@ import simd
 ///   handle     0x7000_0000 (the extrude drag handle), 0x7000_0001 (the dot that moves a hole),
 ///              0x7000_0002 (a hole's diameter arrow)
 ///   plane      0x7100_0000 | index (an origin plane offered when choosing where to sketch)
+///   plane edge 0x7200_0000 | plane << 8 | edge (a construction plane's border: 0 bottom, 1 right, 2 top, 3 left)
 struct PickID: Hashable, Sendable {
-    enum Kind: Sendable { case none, face, edge, sketchPoint, sketchCurve, region, handle, plane }
+    enum Kind: Sendable { case none, face, edge, sketchPoint, sketchCurve, region, handle, plane, planeEdge }
     static let edgeFlag: UInt32 = 0x8000_0000
     static let sketchFlag: UInt32 = 0x4000_0000
     static let planeFlag: UInt32 = 0x0100_0000
+    static let planeEdgeFlag: UInt32 = 0x0200_0000
     var raw: UInt32
 
     init(raw: UInt32) { self.raw = raw }
@@ -28,6 +30,7 @@ struct PickID: Hashable, Sendable {
     init(sketchCurve i: Int, slot: Int = 0) { raw = 0x5000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
     init(region i: Int, slot: Int = 0) { raw = 0x6000_0000 | UInt32(slot & 0xFFF) << 16 | UInt32(i & 0xFFFF) }
     init(plane i: Int) { raw = 0x7000_0000 | PickID.planeFlag | UInt32(i) }
+    init(planeEdge edge: Int, plane i: Int) { raw = 0x7000_0000 | PickID.planeEdgeFlag | UInt32(i & 0xFF) << 8 | UInt32(edge & 0xF) }
     /// A whole body, picked from the browser (no real face has this index). It counts as a face of
     /// the body for tools that pick bodies, and the highlight covers every face.
     init(wholeBody i: Int) { raw = UInt32(i + 1) << 20 | 0xFFFFF }
@@ -37,6 +40,8 @@ struct PickID: Hashable, Sendable {
     static let moveHandle = PickID(raw: 0x7000_0001)
     /// A hole's second arrow, for its diameter (the first, `handle`, is its depth).
     static let diameterHandle = PickID(raw: 0x7000_0002)
+    /// Which side of a construction plane a plane-edge pick is: 0 bottom, 1 right, 2 top, 3 left.
+    var planeEdge: Int { Int(raw & 0xF) }
     /// Which of a feature's arrows this picks (0 for any other pick).
     var handleSlot: Int { self == PickID.diameterHandle ? 1 : 0 }
 
@@ -48,7 +53,9 @@ struct PickID: Hashable, Sendable {
             case 0: return .sketchPoint
             case 1: return .sketchCurve
             case 2: return .region
-            default: return raw & PickID.planeFlag != 0 ? .plane : .handle
+            default:
+                if raw & PickID.planeEdgeFlag != 0 { return .planeEdge }
+                return raw & PickID.planeFlag != 0 ? .plane : .handle
             }
         }
         return .face
@@ -62,6 +69,7 @@ struct PickID: Hashable, Sendable {
         switch kind {
         case .face, .edge: return Int(raw & 0xFFFFF)
         case .plane: return Int(raw & 0xFF)
+        case .planeEdge: return Int((raw >> 8) & 0xFF)
         case .sketchPoint, .sketchCurve, .region: return Int(raw & 0xFFFF)
         default: return Int(raw & 0x0FFF_FFFF)
         }
@@ -100,6 +108,8 @@ struct SketchOverlay {
     var planeVertices: [FaceVertex] = []
     var planeIndices: [UInt32] = []
     var planeOutline: [SegmentInstance] = []
+    /// The borders of the construction planes, one segment per side, to drag a side and resize the plane.
+    var planeEdges: [SegmentInstance] = []
     /// A plane is being asked for: planes show through bodies, and their borders pick through them,
     /// so one that lies under or inside a body (the floor, under a part sitting on it) can still be chosen.
     var planesSeeThrough = false
@@ -340,6 +350,7 @@ final class Renderer {
         /// One centre per plane (6 indices each), to draw them back to front.
         var planeCenters: [SIMD3<Float>] = []
         var planeOutline: MTLBuffer?, planeOutlineCount = 0
+        var planeEdges: MTLBuffer?, planeEdgeCount = 0
         var planesSeeThrough = false
         /// Images with their textures, farthest first once drawn (see draw).
         var images: [(draw: ImageDraw, texture: MTLTexture)] = []
@@ -472,6 +483,7 @@ final class Renderer {
             return c / 4
         }
         g.planeOutline = makeBuffer(o.planeOutline); g.planeOutlineCount = o.planeOutline.count
+        g.planeEdges = makeBuffer(o.planeEdges); g.planeEdgeCount = o.planeEdges.count
         g.planesSeeThrough = o.planesSeeThrough
         g.images = o.images.compactMap { d in texture(for: d).map { (d, $0) } }
         imageTextures = imageTextures.filter { key, _ in o.images.contains { $0.id == key } }
@@ -885,6 +897,16 @@ final class Renderer {
         segments(overlay.planeOutline, overlay.planeOutlineCount,
                  DrawParams(color: planeLine, hoverColor: planeLine, selectColor: planeLine,
                             thickness: 1.2 * scale, depthBias: 0.0005, pickable: 1))
+        // A construction plane's sides, to grab and drag: a band wide enough to hit, and the side itself
+        // lighting up under the pointer.
+        enc.setDepthStencilState(noWriteDepthState)
+        segments(overlay.planeEdges, overlay.planeEdgeCount,
+                 DrawParams(color: planeLine, hoverColor: hover, selectColor: planeLine,
+                            thickness: Self.edgePickWidth * scale, depthBias: 0.0005, pickable: 1), pipeline: pickBandPipeline)
+        enc.setDepthStencilState(depthState)
+        segments(overlay.planeEdges, overlay.planeEdgeCount,
+                 DrawParams(color: planeLine, hoverColor: hover, selectColor: planeLine,
+                            thickness: 1.6 * scale, depthBias: 0.0005, pickable: 1))
         if overlay.planesSeeThrough {
             // An unseen band along each plane's border, in the ID buffer over everything: a plane
             // covered by a body (the floor under a part) is still picked by clicking its border.

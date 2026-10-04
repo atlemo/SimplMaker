@@ -24,6 +24,7 @@ struct WelcomeView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     @AppStorage(Preferences.showWelcome) private var showWelcome = true
+    @AppStorage(Preferences.tutorialCompleted) private var tutorialCompleted = false
     @State private var recents: [URL] = []
     @State private var selected: URL?
     /// The part being opened, which shows a spinner.
@@ -43,7 +44,7 @@ struct WelcomeView: View {
                 .frame(maxHeight: .infinity)
                 .background(Color(nsColor: .underPageBackgroundColor))
         }
-        .frame(height: 520)
+        .frame(height: 580)
         .onAppear { AppWindows.openWindow = openWindow; reloadRecents() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in reloadRecents() }
         .alert("The part couldn't be opened", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
@@ -74,12 +75,15 @@ struct WelcomeView: View {
             .padding(.bottom, DS.Spacing.space8)
 
             VStack(alignment: .leading, spacing: 18) {
+                // New users see the tutorial first; once it's been finished it moves down the list.
+                if !tutorialCompleted { tutorialAction }
                 WelcomeAction(title: "Create a new part", subtitle: "Start with an empty part and sketch on a plane.",
                               systemImage: "plus.square") { newDocument { CADFile() } }
                 WelcomeAction(title: "Open the demo part", subtitle: "A plate with a hole, fillets and a chamfer to explore.",
                               systemImage: "cube") { newDocument { CADFile(document: .demo()) } }
                 WelcomeAction(title: "Open an existing part…", subtitle: "Open a .simplmaker file on your Mac.",
                               systemImage: "folder") { NSDocumentController.shared.openDocument(nil) }
+                if tutorialCompleted { tutorialAction }
             }
             .padding(.horizontal, 52)
 
@@ -95,6 +99,12 @@ struct WelcomeView: View {
                 .padding(.horizontal, DS.Spacing.windowMargin)
                 .padding(.bottom, DS.Spacing.windowMargin)
         }
+    }
+
+    private var tutorialAction: some View {
+        WelcomeAction(title: tutorialCompleted ? "Do the tutorial again" : "Make your first part",
+                      subtitle: "A guided tutorial: build a box with a lid, step by step.",
+                      systemImage: "graduationcap") { newDocument { CADFile(tutorial: true) } }
     }
 
     static var versionText: String {

@@ -71,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// Menu commands. They act on the frontmost document window through a focused value.
 struct SimplMakerCommands: Commands {
     @FocusedValue(\.documentModel) private var model
+    @FocusedValue(\.tutorialGuide) private var guide
     @Environment(\.newDocument) private var newDocument
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var updater = Updater.shared
@@ -92,6 +93,9 @@ struct SimplMakerCommands: Commands {
                 if !license.isLicensed { Button("Buy SimplMaker…") { license.buy() } }
                 Button("License…") { openWindow(id: AppWindows.licenseID) }
             }
+        }
+        CommandGroup(replacing: .help) {
+            Button(guide?.canResume == true ? "Resume Tutorial: Box with a Lid" : "Tutorial: Make a Box with a Lid") { startTutorial() }
         }
         CommandGroup(after: .newItem) {
             Button("New Demo Part") { newDocument { CADFile(document: .demo()) } }
@@ -200,6 +204,18 @@ struct SimplMakerCommands: Commands {
         CommandMenu("Inspect") {
             ForEach(DesignTool.inspect) { tool in toolItem(tool) }
         }
+    }
+
+    /// Help ▸ Tutorial: brings back one that was closed, starts in the empty part in front, or opens a new part for it.
+    private func startTutorial() {
+        if let guide, let model {
+            if guide.isActive { return }
+            if guide.canResume || (model.document.features.isEmpty && model.document.parameters.isEmpty) {
+                guide.start()
+                return
+            }
+        }
+        newDocument { CADFile(tutorial: true) }
     }
 
     /// A Create or Modify tool, with its single-letter shortcut (E for Extrude, F for Fillet...).

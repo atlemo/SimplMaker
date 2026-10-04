@@ -22,15 +22,20 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     /// The model's latest document, readable from any thread. SwiftUI takes snapshots on a
     /// background thread, where touching the main-actor model would crash.
     private let latest: OSAllocatedUnfairLock<CADDocument>
+    /// The window opens with the tutorial's card showing (File ▸ New from the welcome window's tutorial, or Help ▸ Tutorial).
+    private let startsTutorial: Bool
+    @MainActor private var guideStorage: TutorialGuide?
 
-    init(document: CADDocument = CADDocument()) {
+    init(document: CADDocument = CADDocument(), tutorial: Bool = false) {
         initial = document
+        startsTutorial = tutorial
         latest = OSAllocatedUnfairLock(initialState: document)
     }
 
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
         initial = try CADDocument.decode(data)
+        startsTutorial = false
         latest = OSAllocatedUnfairLock(initialState: initial)
     }
 
@@ -41,6 +46,14 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
         m.onDocumentChange = { [latest] doc in latest.withLock { $0 = doc } }
         modelStorage = m
         return m
+    }
+
+    /// The tutorial's guide for this document's window (showing only when asked for).
+    @MainActor var guide: TutorialGuide {
+        if let g = guideStorage { return g }
+        let g = TutorialGuide(active: startsTutorial)
+        guideStorage = g
+        return g
     }
 
     // SwiftUI calls snapshot on a background thread (autosave, Save), so it reads the locked copy.
@@ -56,4 +69,6 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
 extension FocusedValues {
     /// The model of the frontmost document window, for menu commands.
     @Entry var documentModel: DocumentModel?
+    /// The tutorial guide of the frontmost document window, for Help ▸ Tutorial.
+    @Entry var tutorialGuide: TutorialGuide?
 }

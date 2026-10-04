@@ -995,10 +995,13 @@ final class DocumentModel {
             o.planesSeeThrough = true
         }
         // Construction planes, always (unless hidden), pickable to sketch on or to select.
+        // Their sides can be dragged, except while a plane is being asked for (a click on a side then picks the plane).
         let planeSize = OriginPlane.displaySize(for: sceneBounds)
         for (slot, f) in planeFeatures.enumerated() where !document.hidden.contains(f.id) {
-            guard let frame = result?.planes[f.id] else { continue }
-            SketchOverlayBuilder.constructionPlane(frame, size: planeSize, id: PickID(plane: OriginPlane.allCases.count + slot).raw, into: &o)
+            guard let frame = result?.planes[f.id], case .plane(let pf) = f.kind else { continue }
+            let edges = showsOriginPlanes || pendingTool != nil ? nil : (0..<4).map { PickID(planeEdge: $0, plane: slot).raw }
+            SketchOverlayBuilder.constructionPlane(frame, extent: pf.extent ?? PlaneExtent(side: planeSize),
+                                                   id: PickID(plane: OriginPlane.allCases.count + slot).raw, edgeIDs: edges, into: &o)
         }
         addMeasureOverlay(to: &o)
         if manipulatedFeature == nil {
@@ -1516,6 +1519,79 @@ final class DocumentModel {
             return  // the preview stays on screen until the user answers
         }
         commitHandle(h.featureID, h.label, formatDimension(value, kind: h.unit), slot: h.slot, from: handleStartValue, to: value)
+    }
+
+    // MARK: resizing a construction plane
+
+    /// A construction plane's side being dragged: the plane, the side (see `PickID.planeEdge`), and the document before.
+    private struct PlaneResize {
+        var id: FeatureID
+        var edge: Int
+        var start: CADDocument
+    }
+    @ObservationIgnored private var planeResize: PlaneResize?
+
+    /// The plane a plane-edge pick belongs to.
+    func constructionPlane(ofEdge pick: PickID) -> FeatureID? {
+        guard pick.kind == .planeEdge else { return nil }
+        return planeFeatures[safe: pick.element]?.id
+    }
+
+    /// A side of a construction plane was grabbed: select the plane, and drag the side with `dragPlaneEdge`.
+    func beginPlaneResize(_ pick: PickID) {
+        guard let id = constructionPlane(ofEdge: pick) else { return }
+        guard LicenseManager.shared.allowsEditing else { return reportEditingLocked() }
+        selection = []
+        selectedFeature = id
+        planeResize = PlaneResize(id: id, edge: pick.planeEdge, start: document)
+    }
+
+    /// Where the grabbed side is and which way it moves: the point at its middle, the unit direction it
+    /// slides along (the plane's x axis for the left and right sides, its y axis for the others), and its
+    /// coordinate along that direction.
+    var planeResizeLine: (point: SIMD3<Double>, direction: SIMD3<Double>, coordinate: Double, extent: PlaneExtent)? {
+        guard let drag = planeResize, let i = document.index(of: drag.id), case .plane(let pf) = document.features[i].kind,
+              let frame = result?.planes[drag.id] else { return nil }
+        let e = pf.extent ?? PlaneExtent(side: OriginPlane.displaySize(for: sceneBounds))
+        let alongU = drag.edge == 1 || drag.edge == 3
+        let current = [e.vMin, e.uMax, e.vMax, e.uMin][drag.edge]
+        let middle = frame.point(alongU ? current : (e.uMin + e.uMax) / 2, alongU ? (e.vMin + e.vMax) / 2 : current)
+        return (middle, alongU ? frame.xAxis : frame.yAxis, current, e)
+    }
+
+    /// Moves the grabbed side to the point on the line out from its middle that's closest to the mouse ray; the
+    /// opposite side stays where it is. `pointsPerMM`: how long 1 mm looks on screen, for round steps.
+    func dragPlaneEdge(rayOrigin o: SIMD3<Double>, direction d: SIMD3<Double>, pointsPerMM: Double?) {
+        guard let drag = planeResize, let i = document.index(of: drag.id), case .plane(var pf) = document.features[i].kind,
+              let line = planeResizeLine else { return }
+        let a = line.direction, e = line.extent, current = line.coordinate
+        let w = line.point - o, b = simd_dot(a, d)
+        guard 1 - b * b > 1e-6 else { return }  // looking straight along the side's way
+        var value = current + (b * simd_dot(d, w) - simd_dot(a, w)) / (1 - b * b)
+        if let ppm = pointsPerMM, ppm > 1e-9 {
+            let step = ViewportMTKView.niceStep(6 / ppm)
+            value = (value / step).rounded() * step
+        }
+        let smallest = 1.0, before = pf.extent
+        switch drag.edge {
+        case 0: pf.extent = PlaneExtent(uMin: e.uMin, uMax: e.uMax, vMin: min(value, e.vMax - smallest), vMax: e.vMax)
+        case 1: pf.extent = PlaneExtent(uMin: e.uMin, uMax: max(value, e.uMin + smallest), vMin: e.vMin, vMax: e.vMax)
+        case 2: pf.extent = PlaneExtent(uMin: e.uMin, uMax: e.uMax, vMin: e.vMin, vMax: max(value, e.vMin + smallest))
+        default: pf.extent = PlaneExtent(uMin: min(value, e.uMax - smallest), uMax: e.uMax, vMin: e.vMin, vMax: e.vMax)
+        }
+        guard pf.extent != before else { return }
+        document.features[i].kind = .plane(pf)  // shown at once; the undo step is made when the side is let go
+        overlayRevision += 1
+    }
+
+    /// The side is let go: the new size becomes one undo step.
+    func endPlaneResize() {
+        guard let drag = planeResize else { return }
+        planeResize = nil
+        let resized = document
+        guard resized != drag.start else { return }
+        document = drag.start
+        replace(with: resized, actionName: "Resize Plane")
     }
 
     /// Answer to the unlink prompt: use the dragged number, or keep the expression.

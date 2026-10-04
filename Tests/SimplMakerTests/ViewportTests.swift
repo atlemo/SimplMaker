@@ -39,6 +39,24 @@ import Testing
         #expect(PickID(plane: 2).kind == .plane && PickID(plane: 2).element == 2)
         #expect(PickID(plane: 0).kind == .plane && PickID(plane: 0) != PickID.handle)
         #expect(PickID(raw: 0).kind == .none)
+        for edge in 0..<4 {
+            let side = PickID(planeEdge: edge, plane: 5)
+            #expect(side.kind == .planeEdge && side.element == 5 && side.planeEdge == edge)
+            #expect(side != PickID(plane: 5) && side != PickID.handle)
+        }
+    }
+
+    @Test @MainActor func aConstructionPlaneOffersItsFourSidesToDrag() {
+        var o = SketchOverlay()
+        let ids = (0..<4).map { PickID(planeEdge: $0, plane: 0).raw }
+        SketchOverlayBuilder.constructionPlane(.xy, extent: PlaneExtent(uMin: -2, uMax: 10, vMin: -1, vMax: 4), id: 9, edgeIDs: ids, into: &o)
+        #expect(o.planeEdges.map(\.id) == ids)
+        // Bottom runs along v = vMin from uMin to uMax; the left side is the last, at u = uMin.
+        #expect(o.planeEdges[0].ax == -2 && o.planeEdges[0].bx == 10 && o.planeEdges[0].ay == -1 && o.planeEdges[0].by == -1)
+        #expect(o.planeEdges[3].ax == -2 && o.planeEdges[3].bx == -2 && o.planeEdges[3].ay == 4 && o.planeEdges[3].by == -1)
+        var none = SketchOverlay()
+        SketchOverlayBuilder.constructionPlane(.xy, extent: PlaneExtent(side: 10), id: 9, edgeIDs: nil, into: &none)
+        #expect(none.planeEdges.isEmpty && none.planeOutline.count == 4)
     }
 
     @Test func originPlanesRoundTripThroughPicksAndLabels() {

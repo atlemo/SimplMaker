@@ -14,6 +14,8 @@ enum Preferences {
     static let gridSizeMetric = "gridSizeMetric"
     static let gridSizeUS = "gridSizeUS"
     static let sketchPaper = "sketchPaper"
+    /// The guided first part (the box with a lid) has been finished.
+    static let tutorialCompleted = "tutorialCompleted"
 
     /// The tools pinned to a toolbar group (see ToolGroups.swift), by the group's id.
     static func toolbarPins(_ group: String) -> String { "toolbarPins.\(group)" }
