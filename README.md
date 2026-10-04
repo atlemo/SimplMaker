@@ -94,6 +94,10 @@ SimplCAD is a normal Mac document app, with New, Open Recent, autosave, versions
 
 Faces and edges have **persistent names** built from stable IDs and the kernel's history. For example, an extrusion's top face is `plate.end`, and the edge between two of its sides is `plate.side.L0|plate.side.L1`. Features refer to geometry by these names, so a fillet stays on the right edge when you change the dimensions upstream.
 
+## Selling it
+
+SimplCAD has a 14-day trial and then needs a license key, sold through Polar. The trial and license code is in `Sources/SimplCAD/Licensing/`; set-up and testing steps are in [docs/LICENSING-SETUP.md](docs/LICENSING-SETUP.md), and drafts of the EULA and privacy policy are in `legal/`. Builds without `Packaging/licensing.conf` are not license-enforced.
+
 ## License
 
 SimplCAD is proprietary software. Copyright © 2026 Atle Mo. All rights reserved (see [LICENSE](LICENSE)).
