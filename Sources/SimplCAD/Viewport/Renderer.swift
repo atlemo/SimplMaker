@@ -114,6 +114,8 @@ struct SketchOverlay {
     var handle: [SegmentInstance] = []     // drag handle: shaft + tip (zero-length)
     var moveHandle: [SegmentInstance] = [] // a hole's move dot (zero-length)
     var snap: [SegmentInstance] = []       // where the cursor snapped: a zero-length marker
+    var measure: [SegmentInstance] = []    // the Measure tool's line between two pieces, drawn over the bodies
+    var measurePoints: [SegmentInstance] = []  // and its ends (zero-length)
     var handleInvalid = false               // the previewed size can't be built
     var fullyConstrained = false
 }
@@ -350,6 +352,8 @@ final class Renderer {
         var handle: MTLBuffer?, handleCount = 0
         var moveHandle: MTLBuffer?, moveHandleCount = 0
         var snap: MTLBuffer?, snapCount = 0
+        var measure: MTLBuffer?, measureCount = 0
+        var measurePoints: MTLBuffer?, measurePointCount = 0
         var handleInvalid = false
         var fullyConstrained = false
     }
@@ -480,6 +484,8 @@ final class Renderer {
         g.handle = makeBuffer(o.handle); g.handleCount = o.handle.count
         g.moveHandle = makeBuffer(o.moveHandle); g.moveHandleCount = o.moveHandle.count
         g.snap = makeBuffer(o.snap); g.snapCount = o.snap.count
+        g.measure = makeBuffer(o.measure); g.measureCount = o.measure.count
+        g.measurePoints = makeBuffer(o.measurePoints); g.measurePointCount = o.measurePoints.count
         g.handleInvalid = o.handleInvalid
         g.fullyConstrained = o.fullyConstrained
         overlay = g
@@ -910,6 +916,10 @@ final class Renderer {
         // The extrude handle is drawn on top of everything so it can always be grabbed.
         enc.setDepthStencilState(onTopDepthState)
         let handleColor = overlay.handleInvalid ? p.invalid : p.handle
+        segments(overlay.measure, overlay.measureCount,
+                 DrawParams(color: p.handle, hoverColor: p.handle, selectColor: p.handle, thickness: 2 * scale, depthBias: 0, pickable: 0))
+        segments(overlay.measurePoints, overlay.measurePointCount,
+                 DrawParams(color: p.handle, hoverColor: p.handle, selectColor: p.handle, thickness: 9 * scale, depthBias: 0, pickable: 0))
         segments(overlay.handle, overlay.handleCount,
                  DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: p.selection,
                             thickness: 3 * scale, depthBias: 0, pickable: 1))

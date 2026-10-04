@@ -68,6 +68,7 @@ extension DocumentModel {
             .separator,
             .action("Fillet Face Edges", symbol: DesignTool.fillet.symbol) { self.selection = [pick]; self.run(.fillet) },
             .action("Chamfer Face Edges", symbol: DesignTool.chamfer.symbol) { self.selection = [pick]; self.run(.chamfer) },
+            .action("Measure", symbol: DesignTool.measure.symbol) { self.selection = [pick]; self.run(.measure) },
             .separator,
             .action("Move or Rotate Body", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.selection = [pick]; self.run(.move) },
             .action("Combine with Other Bodies…", symbol: "square.on.square.intersection.dashed") {
@@ -85,6 +86,7 @@ extension DocumentModel {
         var items: [ContextItem] = [
             .action("Fillet", symbol: DesignTool.fillet.symbol) { pickEdge(); self.run(.fillet) },
             .action("Chamfer", symbol: DesignTool.chamfer.symbol) { pickEdge(); self.run(.chamfer) },
+            .action("Measure", symbol: DesignTool.measure.symbol) { self.selection = [pick]; self.run(.measure) },
         ]
         if let body = meshes[safe: pick.body]?.id { items += ownerItems(nil, body: body) }
         return items

@@ -101,8 +101,11 @@
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Circ.hxx>
+#include <gp_Cone.hxx>
 #include <gp_Cylinder.hxx>
 #include <gp_Pln.hxx>
+#include <gp_Sphere.hxx>
+#include <gp_Torus.hxx>
 #include <gp_Trsf.hxx>
 
 namespace {
@@ -2221,6 +2224,178 @@ bool sk_body_bounds(SKHandle body, double out[6]) {
   BRepBndLib::Add(b->shape, box);
   if (box.IsVoid()) return false;
   box.Get(out[0], out[1], out[2], out[3], out[4], out[5]);
+  return true;
+  SK_CATCH(false)
+}
+
+// ----------------------------------------------------------------- measure ---
+
+namespace {
+/// The face, the edge or (null name) the whole shape of a body.
+bool measuredPiece(Body &b, bool isFace, const char *name, TopoDS_Shape &out) {
+  if (!name) {
+    out = b.shape;
+    return true;
+  }
+  const auto &index = isFace ? b.faceIndex : b.edgeIndex;
+  auto it = index.find(name);
+  if (it == index.end()) {
+    setError(std::string(isFace ? "face not found: " : "edge not found: ") + name);
+    return false;
+  }
+  out = isFace ? b.faces(it->second + 1) : b.edges(it->second + 1);
+  return true;
+}
+
+}  // namespace
+
+extern "C++" {
+template <class T>
+void copyXYZ(double *to, const T &p) { to[0] = p.X(); to[1] = p.Y(); to[2] = p.Z(); }
+}
+
+bool sk_measure_element(SKHandle body, bool isFace, const char *name, SKMeasure *out) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b || !out) return false;
+  TopoDS_Shape shape;
+  if (!measuredPiece(*b, isFace, name, shape)) return false;
+  *out = SKMeasure{};
+
+  Bnd_Box box;
+  BRepBndLib::AddOptimal(shape, box, Standard_False, Standard_False);
+  if (!box.IsVoid()) box.Get(out->bounds[0], out->bounds[1], out->bounds[2], out->bounds[3], out->bounds[4], out->bounds[5]);
+
+  GProp_GProps props;
+  if (!name) {
+    out->geom = SK_GEOM_BODY;
+    BRepGProp::VolumeProperties(shape, props);
+    out->volume = props.Mass();
+    copyXYZ(out->centroid, props.CentreOfMass());
+    GProp_GProps surface;
+    BRepGProp::SurfaceProperties(shape, surface);
+    out->size = surface.Mass();
+    return true;
+  }
+
+  if (isFace) {
+    const TopoDS_Face &f = TopoDS::Face(shape);
+    BRepGProp::SurfaceProperties(f, props);
+    out->size = props.Mass();
+    copyXYZ(out->centroid, props.CentreOfMass());
+    GProp_GProps edges;
+    BRepGProp::LinearProperties(f, edges);
+    out->perimeter = edges.Mass();
+
+    BRepAdaptor_Surface s(f);
+    const double v0 = s.FirstVParameter(), v1 = s.LastVParameter();
+    switch (s.GetType()) {
+      case GeomAbs_Plane: {
+        out->geom = SK_GEOM_PLANE;
+        gp_Dir n = s.Plane().Axis().Direction();
+        if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
+        out->hasDirection = true;
+        copyXYZ(out->direction, n);
+        break;
+      }
+      case GeomAbs_Cylinder: {
+        const gp_Cylinder c = s.Cylinder();
+        out->geom = SK_GEOM_CYLINDER;
+        out->radius = c.Radius();
+        out->length = std::abs(v1 - v0);
+        out->hasCenter = out->hasDirection = true;
+        copyXYZ(out->center, c.Axis().Location());
+        copyXYZ(out->direction, c.Axis().Direction());
+        break;
+      }
+      case GeomAbs_Cone: {
+        const gp_Cone c = s.Cone();
+        out->geom = SK_GEOM_CONE;
+        const double sa = c.SemiAngle();
+        out->angle = std::abs(sa);
+        out->radius = std::abs(c.RefRadius() + v0 * std::sin(sa));
+        out->radius2 = std::abs(c.RefRadius() + v1 * std::sin(sa));
+        out->length = std::abs(v1 - v0) * std::cos(sa);
+        out->hasCenter = out->hasDirection = true;
+        copyXYZ(out->center, c.Axis().Location());
+        copyXYZ(out->direction, c.Axis().Direction());
+        break;
+      }
+      case GeomAbs_Sphere: {
+        const gp_Sphere sp = s.Sphere();
+        out->geom = SK_GEOM_SPHERE;
+        out->radius = sp.Radius();
+        out->hasCenter = true;
+        copyXYZ(out->center, sp.Location());
+        break;
+      }
+      case GeomAbs_Torus: {
+        const gp_Torus t = s.Torus();
+        out->geom = SK_GEOM_TORUS;
+        out->radius = t.MajorRadius();
+        out->radius2 = t.MinorRadius();
+        out->hasCenter = out->hasDirection = true;
+        copyXYZ(out->center, t.Location());
+        copyXYZ(out->direction, t.Axis().Direction());
+        break;
+      }
+      default:
+        out->geom = SK_GEOM_OTHER;
+    }
+    return true;
+  }
+
+  const TopoDS_Edge &e = TopoDS::Edge(shape);
+  BRepGProp::LinearProperties(e, props);
+  out->size = props.Mass();
+  copyXYZ(out->centroid, props.CentreOfMass());
+  BRepAdaptor_Curve c(e);
+  const double t0 = c.FirstParameter(), t1 = c.LastParameter();
+  out->hasEnds = true;
+  copyXYZ(out->start, c.Value(t0));
+  copyXYZ(out->end, c.Value(t1));
+  switch (c.GetType()) {
+    case GeomAbs_Line:
+      out->geom = SK_GEOM_LINE;
+      out->hasDirection = true;
+      copyXYZ(out->direction, c.Line().Direction());
+      break;
+    case GeomAbs_Circle: {
+      const gp_Circ circle = c.Circle();
+      const double span = std::abs(t1 - t0);
+      out->geom = span > 2 * M_PI - 1e-6 ? SK_GEOM_CIRCLE : SK_GEOM_ARC;
+      out->radius = circle.Radius();
+      out->angle = std::min(span, 2 * M_PI);
+      out->hasCenter = out->hasDirection = true;
+      copyXYZ(out->center, circle.Location());
+      copyXYZ(out->direction, circle.Axis().Direction());
+      break;
+    }
+    default:
+      out->geom = SK_GEOM_OTHER;
+  }
+  return true;
+  SK_CATCH(false)
+}
+
+bool sk_measure_distance(SKHandle bodyA, bool isFaceA, const char *nameA, SKHandle bodyB, bool isFaceB, const char *nameB,
+                         double out[7]) {
+  SK_TRY
+  Body *a, *b;
+  auto keepA = lookup(bodyA, a);
+  auto keepB = lookup(bodyB, b);
+  if (!a || !b) return false;
+  TopoDS_Shape sa, sb;
+  if (!measuredPiece(*a, isFaceA, nameA, sa) || !measuredPiece(*b, isFaceB, nameB, sb)) return false;
+  BRepExtrema_DistShapeShape d(sa, sb);
+  if (!d.IsDone() || d.NbSolution() < 1) {
+    setError("could not measure the distance");
+    return false;
+  }
+  out[0] = d.Value();
+  copyXYZ(out + 1, d.PointOnShape1(1));
+  copyXYZ(out + 4, d.PointOnShape2(1));
   return true;
   SK_CATCH(false)
 }

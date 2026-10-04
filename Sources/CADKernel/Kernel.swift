@@ -165,6 +165,87 @@ public enum KHole: Sendable {
     case countersink(diameter: Double, angle: Double)
 }
 
+/// What a measured piece of a body is (see `KMeasure`).
+public enum KGeometry: Sendable, Equatable {
+    case other, body, plane, cylinder, cone, sphere, torus, line, circle, arc
+}
+
+/// A face, an edge or a whole body, measured: its size, and the geometry that sets it apart (a plane's
+/// normal, a hole's radius and axis, a straight edge's ends). Lengths in mm, angles in radians.
+public struct KMeasure: Sendable, Equatable {
+    public var geometry: KGeometry
+    /// A body's or face's area, an edge's length.
+    public var size: Double
+    /// A body's volume.
+    public var volume: Double
+    /// The length of all the edges around a face.
+    public var perimeter: Double
+    /// A round piece's radius (a cone's at its start, a torus's major radius).
+    public var radius: Double
+    /// A torus's tube radius, a cone's radius at its other end.
+    public var radius2: Double
+    /// The angle an arc spans, or half a cone's opening.
+    public var angle: Double
+    /// A cylinder's or cone's length along its axis.
+    public var length: Double
+    /// A circle's, arc's, sphere's or torus's centre; for a cylinder or cone a point on its axis.
+    public var center: SIMD3<Double>?
+    /// A plane's normal out of the material; the axis of a cylinder, cone or torus; a line's direction; a circle's normal.
+    public var direction: SIMD3<Double>?
+    /// Where an edge starts and ends.
+    public var ends: (start: SIMD3<Double>, end: SIMD3<Double>)?
+    /// The centre of mass.
+    public var centroid: SIMD3<Double>
+    public var bounds: (min: SIMD3<Double>, max: SIMD3<Double>)
+
+    /// The size along each world axis.
+    public var extent: SIMD3<Double> { bounds.max - bounds.min }
+
+    public static func == (a: KMeasure, b: KMeasure) -> Bool {
+        a.geometry == b.geometry && a.size == b.size && a.volume == b.volume && a.perimeter == b.perimeter && a.radius == b.radius
+            && a.radius2 == b.radius2 && a.angle == b.angle && a.length == b.length && a.center == b.center
+            && a.direction == b.direction && a.ends?.start == b.ends?.start && a.ends?.end == b.ends?.end
+            && a.centroid == b.centroid && a.bounds.min == b.bounds.min && a.bounds.max == b.bounds.max
+    }
+
+    init(_ m: SKMeasure) {
+        func v(_ a: (Double, Double, Double)) -> SIMD3<Double> { SIMD3(a.0, a.1, a.2) }
+        switch m.geom {
+        case Int32(SK_GEOM_BODY.rawValue): geometry = .body
+        case Int32(SK_GEOM_PLANE.rawValue): geometry = .plane
+        case Int32(SK_GEOM_CYLINDER.rawValue): geometry = .cylinder
+        case Int32(SK_GEOM_CONE.rawValue): geometry = .cone
+        case Int32(SK_GEOM_SPHERE.rawValue): geometry = .sphere
+        case Int32(SK_GEOM_TORUS.rawValue): geometry = .torus
+        case Int32(SK_GEOM_LINE.rawValue): geometry = .line
+        case Int32(SK_GEOM_CIRCLE.rawValue): geometry = .circle
+        case Int32(SK_GEOM_ARC.rawValue): geometry = .arc
+        default: geometry = .other
+        }
+        size = m.size; volume = m.volume; perimeter = m.perimeter; radius = m.radius; radius2 = m.radius2
+        angle = m.angle; length = m.length
+        center = m.hasCenter ? v(m.center) : nil
+        direction = m.hasDirection ? v(m.direction) : nil
+        ends = m.hasEnds ? (v(m.start), v(m.end)) : nil
+        centroid = v(m.centroid)
+        bounds = (SIMD3(m.bounds.0, m.bounds.1, m.bounds.2), SIMD3(m.bounds.3, m.bounds.4, m.bounds.5))
+    }
+}
+
+/// Something on a body to measure: the whole body, one face or one edge (by persistent name).
+public enum KPiece: Sendable, Hashable {
+    case body
+    case face(String)
+    case edge(String)
+}
+
+/// The shortest distance between two pieces, and the points on each that are that far apart.
+public struct KDistance: Sendable, Equatable {
+    public var distance: Double
+    public var a: SIMD3<Double>
+    public var b: SIMD3<Double>
+}
+
 public final class KBody: @unchecked Sendable {
     let handle: SKHandle
     init(handle: SKHandle) { self.handle = handle }
@@ -393,6 +474,34 @@ public final class KBody: @unchecked Sendable {
         var o = [Double](repeating: 0, count: 6)
         guard sk_body_edge_handle(handle, edge, &o) else { throw KernelError.last("edge handle") }
         return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]))
+    }
+
+    /// Measures the whole body, a face or an edge.
+    public func measure(_ piece: KPiece = .body) throws -> KMeasure {
+        var m = SKMeasure()
+        let ok: Bool
+        switch piece {
+        case .body: ok = sk_measure_element(handle, false, nil, &m)
+        case .face(let name): ok = sk_measure_element(handle, true, name, &m)
+        case .edge(let name): ok = sk_measure_element(handle, false, name, &m)
+        }
+        guard ok else { throw KernelError.last("measure") }
+        return KMeasure(m)
+    }
+
+    /// The shortest distance from a piece of this body to a piece of another (or the same) body.
+    public func distance(_ piece: KPiece, to other: KBody, _ otherPiece: KPiece) throws -> KDistance {
+        func parts(_ p: KPiece) -> (isFace: Bool, name: String?) {
+            switch p {
+            case .body: return (false, nil)
+            case .face(let n): return (true, n)
+            case .edge(let n): return (false, n)
+            }
+        }
+        let (fa, na) = parts(piece), (fb, nb) = parts(otherPiece)
+        var o = [Double](repeating: 0, count: 7)
+        guard sk_measure_distance(handle, fa, na, other.handle, fb, nb, &o) else { throw KernelError.last("distance") }
+        return KDistance(distance: o[0], a: SIMD3(o[1], o[2], o[3]), b: SIMD3(o[4], o[5], o[6]))
     }
 
     public var volume: Double { sk_body_volume(handle) }

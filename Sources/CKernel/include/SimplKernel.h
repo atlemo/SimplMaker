@@ -174,6 +174,46 @@ bool sk_body_edge_handle(SKHandle body, const char *edgeName, double out[6]);
 /// out[3..5] = unit direction along the first face, away from the edge, out[6..8] = the same along the other face,
 /// out[9..11] = the first face's outward normal. False if the edge doesn't join two faces.
 bool sk_body_chamfer_handle(SKHandle body, const char *edgeName, const char *faceName, bool flip, double out[12]);
+/// What a measured piece of a body is, for sk_measure_element.
+typedef enum SKGeom {
+  SK_GEOM_OTHER = 0,
+  SK_GEOM_BODY = 1,
+  SK_GEOM_PLANE = 2,
+  SK_GEOM_CYLINDER = 3,
+  SK_GEOM_CONE = 4,
+  SK_GEOM_SPHERE = 5,
+  SK_GEOM_TORUS = 6,
+  SK_GEOM_LINE = 7,
+  SK_GEOM_CIRCLE = 8,  // a full circle
+  SK_GEOM_ARC = 9      // part of a circle
+} SKGeom;
+
+/// A measured piece of a body: the whole body, one face or one edge. Fields that don't apply are 0.
+typedef struct SKMeasure {
+  int geom;              // SKGeom
+  double size;           // body or face: area; edge: length
+  double volume;         // body only
+  double perimeter;      // face: the length of all its edges
+  double radius;         // cylinder, cone (at the start), sphere, torus (major), circle, arc
+  double radius2;        // torus: the tube's radius; cone: the radius at the other end
+  double angle;          // arc: the angle it spans; cone: half the opening angle (radians)
+  double length;         // cylinder and cone: the length along the axis
+  bool hasCenter;
+  double center[3];      // circle, arc, sphere, torus: the centre; cylinder, cone: a point on the axis; other faces and bodies: the centre of mass
+  double centroid[3];    // the centre of mass of the body, face or edge
+  bool hasDirection;
+  double direction[3];   // plane: the normal out of the material; cylinder, cone, torus: the axis; line: along it; circle, arc: the normal
+  bool hasEnds;
+  double start[3], end[3];  // edge: where it starts and ends
+  double bounds[6];      // xmin ymin zmin xmax ymax zmax
+} SKMeasure;
+/// Measures a face, an edge, or (with a null name) the whole body. `isFace` says which kind `name` is.
+bool sk_measure_element(SKHandle body, bool isFace, const char *name, SKMeasure *out);
+/// The shortest distance between two measured pieces and the points that are that far apart:
+/// out[0] = the distance, out[1..3] = the point on the first, out[4..6] = the point on the second.
+/// A null name stands for the whole body. False if either is missing or the search fails.
+bool sk_measure_distance(SKHandle bodyA, bool isFaceA, const char *nameA, SKHandle bodyB, bool isFaceB, const char *nameB,
+                         double out[7]);
 double sk_body_volume(SKHandle body);
 bool sk_body_bounds(SKHandle body, double out[6]);  // xmin ymin zmin xmax ymax zmax
 bool sk_body_is_valid(SKHandle body);

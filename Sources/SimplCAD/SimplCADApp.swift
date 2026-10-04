@@ -197,6 +197,9 @@ struct SimplCADCommands: Commands {
             toolItem(.mirror)
             toolItem(.pattern)
         }
+        CommandMenu("Inspect") {
+            ForEach(DesignTool.inspect) { tool in toolItem(tool) }
+        }
     }
 
     /// A Create or Modify tool, with its single-letter shortcut (E for Extrude, F for Fillet...).

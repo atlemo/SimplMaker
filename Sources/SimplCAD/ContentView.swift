@@ -105,6 +105,16 @@ struct DocumentWindow: View {
             }
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.showAppearance)
+        // The Measure tool's readout floats in the same corner.
+        .overlay(alignment: .topTrailing) {
+            if model.pendingTool == .measure, model.sketchSession == nil {
+                MeasurePanel(model: model)
+                    .padding(.top, Panel.inset)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.pendingTool == .measure)
         // The status bar floats at the bottom, between the panels.
         .overlay(alignment: .bottom) {
             StatusBar(model: model)
@@ -1036,6 +1046,8 @@ struct DesignToolbar: View {
             group("Modify", id: "design.modify", DesignTool.modifiers, defaults: DesignTool.modifiers)
             ToolDivider()
             group("Construct", id: "design.construct", DesignTool.construct, defaults: [.plane, .mirror, .pattern, .canvas])
+            ToolDivider()
+            group("Inspect", id: "design.inspect", DesignTool.inspect, defaults: DesignTool.inspect)
         }
         .toolsPanel()
     }

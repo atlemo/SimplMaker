@@ -14,6 +14,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
     case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", scale = "Scale", combine = "Combine"
     case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell", canvas = "Canvas"
+    case measure = "Measure"
 
     var id: String { rawValue }
 
@@ -24,6 +25,8 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .move, .scale, .combine]
     /// Construction planes, copies of bodies, and reference images.
     static let construct: [DesignTool] = [.plane, .mirror, .pattern, .canvas]
+    /// Tools that read the model without changing it.
+    static let inspect: [DesignTool] = [.measure]
 
     /// A glyph name from the macOS Design System's icon set (see IconGlyphs.swift), not an SF Symbol.
     var symbol: String {
@@ -51,6 +54,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .pattern: return "pattern"
         case .shell: return "shell"
         case .canvas: return "image"
+        case .measure: return "ruler"
         }
     }
 
@@ -78,9 +82,10 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .scale: return "z"
         case .combine: return "j"
         case .plane: return "n"
-        case .mirror: return "i"
+        case .mirror: return "q"
         case .pattern: return "t"
         case .canvas: return "v"
+        case .measure: return "i"
         }
     }
 
@@ -105,10 +110,11 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .thread: return "Thread (D): cut a metric or inch screw thread on a shaft or in a hole"
         case .combine: return "Combine (J): join, cut or intersect bodies (e.g. cut text out of a plate)"
         case .plane: return "Plane (N): a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
-        case .mirror: return "Mirror (I): copy bodies across a plane"
+        case .mirror: return "Mirror (Q): copy bodies across a plane"
         case .pattern: return "Pattern (T): copy bodies in a row or around an axis"
         case .shell: return "Shell (S): hollow a body, leaving the picked faces open"
         case .canvas: return "Canvas (V): place a reference image on a plane or flat face, to trace over; its opacity is adjustable"
+        case .measure: return "Measure (I): click a face, an edge or a body for its size, or two for the distance and angle between them"
         }
     }
 
@@ -125,6 +131,9 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
 
     /// Placed by clicking a plane or a flat face (the origin planes show while it waits).
     var needsPlane: Bool { primitive != nil || self == .plane || self == .canvas }
+
+    /// A body picked in the browser counts too (a click in the viewport picks a face or an edge).
+    var acceptsWholeBody: Bool { picksBodies || self == .measure }
 
     /// Shows the origin planes while it waits, to pick one (mirror across a plane).
     var showsPlanes: Bool { needsPlane || self == .mirror }
@@ -154,6 +163,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .mirror: return kind == .face || kind == .edge || kind == .plane  // bodies, then the plane
         case .pattern: return kind == .face || kind == .edge  // bodies (faces), and a straight edge for the direction
         case .shell: return kind == .face  // the faces to leave open
+        case .measure: return kind == .face || kind == .edge  // and bodies, from the browser
         }
     }
 }
@@ -168,11 +178,13 @@ extension DocumentModel {
             return
         }
         pendingTool = nil
-        if !tool.picksBodies { selection.removeAll(where: \.isWholeBody) }  // a body from the browser isn't a face
+        if !tool.acceptsWholeBody { selection.removeAll(where: \.isWholeBody) }  // a body from the browser isn't a face
+        if tool == .measure { showAppearance = false }  // both float in the same corner
         if perform(tool) { return }
         pendingTool = tool
         if tool.showsPlanes { sketchPlaneSize = OriginPlane.displaySize(for: sceneBounds) }
-        selection = selection.filter { tool.accepts($0.kind) && accepts($0) && (!$0.isWholeBody || tool.picksBodies) }
+        selection = selection.filter { tool.accepts($0.kind) && accepts($0) && (!$0.isWholeBody || tool.acceptsWholeBody) }
+        if tool == .measure { selection = Array(selection.prefix(2)) }
         overlayRevision += 1
     }
 
@@ -191,6 +203,10 @@ extension DocumentModel {
 
     /// A viewport click while a tool waits for input.
     func toolClick(_ tool: DesignTool, _ pick: PickID?, additive: Bool = false) {
+        if tool == .measure {  // stays active: every click is a new measurement
+            if pick?.isWholeBody != true || tool.acceptsWholeBody { measureClick(pick) }
+            return
+        }
         guard let pick, tool.accepts(pick.kind), !pick.isWholeBody || tool.picksBodies else { return }
         // Re-picking: only the feature's own sketch counts.
         if let id = reselecting, let source = profileSource(id) {
@@ -247,6 +263,7 @@ extension DocumentModel {
         case .pattern:
             let n = faceBodies.count
             return n == 0 ? "Click the bodies to copy" : "Click more bodies, or a straight edge for the direction · Return makes the pattern (\(n) picked)"
+        case .measure: return measurePrompt()
         case .shell:
             let n = selection.filter(\.isFace).count
             return n == 0 ? "Click the faces to leave open" : "Click more faces, or press Return to shell (\(n) open)"
@@ -370,6 +387,8 @@ extension DocumentModel {
             guard bodies.count >= 2, !waiting else { return false }
             add(Feature(name: document.nextName(tool.rawValue),
                         .combine(CombineFeature(target: bodies[0], tools: Array(bodies.dropFirst())))))
+        case .measure:
+            return false  // reads the picks without making a feature, and stays until Esc
         }
         return true
     }

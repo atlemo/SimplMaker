@@ -84,6 +84,8 @@ final class DocumentModel {
             if pendingTool != oldValue { toolMissed = false }
         }
     }
+    /// The Measure tool's last readout, for the picks and the scene it was made for.
+    @ObservationIgnored var measureCache: (key: MeasureCacheKey, value: MeasureReadout?)?
     /// The waiting tool's last click was on something it can't use: its prompt says why.
     var toolMissed = false
     /// The pointer's ray while the Thread tool waits, so the face a click would thread lights up.
@@ -963,6 +965,7 @@ final class DocumentModel {
             guard let frame = result?.planes[f.id] else { continue }
             SketchOverlayBuilder.constructionPlane(frame, size: planeSize, id: PickID(plane: OriginPlane.allCases.count + slot).raw, into: &o)
         }
+        addMeasureOverlay(to: &o)
         if manipulatedFeature == nil {
             // Each arrow is its shaft and then its head (the same segment again, drawn as a triangle).
             for h in dragHandles {
@@ -990,6 +993,7 @@ final class DocumentModel {
     func dimensionLabels() -> [DimensionLabel] {
         if let session = sketchSession { return SketchOverlayBuilder.labels(session) }
         if showsOriginPlanes { return SketchOverlayBuilder.originPlaneLabels(size: sketchPlaneSize) }
+        if pendingTool == .measure { return measureLabels() }
         return []  // the drag handle's size is an editable field; see the viewport
     }
 
