@@ -3,6 +3,8 @@
 #   scripts/bundle-app.sh           release build
 #   scripts/bundle-app.sh --debug   debug build (faster to build)
 #   scripts/bundle-app.sh --release release build signed with a Developer ID (see below), ready to notarize
+#   add --licensed to make a debug build ask for a license too (see Licensing below); without it a development
+#   build never does, so your own copy does not lock after 14 days
 #   add --open to launch it afterwards
 # The bundle's Info.plist declares the .simplmaker document type, which the document features
 # (Open Recent, autosave, versions) rely on; prefer this (or Xcode) over `swift run`.
@@ -15,9 +17,12 @@
 #   SPARKLE_FEED_URL                   overrides the feed (default https://simplmaker.com/updates/v<generation>/appcast.xml)
 # Without the key file the bundle has no updater (no "Check for Updates…").
 #
-# Licensing: the 14-day trial and license keys (Polar) are enforced only when the bundle names an organization.
+# Licensing: the 14-day trial and license keys (Polar) are enforced only when the bundle names an organization:
+# --release builds always do, other builds only with --licensed (or LICENSE=1).
 #   Packaging/licensing.conf           POLAR_ORGANIZATION_ID, BUY_URL, POLAR_BENEFIT_ID, LICENSE_GENERATION
 #                                      (copy licensing.conf.example); one product and one feed per major version
+#   LICENSING_CONF=Packaging/licensing.sandbox.conf scripts/bundle-app.sh --debug --licensed
+#                                      tests against Polar's sandbox with another file (leave it out of git)
 # Without it the build is not license-enforced (development builds). --release refuses to build without it,
 # unless ALLOW_UNLICENSED=1.
 #
@@ -31,10 +36,12 @@ cd "$ROOT"
 CONFIG=release
 OPEN=0
 RELEASE=0
+ENFORCE="${LICENSE:-0}"
 for arg in "$@"; do
   case "$arg" in
     --debug) CONFIG=debug ;;
     --release) RELEASE=1 ;;
+    --licensed) ENFORCE=1 ;;
     --open) OPEN=1 ;;
     *) echo "unknown option $arg" >&2; exit 2 ;;
   esac
@@ -58,7 +65,10 @@ POLAR_ORGANIZATION_ID="$(conf_get POLAR_ORGANIZATION_ID)"
 BUY_URL="$(conf_get BUY_URL)"
 POLAR_BENEFIT_ID="$(conf_get POLAR_BENEFIT_ID)"
 POLAR_API_BASE="${POLAR_API_BASE:-$(conf_get POLAR_API_BASE)}"
-if [ -n "$POLAR_ORGANIZATION_ID" ] && [ -n "$BUY_URL" ]; then
+[ "$RELEASE" != 1 ] || ENFORCE=1
+if [ "$ENFORCE" != 1 ]; then
+  echo "note: development build, not license-enforced (--licensed to test the trial and keys)"
+elif [ -n "$POLAR_ORGANIZATION_ID" ] && [ -n "$BUY_URL" ]; then
   # Without the product id a key of any SimplMaker major version would be accepted.
   if [ -z "$POLAR_BENEFIT_ID" ] && [ "$RELEASE" = 1 ] && [ "${ALLOW_UNLICENSED:-0}" != 1 ]; then
     echo "Packaging/licensing.conf has no POLAR_BENEFIT_ID: a key for any major version would unlock this one" >&2
@@ -74,10 +84,10 @@ if [ -n "$POLAR_ORGANIZATION_ID" ] && [ -n "$BUY_URL" ]; then
     plist_set SCPolarAPIBase "$POLAR_API_BASE"
   fi
 elif [ "$RELEASE" = 1 ] && [ "${ALLOW_UNLICENSED:-0}" != 1 ]; then
-  echo "no Packaging/licensing.conf: a release would not ask for a license (ALLOW_UNLICENSED=1 to build one anyway)" >&2
+  echo "no licensing.conf: a release would not ask for a license (ALLOW_UNLICENSED=1 to build one anyway)" >&2
   exit 1
 else
-  echo "note: no Packaging/licensing.conf, so this build is not license-enforced"
+  echo "note: no licensing configuration ($LICENSING_CONF), so this build is not license-enforced"
 fi
 
 # Updater: Sparkle, embedded in Contents/Frameworks (the binary's rpath points there).

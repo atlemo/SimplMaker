@@ -8,3 +8,4 @@ DerivedData/
 ThirdParty/occt/
 .swiftpm/
 dist/
+Packaging/licensing.sandbox.conf
