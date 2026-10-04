@@ -335,9 +335,58 @@ T *copyOut(const std::vector<T> &v) {
   return p;
 }
 
+/// The smallest radius of a rounded corner that a chamfer along `edges` would shrink: an arc or circle in the
+/// edges' tangent chains whose flat face lies inside it (a plate's rounded corner, the top of a boss). Chamfering
+/// the corner by that much or more folds the cone through its own axis, so the result is no solid. (A fillet that
+/// size builds a valid solid, so fillets aren't held to it.)
+/// Holes don't count: their flat face is outside the circle, so chamfering only widens them. False if there is none.
+bool cornerRadiusLimit(Body &b, const std::vector<TopoDS_Edge> &edges, double &radius) {
+  try {
+    BRepFilletAPI_MakeChamfer mk(b.shape);
+    for (const TopoDS_Edge &e : edges) mk.Add(Precision::Confusion() * 10, e);  // Add finds each edge's tangent chain
+    ShapeToShapes edgeFaces;
+    TopExp::MapShapesAndUniqueAncestors(b.shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    bool found = false;
+    for (int ic = 1; ic <= mk.NbContours(); ++ic)
+      for (int j = 1; j <= mk.NbEdges(ic); ++j) {
+        const TopoDS_Edge &e = mk.Edge(ic, j);
+        BRepAdaptor_Curve c(e);
+        if (c.GetType() != GeomAbs_Circle || !edgeFaces.Contains(e)) continue;
+        const gp_Circ circ = c.Circle();
+        const gp_Pnt at = c.Value(0.5 * (c.FirstParameter() + c.LastParameter()));
+        const gp_Vec inward(at, circ.Location());
+        if (inward.Magnitude() < Precision::Confusion()) continue;
+        const gp_Pnt probe = at.Translated(inward.Normalized() * std::min(0.01, 0.01 * circ.Radius()));
+        for (const TopoDS_Shape &fs : edgeFaces.FindFromKey(e)) {
+          const TopoDS_Face &f = TopoDS::Face(fs);
+          BRepAdaptor_Surface surf(f);
+          if (surf.GetType() != GeomAbs_Plane) continue;
+          if (std::abs(surf.Plane().Axis().Direction().Dot(circ.Axis().Direction())) < 0.999) continue;
+          BRepClass_FaceClassifier inside(f, probe, 1e-7);
+          if (inside.State() != TopAbs_IN) continue;
+          radius = found ? std::min(radius, circ.Radius()) : circ.Radius();
+          found = true;
+        }
+      }
+    return found;
+  } catch (Standard_Failure &) {
+    return false;
+  }
+}
+
+/// How a failed chamfer of `size` along `edges` reads when a rounded corner is the reason (see
+/// cornerRadiusLimit); empty if it isn't, or if `size` is 0 (a chamfer measured two ways has no one size to compare).
+std::string cornerMessage(Body &b, const std::vector<TopoDS_Edge> &edges, const char *kind, double size) {
+  double r;
+  if (size <= 0 || !cornerRadiusLimit(b, edges, r) || size < r - 1e-6) return "";
+  char buf[200];
+  std::snprintf(buf, sizeof buf, "the corner it runs round has a radius of %.4g mm, so a %s has to be smaller than that", r, kind);
+  return buf;
+}
+
 template <class Maker, class AddFn>
 SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, const std::string &feat,
-                            const char *kind, AddFn add) {
+                            const char *kind, AddFn add, double size = 0) {
   Body *b;
   auto keep = lookup(body, b);
   if (!b) return 0;
@@ -357,9 +406,12 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
     add(mk, e);
     used.push_back({e, edgeNames[k]});
   }
+  std::vector<TopoDS_Edge> picked;
+  for (auto &u : used) picked.push_back(TopoDS::Edge(u.first));
   mk.Build();
   if (!mk.IsDone()) {
-    setError(std::string(kind) + " failed (size too large for the adjacent faces?)");
+    std::string why = cornerMessage(*b, picked, kind, size);
+    setError(why.empty() ? std::string(kind) + " failed (size too large for the adjacent faces?)" : why);
     return 0;
   }
   std::vector<Named> names;
@@ -379,7 +431,8 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
   Body out = makeBody(mk.Shape(), names, feat + "." + kind);
   BRepCheck_Analyzer check(out.shape);
   if (!check.IsValid()) {
-    setError(std::string(kind) + " produced an invalid solid");
+    std::string why = cornerMessage(*b, picked, kind, size);
+    setError(why.empty() ? std::string(kind) + " produced an invalid solid" : why);
     return 0;
   }
   return store(std::move(out));
@@ -1788,7 +1841,7 @@ SKHandle sk_chamfer(SKHandle body, const char *const *edgeNames, int count, doub
   }
   return edgeFeature<BRepFilletAPI_MakeChamfer>(
       body, edgeNames, count, featureOrDefault(featureId, "chamfer"), "chamfer",
-      [&](BRepFilletAPI_MakeChamfer &mk, const TopoDS_Edge &e) { mk.Add(distance, e); });
+      [&](BRepFilletAPI_MakeChamfer &mk, const TopoDS_Edge &e) { mk.Add(distance, e); }, distance);
   SK_CATCH(0)
 }
 
@@ -1849,6 +1902,24 @@ SKHandle sk_chamfer_ex(SKHandle body, const char *const *edgeNames, const char *
         ++k;
       });
   SK_CATCH(0)
+}
+
+bool sk_edge_round_limit(SKHandle body, const char *const *edgeNames, int count, double *out) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  std::vector<TopoDS_Edge> edges;
+  for (int k = 0; k < count; ++k) {
+    auto it = b->edgeIndex.find(edgeNames[k]);
+    if (it == b->edgeIndex.end()) {
+      setError(std::string("edge not found: ") + edgeNames[k]);
+      return false;
+    }
+    edges.push_back(TopoDS::Edge(b->edges(it->second + 1)));
+  }
+  return cornerRadiusLimit(*b, edges, *out);
+  SK_CATCH(false)
 }
 
 // ----------------------------------------------------------------- queries ---

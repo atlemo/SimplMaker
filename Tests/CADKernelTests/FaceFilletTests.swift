@@ -24,6 +24,22 @@ import Testing
         #expect(try cyl.faceEdges(top).count == 1, "the seam isn't an edge to round")
     }
 
+    @Test func aChamferAsBigAsARoundedCornerSaysSo() throws {
+        func cylinder(chamfer size: String) -> RegenResult {
+            var d = CADDocument()
+            d.features = [
+                Feature(id: "c", name: "Cylinder1", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, height: "10", diameter: "20"))),
+                Feature(id: "k", name: "Chamfer1", .chamfer(EdgeFeature(edges: [], faces: [FaceRef(body: "c", face: "c.top")], size: size))),
+            ]
+            return Regenerator.regenerate(d)
+        }
+        let body = try #require(cylinder(chamfer: "1 mm").edgeFeatureInputs["k"]?["c"])
+        #expect(body.chamferLimit(edges: try body.faceEdges("c.top")) == 10, "the top's circle, 10 mm in radius")
+        #expect(cylinder(chamfer: "9.9 mm").errors.isEmpty)
+        let error = try #require(cylinder(chamfer: "12 mm").errors["k"])
+        #expect(error.contains("radius of 10 mm"), "\(error)")
+    }
+
     @Test func filletAndChamferAllRoundAFace() throws {
         let plain = try #require(Regenerator.regenerate(box()).body("b")).volume
         let top = FaceRef(body: "b", face: "b.top")

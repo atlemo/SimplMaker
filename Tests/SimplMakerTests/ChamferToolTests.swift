@@ -73,6 +73,21 @@ import Testing
         #expect((handles[1].maxValue ?? 0) < .pi / 2, "the angle stops short of a right angle")
     }
 
+    @Test func theChamferArrowStopsUnderARoundedCornersRadius() async throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "b", name: "Cylinder1", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, height: "10", diameter: "20")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        try pickTop(model)
+        model.run(.chamfer)
+        try await settle(model)
+        let h = try #require(model.dragHandles.first)
+        #expect(abs((h.maxValue ?? 0) - 9.99) < 1e-9, "a hair under the 10 mm radius: \(String(describing: h.maxValue))")
+        let problem = try #require(model.handleSizeProblem("12", h))
+        #expect(problem.contains("at most") && problem.contains("radius"), "\(problem)")
+        #expect(model.handleSizeProblem("5", h) == nil)
+    }
+
     @Test func choosingAnotherWayWhileTheToolWaitsOnlyChangesTheWay() async throws {
         let model = try await boxModel()
         model.run(.chamfer)  // nothing picked: it waits for edges

@@ -217,6 +217,56 @@ int main(void) {
   CHECK(sk_fillet(j, e0, 1, 50, "F9") == 0, "oversized fillet must fail cleanly\n");
   printf("  oversized fillet error: %s\n", sk_last_error());
 
+  printf("== chamfer/fillet size limited by a rounded corner\n");
+  {  // A 60x40x10 plate with 5 mm rounded corners: the top edge's chain runs round them.
+    SKHandle box = sk_primitive(SK_BOX, XY, 60, 40, 10, 0, "P");
+    const char *vertical[4];
+    int nv = 0, ne = sk_body_edge_count(box);
+    for (int i = 0; i < ne; i++) {
+      SKMeasure m;
+      sk_measure_element(box, false, sk_body_edge_name(box, i), &m);
+      if (m.geom == SK_GEOM_LINE && fabs(m.direction[2]) > 0.9 && nv < 4) vertical[nv++] = sk_body_edge_name(box, i);
+    }
+    CHECK(nv == 4, "four vertical edges\n");
+    SKHandle plate = sk_fillet(box, vertical, 4, 5, "R");
+    CHECK(plate, "round the corners\n");
+    const char *top[1] = {0};
+    for (int i = 0; plate && i < sk_body_edge_count(plate) && !top[0]; i++) {
+      SKMeasure m;
+      sk_measure_element(plate, false, sk_body_edge_name(plate, i), &m);
+      if (m.geom == SK_GEOM_LINE && fabs(m.bounds[2] - 10) < 1e-6 && fabs(m.bounds[5] - 10) < 1e-6) top[0] = sk_body_edge_name(plate, i);
+    }
+    CHECK(top[0], "a top edge\n");
+    double limit = 0;
+    CHECK(top[0] && sk_edge_round_limit(plate, top, 1, &limit) && NEAR(limit, 5, 1e-9), "corner limit is the 5 mm radius (%g)\n", limit);
+    SKHandle big = top[0] ? sk_chamfer(plate, top, 1, 6, "C") : 0;
+    CHECK(big == 0 && strstr(sk_last_error(), "radius of 5 mm"), "a 6 mm chamfer says why\n");
+    printf("  too-big chamfer error: %s\n", sk_last_error());
+    SKHandle bigFillet = top[0] ? sk_fillet(plate, top, 1, 6, "F") : 0;
+    CHECK(bigFillet && sk_body_is_valid(bigFillet), "a fillet isn't held to the corner radius\n");
+    if (bigFillet) sk_release(bigFillet);
+    SKHandle ok = top[0] ? sk_chamfer(plate, top, 1, 4.99, "C") : 0;
+    CHECK(ok && sk_body_is_valid(ok), "a chamfer just under the corner radius builds\n");
+    // Holes widen when rounded, so they never limit it.
+    SKHandle pin = sk_primitive(SK_CYLINDER, XY, 8, 0, 20, 0, "Q");
+    SKHandle drilled = plate && pin ? sk_boolean(plate, pin, SK_CUT) : 0;
+    const char *rim[1] = {0};
+    for (int i = 0; drilled && i < sk_body_edge_count(drilled) && !rim[0]; i++) {
+      SKMeasure m;
+      sk_measure_element(drilled, false, sk_body_edge_name(drilled, i), &m);
+      if (m.geom == SK_GEOM_CIRCLE && fabs(m.bounds[2] - 10) < 1e-6) rim[0] = sk_body_edge_name(drilled, i);
+    }
+    CHECK(rim[0], "a hole's rim\n");
+    CHECK(rim[0] && !sk_edge_round_limit(drilled, rim, 1, &limit), "a hole's rim has no corner limit\n");
+    SKHandle wide = rim[0] ? sk_chamfer(drilled, rim, 1, 6, "C") : 0;
+    CHECK(wide && sk_body_is_valid(wide), "a big chamfer on a hole is fine\n");
+    if (wide) sk_release(wide);
+    if (drilled) sk_release(drilled);
+    if (pin) sk_release(pin);
+    SKHandle tmp[] = {box, plate, ok};
+    for (int i = 0; i < 3; i++) if (tmp[i]) sk_release(tmp[i]);
+  }
+
   printf("== STEP import\n");
   {
     size_t size = 0;

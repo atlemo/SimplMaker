@@ -1036,6 +1036,8 @@ final class DocumentModel {
         var lengthPerUnit: Double = 1
         /// Largest value allowed (a full turn, for angles).
         var maxValue: Double?
+        /// Why the largest value is what it is, when that isn't obvious (a chamfer held under a corner's radius).
+        var maxReason: String?
         /// The arrow can be dragged back through its base (an extrude going the other way).
         var allowsNegative = false
         /// Which of the feature's arrows this is: a hole has one for its depth (0) and one for its diameter (1).
@@ -1155,11 +1157,13 @@ final class DocumentModel {
         guard let f = document.features.first(where: { $0.id == id }), !f.suppressed, let result else { return nil }
         let params = parameterValues
         func handle(_ label: String, _ base: SIMD3<Double>, _ direction: SIMD3<Double>, _ expression: String,
-                    unit: UnitKind = .length, per: Double = 1, max: Double? = nil, negative: Bool = false) -> DragHandle {
+                    unit: UnitKind = .length, per: Double = 1, max: Double? = nil, maxReason: String? = nil,
+                    negative: Bool = false) -> DragHandle {
             let v = (try? params.value(of: expression, kind: unit)) ?? 0
             return DragHandle(featureID: id, label: label, base: base, direction: direction,
                               value: slot == activeHandleSlot ? handlePreviewValue ?? v * per : v * per, expression: expression,
-                              unit: unit, lengthPerUnit: per, maxValue: max, allowsNegative: negative, slot: slot)
+                              unit: unit, lengthPerUnit: per, maxValue: max, maxReason: maxReason, allowsNegative: negative,
+                              slot: slot)
         }
         switch f.kind {
         case .extrude(let e):
@@ -1199,7 +1203,13 @@ final class DocumentModel {
             }
             guard let h = try? body.edgeHandle(ref.edge) else { return nil }
             if case .fillet = f.kind { return handle("Radius", h.origin, h.direction, ef.size) }
-            return handle("Distance", h.origin, h.direction, ef.size)
+            // A chamfer round a rounded corner has to stay smaller than the corner's radius (a hair under it:
+            // at the radius itself the cone collapses to a point).
+            var edges = ef.edges.filter { $0.body == ref.body }.map(\.edge)
+            for face in ef.faces where face.body == ref.body { edges += (try? body.faceEdges(face.face)) ?? [] }
+            let corner = body.chamferLimit(edges: edges)
+            return handle("Distance", h.origin, h.direction, ef.size, max: corner.map { max($0 - 0.01, 0.01) },
+                          maxReason: corner.map { "the corner it runs round has a radius of \(UnitKind.length.format($0))" })
         case .revolve(let rv):
             guard let sr = result.sketches[rv.sketch], let ref = rv.profiles.first,
                   let region = Regenerator.region(ref, in: sr),
@@ -1518,7 +1528,9 @@ final class DocumentModel {
         do {
             let v = try parameterValues.value(of: t, kind: h.unit)
             if h.allowsNegative ? abs(v) <= 1e-9 : v <= 1e-9 { return h.allowsNegative ? "It can't be zero" : "It must be more than zero" }
-            if let m = h.maxValue, v > m + 1e-9 { return "It can be at most \(h.unit.format(m))" }
+            if let m = h.maxValue, v > m + 1e-9 {
+                return "It can be at most \(h.unit.format(m))" + (h.maxReason.map { ": \($0)" } ?? "")
+            }
             return nil
         } catch {
             // The right expression with the wrong kind of value, e.g. a length parameter in an angle field.

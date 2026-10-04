@@ -386,6 +386,16 @@ public final class KBody: @unchecked Sendable {
         }
     }
 
+    /// The smallest radius of a rounded corner that an equal-distance chamfer along these edges (and the edges that
+    /// continue them) would shrink, e.g. a plate's rounded corners under a chamfered top edge. A chamfer that big
+    /// can't be built. Nil when no corner limits it.
+    public func chamferLimit(edges: [String]) -> Double? {
+        guard !edges.isEmpty else { return nil }
+        var limit = 0.0
+        let found = withCStrings(edges) { sk_edge_round_limit(handle, $0, Int32(edges.count), &limit) }
+        return found ? limit : nil
+    }
+
     /// Where a chamfer's drag handles go on an edge: its midpoint, the directions across the two faces away from
     /// the edge (the first is the one the first distance is measured on) and that face's outward normal.
     public func chamferHandle(_ edge: String, face: String = "", flipped: Bool = false)

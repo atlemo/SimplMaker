@@ -143,6 +143,11 @@ typedef enum SKChamferMode { SK_CHAMFER_EQUAL = 0, SK_CHAMFER_TWO_DISTANCES = 1,
 SKHandle sk_chamfer_ex(SKHandle body, const char *const *edgeNames, const char *const *faceNames, int count,
                        SKChamferMode mode, double first, double second, bool flip, const char *featureId);
 
+/// The smallest radius of a rounded corner that a chamfer along the named edges (and the edges that continue them
+/// tangentially) would shrink, like a plate's rounded corner when its top edge is chamfered. An equal-distance
+/// chamfer at or above it can't be built (a fillet can). Writes it to `out` and returns true, or false if no corner limits the size.
+bool sk_edge_round_limit(SKHandle body, const char *const *edgeNames, int count, double *out);
+
 // ----------------------------------------------------------------- queries ---
 int sk_body_face_count(SKHandle body);
 const char *sk_body_face_name(SKHandle body, int i);  // i matches SKMesh.triangleFace
