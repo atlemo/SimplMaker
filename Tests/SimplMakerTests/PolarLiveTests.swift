@@ -3,13 +3,14 @@
 //   POLAR_LIVE_KEY=SIMPL-… POLAR_LIVE_ORG=<organization uuid> POLAR_LIVE_BENEFIT=<benefit uuid> \
 //   [POLAR_LIVE_BASE=https://sandbox-api.polar.sh] swift test --filter PolarLive
 // It activates the key on this Mac, validates it, and deactivates it again, so the key's activation slot is freed.
+// The tests run one at a time: they share the key, whose activations are limited.
 import Foundation
 import Testing
 @testable import SimplMaker
 
 private let env = ProcessInfo.processInfo.environment
 
-@Suite(.enabled(if: env["POLAR_LIVE_KEY"] != nil && env["POLAR_LIVE_ORG"] != nil && env["POLAR_LIVE_BENEFIT"] != nil))
+@Suite(.serialized, .enabled(if: env["POLAR_LIVE_KEY"] != nil && env["POLAR_LIVE_ORG"] != nil && env["POLAR_LIVE_BENEFIT"] != nil))
 struct PolarLiveTests {
     private func server(benefit: String? = env["POLAR_LIVE_BENEFIT"]) -> PolarLicenseServer {
         var server = PolarLicenseServer(organizationID: env["POLAR_LIVE_ORG"] ?? "", benefitID: benefit)
