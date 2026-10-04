@@ -479,6 +479,34 @@ final class DocumentModel {
         }
     }
 
+    /// How the next extrude reaches: the way the Extrude button works, until another is chosen from its arrow.
+    var extrudeMode = ExtrudeMode.oneDirection
+
+    /// A way of extruding chosen from the toolbar: it becomes the Extrude button's way, and starts the tool
+    /// (or, with the tool already waiting for a profile, or profiles being picked again, only changes the way).
+    func chooseExtrudeMode(_ mode: ExtrudeMode) {
+        extrudeMode = mode
+        if pendingTool == .extrude || reselecting != nil { overlayRevision += 1 } else { run(.extrude) }
+    }
+
+    /// Changes how an extrude feature reaches.
+    func setExtrudeMode(_ mode: ExtrudeMode, of id: FeatureID) {
+        updateFeature(id, "Change Extrude Type") { f in
+            guard case .extrude(var e) = f.kind else { return }
+            e.extent = e.extent.changed(to: mode)
+            f.kind = .extrude(e)
+        }
+    }
+
+    /// The extent a new extrude starts with, for the way the button works now.
+    var newExtrudeExtent: ExtrudeExtent {
+        switch extrudeMode {
+        case .oneDirection: return .distance("10 mm")
+        case .mirrored: return .symmetric("10 mm")
+        case .twoDirections: return .twoSides("10 mm", back: "5 mm")  // a different start, so the two arrows tell apart
+        }
+    }
+
     /// Creates a fillet or chamfer on the selected edges, and all round the selected faces.
     func addEdgeFeature(fillet: Bool) {
         let edges: [EdgeRef] = selection.compactMap { pick in
@@ -881,6 +909,7 @@ final class DocumentModel {
     func sketchCommand(_ command: (SketchSession) -> String?) {
         guard let session = sketchSession else { return }
         session.cancelPattern()  // a command works on the sketch as it is, not with the pattern's copies shown
+        session.cancelOffset()   // nor with an offset's preview
         commitSketch(command(session))
     }
 
@@ -901,6 +930,12 @@ final class DocumentModel {
     func beginSketchTransform(_ tool: SketchTransformTool) {
         sketchSession?.beginTransform(tool)
         overlayRevision += 1  // the viewport shows or hides the manipulator
+    }
+
+    /// Offset shows the offset of the selected curves, with an arrow to drag and a field to type in.
+    func beginSketchOffset() {
+        sketchSession?.beginOffset()
+        overlayRevision += 1  // the viewport shows or hides the arrow
     }
 
     func setSketchTool(_ tool: SketchTool) {
@@ -1142,6 +1177,7 @@ final class DocumentModel {
         switch f.kind {
         case .hole(let h): count = h.depth == nil ? 1 : 2
         case .chamfer(let e): count = e.mode == .equalDistance ? 1 : 2  // two distances, or a distance and an angle
+        case .extrude(let e): if case .twoSides = e.extent { count = 2 } else { count = 1 }  // one arrow each way
         default: count = 1
         }
         return (0..<count).compactMap { handle(for: id, slot: $0) }
@@ -1182,7 +1218,9 @@ final class DocumentModel {
             switch e.extent {
             case .distance(let d): return handle("Distance", base, n, d, negative: true)
             case .symmetric(let d): return handle("Distance", base, n, d, per: 0.5)
-            case .twoSides(let d, _): return handle("Distance", base, n, d, negative: true)
+            case .twoSides(let d, let back):
+                // One arrow each way from the sketch plane; the second can't be pulled back through the plane.
+                return slot == 0 ? handle("Distance 1", base, n, d, negative: true) : handle("Distance 2", base, -n, back)
             case .throughAll, .toFace: return nil  // the length comes from the model, not a size
             }
         case .fillet(let ef), .chamfer(let ef):
@@ -1451,7 +1489,7 @@ final class DocumentModel {
         handlePreviewValue = length
         var preview = start
         Self.set(expression: formatDimension(h.featureValue(length), kind: h.unit), of: h.featureID, slot: h.slot, in: &preview)
-        Self.turnRound(h.featureID, from: handleStartValue, to: h.featureValue(length), in: &preview)
+        Self.turnRound(h.featureID, from: handleStartValue, to: h.featureValue(length), slot: h.slot, in: &preview)
         regenerate(preview: preview, previewFeature: h.featureID)
         overlayRevision += 1
     }
@@ -1495,14 +1533,14 @@ final class DocumentModel {
                               to new: Double? = nil) {
         mutate("Change \(label)") { doc in
             Self.set(expression: expression, of: id, slot: slot, in: &doc)
-            if let new { Self.turnRound(id, from: old, to: new, in: &doc) }
+            if let new { Self.turnRound(id, from: old, to: new, slot: slot, in: &doc) }
         }
     }
 
     /// An extrude dragged or typed through zero turns round: pulled back into the body it cuts,
     /// pushed out again it joins. Other operations are left as the user chose them.
-    static func turnRound(_ id: FeatureID, from old: Double?, to new: Double, in doc: inout CADDocument) {
-        guard let old, let i = doc.index(of: id), case .extrude(var e) = doc.features[i].kind else { return }
+    static func turnRound(_ id: FeatureID, from old: Double?, to new: Double, slot: Int = 0, in doc: inout CADDocument) {
+        guard slot == 0, let old, let i = doc.index(of: id), case .extrude(var e) = doc.features[i].kind else { return }
         if old >= 0, new < 0, e.operation == .join { e.operation = .cut }
         else if old < 0, new >= 0, e.operation == .cut { e.operation = .join }
         else { return }
@@ -1556,7 +1594,7 @@ final class DocumentModel {
         handlePreviewValue = size.value * h.lengthPerUnit
         var preview = document
         Self.set(expression: size.expression, of: h.featureID, slot: h.slot, in: &preview)
-        Self.turnRound(h.featureID, from: h.featureValue((try? parameterValues.value(of: h.expression, kind: h.unit)) ?? 0), to: size.value, in: &preview)
+        Self.turnRound(h.featureID, from: h.featureValue((try? parameterValues.value(of: h.expression, kind: h.unit)) ?? 0), to: size.value, slot: h.slot, in: &preview)
         regenerate(preview: preview, previewFeature: h.featureID)
         overlayRevision += 1
         return true
@@ -1605,7 +1643,7 @@ final class DocumentModel {
             switch e.extent {
             case .distance: e.extent = .distance(text)
             case .symmetric: e.extent = .symmetric(text)
-            case .twoSides(_, let back): e.extent = .twoSides(text, back: back)
+            case .twoSides(let first, let back): e.extent = slot == 1 ? .twoSides(first, back: text) : .twoSides(text, back: back)
             case .throughAll, .toFace: break
             }
             doc.features[i].kind = .extrude(e)

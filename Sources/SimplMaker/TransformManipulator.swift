@@ -78,6 +78,10 @@ extension DocumentModel {
     var manipulatorPlacement: (middle: SIMD3<Double>, turn: SIMD3<Double>, frame: ManipulatorFrame)? {
         if let session = sketchSession {
             guard let m = session.manipulatorMiddle else { return nil }
+            if let h = session.offsetHandle, session.isOffsetting {
+                let direction = session.frame.xAxis * h.direction.x + session.frame.yAxis * h.direction.y
+                return (session.frame.point(m.x, m.y), .zero, ManipulatorFrame(offsetDirection: direction, sketch: session.frame))
+            }
             if let setup = session.patternSetup {
                 return (session.frame.point(m.x, m.y), session.patternValues?.turn ?? .zero,
                         ManipulatorFrame(pattern: setup.kind == .circular, sketch: session.frame))
@@ -90,7 +94,9 @@ extension DocumentModel {
 
     /// What dragging starts from: a Move feature's stored values, or nothing yet for a sketch.
     var manipulatorDragStart: TransformValues? {
-        if let session = sketchSession { return session.patternValues ?? (session.manipulating == nil ? nil : TransformValues()) }
+        if let session = sketchSession {
+            return session.offsetValues ?? session.patternValues ?? (session.manipulating == nil ? nil : TransformValues())
+        }
         return manipulatedFeature.map { transformValues($0.move) }
     }
 
@@ -117,7 +123,9 @@ extension DocumentModel {
     /// The mouse went down on a part. Returns the values to drag from.
     @discardableResult
     func beginManipulatorDrag(_ part: ManipulatorPart) -> TransformValues? {
-        if let session = sketchSession { return session.beginManipulatorDrag(part) ? (session.patternValues ?? TransformValues()) : nil }
+        if let session = sketchSession {
+            return session.beginManipulatorDrag(part) ? (session.offsetValues ?? session.patternValues ?? TransformValues()) : nil
+        }
         guard let (_, m) = manipulatedFeature else { return nil }
         activateManipulatorPart(part)
         let v = transformValues(m)
@@ -162,7 +170,7 @@ extension DocumentModel {
     /// value that comes from a parameter asks before it is replaced by a number.
     func endManipulatorDrag() {
         if let session = sketchSession {
-            if session.isPatterning { overlayRevision += 1; return }  // the copies stay open for more changes
+            if session.isPatterning || session.isOffsetting { overlayRevision += 1; return }  // stays open for more changes
             sketchCommand { $0.endManipulatorDrag() }
             return
         }

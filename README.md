@@ -49,7 +49,7 @@ SimplMaker is a normal Mac document app, with New, Open Recent, autosave, versio
      - **F** fillet: click a corner where two lines meet to round it.
      - **T** trim: click the part of a curve to cut away, up to where other curves cross it.
      - **E** extend: click near the end of a line or arc to extend it to the next curve.
-     - **Offset:** select curves, then press **Offset** and enter a distance. A positive distance goes outward.
+     - **Offset:** select curves (lines, arcs, circles, and spline/Bézier runs), then press **Offset**. The offset shows live beside the originals with an arrow on it: drag the arrow to set the distance (drag it back through the curve to go to the other side), or type a number or expression in the field next to it (negative goes the other way). Return or **OK** keeps it as one undo step; Esc or **Cancel** takes it back. A positive distance goes outward on a closed shape, and to the left of an open chain's direction. Lines and arcs stay linked to their originals by a distance dimension; a Bézier's offset is a close fit made of several curves (no dimension), and is refused when the distance is more than the curve's tightest bend allows on the inside.
      - Clicking an existing point connects to it.
      - Clicking a curve puts the new point on that curve.
      - Nearly horizontal or vertical lines snap and get a constraint.
@@ -59,6 +59,7 @@ SimplMaker is a normal Mac document app, with New, Open Recent, autosave, versio
   5. With the select tool, drag points, lines or circle rims. The geometry follows as far as the constraints allow. ⌫ deletes the selection.
   6. The status bar shows the degrees of freedom left. Curves turn black when the sketch is fully constrained. Press **Return** or **Finish Sketch** when done.
 - **Extrude:** select a sketch in the timeline. Its closed regions (profiles) show shaded; click one or more (⇧-click), then press **Extrude**. Drag the orange arrow to set the distance; the model updates as you drag. Or type the distance in the inspector, where you also set the operation (new body, join, cut, intersect) and direction.
+  - **Extrude types:** the small arrow beside the Extrude button picks how far it reaches: **One Direction** (a distance to one side of the sketch), **Two Directions** (a distance to each side, with an arrow and a typed field for each; Tab moves between them) or **Mirrored** (one length shared evenly, half to each side). The button then works that way until you pick another, and the inspector's Extent picker changes it afterwards (it also has Through all and To face).
 - **Edit a sketch later:** right-click it in the timeline → **Edit Sketch**, or use the inspector. The model is rolled back to that point while you edit.
 - **Fillet / Chamfer:**
   1. Click edges in the viewport (⇧-click to add more).

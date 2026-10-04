@@ -54,7 +54,7 @@ To run it: `pip install cadquery-ocp numpy && python3 spike/parametric_spike.py`
 - Constraints: coincident, horizontal, vertical, parallel, perpendicular, tangent, equal, midpoint, point‑on‑curve, concentric, symmetric, fix.
 - Dimensions: distance, horizontal/vertical distance, radius/diameter, angle. Every dimension value is an expression.
 - Solver UX: live drag, under-, fully and over-constrained coloring, conflict reporting, auto-constraints while drawing.
-- Extrude: one side, symmetric or two-sided distance; New Body, Join, Cut and Intersect; multiple profiles.
+- Extrude: one direction, two directions or mirrored (symmetric), chosen from the toolbar's arrow; New Body, Join, Cut and Intersect; multiple profiles.
 - **Fillet (constant radius) and chamfer (equal distance, two distances, or distance and angle)** on picked edges, following tangent chains, with the size as an expression.
 - Parameter table: user parameters with units and expressions. Dimension parameters (`d1`, `d2` …) are created automatically, like Fusion.
 - Timeline: edit any feature, roll back, suppress, reorder (with validation). Features that break show an error and don't crash.

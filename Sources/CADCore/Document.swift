@@ -70,6 +70,66 @@ public enum ExtrudeExtent: Codable, Hashable, Sendable {
     case toFace(FaceRef)
 }
 
+/// How far an extrude reaches from its sketch plane, the three ways with a typed size (the toolbar's choices).
+public enum ExtrudeMode: String, Codable, CaseIterable, Sendable {
+    /// One distance, to one side of the plane.
+    case oneDirection
+    /// A distance on each side of the plane.
+    case twoDirections
+    /// One length shared evenly: half to each side of the plane.
+    case mirrored
+
+    public var title: String {
+        switch self {
+        case .oneDirection: return "One Direction Extrude"
+        case .twoDirections: return "Two Directions Extrude"
+        case .mirrored: return "Mirrored Extrude"
+        }
+    }
+
+    /// The title under its icon in the toolbar.
+    public var shortTitle: String {
+        switch self {
+        case .oneDirection: return "One Direction"
+        case .twoDirections: return "Two Directions"
+        case .mirrored: return "Mirrored"
+        }
+    }
+}
+
+extension ExtrudeExtent {
+    /// Which of the three sized ways this is; nil for Through All and To Face, which take no size.
+    public var mode: ExtrudeMode? {
+        switch self {
+        case .distance: return .oneDirection
+        case .twoSides: return .twoDirections
+        case .symmetric: return .mirrored
+        case .throughAll, .toFace: return nil
+        }
+    }
+
+    /// The first (or only, or total) size typed, if the extent has one.
+    public var size: String? {
+        switch self {
+        case .distance(let d), .symmetric(let d), .twoSides(let d, _): return d
+        case .throughAll, .toFace: return nil
+        }
+    }
+
+    /// The same size, reaching the way `new` says. The size carries over; a second side starts as
+    /// long as the first.
+    public func changed(to new: ExtrudeMode, fallback: String = "10 mm") -> ExtrudeExtent {
+        let d = size ?? fallback
+        switch new {
+        case .oneDirection: return .distance(d)
+        case .mirrored: return .symmetric(d)
+        case .twoDirections:
+            if case .twoSides = self { return self }
+            return .twoSides(d, back: d)
+        }
+    }
+}
+
 public enum BodyOperation: String, Codable, Hashable, Sendable, CaseIterable {
     case newBody = "New Body", join = "Join", cut = "Cut", intersect = "Intersect"
 }

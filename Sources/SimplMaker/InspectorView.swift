@@ -236,7 +236,7 @@ struct ExtrudeInspector: View {
     }
 
     private enum ExtentKind: String, CaseIterable {
-        case distance = "Distance", symmetric = "Symmetric", twoSides = "Two sides", throughAll = "Through all", toFace = "To face"
+        case distance = "One direction", twoSides = "Two directions", symmetric = "Mirrored", throughAll = "Through all", toFace = "To face"
     }
 
     private var extentKind: ExtentKind {
@@ -268,9 +268,9 @@ struct ExtrudeInspector: View {
             Picker("Extent", selection: Binding(get: { extentKind }, set: { k in
                 update("Change Extent") { e in
                     switch k {
-                    case .distance: e.extent = .distance(size)
-                    case .symmetric: e.extent = .symmetric(size)
-                    case .twoSides: e.extent = .twoSides(size, back: "0 mm")
+                    case .distance: e.extent = e.extent.changed(to: .oneDirection, fallback: size)
+                    case .symmetric: e.extent = e.extent.changed(to: .mirrored, fallback: size)
+                    case .twoSides: e.extent = e.extent.changed(to: .twoDirections, fallback: size)
                     case .throughAll: e.extent = .throughAll
                     case .toFace: if let f = selectedFace { e.extent = .toFace(f) }
                     }
@@ -295,8 +295,16 @@ struct ExtrudeInspector: View {
                     }
                 }
             case .twoSides(let d, let b):
-                LabeledContent("Side 1") { ExpressionField(text: d) { v in update("Edit Distance") { $0.extent = .twoSides(v, back: b) } } }
-                LabeledContent("Side 2") { ExpressionField(text: b) { v in update("Edit Distance") { $0.extent = .twoSides(d, back: v) } } }
+                LabeledContent("Distance 1") {
+                    ExpressionField(text: d, preview: { v in preview { $0.extent = .twoSides(v, back: b) } }) { v in
+                        update("Edit Distance") { $0.extent = .twoSides(v, back: b) }
+                    }
+                }
+                LabeledContent("Distance 2") {
+                    ExpressionField(text: b, preview: { v in preview { $0.extent = .twoSides(d, back: v) } }) { v in
+                        update("Edit Distance") { $0.extent = .twoSides(d, back: v) }
+                    }
+                }
             case .throughAll:
                 Text("Goes through every body in its direction.").font(.caption).foregroundStyle(.secondary)
             case .toFace(let f):
@@ -313,8 +321,10 @@ struct ExtrudeInspector: View {
                                                    set: { op in update("Change Operation") { $0.operation = op } })) {
                 ForEach(BodyOperation.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            Toggle("Flip direction", isOn: Binding(get: { extrude.flipped },
-                                                   set: { v in update("Flip") { $0.flipped = v } }))
+            if extrude.extent.mode != .mirrored {  // a mirrored extrude reaches both ways alike
+                Toggle("Flip direction", isOn: Binding(get: { extrude.flipped },
+                                                       set: { v in update("Flip") { $0.flipped = v } }))
+            }
             if let face = extrude.face {
                 LabeledContent("Face", value: face.face)
             } else {

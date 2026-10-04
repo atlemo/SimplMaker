@@ -20,6 +20,62 @@ public enum Bezier {
         return a + w2 * (p[3] - p[2])
     }
 
+    /// Second derivative at t.
+    public static func secondDerivative(_ p: [SIMD2<Double>], _ t: Double) -> SIMD2<Double> {
+        let u = 1 - t
+        let bend0: SIMD2<Double> = p[2] - 2 * p[1] + p[0], bend1: SIMD2<Double> = p[3] - 2 * p[2] + p[1]
+        return (6 * u) * bend0 + (6 * t) * bend1
+    }
+
+    /// The direction the curve travels at t (unit length); nil where it stands still.
+    public static func tangent(_ p: [SIMD2<Double>], _ t: Double) -> SIMD2<Double>? {
+        var d = derivative(p, t)
+        if vlen(d) < 1e-9 {  // a handle sitting on its anchor: look along the next handle instead
+            d = t < 0.5 ? (p[2] - p[0]) : (p[3] - p[1])
+            if vlen(d) < 1e-9 { d = p[3] - p[0] }
+        }
+        let l = vlen(d)
+        return l > 1e-12 ? d / l : nil
+    }
+
+    /// Cubic pieces that follow the curve at distance `d` to the left of its travel direction (a cubic's
+    /// offset is not itself a cubic, so this is an approximation): each piece is fitted to the offset's
+    /// own end points and end directions, and a piece is split until its middle strays less than `tolerance`.
+    /// The pieces join end to end. Nil when the offset folds over itself (`d` is more than the curve's
+    /// radius of curvature somewhere on the inner side).
+    public static func offset(_ p: [SIMD2<Double>], by d: Double, tolerance: Double = 5e-4) -> [[SIMD2<Double>]]? {
+        guard p.count == 4 else { return nil }
+        /// The offset point at t, and the offset's velocity there (the curve's, scaled by 1 − d·curvature).
+        func at(_ t: Double) -> (point: SIMD2<Double>, velocity: SIMD2<Double>, scale: Double)? {
+            let v = derivative(p, t), speed = vlen(v)
+            guard let u = tangent(p, t) else { return nil }
+            let n = SIMD2(-u.y, u.x)
+            let curvature = speed > 1e-9 ? vcross(v, secondDerivative(p, t)) / (speed * speed * speed) : 0
+            let scale = 1 - d * curvature
+            return (point(p, t) + d * n, speed > 1e-9 ? v * scale : u * scale * vlen(p[3] - p[0]) / 3, scale)
+        }
+        // Folded over: the offset turns back on itself where the scale reaches zero.
+        for i in 0...64 {
+            guard let o = at(Double(i) / 64), o.scale > 0.02 else { return nil }
+        }
+        func fit(_ t0: Double, _ t1: Double, depth: Int) -> [[SIMD2<Double>]]? {
+            guard let a = at(t0), let b = at(t1) else { return nil }
+            let h = (t1 - t0) / 3
+            let piece = [a.point, a.point + a.velocity * h, b.point - b.velocity * h, b.point]
+            var worst = 0.0
+            for k in 1..<8 {
+                let u = Double(k) / 8
+                guard let truth = at(t0 + (t1 - t0) * u) else { return nil }
+                worst = max(worst, vlen(point(piece, u) - truth.point))
+            }
+            if worst <= tolerance || depth >= 8 { return [piece] }
+            let mid = (t0 + t1) / 2
+            guard let left = fit(t0, mid, depth: depth + 1), let right = fit(mid, t1, depth: depth + 1) else { return nil }
+            return left + right
+        }
+        return fit(0, 1, depth: 0)
+    }
+
     /// Parameter (0…1) of the curve point closest to q: the best of a coarse sampling, refined by Newton steps.
     public static func closest(_ q: SIMD2<Double>, _ p: [SIMD2<Double>]) -> Double {
         let n = 32

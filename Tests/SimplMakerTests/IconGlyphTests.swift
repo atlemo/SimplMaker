@@ -21,7 +21,7 @@ import Testing
     }
 
     @Test func toolbarIconsUsedInSimplMakerAreDefined() {
-        let used = ["cuboid", "cylinder", "globe", "torus", "orbit", "waypoints", "extrude", "revolve", "hole", "layers-2",
+        let used = ["cuboid", "cylinder", "globe", "torus", "orbit", "waypoints", "extrude", "extrude-two", "extrude-mirrored", "revolve", "hole", "layers-2",
                     "square-split-horizontal", "circle-dot", "rotate-3d", "spline", "fillet", "chamfer", "chamfer-equal", "chamfer-angle", "chamfer-two", "thread",
                     "pen-tool", "circle-x", "focus", "mouse-pointer-2", "minus", "square", "circle",
                     "dot", "scissors", "arrow-up-right", "ruler", "link", "expand", "square-dashed", "corner-round", "file-box"]

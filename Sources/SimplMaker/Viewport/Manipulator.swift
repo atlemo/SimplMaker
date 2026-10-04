@@ -82,6 +82,16 @@ struct ManipulatorFrame {
         dotGrabs = false
     }
 
+    /// The Offset tool's: one arrow along `direction` (in the sketch's plane) that sets the distance.
+    init(offsetDirection direction: SIMD3<Double>, sketch f: Frame) {
+        basis = [direction, simd_cross(f.normal, direction), f.normal]
+        arrows = [.x]
+        squares = []
+        rings = []
+        dotFollowsScreen = false
+        dotGrabs = false
+    }
+
     func vector(_ axis: Axis3) -> SIMD3<Double> { basis[axis.index] }
 }
 

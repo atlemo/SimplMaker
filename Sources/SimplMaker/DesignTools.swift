@@ -298,13 +298,13 @@ extension DocumentModel {
                     alert = AlertInfo(title: "Only flat faces can be extruded", message: "Pick a flat face, or a profile in a sketch.")
                     return false
                 }
-                add(Feature(name: document.nextName("Extrude"), .extrude(ExtrudeFeature(face: ref))))
+                add(Feature(name: document.nextName("Extrude"), .extrude(ExtrudeFeature(face: ref, extent: newExtrudeExtent))))
                 return true
             }
             guard let first = profiles.first else { return false }
             let refs = profiles.filter { $0.sketch == first.sketch }.map(\.ref)
             add(Feature(name: document.nextName("Extrude"), .extrude(ExtrudeFeature(
-                sketch: first.sketch, profiles: refs, extent: .distance("10 mm"), operation: noBodies ? .newBody : .join))))
+                sketch: first.sketch, profiles: refs, extent: newExtrudeExtent, operation: noBodies ? .newBody : .join))))
         case .revolve:
             guard let first = profiles.first else { return false }
             let line = curves.first { $0.sketch == first.sketch && isLine($0.curve, in: $0.sketch) }
@@ -743,6 +743,27 @@ extension ChamferMode {
         case .equalDistance: return "\(title) (C): \(how), the same distance on both faces"
         case .distanceAngle: return "\(title) (C): \(how), by a distance on one face and the angle to it"
         case .twoDistances: return "\(title) (C): \(how), with a distance on each face"
+        }
+    }
+}
+
+extension ExtrudeMode {
+    /// A glyph name from IconGlyphs.swift.
+    var symbol: String {
+        switch self {
+        case .oneDirection: return "extrude"
+        case .twoDirections: return "extrude-two"
+        case .mirrored: return "extrude-mirrored"
+        }
+    }
+
+    /// The tooltip: what it does, and how it is worked.
+    var help: String {
+        let how = "push a profile or a flat face into a solid"
+        switch self {
+        case .oneDirection: return "\(title) (E): \(how), one distance to one side"
+        case .twoDirections: return "\(title) (E): \(how), a distance to each side of it"
+        case .mirrored: return "\(title) (E): \(how), the same distance to both sides, half each way"
         }
     }
 }

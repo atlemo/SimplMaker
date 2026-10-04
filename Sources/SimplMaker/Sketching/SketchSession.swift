@@ -181,6 +181,8 @@ enum SketchInput: String, CaseIterable, Identifiable {
     /// What Pattern takes: how many copies (the original counts) and how far apart.
     case countX = "Count X", spacingX = "Spacing X", countY = "Count Y", spacingY = "Spacing Y"
     case copies = "Count", spread = "Spread over"
+    /// What Offset takes: how far from the curves, to the side its arrow points (negative: the other side).
+    case offsetDistance = "Distance"
 
     var id: String { rawValue }
     var unit: UnitKind {
@@ -191,7 +193,7 @@ enum SketchInput: String, CaseIterable, Identifiable {
         }
     }
     /// Whether zero and negative values mean something (a move back, a turn clockwise).
-    var isOffset: Bool { [.moveX, .moveY, .turn, .spacingX, .spacingY, .spread].contains(self) }
+    var isOffset: Bool { [.moveX, .moveY, .turn, .spacingX, .spacingY, .spread, .offsetDistance].contains(self) }
     /// A whole number of copies.
     var isCount: Bool { self == .countX || self == .countY || self == .copies }
     /// Short label shown in front of the field.
@@ -207,6 +209,7 @@ enum SketchInput: String, CaseIterable, Identifiable {
         case .spacingX: return "↔"
         case .spacingY: return "↕"
         case .spread: return "∠"
+        case .offsetDistance: return "d"
         case .width: return "W"
         case .height: return "H"
         case .diameter: return "⌀"
@@ -259,7 +262,7 @@ final class SketchSession {
     private(set) var tool: SketchTool = .select
 
     func setTool(_ t: SketchTool) {
-        if t != .select { stopManipulating(); cancelPattern() }
+        if t != .select { stopManipulating(); cancelPattern(); cancelOffset() }
         tool = t
         if t.family.count > 1 { lastInFamily[t.family[0]] = t }
         resetToolState()
@@ -270,8 +273,6 @@ final class SketchSession {
     var circleMode: SketchTool { mode(of: .circle) }
     var selection: [EntityID] = []
     private(set) var hover: EntityID?
-    /// Set by the Offset command to ask the toolbar to show the offset distance popover.
-    var offsetRequested = false
     /// Set by Scale to ask the toolbar to show that tool's popover.
     var transformRequested: SketchTransformTool?
     /// Move is on (it slides and turns): the manipulator sits on the selection (or the whole sketch) for dragging it.
@@ -338,6 +339,9 @@ final class SketchSession {
 
     /// Replaces the sketch (after undo/redo or a parameter change) and re-solves.
     func reload(_ s: Sketch, parameters: ParameterValues) {
+        offsetSetup = nil
+        offsetBase = nil
+        offsetProblem = nil
         patternSetup = nil
         patternBase = nil
         patternBackup = nil
@@ -553,6 +557,7 @@ final class SketchSession {
     private func mouseDown(_ m: SketchMouse) -> (handled: Bool, commit: String?) {
         message = nil
         if patternSetup != nil { return (patternClick(), nil) }
+        if offsetSetup != nil { return (hover != nil, nil) }  // the arrow and the field set it; clicks on curves are ignored
         switch tool {
         case .select:
             if let h = hover, let pid = Sketch.pattern(ofGenerated: h) {  // a copy: change its pattern
@@ -745,6 +750,7 @@ final class SketchSession {
     /// The fields for the current drawing step.
     var inputFields: [SketchInput] {
         if let patternSetup { return patternSetup.kind == .rectangular ? [.countX, .spacingX, .countY, .spacingY] : [.copies, .spread] }
+        if offsetSetup != nil { return [.offsetDistance] }
         if manipulating != nil { return [.moveX, .moveY, .turn] }
         switch (tool, clicks.count) {
         case (.line, 1): return [.length, .angle]
@@ -762,11 +768,13 @@ final class SketchSession {
         typed[field] = t.isEmpty ? nil : t
         if manipulating != nil { previewTyped() }
         if patternSetup != nil { applyTypedPattern() }
+        if offsetSetup != nil { applyTypedOffset() }
     }
 
     func clearTyped() {
         typed = [:]
         if patternSetup != nil { cancelPattern() }
+        if offsetSetup != nil { cancelOffset() }
         if manipulating != nil { cancelManipulatorPreview() }
     }
 
@@ -826,6 +834,7 @@ final class SketchSession {
         case .moveY: return manipulatorValues.move.y
         case .turn: return manipulatorValues.turn.z
         case .countX, .countY, .copies, .spacingX, .spacingY, .spread: return patternValue(field)
+        case .offsetDistance: return offsetDistance
         default: break
         }
         guard let t = target()?.position, let a = clicks.first?.position else { return nil }
@@ -844,13 +853,14 @@ final class SketchSession {
             var sweep = atan2(d.y, d.x) - atan2(s.y, s.x)
             while sweep <= 0 { sweep += 2 * .pi }
             return sweep
-        case .moveX, .moveY, .turn, .countX, .countY, .copies, .spacingX, .spacingY, .spread: return nil
+        case .moveX, .moveY, .turn, .countX, .countY, .copies, .spacingX, .spacingY, .spread, .offsetDistance: return nil
         }
     }
 
     /// Return in a field: place the next point from the typed values, as a click would.
     func commitTyped() -> String? {
         if patternSetup != nil { return commitPattern() }
+        if offsetSetup != nil { return commitOffset() }
         if manipulating != nil { return commitTypedTransform() }
         guard !inputFields.isEmpty, let t = target() else { return nil }
         message = nil
@@ -923,6 +933,7 @@ final class SketchSession {
     /// Where the manipulator sits, in sketch (u, v): the middle of what it works on, carried along by a drag.
     var manipulatorMiddle: SIMD2<Double>? {
         if patternSetup != nil { return patternMiddle }
+        if let h = offsetHandle { return h.origin + h.direction * (offsetDistance ?? 0) }  // the arrow rides the offset curve
         guard manipulating != nil else { return nil }
         if manipulatorBase != nil { return manipulatorPivot + SIMD2(manipulatorValues.move.x, manipulatorValues.move.y) }
         return sketch.transformCenter(selection)
@@ -954,6 +965,11 @@ final class SketchSession {
             for field in patternFields(of: part) { typed[field] = nil }  // dragging replaces what was typed
             return true
         }
+        if offsetSetup != nil {
+            message = nil
+            typed[.offsetDistance] = nil  // dragging replaces what was typed
+            return true
+        }
         cancelManipulatorPreview()
         message = nil
         return captureManipulatorBase()
@@ -961,6 +977,10 @@ final class SketchSession {
 
     /// Shows the selection moved and turned by the dragged values, without keeping it.
     func previewManipulator(_ v: TransformValues) {
+        if offsetSetup != nil {
+            setOffset(formatDimension(v.move.x, kind: .length))
+            return
+        }
         if patternSetup != nil {
             setPattern { d in
                 if d.kind == .rectangular {
@@ -1286,34 +1306,142 @@ final class SketchSession {
 
     // MARK: offset
 
-    var canOffset: Bool { selection.contains { sketch.curve($0) != nil } }
+    /// Offset while it is open: the distance, as an expression (negative goes to the other side of the arrow).
+    struct OffsetSetup: Equatable {
+        var expression: String
+        var sources: [EntityID]
+    }
 
-    func beginOffset() { if canOffset { offsetRequested = true } }
+    private(set) var offsetSetup: OffsetSetup?
+    /// The sketch as it was before, which the offset curves are made on afresh at each change.
+    @ObservationIgnored private var offsetBase: Sketch?
+    /// Where the arrow stands on the curves, and the way a positive distance goes there.
+    private(set) var offsetHandle: (origin: SIMD2<Double>, direction: SIMD2<Double>)?
+    /// Why the offset can't be made as set, if it can't.
+    private(set) var offsetProblem: String?
 
-    /// Offsets the selected curves; positive distances go outward (or to the left of open chains).
-    func offsetSelection(expression: String) -> String? {
-        offsetRequested = false
+    var isOffsetting: Bool { offsetSetup != nil }
+    var canOffset: Bool { offsetSetup != nil || selection.contains { sketch.curve($0) != nil } }
+
+    /// The distance now, in mm (nil if the expression doesn't come to a length).
+    var offsetDistance: Double? {
+        guard let e = offsetSetup?.expression else { return nil }
+        return try? parameters.value(of: e, kind: .length)
+    }
+
+    /// What the arrow shows: how far out the curves are offset.
+    var offsetValues: TransformValues? {
+        guard offsetSetup != nil else { return nil }
+        var v = TransformValues()
+        v.move = SIMD3(offsetDistance ?? 0, 0, 0)
+        return v
+    }
+
+    /// The Offset button: shows the offset of the selection, with an arrow to drag and a field to type in
+    /// (pressed again, it stops).
+    func beginOffset() {
+        if offsetSetup != nil { cancelOffset(); return }
+        let sources = selection.filter { sketch.curve($0) != nil }
+        guard !sources.isEmpty, let handle = sketch.offsetHandle(sources) else { message = "Select the curves to offset first"; return }
+        stopManipulating()
+        cancelPattern()
+        setTool(.select)
+        message = nil
+        offsetBase = sketch
+        offsetHandle = handle
+        offsetSetup = OffsetSetup(expression: "2 mm", sources: sources)
+        previewOffset()
+    }
+
+    /// Takes the offset back and leaves the sketch as it was.
+    func cancelOffset() {
+        guard offsetSetup != nil else { return }
+        if let base = offsetBase { sketch = base; resolve() }
+        endOffset()
+    }
+
+    private func endOffset() {
+        offsetSetup = nil
+        offsetBase = nil
+        offsetHandle = nil
+        offsetProblem = nil
+        typed = [:]
+        message = nil
+    }
+
+    private func setOffset(_ expression: String) {
+        guard offsetSetup != nil else { return }
+        offsetSetup?.expression = expression
+        message = nil
+        previewOffset()
+    }
+
+    /// A typed distance becomes the offset's expression, where it can be used.
+    private func applyTypedOffset() {
+        guard let text = typed[.offsetDistance], typedValue(.offsetDistance) != nil else { return }
+        setOffset(Self.expression(text, .offsetDistance))
+    }
+
+    /// The offset of `curves` on `base`, solved: the sketch and the curves made, or why not.
+    private func offsetResult(on base: Sketch, _ curves: [EntityID], expression: String) -> (sketch: Sketch, created: [EntityID], problem: String?) {
         let distance: Double
         do { distance = try parameters.value(of: expression, kind: .length) } catch {
-            message = "\(error)"
-            return nil
+            return (base, [], "\(error)")
         }
-        guard abs(distance) > 1e-9 else { message = "The offset distance can't be zero"; return nil }
-        var trial = sketch
+        guard abs(distance) > 1e-9 else { return (base, [], "The offset distance can't be zero") }
+        var trial = base
         // Dimensions take the magnitude; the side comes from the sign.
-        let magnitude = expression.trimmingCharacters(in: .whitespaces).hasPrefix("-")
-            ? String(expression.trimmingCharacters(in: .whitespaces).dropFirst()) : expression
-        let created = trial.offset(selection, distance: distance, expression: magnitude)
-        guard !created.isEmpty else { message = "Nothing to offset in the selection"; return nil }
+        let text = expression.trimmingCharacters(in: .whitespaces)
+        let magnitude = text.hasPrefix("-") ? String(text.dropFirst()) : expression
+        let created = trial.offset(curves, distance: distance, expression: magnitude)
+        guard !created.isEmpty else {
+            let bends = curves.contains { base.kind(of: $0) == .bezier || base.kind(of: $0) == .arc }
+            return (base, [], bends ? "Nothing to offset: that far from the curve, the offset folds over itself" : "Nothing to offset in the selection")
+        }
         var v = trial.dimensionValues(parameters)
         v.merge(values) { a, _ in a }
         guard SketchSolver.solve(&trial, dimensionValues: v).status == .solved else {
-            message = "The offset couldn't be solved"
-            return nil
+            return (base, [], "The offset couldn't be solved")
         }
-        sketch = trial
-        selection = created
+        return (trial, created, nil)
+    }
+
+    /// Shows the offset curves over the sketch as it was.
+    private func previewOffset() {
+        guard let setup = offsetSetup, let base = offsetBase else { return }
+        let r = offsetResult(on: base, setup.sources, expression: setup.expression)
+        offsetProblem = r.problem
+        // A distance of zero (passed through while dragging) shows nothing yet, and nothing to complain about.
+        if offsetDistance.map({ abs($0) <= 1e-9 }) == true { offsetProblem = nil }
+        sketch = r.sketch
+        resolve()
+    }
+
+    /// Return: keeps the offset (one undo step) and selects the new curves.
+    func commitOffset() -> String? {
+        guard let setup = offsetSetup, let base = offsetBase else { return nil }
+        if inputFields.contains(where: typedIsInvalid) { message = "That isn't a distance"; return nil }
+        let r = offsetResult(on: base, setup.sources, expression: setup.expression)
+        if let problem = r.problem { message = problem; return nil }
+        endOffset()
+        sketch = r.sketch
+        selection = r.created
+        resolve()
         return finish("Offset")
+    }
+
+    /// Offsets the selected curves at once, by an expression (positive goes outward, or to the left of an
+    /// open chain), without the arrow.
+    func offsetSelection(expression: String) -> String? {
+        let r = offsetResult(on: sketch, selection, expression: expression)
+        if let problem = r.problem { message = problem; return nil }
+        sketch = r.sketch
+        selection = r.created
+        return finish("Offset")
+    }
+
+    var offsetHint: String {
+        "Offset · drag the arrow, or type the distance (negative goes the other way) · Return keeps it · Esc cancels"
     }
 
     /// Dimension tool clicks. A line waits for a second click: the same line or empty space
@@ -1520,6 +1648,7 @@ final class SketchSession {
         if editingDimension != nil { editingDimension = nil }
         else if !clicks.isEmpty || !dimensionPicks.isEmpty { resetToolState() }
         else if patternSetup != nil { cancelPattern() }
+        else if offsetSetup != nil { cancelOffset() }
         else if manipulating != nil { stopManipulating() }
         else if tool != .select { setTool(.select) }
         else { selection = [] }
@@ -1738,6 +1867,7 @@ final class SketchSession {
     var statusText: String {
         if let message { return message }
         if patternSetup != nil { return message ?? patternHint }
+        if offsetSetup != nil { return message ?? offsetHint }
         var s = manipulating == nil ? tool.hint : "Drag an arrow, the square or the ring to move or turn \(selection.isEmpty ? "the sketch" : "the selection") · or type the values · Esc to stop"
         if let snap = lastSnap { s = "Snap: \(snap.kind.rawValue)\(snap.kind == .grid ? " \(gridStep.map { formatDimension($0, kind: .length) } ?? "")" : "") · " + s }
         if !inputFields.isEmpty, manipulating == nil {

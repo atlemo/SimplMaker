@@ -333,14 +333,15 @@ extension Sketch {
     /// Offsets the given curves by `distance` (positive = outward for closed chains, to the left
     /// of the chain otherwise). Connected curves stay connected. New lines are parallel to the
     /// originals with a distance dimension, arcs/circles are concentric with a radial-offset
-    /// dimension, all driven by `expression`. Returns the new curve ids.
+    /// dimension, all driven by `expression`. A Bézier is followed by a run of Béziers fitted to its
+    /// offset (an approximation, so they carry no dimension). Returns the new curve ids.
     @discardableResult
     public mutating func offset(_ ids: [EntityID], distance: Double, expression: String) -> [EntityID] {
         var created: [EntityID] = []
         let chainable = ids.filter { id in
             switch curve(id)?.geometry {
-            case .line?, .arc?: return true
-            default: return false  // circles are offset on their own; Béziers aren't offset
+            case .line?, .arc?, .bezier?: return true
+            default: return false  // circles are offset on their own
             }
         }
         // Circles: concentric copies.
@@ -392,22 +393,85 @@ extension Sketch {
         return result
     }
 
+    /// The unit direction a curve travels at parameter t (in its own orientation); nil for a circle.
+    static func tangent(of g: CurveGeometry, at t: Double) -> SIMD2<Double>? {
+        switch g {
+        case .line(let a, let b):
+            let d = b - a, l = vlen(d)
+            return l > 1e-12 ? d / l : nil
+        case .arc(_, _, let a0, let sw):
+            let a = a0 + sw * t
+            return SIMD2(-sin(a), cos(a))
+        case .bezier(let p): return Bezier.tangent(p, t)
+        case .circle: return nil
+        }
+    }
+
+    /// Which way a positive offset distance goes from the left of a chain's travel direction: +1 (left),
+    /// or −1 for a closed chain that runs counter-clockwise, where positive means outward.
+    private func offsetSide(_ chain: (items: [(id: EntityID, reversed: Bool)], closed: Bool)) -> Double {
+        guard chain.closed else { return 1 }
+        // Signed area of the chain walked along its curves, so two arcs or Béziers (whose ends alone
+        // enclose nothing) still have a direction.
+        var area = 0.0
+        for item in chain.items {
+            guard let g = geometry(of: item.id) else { continue }
+            let steps: Int
+            switch g {
+            case .line: steps = 1
+            case .arc: steps = 24
+            default: steps = 16
+            }
+            var last = g.point(item.reversed ? 1 : 0)
+            for k in 1...steps {
+                let t = Double(k) / Double(steps)
+                let next = g.point(item.reversed ? 1 - t : t)
+                area += vcross(last, next)
+                last = next
+            }
+        }
+        return area > 0 ? -1 : 1
+    }
+
+    /// Where an offset's arrow stands and which way it points: a point in the middle of the first chain
+    /// (or circle) of `ids`, and the unit direction a positive distance goes there (outward for a closed
+    /// chain, to the left of the travel direction for an open one).
+    public func offsetHandle(_ ids: [EntityID]) -> (origin: SIMD2<Double>, direction: SIMD2<Double>)? {
+        let chainable = ids.filter { id in
+            switch curve(id)?.geometry {
+            case .line?, .arc?, .bezier?: return true
+            default: return false
+            }
+        }
+        if let chain = chains(chainable).first, !chain.items.isEmpty {
+            let item = chain.items[chain.items.count / 2]
+            guard let g = geometry(of: item.id), var t = Self.tangent(of: g, at: 0.5) else { return nil }
+            if item.reversed { t = -t }
+            let side = offsetSide(chain)
+            return (g.point(0.5), SIMD2(-t.y, t.x) * side)
+        }
+        for id in ids {
+            if case .circle(let c, let r)? = geometry(of: id) { return (c + SIMD2(r, 0), SIMD2(1, 0)) }
+        }
+        return nil
+    }
+
+    /// Where two lines meet, one through `p` along `u` and the other through `q` along `v`.
+    private static func meeting(_ p: SIMD2<Double>, _ u: SIMD2<Double>, _ q: SIMD2<Double>, _ v: SIMD2<Double>) -> SIMD2<Double>? {
+        let den = vcross(u, v)
+        guard abs(den) > 1e-9 else { return nil }
+        return p + u * (vcross(q - p, v) / den)
+    }
+
     private mutating func offsetChain(_ chain: (items: [(id: EntityID, reversed: Bool)], closed: Bool),
                                       distance: Double, expression: String) -> [EntityID] {
         // Offset geometry of each piece, to the left of the travel direction.
-        var left = distance
-        if chain.closed {
-            // Signed area of the chain's vertices: counter-clockwise chains have "left" pointing inward.
-            var area = 0.0
-            for item in chain.items {
-                guard let g = geometry(of: item.id) else { continue }
-                let a = g.point(item.reversed ? 1 : 0), b = g.point(item.reversed ? 0 : 1)
-                area += vcross(a, b)
-            }
-            if area > 0 { left = -distance }  // positive distance goes outward
-        }
+        let left = distance * offsetSide(chain)
         var pieces: [CurveGeometry] = []
-        for item in chain.items {
+        /// A Bézier's offset as a run of cubics (in the curve's own direction); `pieces` then holds a
+        /// stand-in with the run's ends and end handles, which is all the joints look at.
+        var runs: [Int: [[SIMD2<Double>]]] = [:]
+        for (i, item) in chain.items.enumerated() {
             guard let g = geometry(of: item.id) else { return [] }
             switch g {
             case .line(let a, let b):
@@ -419,7 +483,12 @@ extension Sketch {
                 let nr = item.reversed ? r + left : r - left
                 guard nr > 1e-6 else { return [] }
                 pieces.append(.arc(center: c, radius: nr, start: a0, sweep: sw))
-            case .circle, .bezier:
+            case .bezier(let p):
+                guard var run = Bezier.offset(item.reversed ? Array(p.reversed()) : p, by: left) else { return [] }
+                if item.reversed { run = run.reversed().map { Array($0.reversed()) } }
+                runs[i] = run
+                pieces.append(.bezier([run[0][0], run[0][1], run[run.count - 1][2], run[run.count - 1][3]]))
+            case .circle:
                 return []
             }
         }
@@ -429,20 +498,40 @@ extension Sketch {
             let rev = chain.items[i].reversed
             return pieces[i].point(atEnd != rev ? 1 : 0)
         }
+        /// The curve's travel direction where it starts or ends (as its original, which the offset shares).
+        func travel(_ i: Int, atEnd: Bool) -> SIMD2<Double>? {
+            let rev = chain.items[i].reversed
+            guard let g = geometry(of: chain.items[i].id), let t = Self.tangent(of: g, at: atEnd != rev ? 1 : 0) else { return nil }
+            return rev ? -t : t
+        }
         var joints: [SIMD2<Double>] = []  // joints[i] = start of piece i in travel order
         for i in 0..<n {
             let prev = i - 1 >= 0 ? i - 1 : (chain.closed ? n - 1 : -1)
             let own = endPoint(i, atEnd: false)
             guard prev >= 0 else { joints.append(own); continue }
+            let before = endPoint(prev, atEnd: true), guess = (own + before) / 2
+            if runs[i] != nil || runs[prev] != nil {
+                // A Bézier is in the corner. Smooth ones meet already; a sharp one meets where the offset
+                // curves' tangent lines cross (kept near, or the two ends meet half way).
+                if vlen(own - before) < 1e-4 * max(1, abs(distance)) { joints.append(guess); continue }
+                if let u = travel(prev, atEnd: true), let v = travel(i, atEnd: false),
+                   let m = Self.meeting(before, u, own, v), vlen(m - guess) <= 4 * max(abs(distance), 1e-3) {
+                    joints.append(m)
+                } else {
+                    joints.append(guess)
+                }
+                continue
+            }
             let candidates = intersect(pieces[prev], pieces[i])
-            let guess = (own + endPoint(prev, atEnd: true)) / 2
             joints.append(candidates.min { vlen($0 - guess) < vlen($1 - guess) } ?? own)
         }
         var jointIDs = joints.map { addPoint($0.x, $0.y) }
         let lastEnd: EntityID
-        if chain.closed { lastEnd = jointIDs[0] } else {
+        var lastPosition = SIMD2<Double>.zero
+        if chain.closed { lastEnd = jointIDs[0]; lastPosition = joints[0] } else {
             let p = endPoint(n - 1, atEnd: true)
             lastEnd = addPoint(p.x, p.y)
+            lastPosition = p
             jointIDs.append(lastEnd)
         }
         var created: [EntityID] = []
@@ -460,7 +549,22 @@ extension Sketch {
                 let nid = addArc(center: center, start: a, end: b)
                 dimension(.radialOffset(from: item.id, to: nid), expression)
                 created.append(nid)
-            case .circle, .bezier:
+            case .bezier:
+                guard var run = runs[i] else { continue }
+                // The ends go where the joints are (moved with their handles, so the directions stay).
+                let startAt = joints[i], endAt = i + 1 < joints.count ? joints[i + 1] : lastPosition
+                let (first, last) = item.reversed ? (endAt, startAt) : (startAt, endAt)
+                let k = run.count - 1
+                run[0][1] += first - run[0][0]; run[0][0] = first
+                run[k][2] += last - run[k][3]; run[k][3] = last
+                var from = a
+                for (j, c) in run.enumerated() {
+                    let to = j == k ? b : addPoint(c[3].x, c[3].y)
+                    let c1 = addPoint(c[1].x, c[1].y), c2 = addPoint(c[2].x, c[2].y)
+                    created.append(addBezier(start: from, control1: c1, control2: c2, end: to))
+                    from = to
+                }
+            case .circle:
                 continue
             }
         }

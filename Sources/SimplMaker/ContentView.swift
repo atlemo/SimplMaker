@@ -997,11 +997,10 @@ struct SketchToolbar: View {
     }
 
     private var offset: GroupTool {
-        GroupTool(id: "Offset", title: "Offset", icon: "expand", help: "Offset the selected curves by a distance",
-                  enabled: session.canOffset,
-                  popover: ToolPopover(isPresented: Binding(get: { session.offsetRequested }, set: { session.offsetRequested = $0 }),
-                                       content: AnyView(OffsetPopover(model: model, session: session)))) {
-            session.beginOffset()
+        GroupTool(id: "Offset", title: "Offset", icon: "expand",
+                  help: "Offset the selected curves: drag the arrow, or type the distance",
+                  active: session.isOffsetting, enabled: session.canOffset) {
+            model.beginSketchOffset()
         }
     }
 
@@ -1070,13 +1069,22 @@ struct DesignToolbar: View {
 
     private func group(_ title: String, id: String, _ tools: [DesignTool], defaults: [DesignTool]) -> some View {
         ToolGroup(title, id: id, defaults: defaults.map(\.rawValue), tools: tools.map { tool in
-            // Chamfer has three ways of measuring: its button works the way chosen last, and the arrow beside it chooses.
-            let modes = tool != .chamfer ? [] : ChamferMode.allCases.map { mode in
-                GroupTool(id: mode.rawValue, title: mode.shortTitle, icon: mode.symbol, help: mode.help,
-                          active: model.chamferMode == mode) { model.chooseChamferMode(mode) }
+            // Chamfer and Extrude have three ways each: the button works the way chosen last, and the arrow beside it chooses.
+            var modes: [GroupTool] = [], icon = tool.symbol, help = tool.help
+            if tool == .chamfer {
+                icon = model.chamferMode.symbol; help = model.chamferMode.help
+                modes = ChamferMode.allCases.map { mode in
+                    GroupTool(id: mode.rawValue, title: mode.shortTitle, icon: mode.symbol, help: mode.help,
+                              active: model.chamferMode == mode) { model.chooseChamferMode(mode) }
+                }
+            } else if tool == .extrude {
+                icon = model.extrudeMode.symbol; help = model.extrudeMode.help
+                modes = ExtrudeMode.allCases.map { mode in
+                    GroupTool(id: mode.rawValue, title: mode.shortTitle, icon: mode.symbol, help: mode.help,
+                              active: model.extrudeMode == mode) { model.chooseExtrudeMode(mode) }
+                }
             }
-            return GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool == .chamfer ? model.chamferMode.symbol : tool.symbol,
-                             help: tool == .chamfer ? model.chamferMode.help : tool.help, shortcut: tool.key,
+            return GroupTool(id: tool.rawValue, title: tool.rawValue, icon: icon, help: help, shortcut: tool.key,
                              active: model.pendingTool == tool, modes: modes) { model.run(tool) }
         })
     }
@@ -1187,36 +1195,3 @@ struct TransformPopover: View {
     }
 }
 
-/// Asks for the offset distance. Positive goes outward (or to the left of an open chain).
-struct OffsetPopover: View {
-    let model: DocumentModel
-    let session: SketchSession
-    @State private var draft = "2 mm"
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.labelGap) {
-            Text("Offset Distance").font(.headline)
-            HStack {
-                TextField("Distance", text: $draft)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.body.monospaced())
-                    .frame(width: 160)
-                    .focused($focused)
-                    .completesParameters(model, focused: focused)
-                    .onSubmit(commit)
-                Button("Offset", action: commit).keyboardShortcut(.defaultAction)
-            }
-            Text("Positive goes outward; use a negative value to go inward.")
-                .font(.caption).foregroundStyle(.secondary)
-            if let message = session.message { Text(message).font(.caption).foregroundStyle(.red) }
-        }
-        .padding(DS.Spacing.space6)
-        .onAppear { focused = true }
-    }
-
-    private func commit() {
-        let text = draft
-        model.sketchCommand { $0.offsetSelection(expression: text) }
-    }
-}

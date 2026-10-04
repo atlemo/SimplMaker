@@ -629,7 +629,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         model.clickRayNext = (SIMD3(Double(next.origin.x), Double(next.origin.y), Double(next.origin.z)),
                               SIMD3(Double(next.direction.x), Double(next.direction.y), Double(next.direction.z)))
         let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
-        model.click(renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered), additive: additive)
+        var pick = renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered)
+        // While a plane is being asked for, the grid floor (the XY plane) answers too.
+        if pick == nil, renderer.showGrid, model.showsOriginPlanes, let ray = model.clickRay,
+           ray.direction.z.magnitude > 1e-9, -ray.origin.z / ray.direction.z > 0 {
+            pick = OriginPlane.xy.pickID
+        }
+        model.click(pick, additive: additive)
         refreshOverlay()
     }
 
@@ -710,11 +716,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             switch event.keyCode {
             case 53: session.escape(); refreshOverlay(); return                                      // Esc
             case 51, 117:                                                                             // ⌫ ⌦
-                if session.isPatterning { model.commitSketch(session.deletePattern()) } else { model.sketchCommand { $0.deleteSelection() } }
+                if session.isPatterning { model.commitSketch(session.deletePattern()) }
+                else if session.isOffsetting { session.cancelOffset() }  // takes the offset back, rather than deleting what it came from
+                else { model.sketchCommand { $0.deleteSelection() } }
                 refreshOverlay()
                 return
             case 36, 76:                                                                              // Return
-                if session.typed.isEmpty, !session.isPatterning { model.finishSketch() } else { model.commitSketchTyped(); refreshOverlay() }
+                if session.typed.isEmpty, !session.isPatterning, !session.isOffsetting { model.finishSketch() } else { model.commitSketchTyped(); refreshOverlay() }
                 return
             case 48 where !session.inputFields.isEmpty:                                               // Tab
                 focusSketchField(session.inputFields[0], typing: nil)
@@ -1076,17 +1084,22 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         panel.isHidden = false
         let size = panel.fittingSize
         // Beside the next point; under the ring when the manipulator is on.
-        let below = session.manipulatorMiddle != nil
-        let x = min(max(below ? p.x - size.width / 2 : p.x + 20, 0), max(bounds.width - size.width, 0))
+        let below = session.manipulatorMiddle != nil && !session.isOffsetting
+        var x = min(max(below ? p.x - size.width / 2 : p.x + 20, 0), max(bounds.width - size.width, 0))
         var y = p.y + (below ? ManipulatorLayout.ringRadius + 12 : 20)
         if below, y + size.height > bounds.height - 48 { y = p.y - ManipulatorLayout.ringRadius - 12 - size.height }  // no room: above the ring
+        if session.isOffsetting, let tip = manipulatorLayout?.anchor(for: .axis(.x)) {  // beside the arrow's tip
+            x = min(max(tip.x + 12, 0), max(bounds.width - size.width, 0))
+            y = tip.y - size.height / 2
+        }
         y = min(max(y, 0), max(bounds.height - size.height, 0))
         panel.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
     }
 
     /// Shows the Pattern tool's options just under its fields, or takes them away.
     private func syncPatternHUD() {
-        guard model?.sketchSession?.isPatterning == true, let model, let panel = sketchPanel, !panel.isHidden else {
+        guard model?.sketchSession?.isPatterning == true || model?.sketchSession?.isOffsetting == true,
+              let model, let panel = sketchPanel, !panel.isHidden else {
             patternHUD?.removeFromSuperview()
             patternHUD = nil
             return

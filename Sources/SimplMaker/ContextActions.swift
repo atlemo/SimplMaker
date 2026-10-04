@@ -464,7 +464,30 @@ struct SketchPatternHUD: View {
     let model: DocumentModel
 
     var body: some View {
-        if let session = model.sketchSession, let setup = session.patternSetup {
+        if let session = model.sketchSession, session.isOffsetting {
+            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                if let problem = session.message ?? session.offsetProblem {
+                    Text(problem)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .errorWrap(problem, width: 280)
+                }
+                HStack(spacing: DS.Spacing.space3) {
+                    Text("Offset").font(.caption.weight(.semibold))
+                    Button("Cancel") {
+                        session.cancelOffset()
+                        model.overlayRevision += 1
+                    }
+                    .help("Take the offset back (Esc)")
+                    Button("OK") { model.commitSketchTyped() }
+                        .help("Keep the offset (Return)")
+                }
+            }
+            .controlSize(.small)
+            .padding(DS.Spacing.space3)
+            .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.xl2))
+            .fixedSize()
+        } else if let session = model.sketchSession, let setup = session.patternSetup {
             VStack(alignment: .leading, spacing: DS.Spacing.space2) {
                 if let problem = session.message ?? session.patternProblem {
                     Text(problem)

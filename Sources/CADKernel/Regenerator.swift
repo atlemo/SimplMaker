@@ -839,13 +839,22 @@ public enum Regenerator {
             }
             let edges = byBody[bodyID]!
             let b = r.bodies[i].body
-            if fillet {
-                r.bodies[i].body = try b.fillet(edges: edges, radius: size, featureID: feature.id)
-            } else if f.mode == .equalDistance {
-                r.bodies[i].body = try b.chamfer(edges: edges, distance: size, featureID: feature.id)
-            } else {
-                r.bodies[i].body = try b.chamfer(edges: edges, faces: edges.map { pickedFace[bodyID]?[$0] ?? "" }, mode: f.mode,
-                                                 first: size, second: second, flipped: f.flipped, featureID: feature.id)
+            let faces = edges.map { pickedFace[bodyID]?[$0] ?? "" }
+            func round(_ scale: Double) throws -> KBody {
+                if fillet { return try b.fillet(edges: edges, radius: size * scale, featureID: feature.id) }
+                if f.mode == .equalDistance { return try b.chamfer(edges: edges, distance: size * scale, featureID: feature.id) }
+                // A second distance scales with the first; an angle stays what it is.
+                return try b.chamfer(edges: edges, faces: faces, mode: f.mode, first: size * scale,
+                                     second: f.mode == .twoDistances ? second * scale : second, flipped: f.flipped, featureID: feature.id)
+            }
+            do {
+                r.bodies[i].body = try round(1)
+            } catch {
+                // Two rounds that use up a whole face (half its width each, as on a 2 mm strip with 1 mm) leave
+                // nothing between them, which the kernel can't build. A hair under that works and leaves a
+                // sliver about 0.00002 mm wide; if that fails too, the size really is too large.
+                guard let nudged = try? round(1 - 1e-5) else { throw error }
+                r.bodies[i].body = nudged
             }
         }
         if fillet { r.rounds.append((feature.name, size)) }
