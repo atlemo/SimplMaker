@@ -105,8 +105,7 @@ struct TutorialCard: View {
             switch step.kind {
             case .read(let title):
                 Button(step.id == TutorialScript.welcome.id ? "Not now" : "Leave tutorial") { guide.stop() }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .buttonStyle(.bordered)
                 Spacer(minLength: 0)
                 if step.id == TutorialScript.done.id {
                     Button("Save…") { NSApp.sendAction(#selector(NSDocument.save(_:)), to: nil, from: nil) }
@@ -115,8 +114,7 @@ struct TutorialCard: View {
                     .buttonStyle(.borderedProminent)
             case .task:
                 Button("Leave tutorial") { guide.stop() }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .buttonStyle(.bordered)
                 Spacer(minLength: 0)
                 Button("Do it for me") { Task { await guide.assist(step, in: model) } }
                     .disabled(guide.isAssisting || step.assist == nil)
@@ -127,11 +125,29 @@ struct TutorialCard: View {
         .font(.callout)
     }
 
-    /// Inline Markdown (`code`, **bold**) in a step's text.
-    private func markdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
+    private func markdown(_ text: String) -> AttributedString { tutorialMarkdown(text) }
+}
+
+/// Inline Markdown in a step's text. What the user types or clicks stands out from the explanation around it:
+/// `code` (a parameter name, a value) is bright on an accent-tinted chip, **bold** (a tool, a key) is bright.
+func tutorialMarkdown(_ text: String) -> AttributedString {
+    guard let parsed = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+    else { return AttributedString(text) }
+    var out = AttributedString()
+    for run in parsed.runs {
+        var piece = AttributedString(parsed[run.range])
+        let intent = run.inlinePresentationIntent ?? []
+        if intent.contains(.code) {
+            // Thin spaces inside the chip, so the background has some air around the letters.
+            piece = AttributedString("\u{2009}") + piece + AttributedString("\u{2009}")
+            piece.foregroundColor = Color.primary
+            piece.backgroundColor = Color.accentColor.opacity(0.32)
+        } else if intent.contains(.stronglyEmphasized) {
+            piece.foregroundColor = Color.primary
+        }
+        out += piece
     }
+    return out
 }
 
 /// What to do next, set apart from the explanation above it.
@@ -142,8 +158,7 @@ private struct HintRow: View {
         HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.space4) {
             Image(systemName: hint.isProblem ? "exclamationmark.triangle.fill" : "arrow.right.circle.fill")
                 .foregroundStyle(hint.isProblem ? Color.orange : Color.accentColor)
-            Text((try? AttributedString(markdown: hint.text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-                 ?? AttributedString(hint.text))
+            Text(tutorialMarkdown(hint.text))
                 .font(.callout.weight(.medium))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)

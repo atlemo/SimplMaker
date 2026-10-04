@@ -322,6 +322,9 @@ enum TutorialScript {
         switch TutorialFacts.outline(of: sketch.value.sketch) {
         case .plainNumbers:
             return .problem("That rectangle uses plain numbers, so it won't follow your parameters. Press ⌘Z and type `width` and `depth` instead.")
+        case .missingParameters(let missing):
+            let names = missing.map { "`\($0)`" }.joined(separator: " and ")
+            return .problem("The rectangle should be sized by `width` and `depth`, but \(names) isn't used. Click a size in the sketch and type \(missing.count == 1 ? "it" : "them") there.")
         case .offCenter:
             return .problem("That rectangle isn't centered on the origin. Press ⌘Z, then click the origin first.")
         case .missing, .good:

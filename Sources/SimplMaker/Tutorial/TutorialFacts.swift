@@ -124,8 +124,10 @@ struct TutorialFacts {
 
     enum Outline: Equatable {
         case missing
-        /// A rectangle that doesn't use `width` and `depth`: it wouldn't follow the parameters.
+        /// A rectangle sized with plain numbers only: it wouldn't follow any parameter.
         case plainNumbers
+        /// A rectangle sized by parameters, but not by these ones (`width` and `depth`): the lid wouldn't match the box.
+        case missingParameters([String])
         /// A rectangle that isn't centered on the sketch's origin, so the lid wouldn't sit squarely on the box.
         case offCenter
         case good
@@ -140,7 +142,9 @@ struct TutorialFacts {
         }
         guard lines >= 4 else { return .missing }
         let used = Set(sketch.dimensions.flatMap { d in (try? Expressions.parse(d.expression))?.references ?? [] })
-        guard used.contains("width"), used.contains("depth") else { return .plainNumbers }
+        guard !used.isEmpty else { return .plainNumbers }
+        let missing = ["width", "depth"].filter { !used.contains($0) }
+        guard missing.isEmpty else { return .missingParameters(missing) }
         let points = Set(corners).compactMap { sketch.point($0) }
         guard let x0 = points.map(\.x).min(), let x1 = points.map(\.x).max(),
               let y0 = points.map(\.y).min(), let y1 = points.map(\.y).max() else { return .missing }

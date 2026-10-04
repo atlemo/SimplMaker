@@ -130,6 +130,13 @@ import Testing
         plain.dimension(.length(plain.curves[0].id), "60 mm")
         #expect(TutorialFacts.outline(of: plain) == .plainNumbers)
 
+        // Sized by parameters, but the wrong ones: not "plain numbers", and the hint names what's missing.
+        var wrong = Sketch()
+        wrong.addRectangle(-30, -20, 30, 20)
+        wrong.dimension(.length(wrong.curves[0].id), "width")
+        wrong.dimension(.length(wrong.curves[1].id), "height")
+        #expect(TutorialFacts.outline(of: wrong) == .missingParameters(["depth"]))
+
         var shifted = Sketch()
         shifted.addRectangle(0, 0, 60, 40)
         shifted.dimension(.length(shifted.curves[0].id), "width")
