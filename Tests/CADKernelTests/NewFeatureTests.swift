@@ -136,6 +136,84 @@ import Testing
         #expect(loft.hasFace("lf.start") && loft.hasFace("lf.end"))
     }
 
+    @Test func loftOfRingsStaysHollow() throws {
+        let base = Self.box("base", "30", "30", "20")
+        var doc = CADDocument()
+        doc.features = [base]
+        let top = try Regenerator.regenerate(doc).body("base")!.faceFrame("base.top")
+        let d = SIMD3<Double>(0, 0, 20) - top.origin
+        let cu = (d * top.xAxis).sum(), cv = (d * top.yAxis).sum()
+        let r = try Self.regen([
+            base,
+            Self.sketch("lo") { s in
+                let c = s.addPoint(0, 0)
+                s.constrain(.fix(c, x: 0, y: 0))
+                s.addCircle(center: c, radius: 6, id: "O1")
+                s.addCircle(center: c, radius: 4, id: "I1")
+            },
+            Self.sketch("hi", on: .face(FaceRef(body: "base", face: "base.top"))) { s in
+                let c = s.addPoint(cu, cv)
+                s.constrain(.fix(c, x: cu, y: cv))
+                s.addCircle(center: c, radius: 5, id: "O2")
+                s.addCircle(center: c, radius: 3, id: "I2")
+            },
+            Feature(id: "lf", name: "lf", .loft(LoftFeature(sections: [
+                LoftSection(sketch: "lo", profile: ProfileRef(curves: ["O1", "I1"])),
+                LoftSection(sketch: "hi", profile: ProfileRef(curves: ["O2", "I2"])),
+            ], operation: .newBody))),
+        ])
+        let loft = try #require(r.body("lf"))
+        #expect(loft.isValid)
+        // A ring-section frustum: outer cone minus the inner one, not a solid.
+        let cone = { (a: Double, b: Double) in .pi * 20 / 3 * (a * a + a * b + b * b) }
+        #expect(Self.close(loft.volume, cone(6, 5) - cone(4, 3), 0.02), "\(loft.volume)")
+        #expect(loft.hasFace("lf.start") && loft.hasFace("lf.end"))
+    }
+
+    @Test func straightSidedLoftOfRingsTakesChamfersOnEveryEdge() throws {
+        func centre(_ feats: [Feature], _ body: String, _ z: Double) throws -> (Double, Double) {
+            var doc = CADDocument(); doc.features = feats
+            let f = try Regenerator.regenerate(doc).body(body)!.faceFrame("\(body).top")
+            let d = SIMD3<Double>(0, 0, z) - f.origin
+            return ((d * f.xAxis).sum(), (d * f.yAxis).sum())
+        }
+        let base = Self.box("base", "60", "60", "20")
+        let (cu, cv) = try centre([base], "base", 20)
+        let b2 = Self.box("b2", on: .face(FaceRef(body: "base", face: "base.top")), "60", "60", "20", .newBody)
+        let (du, dv) = try centre([base, b2], "b2", 40)
+        let r = try Self.regen([
+            base, b2,
+            Self.sketch("lo") { s in
+                let c = s.addPoint(0, 0); s.constrain(.fix(c, x: 0, y: 0))
+                s.addCircle(center: c, radius: 17, id: "O1"); s.addCircle(center: c, radius: 15, id: "I1")
+            },
+            Self.sketch("mid", on: .face(FaceRef(body: "base", face: "base.top"))) { s in
+                let c = s.addPoint(cu, cv); s.constrain(.fix(c, x: cu, y: cv))
+                s.addCircle(center: c, radius: 21, id: "O2"); s.addCircle(center: c, radius: 19, id: "I2")
+            },
+            Self.sketch("hi", on: .face(FaceRef(body: "b2", face: "b2.top"))) { s in
+                let c = s.addPoint(du, dv); s.constrain(.fix(c, x: du, y: dv))
+                s.addCircle(center: c, radius: 22, id: "O3"); s.addCircle(center: c, radius: 20, id: "I3")
+            },
+            Feature(id: "lf", name: "lf", .loft(LoftFeature(sections: [
+                LoftSection(sketch: "lo", profile: ProfileRef(curves: ["O1", "I1"])),
+                LoftSection(sketch: "mid", profile: ProfileRef(curves: ["O2", "I2"])),
+                LoftSection(sketch: "hi", profile: ProfileRef(curves: ["O3", "I3"])),
+            ], ruled: true, operation: .newBody))),
+        ])
+        let loft = try #require(r.body("lf"))
+        #expect(loft.isValid)
+        // The bore is lofted from clockwise hole wires; its surfaces must still accept a chamfer at both ends.
+        for face in ["lf.start", "lf.end"] {
+            let edges = try loft.faceEdges(face)
+            #expect(edges.count == 2)
+            for e in edges {
+                let chamfered = try loft.chamfer(edges: [e], distance: 0.4, featureID: "c")
+                #expect(chamfered.isValid && chamfered.volume < loft.volume, "\(e)")
+            }
+        }
+    }
+
     @Test func ribFillsTheCornerOfABracket() throws {
         let plate = Self.box("plate", "40", "40", "5")
         let wall = Self.box("wall", v: "17.5", "40", "5", "40", .join)

@@ -67,6 +67,8 @@
 #include <BRepTools_History.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
+#include <Geom_Curve.hxx>
+#include <TopLoc_Location.hxx>
 #include <Bnd_Box.hxx>
 #include <Geom2d_Curve.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
@@ -1180,6 +1182,25 @@ SKHandle sk_pipe(SKHandle path, double diameter, double wall, const char *featur
   SK_CATCH(0)
 }
 
+/// A profile's hole wire holds its circle with the edge flagged reversed (the hole runs clockwise inside the face).
+/// Lofting that gives a bore whose surfaces OCCT's chamfer and fillet reject, so a single-edge wire like that is
+/// rebuilt with the reversal in its curve instead. Returns the wire to loft; `edge` is set to the profile's own edge.
+TopoDS_Wire forwardWire(const TopoDS_Wire &w, TopoDS_Edge &edge) {
+  TopExp_Explorer ex(w, TopAbs_EDGE);
+  edge = TopoDS::Edge(ex.Current());
+  ex.Next();
+  if (ex.More() || edge.Orientation() != TopAbs_REVERSED) return w;
+  TopLoc_Location loc;
+  double first, last;
+  Handle(Geom_Curve) c = BRep_Tool::Curve(edge, loc, first, last);
+  if (c.IsNull()) return w;
+  Handle(Geom_Curve) placed = Handle(Geom_Curve)::DownCast(c->Transformed(loc.Transformation()));
+  Handle(Geom_Curve) flipped = placed->Reversed();
+  BRepBuilderAPI_MakeEdge mk(flipped, placed->ReversedParameter(last), placed->ReversedParameter(first));
+  if (!mk.IsDone()) return w;
+  return BRepBuilderAPI_MakeWire(mk.Edge()).Wire();
+}
+
 SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *featureId) {
   SK_TRY
   const std::string feat = featureOrDefault(featureId, "loft");
@@ -1206,7 +1227,78 @@ SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *fe
     TopoDS_Shape g = loft.GeneratedFace(ex.Current());
     if (!g.IsNull()) names.push_back({g, feat + ".side." + edgeTag(*ps[0], ex.Current())});
   }
-  return storeChecked(loft.Shape(), names, feat, "loft produced an invalid solid");
+
+  // Holes in the profiles (a ring, say) loft too, and are cut out of the outer loft. Every profile
+  // must have the same number of holes; each hole is matched to the nearest one in the previous profile.
+  std::vector<std::vector<TopoDS_Wire>> holes(ps.size());
+  for (size_t k = 0; k < ps.size(); ++k)
+    for (TopExp_Explorer wx(ps[k]->face, TopAbs_WIRE); wx.More(); wx.Next())
+      if (!wx.Current().IsSame(wires[k])) holes[k].push_back(TopoDS::Wire(wx.Current()));
+  if (std::all_of(holes.begin(), holes.end(), [](auto &h) { return h.empty(); }))
+    return storeChecked(loft.Shape(), names, feat, "loft produced an invalid solid");
+  for (auto &h : holes)
+    if (h.size() != holes[0].size()) {
+      setError("every profile in a loft needs the same number of holes");
+      return 0;
+    }
+  auto centre = [](const TopoDS_Wire &w) {
+    GProp_GProps g;
+    BRepGProp::LinearProperties(w, g);
+    return g.CentreOfMass();
+  };
+  std::vector<std::vector<TopoDS_Wire>> chains(holes[0].size());  // chains[hole][profile]
+  for (size_t h = 0; h < holes[0].size(); ++h) chains[h].push_back(holes[0][h]);
+  for (size_t k = 1; k < ps.size(); ++k) {
+    std::vector<bool> used(holes[k].size(), false);
+    for (auto &chain : chains) {
+      const gp_Pnt from = centre(chain.back());
+      int best = -1;
+      double bestD = 0;
+      for (size_t j = 0; j < holes[k].size(); ++j) {
+        const double d = from.Distance(centre(holes[k][j]));
+        if (!used[j] && (best < 0 || d < bestD)) best = (int)j, bestD = d;
+      }
+      used[best] = true;
+      chain.push_back(holes[k][best]);
+    }
+  }
+  TopoDS_Shape result = loft.Shape();
+  std::vector<Named> boreNames;
+  for (size_t h = 0; h < chains.size(); ++h) {
+    BRepOffsetAPI_ThruSections bore(true, ruled);
+    TopoDS_Wire firstWire;
+    TopoDS_Edge firstEdge;
+    for (size_t k = 0; k < chains[h].size(); ++k) {
+      TopoDS_Edge own;
+      TopoDS_Wire w = forwardWire(chains[h][k], own);
+      if (k == 0) firstWire = w, firstEdge = own;
+      bore.AddWire(w);
+    }
+    bore.Build();
+    if (!bore.IsDone()) {
+      setError("could not loft the profiles' holes");
+      return 0;
+    }
+    for (TopExp_Explorer ex(firstWire, TopAbs_EDGE); ex.More(); ex.Next()) {
+      TopoDS_Shape g = bore.GeneratedFace(ex.Current());
+      // the rebuilt wire has one edge; its tag is the profile edge's
+      const TopoDS_Shape &tagged = firstWire.IsSame(chains[h][0]) ? ex.Current() : firstEdge;
+      if (!g.IsNull()) boreNames.push_back({g, feat + ".hole." + edgeTag(*ps[0], tagged)});
+    }
+    BRepAlgoAPI_Cut cut(result, bore.Shape());
+    if (!cut.IsDone() || cut.HasErrors()) {
+      setError("could not hollow the loft");
+      return 0;
+    }
+    std::vector<Named> carriedOuter, carriedBore;
+    carry(cut, names, carriedOuter);
+    carry(cut, boreNames, carriedBore);
+    names = std::move(carriedOuter);
+    names.insert(names.end(), carriedBore.begin(), carriedBore.end());
+    boreNames.clear();
+    result = cut.Shape();
+  }
+  return storeChecked(result, names, feat, "loft produced an invalid solid");
   SK_CATCH(0)
 }
 
