@@ -47,6 +47,8 @@ struct PolarLicenseServer: LicenseServer {
     var benefitID: String? = nil
     var baseURL = URL(string: "https://api.polar.sh/v1/customer-portal/license-keys")!
     var transport: HTTPTransport = PolarLicenseServer.urlSession
+    /// The pause between attempts to free an activation (shortened in tests).
+    var retryDelay: Duration = .milliseconds(600)
 
     static let urlSession: HTTPTransport = { request in
         do {
@@ -67,7 +69,12 @@ struct PolarLicenseServer: LicenseServer {
                                              lastValidated: now, expiresAt: body.license_key.expires_at.flatMap(Self.date),
                                              benefitID: body.license_key.benefit_id)
             if let want = benefitID, activated.benefitID != want {
-                try? await deactivate(activated)  // do not use up one of the key's activations on the wrong version
+                // Do not use up one of the key's activations on the wrong version. A slot that is not freed stays used
+                // until the customer removes it in Polar's portal, so a failed attempt (Polar rate-limits) is retried.
+                for attempt in 0..<3 {
+                    if (try? await deactivate(activated)) != nil { break }
+                    if attempt < 2 { try? await Task.sleep(for: retryDelay) }
+                }
                 throw LicenseError.wrongVersion
             }
             return activated

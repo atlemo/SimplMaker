@@ -85,10 +85,16 @@ private func license(validated: Date = t0, expires: Date? = nil) -> ActivatedLic
         var status = 200
         var body = Data()
         var fail = false
+        /// Make this many "deactivate" calls fail before one succeeds.
+        var failDeactivations = 0
         var transport: HTTPTransport {
             { [self] request in
                 requests.append(request)
                 if fail { throw LicenseError.offline }
+                if request.url?.lastPathComponent == "deactivate", failDeactivations > 0 {
+                    failDeactivations -= 1
+                    throw LicenseError.offline
+                }
                 return (body, HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!)
             }
         }
@@ -165,6 +171,17 @@ private func license(validated: Date = t0, expires: Date? = nil) -> ActivatedLic
         let ok = try await v1.activate(key: "K", label: "L", now: t0)
         #expect(ok.benefitID == "benefit-v1")
         #expect(fake1.requests.count == 1)
+    }
+
+    @Test func aFailedAttemptToFreeTheWrongVersionActivationIsRetried() async {
+        let fake = Fake()
+        fake.json(["id": "act-5", "license_key": ["display_key": "****", "benefit_id": "benefit-v1"]])
+        fake.failDeactivations = 2
+        var v2 = server(fake)
+        v2.benefitID = "benefit-v2"
+        v2.retryDelay = .milliseconds(1)
+        await #expect(throws: LicenseError.wrongVersion) { try await v2.activate(key: "K", label: "L", now: t0) }
+        #expect(fake.requests.map { $0.url?.lastPathComponent } == ["activate", "deactivate", "deactivate", "deactivate"])
     }
 
     @Test func aKeyWithNoProductIsTurnedAwayWhenTheBuildNamesOne() async {
