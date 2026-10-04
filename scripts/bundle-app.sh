@@ -53,6 +53,12 @@ mkdir -p "$APP/Contents/Frameworks"
 ditto "$SPARKLE" "$APP/Contents/Frameworks/Sparkle.framework"
 # Not sandboxed, so Sparkle's XPC services go unused.
 rm -rf "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$APP/Contents/Frameworks/Sparkle.framework/XPCServices"
+# OpenCASCADE (LGPL-2.1) ships as a dylib the user can replace, not linked into the binary (see PLAN.md).
+# The binary also carries the development rpath to ThirdParty/occt/lib; drop it, since the dylib is bundled.
+OCCT_LIB="${OCCT_ROOT:-$ROOT/ThirdParty/occt}/lib"
+[ -f "$OCCT_LIB/libSimplOCCT.dylib" ] || { echo "$OCCT_LIB/libSimplOCCT.dylib missing; run scripts/build-occt.sh" >&2; exit 1; }
+cp "$OCCT_LIB/libSimplOCCT.dylib" "$APP/Contents/Frameworks/libSimplOCCT.dylib"
+install_name_tool -delete_rpath "$OCCT_LIB" "$APP/Contents/MacOS/SimplCAD" 2>/dev/null  # (invalidates the signature; signed below)
 KEY_FILE="$ROOT/Packaging/sparkle-public-key.txt"
 if [ -s "$KEY_FILE" ]; then
   plist_set SUFeedURL "${SPARKLE_FEED_URL:-https://simplcad.com/updates/appcast.xml}"
@@ -75,10 +81,11 @@ fi
 if [ "$RELEASE" = 1 ]; then
   IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -n 1)}"
   [ -n "$IDENTITY" ] || { echo "no Developer ID Application certificate; set SIGN_IDENTITY" >&2; exit 1; }
-  # Inside out: Sparkle's helpers, the framework, then the app. The hardened runtime and a timestamp are
+  # Inside out: Sparkle's helpers, the frameworks and dylib, then the app. The hardened runtime and a timestamp are
   # what notarization requires.
   SPK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
-  for item in "$SPK/Autoupdate" "$SPK/Updater.app" "$APP/Contents/Frameworks/Sparkle.framework" "$APP"; do
+  for item in "$SPK/Autoupdate" "$SPK/Updater.app" "$APP/Contents/Frameworks/Sparkle.framework" \
+              "$APP/Contents/Frameworks/libSimplOCCT.dylib" "$APP"; do
     codesign --force --options runtime --timestamp --sign "$IDENTITY" "$item"
   done
   codesign --verify --deep --strict "$APP"

@@ -2,6 +2,9 @@
 # Builds a minimal, static OpenCASCADE into ThirdParty/occt and merges all
 # toolkits into a single archive (lib/libSimplOCCT.a), so the app links one
 # library with no external dependencies (no Tcl/Tk, FreeType, TBB, OpenGL, VTK).
+# On macOS the archive is also linked into lib/libSimplOCCT.dylib, and the app links *that*: OCCT is
+# LGPL-2.1, and a closed-source app may only use it as a library the user can replace (see PLAN.md).
+# bundle-app.sh puts the dylib in SimplCAD.app/Contents/Frameworks. Linux keeps the static archive.
 #
 # Usage: scripts/build-occt.sh            (macOS arm64 or Linux)
 # Env:   OCCT_TAG (default V8_0_1), JOBS (default: CPU count)
@@ -54,5 +57,10 @@ if [ "$(uname)" = "Darwin" ]; then
   libtool -static -o "$OUT" "$LIBDIR"/libTK*.a
 else
   { echo "CREATE $OUT"; for a in "$LIBDIR"/libTK*.a; do echo "ADDLIB $a"; done; echo SAVE; echo END; } | ar -M
+fi
+if [ "$(uname)" = "Darwin" ]; then
+  clang++ -dynamiclib -arch arm64 -mmacosx-version-min=26.0 -o "$PREFIX/lib/libSimplOCCT.dylib" \
+    -install_name @rpath/libSimplOCCT.dylib -Wl,-force_load,"$OUT" \
+    -framework Foundation -framework AppKit -framework IOKit -lc++
 fi
 echo "OCCT installed to $PREFIX (headers: $(dirname "$(find "$PREFIX" -name Standard.hxx | head -1)"))"

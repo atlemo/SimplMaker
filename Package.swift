@@ -5,6 +5,8 @@ import Foundation
 import PackageDescription
 
 // OpenCASCADE is built by scripts/build-occt.sh into ThirdParty/occt (override with OCCT_ROOT).
+// On macOS it is linked as lib/libSimplOCCT.dylib (LGPL: the user must be able to replace it); the rpath
+// below finds it in a development build, and bundle-app.sh copies it into the app and drops that rpath.
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 let occt = ProcessInfo.processInfo.environment["OCCT_ROOT"] ?? "\(packageRoot)/ThirdParty/occt"
 
@@ -28,7 +30,7 @@ let package = Package(
             path: "Sources/CKernel",
             cxxSettings: [.unsafeFlags(["-I\(occt)/include/opencascade", "-Wno-deprecated-declarations"])],
             linkerSettings: [
-                .unsafeFlags(["-L\(occt)/lib"]),
+                .unsafeFlags(["-L\(occt)/lib", "-Xlinker", "-rpath", "-Xlinker", "\(occt)/lib"]),
                 .linkedLibrary("SimplOCCT"),
                 .linkedFramework("Foundation", .when(platforms: [.macOS])),
                 .linkedFramework("AppKit", .when(platforms: [.macOS])),

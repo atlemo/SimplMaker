@@ -21,13 +21,23 @@ enum AboutPanel {
         var notice: String
     }
 
+    /// What the LGPL asks of an application that uses OCCT without being under it: tell the user the library
+    /// is separate and replaceable, and where its source is.
+    private static let occtReplacement = """
+        SimplCAD uses Open CASCADE Technology as a separate library, libSimplOCCT.dylib, in the Frameworks \
+        folder inside the SimplCAD application package. It is built, unmodified, from the Open CASCADE \
+        Technology \(occtVersion) source (https://github.com/Open-Cascade-SAS/OCCT, tag V\(occtVersion.replacingOccurrences(of: ".", with: "_"))). \
+        You may replace it with your own build of a compatible version of that library; macOS then requires \
+        the application to be signed again (codesign --force --deep --sign - SimplCAD.app).
+        """
+
     private static let components = [
         Component(name: "Open CASCADE Technology \(occtVersion)",
                   role: "The geometric modelling kernel.",
                   copyright: "Copyright © OPEN CASCADE SAS and contributors.",
                   license: "GNU LGPL 2.1 with the Open CASCADE exception.",
                   url: "https://dev.opencascade.org",
-                  notice: LicenseTexts.occtException + "\n\nThe GNU LGPL 2.1 follows at the end."),
+                  notice: occtReplacement + "\n\n" + LicenseTexts.occtException + "\n\nThe GNU LGPL 2.1 follows at the end."),
         Component(name: "DelaBella",
                   role: "Delaunay triangulation, part of OpenCASCADE's mesher.",
                   copyright: "Copyright © 2018 GUMIX – Marcin Sokalski.",
