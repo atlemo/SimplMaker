@@ -34,7 +34,9 @@ How it behaves (see `Sources/SimplMaker/Licensing/`):
    suggests selling through a company if you can.
 2. **Create the product** "SimplMaker 1" at $39, one-time. Add the **License Keys** benefit:
    - prefix `SIMPL`
-   - activation limit: 3 (a desktop and a laptop, with one spare)
+   - **activation limit: 2** (a desktop and a laptop). This is Polar's *activation* limit, a different field from the
+     *usage* limit, which must stay empty: the app never counts usage, and a key whose benefit has no activation
+     limit cannot be activated at all (Polar answers 403, and the app says the key cannot be activated)
    - expiration: none (a version-1 license never expires)
    - no usage limit
 
