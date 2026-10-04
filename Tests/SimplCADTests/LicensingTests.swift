@@ -59,6 +59,13 @@ private func license(validated: Date = t0, expires: Date? = nil) -> ActivatedLic
 }
 
 @Suite struct KeychainMergeTests {
+    @Test func eachMajorVersionKeepsItsOwnRecord() {
+        let one = KeychainLicenseStore(generation: 1), two = KeychainLicenseStore(generation: 2)
+        #expect(one.account != two.account)
+        #expect(one.defaultsKey != two.defaultsKey)
+        #expect(two.account == "state-v2")
+    }
+
     @Test func theEarlierTrialStartAndLaterLastSeenWin() {
         let a = LicenseData(trialStart: t0 + 5 * day, lastSeen: t0 + 6 * day)
         let b = LicenseData(trialStart: t0, lastSeen: t0 + 9 * day, license: license())
@@ -138,6 +145,44 @@ private func license(validated: Date = t0, expires: Date? = nil) -> ActivatedLic
         try await server(fake).deactivate(license())
         fake.status = 500
         await #expect(throws: LicenseError.server(500)) { try await server(fake).deactivate(license()) }
+    }
+
+    @Test func aKeyForAnotherMajorVersionIsTurnedAwayAndItsActivationFreed() async throws {
+        let fake = Fake()
+        fake.json(["id": "act-7", "license_key": ["display_key": "****-V1", "benefit_id": "benefit-v1"]])
+        var v2 = server(fake)
+        v2.benefitID = "benefit-v2"
+        await #expect(throws: LicenseError.wrongVersion) { try await v2.activate(key: "K", label: "L", now: t0) }
+        // It asked Polar to remove the activation it had just made, so the key's slot is not used up.
+        #expect(fake.requests.map { $0.url?.lastPathComponent } == ["activate", "deactivate"])
+        #expect(fake.sent()["activation_id"] == "act-7")
+
+        var v1 = server(Fake())
+        let fake1 = Fake()
+        fake1.json(["id": "act-8", "license_key": ["display_key": "****-V1", "benefit_id": "benefit-v1"]])
+        v1 = server(fake1)
+        v1.benefitID = "benefit-v1"
+        let ok = try await v1.activate(key: "K", label: "L", now: t0)
+        #expect(ok.benefitID == "benefit-v1")
+        #expect(fake1.requests.count == 1)
+    }
+
+    @Test func aKeyWithNoProductIsTurnedAwayWhenTheBuildNamesOne() async {
+        let fake = Fake()
+        fake.json(["id": "act-1", "license_key": ["display_key": "****"]])
+        var v1 = server(fake)
+        v1.benefitID = "benefit-v1"
+        await #expect(throws: LicenseError.wrongVersion) { try await v1.activate(key: "K", label: "L", now: t0) }
+    }
+
+    @Test func validateAsksAboutTheProductOfThisVersion() async throws {
+        let fake = Fake()
+        fake.json(["expires_at": NSNull()])
+        var v1 = server(fake)
+        v1.benefitID = "benefit-v1"
+        _ = try await v1.validate(license(), now: t0)
+        #expect(fake.sent()["benefit_id"] == "benefit-v1")
+        #expect(fake.sent()["activation_id"] == "act-1")
     }
 
     @Test func polarTimestampsWithMicrosecondsParse() {

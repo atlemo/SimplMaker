@@ -7,6 +7,8 @@ import Foundation
 enum LicenseError: Error, Equatable {
     /// No such key, or it was revoked.
     case invalidKey
+    /// A real key, but for another major version of SimplCAD.
+    case wrongVersion
     /// The key cannot be activated: disabled, expired, or already on as many Macs as it allows.
     case rejected
     /// The server could not be reached.
@@ -16,6 +18,7 @@ enum LicenseError: Error, Equatable {
     var message: String {
         switch self {
         case .invalidKey: "That license key was not recognised. Check it for typing mistakes."
+        case .wrongVersion: "This key was bought for a different major version of SimplCAD. A key works with the version it was bought for (SimplCAD 1 keys with SimplCAD 1); buy the upgrade for this version."
         case .rejected: "This key cannot be activated. It may have expired, been revoked, or already be in use on the most Macs it allows. Deactivate it on another Mac first, or contact support."
         case .offline: "SimplCAD could not reach the license server. Check your internet connection and try again."
         case .server(let code): "The license server answered with an error (\(code)). Try again later."
@@ -40,6 +43,8 @@ typealias HTTPTransport = @Sendable (URLRequest) async throws -> (Data, HTTPURLR
 
 struct PolarLicenseServer: LicenseServer {
     var organizationID: String
+    /// The product (license-key benefit) of this major version. Keys of other products are turned away.
+    var benefitID: String? = nil
     var baseURL = URL(string: "https://api.polar.sh/v1/customer-portal/license-keys")!
     var transport: HTTPTransport = PolarLicenseServer.urlSession
 
@@ -58,8 +63,14 @@ struct PolarLicenseServer: LicenseServer {
         switch response.statusCode {
         case 200:
             guard let body = try? JSONDecoder().decode(ActivationBody.self, from: data) else { throw LicenseError.server(200) }
-            return ActivatedLicense(key: key, displayKey: body.license_key.display_key, activationID: body.id,
-                                    lastValidated: now, expiresAt: body.license_key.expires_at.flatMap(Self.date))
+            let activated = ActivatedLicense(key: key, displayKey: body.license_key.display_key, activationID: body.id,
+                                             lastValidated: now, expiresAt: body.license_key.expires_at.flatMap(Self.date),
+                                             benefitID: body.license_key.benefit_id)
+            if let want = benefitID, activated.benefitID != want {
+                try? await deactivate(activated)  // do not use up one of the key's activations on the wrong version
+                throw LicenseError.wrongVersion
+            }
+            return activated
         case 404, 422: throw LicenseError.invalidKey
         case 403: throw LicenseError.rejected
         default: throw LicenseError.server(response.statusCode)
@@ -67,8 +78,9 @@ struct PolarLicenseServer: LicenseServer {
     }
 
     func validate(_ license: ActivatedLicense, now: Date) async throws -> ValidationResult {
-        let (data, response) = try await post("validate", ["key": license.key, "organization_id": organizationID,
-                                                           "activation_id": license.activationID])
+        var body = ["key": license.key, "organization_id": organizationID, "activation_id": license.activationID]
+        if let benefitID { body["benefit_id"] = benefitID }
+        let (data, response) = try await post("validate", body)
         switch response.statusCode {
         case 200:
             let expires = (try? JSONDecoder().decode(ValidationBody.self, from: data))?.expires_at.flatMap(Self.date)
@@ -96,7 +108,7 @@ struct PolarLicenseServer: LicenseServer {
     }
 
     private struct ActivationBody: Decodable {
-        struct Key: Decodable { var display_key: String; var expires_at: String? }
+        struct Key: Decodable { var display_key: String; var expires_at: String?; var benefit_id: String? }
         var id: String
         var license_key: Key
     }

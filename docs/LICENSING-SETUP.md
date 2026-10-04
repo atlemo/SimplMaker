@@ -4,6 +4,17 @@ SimplCAD sells through [Polar](https://polar.sh), a merchant of record: Polar is
 the customer, collects and pays the VAT and sales tax, and emails the license key. The app needs no server of
 its own. It checks the trial itself and activates keys against Polar's public license endpoints.
 
+**The model: $39 per major version.** A license covers one major version (1.x, 2.x) for good, with all its
+updates. SimplCAD 1 keeps working, and keeps getting its own updates, when SimplCAD 2 comes out; whoever wants
+2.0 buys it again. In the code this is the *generation* (`LICENSE_GENERATION` in `Packaging/licensing.conf`):
+
+- each major version is its own Polar **product**, with its own License Keys benefit, so a key for 1 is turned
+  away by 2 (and the activation it briefly made is freed straight away);
+- each has its own **14-day trial** (kept under its own keychain item), so a trial or key from 1 does not touch 2;
+- each has its own **update feed** (`https://simplcad.com/updates/v1/appcast.xml`, `…/v2/…`), so Sparkle never
+  offers 2 to a copy of 1; users hear about 2 from the website or your email list;
+- keys do not expire (leave the expiration empty); the app is tied to the product, not to a date.
+
 How it behaves (see `Sources/SimplCAD/Licensing/`):
 
 - **Trial:** 14 days from the first launch. The start date is kept in the macOS keychain, with a copy in
@@ -21,20 +32,36 @@ How it behaves (see `Sources/SimplCAD/Licensing/`):
 1. **Create the account.** Sign up at polar.sh, create an organization, and finish the payout setup (Polar pays out
    through Stripe Connect Express; Norway is supported). Individuals and companies can both sell; your legal note
    suggests selling through a company if you can.
-2. **Create the product** "SimplCAD" with a one-time price. Add the **License Keys** benefit:
+2. **Create the product** "SimplCAD 1" at $39, one-time. Add the **License Keys** benefit:
    - prefix `SIMPL`
    - activation limit: 3 (a desktop and a laptop, with one spare)
-   - expiration: none for a perpetual license (set one for a time-limited license: the app then stops editing
-     when it passes, and the key can be renewed)
+   - expiration: none (a version-1 license never expires)
    - no usage limit
+
+   For version 2 you make a separate product, "SimplCAD 2", with its own benefit. For people who own 1, make a
+   Polar **discount code** for 2 and email it to them (the app does not know who bought what).
 3. **Make a checkout link** for the product (Polar dashboard ▸ Checkout Links). It looks like `https://buy.polar.sh/polar_cl_…`.
-4. **Copy the organization id** (dashboard ▸ Settings ▸ General) and write both values to `Packaging/licensing.conf`
-   (copy `Packaging/licensing.conf.example`; neither value is secret, so commit it):
+4. **Copy the organization id** (dashboard ▸ Settings ▸ General). Find the **benefit id** of the License Keys
+   benefit: after buying once (sandbox or real), ask Polar about that key; this does not use up an activation:
+
+   ```bash
+   curl -s -X POST https://api.polar.sh/v1/customer-portal/license-keys/validate \
+        -H 'Content-Type: application/json' \
+        -d '{"key":"<the key>","organization_id":"<organization id>"}'
+   ```
+
+   and copy `benefit_id` from the answer. Write the values to `Packaging/licensing.conf` (copy
+   `Packaging/licensing.conf.example`; none of them is secret, so commit it):
 
    ```
    POLAR_ORGANIZATION_ID=<uuid>
    BUY_URL=https://buy.polar.sh/polar_cl_…
+   POLAR_BENEFIT_ID=<uuid>
+   LICENSE_GENERATION=1
    ```
+
+   A release build refuses to be made without the benefit id, since without it a key for any major version
+   would unlock the app.
 
 ## Test it in Polar's sandbox first
 
@@ -54,14 +81,17 @@ as a member and read the key in the sandbox customer portal.
 
 ## Cost (checked October 2026; verify on polar.sh before relying on it)
 
-- Polar: about 5 % + $0.50 per sale on the free plan; no monthly fee. Lower rates exist on paid plans.
+- Polar: 5 % + $0.50 per sale on the free plan, no monthly fee, so about $2.45 of each $39 (6.3 %). The Pro plan
+  ($20 a month) is 3.8 % + $0.40: it pays for itself above roughly 40 sales a month. Polar adds VAT and sales tax at
+  checkout; check how the price is shown to buyers.
 - Already paid for: the Apple Developer Program ($99 a year), the domain and the hosting.
 - No cost for the licensing code itself: there is no server to run.
 
 ## Still open
 
-- Price, and whether updates are included forever or for a year (a year needs the key to expire and a
-  renewal product, or version checks in the app).
+- When 1.0 ships: set `VERSION` to `1.0.0` (0.x versions count as betas of version 1; `scripts/release.sh` accepts them).
+- Telling owners of version 1 about version 2: the website and email. (Sparkle can also show a one-off
+  "version 2 is available" note from the version-1 feed; not set up.)
 - Publish the EULA and the privacy policy (drafts in `legal/`, after a lawyer has read them) on simplcad.com, and link
   them from the product page and the app.
 - Polar needs a website with the product, a refund policy and support contact for its review.

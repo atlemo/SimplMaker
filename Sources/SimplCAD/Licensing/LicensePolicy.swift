@@ -14,6 +14,8 @@ struct ActivatedLicense: Codable, Equatable {
     var lastValidated: Date
     /// When the key stops working, if it expires (a key can be sold with a time limit).
     var expiresAt: Date?
+    /// Which product the key was bought for. A key only works with the major version it was bought for.
+    var benefitID: String? = nil
 }
 
 /// Everything remembered between launches (kept in the keychain).

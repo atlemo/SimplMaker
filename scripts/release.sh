@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Builds, signs, notarizes and packages a release, then updates the Sparkle appcast.
 #   scripts/release.sh
-# Everything lands in $RELEASES_DIR (default ~/SimplCADReleases): SimplCAD-<version>.zip for each release,
-# appcast.xml, and old_updates/. scripts/publish.sh uploads that folder to simplcad.com.
+# Everything lands in $RELEASES_DIR (default ~/SimplCADReleases/v<generation>, one folder per major version):
+# SimplCAD-<version>.zip for each release, appcast.xml, and old_updates/. scripts/publish.sh uploads that folder
+# to simplcad.com/updates/v<generation>/. The generation (major version sold) is LICENSE_GENERATION in
+# Packaging/licensing.conf; VERSION must start with it (1.x.y for generation 1; 0.x.y betas count as 1).
 #
 # Needs, once:
 #   - a "Developer ID Application" certificate in the keychain (SIGN_IDENTITY picks one if there are several)
@@ -16,15 +18,21 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+. "$ROOT/scripts/licensing-conf.sh"
 
-RELEASES_DIR="${RELEASES_DIR:-$HOME/SimplCADReleases}"
+RELEASES_DIR="${RELEASES_DIR:-$HOME/SimplCADReleases/v$LICENSE_GENERATION}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-simplcad-notary}"
 SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-SimplCAD}"
-UPDATES_URL="${UPDATES_URL:-https://simplcad.com/updates}"
+UPDATES_URL="${UPDATES_URL:-https://simplcad.com/updates/v$LICENSE_GENERATION}"
 VERSION="$(tr -d '[:space:]' < VERSION)"
 ARCHIVE="$RELEASES_DIR/SimplCAD-$VERSION.zip"
 APP="$ROOT/dist/SimplCAD.app"
 
+# A major version has its own keys and feed, so VERSION's major number must be the one being sold.
+# (0.x versions are betas of major version 1.)
+MAJOR="${VERSION%%.*}"
+[ "$MAJOR" = "$LICENSE_GENERATION" ] || { [ "$MAJOR" = 0 ] && [ "$LICENSE_GENERATION" = 1 ]; } \
+  || { echo "VERSION $VERSION does not belong to LICENSE_GENERATION $LICENSE_GENERATION (Packaging/licensing.conf)" >&2; exit 1; }
 # A release comes from committed code, so the build number identifies exactly what shipped.
 if [ -n "$(git status --porcelain)" ] && [ "${ALLOW_DIRTY:-0}" != 1 ]; then
   echo "uncommitted changes: commit first (or ALLOW_DIRTY=1)" >&2; exit 1

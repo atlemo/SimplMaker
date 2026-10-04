@@ -9,16 +9,22 @@ struct LicenseConfiguration: Equatable {
     var organizationID: String
     /// The page where the app is bought (a Polar checkout link).
     var buyURL: URL
+    /// The major version this build sells licenses for (1 for SimplCAD 1.x). Each has its own trial and its own keys.
+    var generation = 1
+    /// The Polar product (license-key benefit) of this major version; keys of other products are rejected.
+    var benefitID: String?
     /// Polar's sandbox API for testing (https://sandbox-api.polar.sh); nil means the real one.
     var apiBase: URL?
 
-    /// From Info.plist (SCPolarOrganizationID, SCBuyURL, SCPolarAPIBase, written by scripts/bundle-app.sh from Packaging/licensing.conf).
+    /// From Info.plist (SCPolarOrganizationID, SCBuyURL, SCLicenseGeneration, SCPolarBenefitID, SCPolarAPIBase, written by scripts/bundle-app.sh from Packaging/licensing.conf).
     static func fromBundle(_ bundle: Bundle = .main) -> LicenseConfiguration? {
         guard let id = bundle.object(forInfoDictionaryKey: "SCPolarOrganizationID") as? String, !id.isEmpty,
               let buy = (bundle.object(forInfoDictionaryKey: "SCBuyURL") as? String).flatMap(URL.init(string:))
         else { return nil }
         let base = (bundle.object(forInfoDictionaryKey: "SCPolarAPIBase") as? String).flatMap(URL.init(string:))
-        return LicenseConfiguration(organizationID: id, buyURL: buy, apiBase: base)
+        let generation = (bundle.object(forInfoDictionaryKey: "SCLicenseGeneration") as? String).flatMap(Int.init) ?? 1
+        let benefit = (bundle.object(forInfoDictionaryKey: "SCPolarBenefitID") as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return LicenseConfiguration(organizationID: id, buyURL: buy, generation: generation, benefitID: benefit, apiBase: base)
     }
 }
 
@@ -27,9 +33,9 @@ struct LicenseConfiguration: Equatable {
 final class LicenseManager {
     static var shared: LicenseManager = {
         guard let configuration = LicenseConfiguration.fromBundle() else { return LicenseManager(configuration: nil) }
-        var server = PolarLicenseServer(organizationID: configuration.organizationID)
+        var server = PolarLicenseServer(organizationID: configuration.organizationID, benefitID: configuration.benefitID)
         if let base = configuration.apiBase { server.baseURL = base.appendingPathComponent("v1/customer-portal/license-keys") }
-        return LicenseManager(configuration: configuration, store: KeychainLicenseStore(), server: server)
+        return LicenseManager(configuration: configuration, store: KeychainLicenseStore(generation: configuration.generation), server: server)
     }()
 
     let configuration: LicenseConfiguration?

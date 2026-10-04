@@ -10,9 +10,10 @@ By installing or using SimplCAD you accept this agreement. If you do not accept 
 
 ## 2. The license
 - We grant you a personal, non-exclusive, non-transferable, revocable license to use SimplCAD on the Macs you own or control, up to the number of activations your license key allows.
-- **Trial.** Without a license key, SimplCAD is fully usable for 14 days from first launch. After that you can open and export your parts but not edit or save changes until you enter a valid license key.
+- **Trial.** Without a license key, each major version of SimplCAD is fully usable for 14 days from its first launch. After that you can open and export your parts but not edit or save changes until you enter a valid license key.
 - **License key.** A key is for one buyer. Do not share it or publish it. Activating it on a Mac sends the key and the Mac's name to our license provider (see the Privacy Policy). You can deactivate a Mac from *SimplCAD ▸ License…* to use the key elsewhere.
-- **Updates.** [Updates are included for the life of the product / for one year after purchase.] SimplCAD can check for updates on its own; you can turn this off in Settings.
+- **Major versions.** A license key is for one major version of SimplCAD (for example version 1, which covers 1.0, 1.1, 1.2 and so on). It does not expire, and it covers every update of that major version. A new major version (version 2) is a new product that needs its own license; the earlier version keeps working with its own key.
+- **Updates.** SimplCAD can check for updates of your major version on its own; you can turn this off in Settings. [We provide updates within a major version for as long as we support it, and at least [period] after the next major version appears.]
 
 ## 3. What you may not do
 Unless the law gives you the right regardless of this agreement, you may not: copy SimplCAD except for backup and installation; modify it; reverse engineer, decompile or disassemble it; remove license checks or notices; rent, lend, sell, sublicense or share SimplCAD or your key; or use SimplCAD to build a competing product from it.

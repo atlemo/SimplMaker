@@ -12,11 +12,12 @@
 #
 # Updates (Sparkle): the app only turns its updater on when the bundle names a feed and a public key.
 #   Packaging/sparkle-public-key.txt   the public EdDSA key (from Sparkle's generate_keys), committed
-#   SPARKLE_FEED_URL                   overrides the feed (default https://simplcad.com/updates/appcast.xml)
+#   SPARKLE_FEED_URL                   overrides the feed (default https://simplcad.com/updates/v<generation>/appcast.xml)
 # Without the key file the bundle has no updater (no "Check for Updates…").
 #
 # Licensing: the 14-day trial and license keys (Polar) are enforced only when the bundle names an organization.
-#   Packaging/licensing.conf           POLAR_ORGANIZATION_ID and BUY_URL (copy licensing.conf.example)
+#   Packaging/licensing.conf           POLAR_ORGANIZATION_ID, BUY_URL, POLAR_BENEFIT_ID, LICENSE_GENERATION
+#                                      (copy licensing.conf.example); one product and one feed per major version
 # Without it the build is not license-enforced (development builds). --release refuses to build without it,
 # unless ALLOW_UNLICENSED=1.
 #
@@ -26,6 +27,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+. "$ROOT/scripts/licensing-conf.sh"
 CONFIG=release
 OPEN=0
 RELEASE=0
@@ -52,15 +54,20 @@ plist_set CFBundleShortVersionString "$(tr -d '[:space:]' < "$ROOT/VERSION")"
 plist_set CFBundleVersion "${BUILD_NUMBER:-$(git rev-list --count HEAD)}"
 
 # Licensing configuration.
-LICENSING_CONF="$ROOT/Packaging/licensing.conf"
-if [ -f "$LICENSING_CONF" ]; then
-  POLAR_ORGANIZATION_ID="$(sed -n 's/^POLAR_ORGANIZATION_ID=//p' "$LICENSING_CONF" | tr -d '[:space:]')"
-  BUY_URL="$(sed -n 's/^BUY_URL=//p' "$LICENSING_CONF" | tr -d '[:space:]')"
-  POLAR_API_BASE="${POLAR_API_BASE:-$(sed -n 's/^POLAR_API_BASE=//p' "$LICENSING_CONF" | tr -d '[:space:]')}"
-fi
-if [ -n "${POLAR_ORGANIZATION_ID:-}" ] && [ -n "${BUY_URL:-}" ]; then
+POLAR_ORGANIZATION_ID="$(conf_get POLAR_ORGANIZATION_ID)"
+BUY_URL="$(conf_get BUY_URL)"
+POLAR_BENEFIT_ID="$(conf_get POLAR_BENEFIT_ID)"
+POLAR_API_BASE="${POLAR_API_BASE:-$(conf_get POLAR_API_BASE)}"
+if [ -n "$POLAR_ORGANIZATION_ID" ] && [ -n "$BUY_URL" ]; then
+  # Without the product id a key of any SimplCAD major version would be accepted.
+  if [ -z "$POLAR_BENEFIT_ID" ] && [ "$RELEASE" = 1 ] && [ "${ALLOW_UNLICENSED:-0}" != 1 ]; then
+    echo "Packaging/licensing.conf has no POLAR_BENEFIT_ID: a key for any major version would unlock this one" >&2
+    exit 1
+  fi
   plist_set SCPolarOrganizationID "$POLAR_ORGANIZATION_ID"
   plist_set SCBuyURL "$BUY_URL"
+  plist_set SCLicenseGeneration "$LICENSE_GENERATION"
+  [ -z "$POLAR_BENEFIT_ID" ] || plist_set SCPolarBenefitID "$POLAR_BENEFIT_ID"
   if [ -n "${POLAR_API_BASE:-}" ]; then
     # Polar's sandbox, for testing. A release must talk to the real API.
     [ "$RELEASE" != 1 ] || { echo "POLAR_API_BASE is set (a sandbox); a release must use the real Polar API" >&2; exit 1; }
@@ -88,7 +95,7 @@ cp "$OCCT_LIB/libSimplOCCT.dylib" "$APP/Contents/Frameworks/libSimplOCCT.dylib"
 install_name_tool -delete_rpath "$OCCT_LIB" "$APP/Contents/MacOS/SimplCAD" 2>/dev/null  # (invalidates the signature; signed below)
 KEY_FILE="$ROOT/Packaging/sparkle-public-key.txt"
 if [ -s "$KEY_FILE" ]; then
-  plist_set SUFeedURL "${SPARKLE_FEED_URL:-https://simplcad.com/updates/appcast.xml}"
+  plist_set SUFeedURL "${SPARKLE_FEED_URL:-https://simplcad.com/updates/v$LICENSE_GENERATION/appcast.xml}"
   plist_set SUPublicEDKey "$(tr -d '[:space:]' < "$KEY_FILE")"
 else
   echo "note: no Packaging/sparkle-public-key.txt, so this build has no updater"

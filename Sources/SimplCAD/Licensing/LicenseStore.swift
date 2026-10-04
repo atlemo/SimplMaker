@@ -17,11 +17,17 @@ final class InMemoryLicenseStore: LicenseStore {
     func save(_ data: LicenseData) { self.data = data }
 }
 
+/// One record per major version: SimplCAD 2 has its own trial and its own license, apart from SimplCAD 1's.
 struct KeychainLicenseStore: LicenseStore {
     var service = "org.simplcad.SimplCAD.license"
-    var account = "state"
+    var account: String
     var defaults = UserDefaults.standard
-    var defaultsKey = "licenseStateBackup"
+    var defaultsKey: String
+
+    init(generation: Int = 1) {
+        account = "state-v\(generation)"
+        defaultsKey = "licenseStateBackup-v\(generation)"
+    }
 
     func load() -> LicenseData? {
         merged(keychain: readKeychain(), backup: readBackup())
