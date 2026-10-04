@@ -1,6 +1,6 @@
 // The welcome window shown at launch, in the style of Xcode's: the app icon and the ways to start
 // on the left, recently opened parts on the right.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import CADCore
 import SwiftUI

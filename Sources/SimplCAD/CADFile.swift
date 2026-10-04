@@ -1,7 +1,7 @@
 // The document type for SwiftUI's DocumentGroup. It wraps the window's DocumentModel, so
 // macOS provides New/Open/Open Recent/Save/Duplicate/Rename/Revert, autosave, versions and the
 // "unsaved changes" prompt. The document is marked edited whenever the model registers undo.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import os
 import SwiftUI

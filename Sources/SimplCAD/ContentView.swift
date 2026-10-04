@@ -1,5 +1,5 @@
 // Main window: timeline + parameters on the left, viewport in the middle, inspector on the right.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import CADCore
 import CADKernel

@@ -1,5 +1,5 @@
 // App state: the document, undo, background regeneration, selection, files.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import CADCore
 import CADKernel

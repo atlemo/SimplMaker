@@ -1,7 +1,7 @@
 // Editing operations on a sketch used by the interactive tools: snapping, deleting with
 // cascade, measuring, suggesting dimensions, constraint tools and drag-solving.
 // Kept UI-free so it can be unit-tested.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 public enum SketchEntityKind: Sendable, Equatable {

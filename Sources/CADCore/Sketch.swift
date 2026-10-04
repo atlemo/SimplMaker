@@ -1,5 +1,5 @@
 // 2D sketch model: points, curves, geometric constraints and driving dimensions.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 /// Stable identifier of a sketch entity or feature. Never changes once created, so

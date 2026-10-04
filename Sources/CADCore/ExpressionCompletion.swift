@@ -1,5 +1,5 @@
 // Auto-complete for the words in an expression: parameter names, functions and constants.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 /// A word that can be typed in an expression field.

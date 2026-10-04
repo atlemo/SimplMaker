@@ -1,5 +1,5 @@
 // Threads: sizes from the tables, and threads cut into shafts and holes through the regenerator.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import Foundation
 import Testing

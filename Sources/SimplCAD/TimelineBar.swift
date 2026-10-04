@@ -1,6 +1,6 @@
 // The timeline: every feature in build order, as a horizontal bar along the bottom of the window,
 // with a marker that rolls the model back to any point (like the timeline in other CAD tools).
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import SwiftUI
 

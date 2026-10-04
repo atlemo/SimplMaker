@@ -1,5 +1,5 @@
 // Expressions with units, e.g. "width / 2 + 3 mm", "atan(h / w)", "45 deg".
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 /// A value with a (length, angle) dimension. Internal base units: millimetres and radians.

@@ -96,6 +96,6 @@ Faces and edges have **persistent names** built from stable IDs and the kernel's
 
 ## License
 
-SimplCAD is free software under the **GNU GPL v3.0 or later** (see [LICENSE](LICENSE)). You may use, modify and redistribute it, and derivative works must stay under the same license.
+SimplCAD is proprietary software. Copyright © 2026 Atle Mo. All rights reserved (see [LICENSE](LICENSE)).
 
-It links [OpenCASCADE Technology](https://dev.opencascade.org), which is LGPL-2.1 with the OCCT exception (GPL-compatible). The parts of OCCT that SimplCAD uses include DelaBella (MIT) and flex's `FlexLexer.h` (BSD). The toolbar icons come from [Lucide](https://lucide.dev) (ISC; parts from Feather, MIT). **SimplCAD → About SimplCAD** credits all of them and shows their licence texts; the texts are in `Sources/SimplCAD/LicenseTexts.swift`.
+It links [OpenCASCADE Technology](https://dev.opencascade.org), which is LGPL-2.1 with the OCCT exception (see PLAN.md for what that requires of a closed-source app). The parts of OCCT that SimplCAD uses include DelaBella (MIT) and flex's `FlexLexer.h` (BSD). The toolbar icons come from [Lucide](https://lucide.dev) (ISC; parts from Feather, MIT). **SimplCAD → About SimplCAD** credits all of them and shows their licence texts; the texts are in `Sources/SimplCAD/LicenseTexts.swift`.

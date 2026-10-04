@@ -1,6 +1,6 @@
 // Automatic updates through Sparkle. The feed and the signing key are named in Info.plist
 // (SUFeedURL, SUPublicEDKey); scripts/release.sh builds and signs the archives the feed points to.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Combine
 import Foundation
 import Sparkle

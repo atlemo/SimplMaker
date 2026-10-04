@@ -6,7 +6,7 @@
 // for the AppKit fields in the viewport (ValueField) and for SwiftUI text fields, which can't be subclassed:
 // those say they are focused with `completesParameters`.
 //
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import CADCore
 import SwiftUI

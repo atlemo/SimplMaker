@@ -1,6 +1,6 @@
 // The clear space between a circle's (or arc's) rim and another item: what "put the hole 4 mm
 // from the edge" measures.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 struct RimGap {

@@ -1,5 +1,5 @@
 // SimplKernel — OpenCASCADE implementation of the C API in include/SimplKernel.h.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 
 #include "SimplKernel.h"
 

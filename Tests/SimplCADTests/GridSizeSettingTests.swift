@@ -1,5 +1,5 @@
 // The grid-size and unit-system settings.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Testing
 import Foundation
 @testable import SimplCAD

@@ -1,6 +1,6 @@
 // Interactive sketch editing: tools, snapping, selection, dragging and dimensions.
 // Geometry operations live in CADCore (SketchEditing.swift); this is the UI state machine.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import CADKernel
 import Foundation

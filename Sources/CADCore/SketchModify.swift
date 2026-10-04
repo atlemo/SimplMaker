@@ -1,7 +1,7 @@
 // Sketch modify tools: trim, extend, offset and corner fillet.
 // Geometry is computed from the current (solved) positions; new points that land on other
 // curves get point-on-curve constraints so the result stays parametric.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 /// A curve's current geometry.

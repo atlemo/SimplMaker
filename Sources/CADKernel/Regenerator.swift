@@ -1,6 +1,6 @@
 // Replays a document's timeline through the kernel. This is what makes SimplCAD parametric:
 // change any parameter or feature, call regenerate, and every downstream feature is rebuilt.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import CKernel
 import Foundation

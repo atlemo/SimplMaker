@@ -8,7 +8,7 @@ A simple, native macOS, parametric CAD tool in the spirit of Fusion 360:
 | Topic | Decision |
 |---|---|
 | Distribution | Self-distributed (no Mac App Store). Developer ID signing + notarization when shared. |
-| License | **GPL-3.0-or-later** (copyleft / share-alike). Compatible with OCCT's LGPL-2.1, and allows GPL components such as SolveSpace's solver if ever needed. |
+| License | **Proprietary, closed source** (changed from GPL-3.0 before any release). Rules out GPL components such as SolveSpace's `libslvs`. OCCT (LGPL-2.1) must be linked so users can replace it: see the Licensing risk. |
 | Target | **macOS 26+, Apple Silicon only.** Newest SwiftUI/Observation APIs, no availability checks. |
 | Priority | **Fillet and chamfer are high priority.** They are part of the first milestones, which requires persistent *edge* naming and edge picking early. |
 | Build | Swift Package (no Xcode project needed), OCCT 8.0.1 built static by `scripts/build-occt.sh`, `.app` assembled by `scripts/bundle-app.sh`. |
@@ -95,7 +95,7 @@ To run it: `pip install cadquery-ocp numpy && python3 spike/parametric_spike.py`
 |---|---|---|
 | Language | **Swift 6** for the app and model. A **plain C API** over a C++ implementation for the kernel. | OCCT headers never reach Swift. A C header imports into Swift perfectly with no C++-interop flags, and the kernel can be tested from plain C on any platform (it runs on Linux CI too). |
 | Geometry kernel | **OpenCASCADE 8.x** | Parasolid/ACIS cost too much. Own mesh kernel ([Manifold](https://github.com/elalish/manifold)) has robust, fast booleans but no exact faces, fillets or STEP. Keep Manifold in mind only if OCCT booleans become a problem. |
-| Constraint solver | **Own solver in Swift** (Levenberg–Marquardt, rank analysis for degrees of freedom; dense Swift linear algebra for now, analytic Jacobians/Accelerate when sketches get big) | Small (the spike's is ~60 lines), and gives full control over drag behavior and error messages. Drop-in alternatives: FreeCAD's PlaneGCS (LGPL, C++/Eigen) or SolveSpace's `libslvs` (**GPLv3**, which only works if SimplCAD is GPL). |
+| Constraint solver | **Own solver in Swift** (Levenberg–Marquardt, rank analysis for degrees of freedom; dense Swift linear algebra for now, analytic Jacobians/Accelerate when sketches get big) | Small (the spike's is ~60 lines), and gives full control over drag behavior and error messages. Drop-in alternatives: FreeCAD's PlaneGCS (LGPL, C++/Eigen) or SolveSpace's `libslvs` (**GPLv3**, which rules it out now that SimplCAD is closed source). |
 | Rendering | **Metal** via `MTKView` | SceneKit was soft-deprecated in 2025 and is weak at CAD needs (crisp edges, ID picking). RealityKit is built for AR. |
 | UI | **SwiftUI** panels, **AppKit** `NSView` for the viewport (via `NSViewRepresentable`) | SwiftUI is fast to build panels in. AppKit gives precise mouse, trackpad, modifier-key and cursor control. |
 | Document | JSON via `Codable` (`.simplcad`). Single-window app for now; move to `DocumentGroup` once the bundle declares the document type everywhere. | Autosave, versions and multiple windows come with `DocumentGroup`. |
@@ -194,7 +194,7 @@ Testing:
 | OCCT build/packaging friction on macOS | Low | `scripts/build-occt.sh` builds a minimal static OCCT with no external dependencies; CI caches it. |
 | OCCT boolean or fillet failures on edge cases | Medium (fillets) / Low (extrude+booleans) | Fillet/chamfer results are validated with `BRepCheck_Analyzer`. Failures (e.g. radius too big) become red timeline errors, never crashes; the kernel tests cover this. Next: `ShapeFix` healing and fuzzy booleans where needed. |
 | Swift ↔ kernel boundary | Low | Plain C API with opaque handles, so there's no Swift C++ interop to break. |
-| Licensing | Resolved | SimplCAD is GPL-3.0-or-later, and OCCT's LGPL-2.1 is compatible with static linking in a GPL app. |
+| Licensing | **Open** | SimplCAD is proprietary. OCCT's LGPL-2.1 exception covers only material from OCCT's header files, not static linking, so a closed app must let users swap OCCT: ship it as dynamic libraries (TODO: scripts/build-occt.sh, Package.swift, bundle-app.sh) or offer the app's object files for relinking. Have a lawyer confirm. Also needed: an EULA. |
 | Scope creep toward Fusion parity | High | This document's MVP list is the contract. |
 
 ## 10. Open questions

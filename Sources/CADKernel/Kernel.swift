@@ -1,5 +1,5 @@
 // Swift wrappers around the SimplKernel C API. Handles are released in deinit.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import CKernel
 import Foundation

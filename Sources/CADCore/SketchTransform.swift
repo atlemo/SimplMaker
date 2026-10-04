@@ -1,5 +1,5 @@
 // Moving, rotating and scaling the geometry of a sketch (a selection of it, or all of it).
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 public enum SketchTransform: Sendable, Equatable {

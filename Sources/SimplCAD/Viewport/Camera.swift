@@ -1,5 +1,5 @@
 // Orbit camera, Z up. Angles in radians, distances in mm.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CoreGraphics
 import Foundation
 import simd

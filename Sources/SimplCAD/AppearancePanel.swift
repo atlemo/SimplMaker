@@ -1,5 +1,5 @@
 // The Appearance panel: gives bodies colours. Opens with A, or View ▸ Show Appearance.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import CADCore
 import SwiftUI

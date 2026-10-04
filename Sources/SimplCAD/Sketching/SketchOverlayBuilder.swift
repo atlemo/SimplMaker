@@ -1,5 +1,5 @@
 // Turns sketches (2D, in a plane frame) into GPU segments/triangles for the viewport.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import CADKernel
 import Foundation

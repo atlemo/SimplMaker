@@ -1,6 +1,6 @@
 // The About panel: the standard macOS one, with credits naming what SimplCAD is built on and
 // carrying the licence notices those components ask every copy of the app to include.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import CADKernel
 
@@ -79,9 +79,7 @@ enum AboutPanel {
             add(string, font: .boldSystemFont(ofSize: small + 1), style: style)
         }
 
-        add("SimplCAD is free software under the GNU General Public License, version 3 or later. "
-            + "It comes with ABSOLUTELY NO WARRANTY.", color: .secondaryLabelColor)
-        add("Source code", link: "https://github.com/atlemo/SimplCAD")
+        add("Copyright © 2026 Atle Mo. All rights reserved.", color: .secondaryLabelColor)
 
         heading("Acknowledgements")
         add("SimplCAD makes use of facilities provided by the Open CASCADE Technology software.",
@@ -93,10 +91,9 @@ enum AboutPanel {
             if let url = c.url { add(url.replacingOccurrences(of: "https://", with: ""), link: url) }
         }
 
-        // The notices, then the two long licences last.
+        // The notices, then the long licence last.
         let notices = components.map { ($0.name, $0.notice) }
-            + [("GNU Lesser General Public License 2.1 (Open CASCADE Technology)", LicenseTexts.lgpl21),
-               ("GNU General Public License 3 (SimplCAD)", LicenseTexts.gpl3)]
+            + [("GNU Lesser General Public License 2.1 (Open CASCADE Technology)", LicenseTexts.lgpl21)]
         for (name, notice) in notices {
             heading(name, style: left)
             add(reflowed(notice), font: .systemFont(ofSize: small - 1), color: .secondaryLabelColor, style: body)

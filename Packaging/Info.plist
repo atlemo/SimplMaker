@@ -13,7 +13,7 @@
 	<key>LSMinimumSystemVersion</key><string>26.0</string>
 	<key>LSApplicationCategoryType</key><string>public.app-category.graphics-design</string>
 	<key>NSHighResolutionCapable</key><true/>
-	<key>NSHumanReadableCopyright</key><string>SimplCAD contributors. GPL-3.0-or-later.</string>
+	<key>NSHumanReadableCopyright</key><string>Copyright © 2026 Atle Mo. All rights reserved.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

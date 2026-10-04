@@ -1,5 +1,5 @@
 // Metal renderer: shaded faces, screen-space edges, grid, and an ID buffer for picking.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import CADKernel
 import Metal

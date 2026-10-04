@@ -1,5 +1,5 @@
 // User parameters: named expressions, evaluated in dependency order.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 public struct Parameter: Codable, Hashable, Identifiable, Sendable {

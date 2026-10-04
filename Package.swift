@@ -1,6 +1,6 @@
 // swift-tools-version: 6.2
 // SimplCAD — a small parametric CAD tool for macOS.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 import PackageDescription
 

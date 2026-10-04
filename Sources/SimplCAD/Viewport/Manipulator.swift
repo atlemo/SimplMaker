@@ -1,7 +1,7 @@
 // The Move/Rotate manipulator: axis arrows, plane squares, a centre dot and rotation rings, drawn
 // over the viewport in screen space. This file is the geometry (where things are on screen, what a
 // click hits) and the drag math (what a mouse movement means); the drawing is in ManipulatorView.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import CADKernel
 import CoreGraphics

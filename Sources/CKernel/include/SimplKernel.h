@@ -11,7 +11,7 @@
 //    Names survive regeneration because they are built from stable IDs + kernel history.
 //  * On failure a function returns 0 / NULL / false and sk_last_error() says why.
 //
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 #ifndef SIMPL_KERNEL_H
 #define SIMPL_KERNEL_H
 

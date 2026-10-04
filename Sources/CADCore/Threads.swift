@@ -1,6 +1,6 @@
 // Screw threads: the common ISO metric and unified (inch) sizes, and the Thread feature that cuts
 // one into a round face.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 /// A family of 60° threads. Metric sizes are ISO 261/262; inch sizes are ASME B1.1.

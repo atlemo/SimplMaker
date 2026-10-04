@@ -6,7 +6,7 @@
 // damped Gauss–Newton steps move the geometry as little as possible, which is what makes
 // an under-constrained sketch "stay where it is" while dimensions change.
 //
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 public struct SolveResult: Sendable, Equatable {

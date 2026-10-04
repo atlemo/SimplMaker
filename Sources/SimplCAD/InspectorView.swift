@@ -1,5 +1,5 @@
 // Edits the selected feature: every value is an expression, and any change regenerates the model.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import CADKernel
 import SwiftUI

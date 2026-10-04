@@ -6,7 +6,7 @@
 //   click = select face/edge/profile (⇧/⌘ to add), Esc = clear selection
 // In sketch mode, clicks go to the active sketch tool; see SketchSession.
 //
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import CADCore
 import CADKernel

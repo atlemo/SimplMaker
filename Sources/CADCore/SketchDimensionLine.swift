@@ -1,5 +1,5 @@
 // The drawn form of a distance dimension: the line with arrows between two extension lines.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 /// Where a distance dimension is drawn. It measures between `p1` and `p2`; the dimension line is

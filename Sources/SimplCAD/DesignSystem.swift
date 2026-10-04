@@ -1,6 +1,6 @@
 // Layout tokens from the "macOS Design System" (Claude Design), so custom-drawn UI here uses the
 // same spacing, radius and timing scale as the rest of the design system rather than ad hoc numbers.
-// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 
 /// Design-system tokens. Native SwiftUI/AppKit controls already draw with the real system colors,
