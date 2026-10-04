@@ -631,11 +631,27 @@ struct InlineNameField: View {
     @State private var draft = ""
     @State private var done = false
     @FocusState private var focused: Bool
+    /// `.increased` when the row sits on the accent-coloured selection, where the stock field's
+    /// dark text is unreadable.
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
+        let onSelection = prominence == .increased
         TextField("Name", text: $draft)
-            .textFieldStyle(.roundedBorder)
+            .textFieldStyle(.plain)
             .labelsHidden()
+            .foregroundStyle(onSelection ? Color.white : Color.primary)
+            .tint(onSelection ? Color.white : Color.accentColor)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(onSelection ? Color.black.opacity(0.25) : Color(nsColor: .textBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(onSelection ? Color.white.opacity(0.4) : Color.secondary.opacity(0.4), lineWidth: 1)
+            )
             .focused($focused)
             .onAppear {
                 draft = name
