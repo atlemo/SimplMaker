@@ -754,7 +754,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
     public static func decode(_ data: Data) throws -> CADDocument {
         let doc = try JSONDecoder().decode(CADDocument.self, from: data)
         guard doc.version <= formatVersion else {
-            throw ExpressionError("this file was made by a newer SimplCAD (format \(doc.version))")
+            throw ExpressionError("this file was made by a newer SimplMaker (format \(doc.version))")
         }
         return doc
     }

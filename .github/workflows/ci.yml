@@ -70,14 +70,14 @@ jobs:
       - name: Xcode project
         run: |
           set -o pipefail
-          xcodebuild -project SimplCAD.xcodeproj -scheme SimplCADApp -configuration Debug \
+          xcodebuild -project SimplMaker.xcodeproj -scheme SimplMakerApp -configuration Debug \
             -destination 'platform=macOS' build | tail -n 30
-          test -f "$(xcodebuild -project SimplCAD.xcodeproj -scheme SimplCADApp -showBuildSettings | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/SimplCAD.app/Contents/Resources/AppIcon.icns"
+          test -f "$(xcodebuild -project SimplMaker.xcodeproj -scheme SimplMakerApp -showBuildSettings | awk '/ BUILT_PRODUCTS_DIR /{print $3}')/SimplMaker.app/Contents/Resources/AppIcon.icns"
       - name: Bundle app
         run: |
           scripts/bundle-app.sh
-          ditto -c -k --keepParent dist/SimplCAD.app dist/SimplCAD.zip
+          ditto -c -k --keepParent dist/SimplMaker.app dist/SimplMaker.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: SimplCAD-macOS
-          path: dist/SimplCAD.zip
+          name: SimplMaker-macOS
+          path: dist/SimplMaker.zip

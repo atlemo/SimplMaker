@@ -1,4 +1,4 @@
-// SimplKernel — the C API between SimplCAD (Swift) and OpenCASCADE (C++).
+// SimplKernel — the C API between SimplMaker (Swift) and OpenCASCADE (C++).
 //
 // Design rules:
 //  * Plain C: Swift imports it without C++ interop, so OCCT headers never reach Swift.

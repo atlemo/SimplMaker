@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Builds SimplCAD.app into dist/ (ad-hoc signed, for local use / self-distribution).
+# Builds SimplMaker.app into dist/ (ad-hoc signed, for local use / self-distribution).
 #   scripts/bundle-app.sh           release build
 #   scripts/bundle-app.sh --debug   debug build (faster to build)
 #   scripts/bundle-app.sh --release release build signed with a Developer ID (see below), ready to notarize
 #   add --open to launch it afterwards
-# The bundle's Info.plist declares the .simplcad document type, which the document features
+# The bundle's Info.plist declares the .simplmaker document type, which the document features
 # (Open Recent, autosave, versions) rely on; prefer this (or Xcode) over `swift run`.
 #
 # Version: Marketing version from VERSION, build number (CFBundleVersion, which Sparkle compares) from the
@@ -12,7 +12,7 @@
 #
 # Updates (Sparkle): the app only turns its updater on when the bundle names a feed and a public key.
 #   Packaging/sparkle-public-key.txt   the public EdDSA key (from Sparkle's generate_keys), committed
-#   SPARKLE_FEED_URL                   overrides the feed (default https://simplcad.com/updates/v<generation>/appcast.xml)
+#   SPARKLE_FEED_URL                   overrides the feed (default https://simplmaker.com/updates/v<generation>/appcast.xml)
 # Without the key file the bundle has no updater (no "Check for Updates…").
 #
 # Licensing: the 14-day trial and license keys (Polar) are enforced only when the bundle names an organization.
@@ -23,7 +23,7 @@
 #
 # --release signs with a Developer ID Application certificate: SIGN_IDENTITY, or the only one in the keychain.
 # Then notarize and staple (scripts/release.sh):
-#   xcrun notarytool submit … && xcrun stapler staple dist/SimplCAD.app
+#   xcrun notarytool submit … && xcrun stapler staple dist/SimplMaker.app
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -39,12 +39,12 @@ for arg in "$@"; do
     *) echo "unknown option $arg" >&2; exit 2 ;;
   esac
 done
-swift build -c "$CONFIG" --product SimplCAD
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/SimplCAD"
-APP="$ROOT/dist/SimplCAD.app"
+swift build -c "$CONFIG" --product SimplMaker
+BIN="$(swift build -c "$CONFIG" --show-bin-path)/SimplMaker"
+APP="$ROOT/dist/SimplMaker.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/SimplCAD"
+cp "$BIN" "$APP/Contents/MacOS/SimplMaker"
 cp "$ROOT/Packaging/Info.plist" "$APP/Contents/Info.plist"
 
 # Version numbers.
@@ -59,7 +59,7 @@ BUY_URL="$(conf_get BUY_URL)"
 POLAR_BENEFIT_ID="$(conf_get POLAR_BENEFIT_ID)"
 POLAR_API_BASE="${POLAR_API_BASE:-$(conf_get POLAR_API_BASE)}"
 if [ -n "$POLAR_ORGANIZATION_ID" ] && [ -n "$BUY_URL" ]; then
-  # Without the product id a key of any SimplCAD major version would be accepted.
+  # Without the product id a key of any SimplMaker major version would be accepted.
   if [ -z "$POLAR_BENEFIT_ID" ] && [ "$RELEASE" = 1 ] && [ "${ALLOW_UNLICENSED:-0}" != 1 ]; then
     echo "Packaging/licensing.conf has no POLAR_BENEFIT_ID: a key for any major version would unlock this one" >&2
     exit 1
@@ -92,10 +92,10 @@ rm -rf "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$APP
 OCCT_LIB="${OCCT_ROOT:-$ROOT/ThirdParty/occt}/lib"
 [ -f "$OCCT_LIB/libSimplOCCT.dylib" ] || { echo "$OCCT_LIB/libSimplOCCT.dylib missing; run scripts/build-occt.sh" >&2; exit 1; }
 cp "$OCCT_LIB/libSimplOCCT.dylib" "$APP/Contents/Frameworks/libSimplOCCT.dylib"
-install_name_tool -delete_rpath "$OCCT_LIB" "$APP/Contents/MacOS/SimplCAD" 2>/dev/null  # (invalidates the signature; signed below)
+install_name_tool -delete_rpath "$OCCT_LIB" "$APP/Contents/MacOS/SimplMaker" 2>/dev/null  # (invalidates the signature; signed below)
 KEY_FILE="$ROOT/Packaging/sparkle-public-key.txt"
 if [ -s "$KEY_FILE" ]; then
-  plist_set SUFeedURL "${SPARKLE_FEED_URL:-https://simplcad.com/updates/v$LICENSE_GENERATION/appcast.xml}"
+  plist_set SUFeedURL "${SPARKLE_FEED_URL:-https://simplmaker.com/updates/v$LICENSE_GENERATION/appcast.xml}"
   plist_set SUPublicEDKey "$(tr -d '[:space:]' < "$KEY_FILE")"
 else
   echo "note: no Packaging/sparkle-public-key.txt, so this build has no updater"
@@ -103,7 +103,7 @@ fi
 # The icon: compile the Icon Composer file (Liquid Glass layers + a flat .icns fallback) with actool;
 # without Xcode's actool, fall back to the prebuilt .icns.
 if xcrun --find actool >/dev/null 2>&1; then
-  PARTIAL="$(mktemp -t simplcad-icon).plist"
+  PARTIAL="$(mktemp -t simplmaker-icon).plist"
   xcrun actool "$ROOT/Packaging/AppIcon.icon" --compile "$APP/Contents/Resources" --app-icon AppIcon \
     --platform macosx --target-device mac --minimum-deployment-target 26.0 \
     --output-partial-info-plist "$PARTIAL" --output-format human-readable-text --errors >/dev/null

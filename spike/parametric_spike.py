@@ -1,5 +1,5 @@
 """
-Feasibility spike for SimplCAD (throwaway, NOT the product).
+Feasibility spike for SimplMaker (throwaway, NOT the product).
 
 Proves the risky core of the plan end-to-end using OpenCASCADE (via the
 `cadquery-ocp` Python bindings, so it runs anywhere incl. macOS):

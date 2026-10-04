@@ -1,4 +1,4 @@
-# SimplCAD — plan and feasibility
+# SimplMaker — plan and feasibility
 
 A simple, native macOS, parametric CAD tool in the spirit of Fusion 360:
 **sketch → constrain → extrude → go back and change anything → model regenerates.**
@@ -67,7 +67,7 @@ To run it: `pip install cadquery-ocp numpy && python3 spike/parametric_spike.py`
 ## 4. Architecture
 
 ```
-┌──────────────────────────────── SimplCAD.app (Swift) ────────────────────────────────┐
+┌──────────────────────────────── SimplMaker.app (Swift) ────────────────────────────────┐
 │  UI (SwiftUI)          toolbar · browser/feature tree · timeline · inspector ·        │
 │                        parameter table · feature dialogs                              │
 │  Viewport (AppKit+Metal) MTKView · camera · shading · edges · sketch overlay · picking │
@@ -95,10 +95,10 @@ To run it: `pip install cadquery-ocp numpy && python3 spike/parametric_spike.py`
 |---|---|---|
 | Language | **Swift 6** for the app and model. A **plain C API** over a C++ implementation for the kernel. | OCCT headers never reach Swift. A C header imports into Swift perfectly with no C++-interop flags, and the kernel can be tested from plain C on any platform (it runs on Linux CI too). |
 | Geometry kernel | **OpenCASCADE 8.x** | Parasolid/ACIS cost too much. Own mesh kernel ([Manifold](https://github.com/elalish/manifold)) has robust, fast booleans but no exact faces, fillets or STEP. Keep Manifold in mind only if OCCT booleans become a problem. |
-| Constraint solver | **Own solver in Swift** (Levenberg–Marquardt, rank analysis for degrees of freedom; dense Swift linear algebra for now, analytic Jacobians/Accelerate when sketches get big) | Small (the spike's is ~60 lines), and gives full control over drag behavior and error messages. Drop-in alternatives: FreeCAD's PlaneGCS (LGPL, C++/Eigen) or SolveSpace's `libslvs` (**GPLv3**, which rules it out now that SimplCAD is closed source). |
+| Constraint solver | **Own solver in Swift** (Levenberg–Marquardt, rank analysis for degrees of freedom; dense Swift linear algebra for now, analytic Jacobians/Accelerate when sketches get big) | Small (the spike's is ~60 lines), and gives full control over drag behavior and error messages. Drop-in alternatives: FreeCAD's PlaneGCS (LGPL, C++/Eigen) or SolveSpace's `libslvs` (**GPLv3**, which rules it out now that SimplMaker is closed source). |
 | Rendering | **Metal** via `MTKView` | SceneKit was soft-deprecated in 2025 and is weak at CAD needs (crisp edges, ID picking). RealityKit is built for AR. |
 | UI | **SwiftUI** panels, **AppKit** `NSView` for the viewport (via `NSViewRepresentable`) | SwiftUI is fast to build panels in. AppKit gives precise mouse, trackpad, modifier-key and cursor control. |
-| Document | JSON via `Codable` (`.simplcad`). Single-window app for now; move to `DocumentGroup` once the bundle declares the document type everywhere. | Autosave, versions and multiple windows come with `DocumentGroup`. |
+| Document | JSON via `Codable` (`.simplmaker`). Single-window app for now; move to `DocumentGroup` once the bundle declares the document type everywhere. | Autosave, versions and multiple windows come with `DocumentGroup`. |
 | Minimum OS / arch | macOS 26+, Apple Silicon (arm64) only | Newest APIs, one architecture to build and test. |
 
 ## 5. Data model (the "parametric" part)
@@ -194,7 +194,7 @@ Testing:
 | OCCT build/packaging friction on macOS | Low | `scripts/build-occt.sh` builds a minimal static OCCT with no external dependencies; CI caches it. |
 | OCCT boolean or fillet failures on edge cases | Medium (fillets) / Low (extrude+booleans) | Fillet/chamfer results are validated with `BRepCheck_Analyzer`. Failures (e.g. radius too big) become red timeline errors, never crashes; the kernel tests cover this. Next: `ShapeFix` healing and fuzzy booleans where needed. |
 | Swift ↔ kernel boundary | Low | Plain C API with opaque handles, so there's no Swift C++ interop to break. |
-| Licensing | **Open** | SimplCAD is proprietary. OCCT's LGPL-2.1 exception covers only material from OCCT's header files, not static linking, so a closed app must let users swap OCCT: ship it as dynamic libraries (TODO: scripts/build-occt.sh, Package.swift, bundle-app.sh) or offer the app's object files for relinking. Have a lawyer confirm. Also needed: an EULA. |
+| Licensing | **Open** | SimplMaker is proprietary. OCCT's LGPL-2.1 exception covers only material from OCCT's header files, not static linking, so a closed app must let users swap OCCT: ship it as dynamic libraries (TODO: scripts/build-occt.sh, Package.swift, bundle-app.sh) or offer the app's object files for relinking. Have a lawyer confirm. Also needed: an EULA. |
 | Scope creep toward Fusion parity | High | This document's MVP list is the contract. |
 
 ## 10. Open questions

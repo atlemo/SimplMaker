@@ -157,8 +157,8 @@ int main(void) {
   CHECK(m && (int)maxFace == sk_body_face_count(b.finalBody) - 1, "every face tessellated\n");
   if (m) printf("  %u vertices, %u triangles, %u edge segments\n", m->vertexCount, m->triangleCount, m->segmentCount);
   sk_mesh_free(m);
-  CHECK(sk_export_step(&b.finalBody, 1, "/tmp/simplcad_test.step"), "step\n");
-  CHECK(sk_export_stl(&b.finalBody, 1, "/tmp/simplcad_test.stl", 0.05), "stl\n");
+  CHECK(sk_export_step(&b.finalBody, 1, "/tmp/simplmaker_test.step"), "step\n");
+  CHECK(sk_export_stl(&b.finalBody, 1, "/tmp/simplmaker_test.stl", 0.05), "stl\n");
 
   printf("== join of two flush extrusions merges coplanar faces, so the outer edge can be filleted\n");
   SKHandle s = sk_sketch_new(XY);
@@ -220,7 +220,7 @@ int main(void) {
   printf("== STEP import\n");
   {
     size_t size = 0;
-    char *step = read_file("/tmp/simplcad_test.step", &size);
+    char *step = read_file("/tmp/simplmaker_test.step", &size);
     CHECK(step && size > 100, "read back the exported STEP file\n");
     SKHandle imp = sk_import_step(step, size, "imp");
     CHECK(imp && sk_body_is_valid(imp), "import\n");
@@ -237,9 +237,9 @@ int main(void) {
     // An imported body can be filleted like any other. (A box: the plate's edges along its
     // rounded corners join tangent faces, which can't take a fillet whether imported or not.)
     SKHandle box = sk_primitive(SK_BOX, XY, 20, 10, 5, 0, "B");
-    CHECK(sk_export_step(&box, 1, "/tmp/simplcad_box.step"), "export a box\n");
+    CHECK(sk_export_step(&box, 1, "/tmp/simplmaker_box.step"), "export a box\n");
     size_t boxSize = 0;
-    char *boxStep = read_file("/tmp/simplcad_box.step", &boxSize);
+    char *boxStep = read_file("/tmp/simplmaker_box.step", &boxSize);
     SKHandle importedBox = boxStep ? sk_import_step(boxStep, boxSize, "imp3") : 0;
     const char *e0[] = {importedBox ? sk_body_edge_name(importedBox, 0) : ""};
     SKHandle rounded = importedBox ? sk_fillet(importedBox, e0, 1, 0.5, "F") : 0;
@@ -253,8 +253,8 @@ int main(void) {
 
     // Several bodies in one file come back as one body with all of them.
     SKHandle two[] = {b.finalBody, sym};
-    CHECK(sk_export_step(two, 2, "/tmp/simplcad_test2.step"), "export two bodies\n");
-    step = read_file("/tmp/simplcad_test2.step", &size);
+    CHECK(sk_export_step(two, 2, "/tmp/simplmaker_test2.step"), "export two bodies\n");
+    step = read_file("/tmp/simplmaker_test2.step", &size);
     SKHandle both = step ? sk_import_step(step, size, "imp2") : 0;
     CHECK(both && NEAR(sk_body_volume(both), sk_body_volume(b.finalBody) + sk_body_volume(sym), 1e-6), "two solids\n");
     free(step);

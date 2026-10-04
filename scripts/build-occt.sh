@@ -4,7 +4,7 @@
 # library with no external dependencies (no Tcl/Tk, FreeType, TBB, OpenGL, VTK).
 # On macOS the archive is also linked into lib/libSimplOCCT.dylib, and the app links *that*: OCCT is
 # LGPL-2.1, and a closed-source app may only use it as a library the user can replace (see PLAN.md).
-# bundle-app.sh puts the dylib in SimplCAD.app/Contents/Frameworks. Linux keeps the static archive.
+# bundle-app.sh puts the dylib in SimplMaker.app/Contents/Frameworks. Linux keeps the static archive.
 #
 # Usage: scripts/build-occt.sh            (macOS arm64 or Linux)
 # Env:   OCCT_TAG (default V8_0_1), JOBS (default: CPU count)

@@ -1,12 +1,12 @@
-SimplCAD
+SimplMaker
 Copyright © 2026 Atle Mo. All rights reserved.
 
-This source code and the SimplCAD application are proprietary and confidential. No part of
+This source code and the SimplMaker application are proprietary and confidential. No part of
 them may be copied, modified, distributed, sublicensed, reverse engineered or used except as
 permitted by a written license agreement with the copyright holder.
 
-Use of the compiled SimplCAD application is governed by its end-user license agreement.
+Use of the compiled SimplMaker application is governed by its end-user license agreement.
 
-SimplCAD includes third-party software under its own licences (Open CASCADE Technology,
-Sparkle, Lucide, Feather, DelaBella and flex). Their notices are shown in SimplCAD ▸ About
-SimplCAD and are in Sources/SimplCAD/LicenseTexts.swift.
+SimplMaker includes third-party software under its own licences (Open CASCADE Technology,
+Sparkle, Lucide, Feather, DelaBella and flex). Their notices are shown in SimplMaker ▸ About
+SimplMaker and are in Sources/SimplMaker/LicenseTexts.swift.

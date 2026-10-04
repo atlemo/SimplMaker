@@ -2,10 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key><string>SimplCAD</string>
-	<key>CFBundleDisplayName</key><string>SimplCAD</string>
-	<key>CFBundleIdentifier</key><string>org.simplcad.SimplCAD</string>
-	<key>CFBundleExecutable</key><string>SimplCAD</string>
+	<key>CFBundleName</key><string>SimplMaker</string>
+	<key>CFBundleDisplayName</key><string>SimplMaker</string>
+	<key>CFBundleIdentifier</key><string>com.simplmaker.SimplMaker</string>
+	<key>CFBundleExecutable</key><string>SimplMaker</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>0.1.0</string>
@@ -17,21 +17,21 @@
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
-			<key>UTTypeIdentifier</key><string>org.simplcad.document</string>
-			<key>UTTypeDescription</key><string>SimplCAD Document</string>
+			<key>UTTypeIdentifier</key><string>com.simplmaker.document</string>
+			<key>UTTypeDescription</key><string>SimplMaker Document</string>
 			<key>UTTypeConformsTo</key><array><string>public.json</string></array>
 			<key>UTTypeTagSpecification</key>
-			<dict><key>public.filename-extension</key><array><string>simplcad</string></array></dict>
+			<dict><key>public.filename-extension</key><array><string>simplmaker</string></array></dict>
 		</dict>
 	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleTypeName</key><string>SimplCAD Document</string>
+			<key>CFBundleTypeName</key><string>SimplMaker Document</string>
 			<key>CFBundleTypeRole</key><string>Editor</string>
 			<key>LSHandlerRank</key><string>Owner</string>
 			<key>CFBundleTypeIconSystemGenerated</key><true/>
-			<key>LSItemContentTypes</key><array><string>org.simplcad.document</string></array>
+			<key>LSItemContentTypes</key><array><string>com.simplmaker.document</string></array>
 		</dict>
 	</array>
 </dict>

@@ -9,7 +9,7 @@ import Testing
     /// A 20 × 10 × 5 box, written to a STEP file and read back as bytes.
     private func boxSTEP() throws -> Data {
         let box = try KBody.primitive(.box(width: 20, length: 10, height: 5), on: .xy, featureID: "b")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("simplcad-import-\(UUID().uuidString).step")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("simplmaker-import-\(UUID().uuidString).step")
         defer { try? FileManager.default.removeItem(at: url) }
         try KBody.exportSTEP([box], to: url)
         return try Data(contentsOf: url)

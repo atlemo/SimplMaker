@@ -1,4 +1,4 @@
-# SimplCAD
+# SimplMaker
 
 A small, native, **parametric** CAD tool for macOS in the spirit of Fusion 360.
 You sketch, extrude, fillet and chamfer. Every value is an expression that can use named parameters, and changing any of them rebuilds the whole model.
@@ -15,31 +15,31 @@ Status: **early development.** You can sketch on a plane or a face (lines, recta
 
 ```sh
 brew install cmake ninja
-git clone https://github.com/atlemo/SimplCAD.git && cd SimplCAD
+git clone https://github.com/atlemo/SimplMaker.git && cd SimplMaker
 git checkout claude/parametric-cad-tool-plan-k6i4ry   # until it's merged
 scripts/build-occt.sh   # one time, ~10–20 min
-open SimplCAD.xcodeproj
+open SimplMaker.xcodeproj
 ```
 
-In Xcode, choose the **SimplCADApp** scheme and press ⌘R. Edit the project in Xcode as usual. `Sources/SimplCAD` is a synchronized folder, so new Swift files there are part of the app without adding them to the project. The app target links the `CADCore` and `CADKernel` libraries from the Swift package in the same folder. Run the tests with `swift test`, or open `Package.swift` in Xcode and use its test schemes.
+In Xcode, choose the **SimplMakerApp** scheme and press ⌘R. Edit the project in Xcode as usual. `Sources/SimplMaker` is a synchronized folder, so new Swift files there are part of the app without adding them to the project. The app target links the `CADCore` and `CADKernel` libraries from the Swift package in the same folder. Run the tests with `swift test`, or open `Package.swift` in Xcode and use its test schemes.
 
 ## Build and run
 
 ```sh
 scripts/build-occt.sh      # once: builds OpenCASCADE 8.0.1 into ThirdParty/occt (~30–60 min)
-scripts/bundle-app.sh --debug --open   # build dist/SimplCAD.app and launch it
+scripts/bundle-app.sh --debug --open   # build dist/SimplMaker.app and launch it
 swift test                 # unit + integration tests
 scripts/test-kernel.sh     # C-level kernel regression test (also runs on Linux)
-scripts/bundle-app.sh      # release build → dist/SimplCAD.app
+scripts/bundle-app.sh      # release build → dist/SimplMaker.app
 ```
 
-The version comes from `VERSION`, and the build number from the commit count. The bundle embeds Sparkle for updates: it turns the updater on only when `Packaging/sparkle-public-key.txt` exists (the public EdDSA key from Sparkle's `generate_keys`), and reads the feed from `SPARKLE_FEED_URL` or `https://simplcad.com/updates/appcast.xml`. `scripts/bundle-app.sh --release` signs with a Developer ID certificate for distribution.
+The version comes from `VERSION`, and the build number from the commit count. The bundle embeds Sparkle for updates: it turns the updater on only when `Packaging/sparkle-public-key.txt` exists (the public EdDSA key from Sparkle's `generate_keys`), and reads the feed from `SPARKLE_FEED_URL` or `https://simplmaker.com/updates/appcast.xml`. `scripts/bundle-app.sh --release` signs with a Developer ID certificate for distribution.
 
-Launch the bundled app rather than using `swift run`. The bundle declares the `.simplcad` document type, which Open Recent, autosave and versions depend on. You can also open `Package.swift` in Xcode.
+Launch the bundled app rather than using `swift run`. The bundle declares the `.simplmaker` document type, which Open Recent, autosave and versions depend on. You can also open `Package.swift` in Xcode.
 
 ## Using it
 
-SimplCAD is a normal Mac document app, with New, Open Recent, autosave, versions and one window per part. It opens with a **welcome window** like Xcode's: create a new part, open the demo part, open a file, or pick one of the recent parts listed on the right (double-click or Return). Turn it off with the checkbox at the bottom or in Settings; **Window → Welcome to SimplCAD** (⇧⌘1) brings it back any time. **File → New Demo Part** (⌥⌘N) opens the sample part: a plate with a hole, a pin hole cut from a sketch on its top face, two filleted corners and a chamfered edge.
+SimplMaker is a normal Mac document app, with New, Open Recent, autosave, versions and one window per part. It opens with a **welcome window** like Xcode's: create a new part, open the demo part, open a file, or pick one of the recent parts listed on the right (double-click or Return). Turn it off with the checkbox at the bottom or in Settings; **Window → Welcome to SimplMaker** (⇧⌘1) brings it back any time. **File → New Demo Part** (⌥⌘N) opens the sample part: a plate with a hole, a pin hole cut from a sketch on its top face, two filleted corners and a chamfered edge.
 
 - **Parameters** (left sidebar): edit any expression, e.g. set `width` to `90 mm`, or `thickness` to `1 in`, or `hole_d` to `depth / 3`. Press Return and the model rebuilds.
 - **Timeline** (left sidebar): select a feature to edit it in the inspector on the right. Right-click a feature to suppress or delete it. A red triangle means the feature failed; hover over it to see why. The features after it still rebuild.
@@ -72,7 +72,7 @@ SimplCAD is a normal Mac document app, with New, Open Recent, autosave, versions
 - **Keys:** the Create, Modify and Inspect menus show a single letter for each tool: **E** Extrude, **R** Revolve, **W** Sweep, **L** Loft, **B** Rib, **P** Pipe, **X** Box, **Y** Cylinder, **G** Sphere, **U** Torus, **K** Coil, **N** Construction Plane, **V** Canvas, **F** Fillet, **C** Chamfer, **H** Hole, **D** Thread, **S** Shell, **M** Move (and rotate), **Z** Scale, **J** Combine, **Q** Mirror, **T** Pattern, **I** Measure, and **A** for Appearance. While you sketch, the letters pick sketch tools instead, and in a text field they type as usual.
 - **Body colours:** press **A** (or **View → Show Appearance**) to open the Appearance panel. Select bodies in the view (a face or edge counts for its body) or in the panel's body list (⇧-click to add more), then click a colour, or choose any colour with **Custom Colour**. **Default** puts the standard colour back. Right-click a body → **Appearance…** opens the panel for it. Colours are saved in the file, can be undone, and need no rebuild.
 - **Light and dark:** the viewport follows light and dark mode, and draws thicker lines when Increase Contrast is on.
-- **Files:** documents are `.simplcad` files (JSON). They store only parameters and features; geometry is always rebuilt. **File → Export STEP…/Export STL…** export the bodies.
+- **Files:** documents are `.simplmaker` files (JSON). They store only parameters and features; geometry is always rebuilt. **File → Export STEP…/Export STL…** export the bodies.
 - **Threads:** **Modify → Thread** (D), or right-click a round face → **Thread…**, then click the side of a shaft or the wall of a hole. It cuts a modeled thread, external on a shaft and internal in a hole, in the size that suits the face: an 8 mm shaft gets M8, a 6.8 mm hole (the M8 tap drill) gets an M8 thread. The inspector picks the standard (ISO Metric, ISO Metric Fine, UNC or UNF) and size, and shows the pitch, diameters and tap drill. The thread runs the full length of the face or a set distance (drag the arrow), from the free end (a shaft's tip, a hole's mouth) or the other end, right- or left-handed. The face is turned or bored to the thread's diameters first, and the thread uses the basic 60° profile, without tolerance classes.
 - **Import STEP:** **File → Import STEP…** (⇧⌘I) adds a `.step`/`.stp` file to the timeline as an **Import** feature: one body with all the file's solids, named after the file, in millimetres whatever unit the file uses. The file's contents are stored in the part, so it rebuilds without the original. Fillet, cut, shell, move or rotate it like any other body. **Replace File…** in the inspector swaps in a new version; features after the import keep their edges and faces as long as the new file lists its faces in the same order.
 - **Canvas (reference image):** **Create → Canvas (Reference Image)…** (**V**), or **Insert Image…** in the right-click menu of a face or construction plane. Select a flat face or plane first (or click one while the tool waits), then choose a PNG, JPEG, HEIC or TIFF file. The picture lies on that plane at its middle, upright as the view shows the plane, to trace over and measure against. The Inspector sets its **opacity** (a slider; it rebuilds nothing), width (the height follows the picture's proportions), position and turn, all as expressions, and can swap in another file. Clicks and sketching pass through it. The file is kept inside the part, and the browser lists it under Canvases, where the eye hides it.
@@ -86,7 +86,7 @@ SimplCAD is a normal Mac document app, with New, Open Recent, autosave, versions
 
 | Layer | What | Where |
 |---|---|---|
-| App | SwiftUI panels, AppKit + Metal viewport with GPU ID-buffer picking | `Sources/SimplCAD` |
+| App | SwiftUI panels, AppKit + Metal viewport with GPU ID-buffer picking | `Sources/SimplMaker` |
 | Core | Expressions with units, parameters, sketch model, constraint solver, document model. Pure Swift with no dependencies. | `Sources/CADCore` |
 | Kernel (Swift) | Wrappers and the timeline **regenerator** | `Sources/CADKernel` |
 | Kernel (C API) | Plain C API over OpenCASCADE, with persistent face/edge naming | `Sources/CKernel` |
@@ -96,10 +96,10 @@ Faces and edges have **persistent names** built from stable IDs and the kernel's
 
 ## Selling it
 
-SimplCAD has a 14-day trial and then needs a license key, sold through Polar. The trial and license code is in `Sources/SimplCAD/Licensing/`; set-up and testing steps are in [docs/LICENSING-SETUP.md](docs/LICENSING-SETUP.md), and drafts of the EULA and privacy policy are in `legal/`. Builds without `Packaging/licensing.conf` are not license-enforced.
+SimplMaker has a 14-day trial and then needs a license key, sold through Polar. The trial and license code is in `Sources/SimplMaker/Licensing/`; set-up and testing steps are in [docs/LICENSING-SETUP.md](docs/LICENSING-SETUP.md), and drafts of the EULA and privacy policy are in `legal/`. Builds without `Packaging/licensing.conf` are not license-enforced.
 
 ## License
 
-SimplCAD is proprietary software. Copyright © 2026 Atle Mo. All rights reserved (see [LICENSE](LICENSE)).
+SimplMaker is proprietary software. Copyright © 2026 Atle Mo. All rights reserved (see [LICENSE](LICENSE)).
 
-It links [OpenCASCADE Technology](https://dev.opencascade.org), which is LGPL-2.1 with the OCCT exception (see PLAN.md for what that requires of a closed-source app). The parts of OCCT that SimplCAD uses include DelaBella (MIT) and flex's `FlexLexer.h` (BSD). The toolbar icons come from [Lucide](https://lucide.dev) (ISC; parts from Feather, MIT). **SimplCAD → About SimplCAD** credits all of them and shows their licence texts; the texts are in `Sources/SimplCAD/LicenseTexts.swift`.
+It links [OpenCASCADE Technology](https://dev.opencascade.org), which is LGPL-2.1 with the OCCT exception (see PLAN.md for what that requires of a closed-source app). The parts of OCCT that SimplMaker uses include DelaBella (MIT) and flex's `FlexLexer.h` (BSD). The toolbar icons come from [Lucide](https://lucide.dev) (ISC; parts from Feather, MIT). **SimplMaker → About SimplMaker** credits all of them and shows their licence texts; the texts are in `Sources/SimplMaker/LicenseTexts.swift`.

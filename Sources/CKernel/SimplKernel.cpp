@@ -2483,7 +2483,7 @@ SKHandle sk_import_step(const char *data, size_t size, const char *featureId) {
   std::istringstream in(std::string(data, size));
   STEPControl_Reader reader;
   if (reader.ReadStream("import.step", in) != IFSelect_RetDone) {
-    setError("this isn't a STEP file SimplCAD can read");
+    setError("this isn't a STEP file SimplMaker can read");
     return 0;
   }
   reader.SetSystemLengthUnit(1.0);  // millimetres, whatever unit the file uses

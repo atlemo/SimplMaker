@@ -1,21 +1,21 @@
-# Selling SimplCAD: setting up licensing
+# Selling SimplMaker: setting up licensing
 
-SimplCAD sells through [Polar](https://polar.sh), a merchant of record: Polar is the seller of record, charges
+SimplMaker sells through [Polar](https://polar.sh), a merchant of record: Polar is the seller of record, charges
 the customer, collects and pays the VAT and sales tax, and emails the license key. The app needs no server of
 its own. It checks the trial itself and activates keys against Polar's public license endpoints.
 
 **The model: $39 per major version.** A license covers one major version (1.x, 2.x) for good, with all its
-updates. SimplCAD 1 keeps working, and keeps getting its own updates, when SimplCAD 2 comes out; whoever wants
+updates. SimplMaker 1 keeps working, and keeps getting its own updates, when SimplMaker 2 comes out; whoever wants
 2.0 buys it again. In the code this is the *generation* (`LICENSE_GENERATION` in `Packaging/licensing.conf`):
 
 - each major version is its own Polar **product**, with its own License Keys benefit, so a key for 1 is turned
   away by 2 (and the activation it briefly made is freed straight away);
 - each has its own **14-day trial** (kept under its own keychain item), so a trial or key from 1 does not touch 2;
-- each has its own **update feed** (`https://simplcad.com/updates/v1/appcast.xml`, `…/v2/…`), so Sparkle never
+- each has its own **update feed** (`https://simplmaker.com/updates/v1/appcast.xml`, `…/v2/…`), so Sparkle never
   offers 2 to a copy of 1; users hear about 2 from the website or your email list;
 - keys do not expire (leave the expiration empty); the app is tied to the product, not to a date.
 
-How it behaves (see `Sources/SimplCAD/Licensing/`):
+How it behaves (see `Sources/SimplMaker/Licensing/`):
 
 - **Trial:** 14 days from the first launch. The start date is kept in the macOS keychain, with a copy in
   UserDefaults, so trashing the app does not restart it. A clock set back does not add days.
@@ -32,13 +32,13 @@ How it behaves (see `Sources/SimplCAD/Licensing/`):
 1. **Create the account.** Sign up at polar.sh, create an organization, and finish the payout setup (Polar pays out
    through Stripe Connect Express; Norway is supported). Individuals and companies can both sell; your legal note
    suggests selling through a company if you can.
-2. **Create the product** "SimplCAD 1" at $39, one-time. Add the **License Keys** benefit:
+2. **Create the product** "SimplMaker 1" at $39, one-time. Add the **License Keys** benefit:
    - prefix `SIMPL`
    - activation limit: 3 (a desktop and a laptop, with one spare)
    - expiration: none (a version-1 license never expires)
    - no usage limit
 
-   For version 2 you make a separate product, "SimplCAD 2", with its own benefit. For people who own 1, make a
+   For version 2 you make a separate product, "SimplMaker 2", with its own benefit. For people who own 1, make a
    Polar **discount code** for 2 and email it to them (the app does not know who bought what).
 3. **Make a checkout link** for the product (Polar dashboard ▸ Checkout Links). It looks like `https://buy.polar.sh/polar_cl_…`.
 4. **Copy the organization id** (dashboard ▸ Settings ▸ General). Find the **benefit id** of the License Keys
@@ -72,11 +72,11 @@ as a member and read the key in the sandbox customer portal.
 1. Make the same organization, product, license-key benefit and checkout link in the sandbox.
 2. Put the sandbox organization id and checkout link in `Packaging/licensing.conf`, and add
    `POLAR_API_BASE=https://sandbox-api.polar.sh`.
-3. `scripts/bundle-app.sh --debug --open`. Buy with the test card, then enter the key under *SimplCAD ▸ License…*.
+3. `scripts/bundle-app.sh --debug --open`. Buy with the test card, then enter the key under *SimplMaker ▸ License…*.
    Check: activating, the Mac showing in the sandbox customer portal, deactivating, a second Mac hitting the limit.
 4. To test the end of the trial without waiting two weeks, move the stored start date back (the item is
-   `org.simplcad.SimplCAD.license` in the login keychain, JSON with `trialStart` and `lastSeen`), then delete the
-   `licenseStateBackup` default: `defaults delete org.simplcad.SimplCAD licenseStateBackup`.
+   `com.simplmaker.SimplMaker.license` in the login keychain, JSON with `trialStart` and `lastSeen`), then delete the
+   `licenseStateBackup` default: `defaults delete com.simplmaker.SimplMaker licenseStateBackup`.
 5. Remove `POLAR_API_BASE` and put the real values back before releasing; `--release` refuses to build while it is set.
 
 ## Cost (checked October 2026; verify on polar.sh before relying on it)
@@ -92,6 +92,6 @@ as a member and read the key in the sandbox customer portal.
 - When 1.0 ships: set `VERSION` to `1.0.0` (0.x versions count as betas of version 1; `scripts/release.sh` accepts them).
 - Telling owners of version 1 about version 2: the website and email. (Sparkle can also show a one-off
   "version 2 is available" note from the version-1 feed; not set up.)
-- Publish the EULA and the privacy policy (drafts in `legal/`, after a lawyer has read them) on simplcad.com, and link
+- Publish the EULA and the privacy policy (drafts in `legal/`, after a lawyer has read them) on simplmaker.com, and link
   them from the product page and the app.
 - Polar needs a website with the product, a refund policy and support contact for its review.

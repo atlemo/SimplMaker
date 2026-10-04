@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Uploads the releases in $RELEASES_DIR (made by scripts/release.sh) to simplcad.com/updates/v<generation> over SFTP.
+# Uploads the releases in $RELEASES_DIR (made by scripts/release.sh) to simplmaker.com/updates/v<generation> over SFTP.
 #   scripts/publish.sh            upload, then check what the web server serves
 #   scripts/publish.sh --dry-run  show what would be uploaded
 #
@@ -7,18 +7,18 @@
 # a file which is not there yet. Archives are immutable (one per version), so ones already on the
 # server are skipped. Login is by SSH key; no password is stored or typed.
 #
-# Settings (environment overrides): defaults are the one.com account for simplcad.com.
+# Settings (environment overrides): defaults are the one.com account for simplmaker.com.
 #   SFTP_USER, SFTP_HOST, SFTP_KEY, REMOTE_DIR (relative to the SFTP home), UPDATES_URL, RELEASES_DIR
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/licensing-conf.sh"
 
-RELEASES_DIR="${RELEASES_DIR:-$HOME/SimplCADReleases/v$LICENSE_GENERATION}"
+RELEASES_DIR="${RELEASES_DIR:-$HOME/SimplMakerReleases/v$LICENSE_GENERATION}"
 SFTP_USER="${SFTP_USER:-sftp-user}"
 SFTP_HOST="${SFTP_HOST:-ssh.example.com}"
 SFTP_KEY="${SFTP_KEY:-$HOME/.ssh/simplcad_deploy}"
-REMOTE_DIR="${REMOTE_DIR:-webroots/by-route/simplcad.com_/updates/v$LICENSE_GENERATION}"
-UPDATES_URL="${UPDATES_URL:-https://simplcad.com/updates/v$LICENSE_GENERATION}"
+REMOTE_DIR="${REMOTE_DIR:-webroots/by-route/simplmaker.com_/updates/v$LICENSE_GENERATION}"
+UPDATES_URL="${UPDATES_URL:-https://simplmaker.com/updates/v$LICENSE_GENERATION}"
 DRY=0
 for arg in "$@"; do
   case "$arg" in

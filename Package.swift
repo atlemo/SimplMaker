@@ -1,5 +1,5 @@
 // swift-tools-version: 6.2
-// SimplCAD — a small parametric CAD tool for macOS.
+// SimplMaker — a small parametric CAD tool for macOS.
 // Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 import PackageDescription
@@ -11,11 +11,11 @@ let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().pa
 let occt = ProcessInfo.processInfo.environment["OCCT_ROOT"] ?? "\(packageRoot)/ThirdParty/occt"
 
 let package = Package(
-    name: "SimplCAD",
+    name: "SimplMaker",
     platforms: [.macOS("26.0")],
     products: [
-        .executable(name: "SimplCAD", targets: ["SimplCAD"]),
-        // Used by the Xcode app project (SimplCAD.xcodeproj).
+        .executable(name: "SimplMaker", targets: ["SimplMaker"]),
+        // Used by the Xcode app project (SimplMaker.xcodeproj).
         .library(name: "CADCore", targets: ["CADCore"]),
         .library(name: "CADKernel", targets: ["CADKernel"]),
     ],
@@ -43,15 +43,15 @@ let package = Package(
         .target(name: "CADKernel", dependencies: ["CADCore", "CKernel"], path: "Sources/CADKernel"),
         // The macOS app (SwiftUI + Metal).
         .executableTarget(
-            name: "SimplCAD",
+            name: "SimplMaker",
             dependencies: ["CADCore", "CADKernel", .product(name: "Sparkle", package: "Sparkle")],
-            path: "Sources/SimplCAD",
+            path: "Sources/SimplMaker",
             // SwiftPM executables only look for frameworks next to the binary; an .app keeps them in Contents/Frameworks.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(name: "CADCoreTests", dependencies: ["CADCore"], path: "Tests/CADCoreTests"),
         .testTarget(name: "CADKernelTests", dependencies: ["CADCore", "CADKernel"], path: "Tests/CADKernelTests"),
-        .testTarget(name: "SimplCADTests", dependencies: ["SimplCAD"], path: "Tests/SimplCADTests"),
+        .testTarget(name: "SimplMakerTests", dependencies: ["SimplMaker"], path: "Tests/SimplMakerTests"),
     ],
     cxxLanguageStandard: .cxx17
 )
