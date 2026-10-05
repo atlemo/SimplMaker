@@ -356,6 +356,7 @@ extension View {
 }
 
 struct StatusBar: View {
+    @Environment(\.colorScheme) private var colorScheme
     let model: DocumentModel
 
     var body: some View {
@@ -378,7 +379,7 @@ struct StatusBar: View {
         .font(.callout)
         .padding(.horizontal, DS.Spacing.space5)
         .frame(height: DS.ControlHeight.large)
-        .glassEffect(.regular, in: .capsule)
+        .background((colorScheme == .dark ? Color.black : Color.white).opacity(0.2), in: .capsule)
     }
 
     @ViewBuilder private var message: some View {
