@@ -51,16 +51,56 @@ struct WindowSizeMemory: NSViewRepresentable {
 
 /// Put in a document window's content: while `dark`, the titlebar (the document title and the
 /// toolbar buttons) draws in its dark appearance, so it reads white on Sketch mode's accent-coloured
-/// toolbar. The content below keeps the system appearance.
+/// toolbar. The content below keeps the system appearance. `tabTint` colours the window's tab bar
+/// to match the toolbar; nil leaves it as the system draws it.
 struct TitlebarAppearance: NSViewRepresentable {
     let dark: Bool
+    var tabTint: NSColor?
+
+    /// Re-applies the tab tint when the window's tabs come and go or it becomes the front tab, since
+    /// the system builds the tab bar's views anew then.
+    @MainActor final class Coordinator {
+        var observations: [NSObjectProtocol] = []
+        var tabObservation: NSKeyValueObservation?
+        var window: NSWindow?
+        var tint: NSColor?
+
+        func attach(to window: NSWindow) {
+            guard self.window !== window else { return }
+            self.window = window
+            observations.forEach(NotificationCenter.default.removeObserver)
+            observations = [NSWindow.didBecomeKeyNotification, NSWindow.didChangeScreenNotification].map {
+                NotificationCenter.default.addObserver(forName: $0, object: window, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.reapply() } }
+            }
+            tabObservation = window.tabGroup?.observe(\.windows) { [weak self] _, _ in
+                Task { @MainActor in self?.reapply() }
+            }
+        }
+
+        func reapply() {
+            guard let window else { return }
+            TitlebarAppearance.applyTabTint(tint, in: window)
+            // The tab bar's views can appear a moment after the tabs change.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, let window = self.window else { return }
+                TitlebarAppearance.applyTabTint(self.tint, in: window)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ view: NSView, context: Context) {
+        let coordinator = context.coordinator
+        let tabTint = tabTint
         // The window isn't known until the view is in it, so apply on the next turn of the run loop.
         DispatchQueue.main.async { [weak view] in
             guard let window = view?.window else { return }
+            coordinator.tint = tabTint
+            coordinator.attach(to: window)
+            coordinator.reapply()
             window.appearance = dark ? NSAppearance(named: .darkAqua) : nil
             window.contentView?.appearance = dark ? NSApp.effectiveAppearance : nil
             // The title and subtitle labels keep their own colour whatever the appearance, so set it.
@@ -71,6 +111,42 @@ struct TitlebarAppearance: NSViewRepresentable {
                 if let titlebar { Self.recolorTitles(in: titlebar, dark: dark) }
             }
         }
+    }
+
+    private static let tabTintID = NSUserInterfaceItemIdentifier("simplmaker.tabTint")
+
+    /// Colours the window's tab bar: the selected tab's glass takes the tint, and a wash of it goes
+    /// under the tabs on the track. The tab bar is the system's, so this goes by its view classes and
+    /// does nothing if they aren't there.
+    static func applyTabTint(_ tint: NSColor?, in window: NSWindow) {
+        guard let frame = window.contentView?.superview else { return }
+        for view in allSubviews(of: frame) {
+            if let glass = view as? NSGlassEffectView, glass.className == "NSGlassEffectView", isInTabBar(glass) {
+                glass.tintColor = tint
+            } else if view.className == "NSTabBarScrollView", let host = view.superview {
+                let wash = host.subviews.first { $0.identifier == tabTintID }
+                guard let tint else { wash?.removeFromSuperview(); continue }
+                let layerView = wash ?? NSView()
+                if wash == nil {
+                    layerView.identifier = tabTintID
+                    layerView.wantsLayer = true
+                    layerView.autoresizingMask = [.width, .height]
+                    layerView.frame = host.bounds
+                    host.addSubview(layerView, positioned: .below, relativeTo: view)
+                }
+                layerView.layer?.backgroundColor = tint.withAlphaComponent(0.55).cgColor
+                layerView.layer?.cornerRadius = host.bounds.height / 2
+            }
+        }
+    }
+
+    private static func isInTabBar(_ view: NSView) -> Bool {
+        var v: NSView? = view.superview
+        while let current = v {
+            if current.className == "NSTabBar" { return true }
+            v = current.superview
+        }
+        return false
     }
 
     private static func recolorTitles(in view: NSView, dark: Bool) {
