@@ -48,8 +48,13 @@ struct Icon: View {
             ForEach(elements.indices, id: \.self) { i in
                 let element = elements[i]
                 if element.filled {
-                    element.path.fill().opacity(element.opacity)
-                } else {
+                    if let color = element.fillIsAccent ? accent : element.fillColor {
+                        element.path.fill(color).opacity(element.opacity)
+                    } else {
+                        element.path.fill().opacity(element.opacity)
+                    }
+                }
+                if !element.filled || element.alsoStroked {
                     let style = StrokeStyle(lineWidth: gridStrokeWidth * element.strokeWeight, lineCap: element.cap,
                                             lineJoin: element.join)
                     if let color = element.strokeIsAccent ? accent : element.strokeColor {
@@ -85,6 +90,11 @@ struct SVGPathElement {
     var strokeColor: Color?
     /// The stroke is the app's accent colour (`stroke="accent"`).
     var strokeIsAccent = false
+    /// A filled element takes the glyph's ink unless it names a colour (`fill="#RRGGBB"` or `"accent"`).
+    var fillColor: Color?
+    var fillIsAccent = false
+    /// A filled element is also outlined when it names a stroke (`stroke="accent"`); otherwise it is only filled.
+    var alsoStroked = false
     var strokeOpacity: Double = 1
     var strokeWeight: Double = 1
     var cap: CGLineCap = .round
@@ -108,11 +118,15 @@ enum SVGGlyph {
             guard let space = body.firstIndex(of: " ") else { continue }
             let tagName = String(body[body.startIndex..<space])
             let attrs = String(body[space...])  // keeps the leading space, so lookups can require a word boundary
-            let filled = attribute(attrs, "fill") == "currentColor"
+            let fillAttr = attribute(attrs, "fill")
+            let filled = fillAttr == "currentColor" || fillAttr == "accent" || fillAttr.flatMap(color(hex:)) != nil
             let opacity = number(attrs, "fill-opacity") ?? 1
             let first = elements.count
             defer {
                 for k in first..<elements.count {
+                    elements[k].fillColor = fillAttr.flatMap(color(hex:))
+                    elements[k].fillIsAccent = fillAttr == "accent"
+                    elements[k].alsoStroked = filled && attribute(attrs, "stroke").map { $0 != "none" } == true
                     elements[k].strokeColor = attribute(attrs, "stroke").flatMap(color(hex:))
                     elements[k].strokeIsAccent = attribute(attrs, "stroke") == "accent"
                     elements[k].strokeOpacity = number(attrs, "stroke-opacity") ?? 1
