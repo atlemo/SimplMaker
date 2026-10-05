@@ -31,6 +31,12 @@ enum Shaders {
         uint pickable;
         float selectedThickness; // pixels; a selected body edge's or sketch curve's width when set (see segmentFragment)
         uint style;            // DrawStyle bits: 1 only when hovered or selected, 2 dashed, 4 flat (unlit), 8 arrowhead
+        float grow;            // pixels; an arrowhead's outline layer reaches this far past its edge
+        float radius;          // pixels; the rounding of an arrowhead's corners
+        float minLength;       // pixels; a segment shorter than this on screen is drawn this long (0 = as it is)
+        float growSide;        // pixels; like grow, along an arrowhead's slanted sides (it fades to grow at the back)
+        float dashPitch;       // pixels; a dashed line's dashes start this far apart
+        float dashLength;      // pixels; (radius is half a dash's width, grow its outline)
     };
 
     struct FaceOut {
@@ -43,6 +49,7 @@ enum Shaders {
         float4 position [[position]];
         float across;          // -1 to 1 from one side of the line to the other
         float2 dir [[flat]];   // the line's direction on screen, in framebuffer pixels (y down), for dashes
+        float2 tip [[flat]];   // an arrowhead's tip, or a dashed line's start, in framebuffer pixels
         uint id [[flat]];
     };
     struct FragOut {
@@ -148,6 +155,13 @@ enum Shaders {
         float2 uv;
     };
 
+    // Reads one sample of a multisampled ID buffer (a copy can't, and the integers can't be resolved).
+    kernel void pickSample(texture2d_ms<uint, access::read> ids [[texture(0)]],
+                           constant uint2& pixel [[buffer(0)]],
+                           device uint* result [[buffer(1)]]) {
+        result[0] = ids.read(pixel, 0).x;
+    }
+
     vertex ImageOut imageVertex(uint vid [[vertex_id]],
                                 constant Uniforms& u [[buffer(1)]],
                                 constant ImageParams& p [[buffer(3)]]) {
@@ -190,7 +204,13 @@ enum Shaders {
         float2 sa = ca.xy / max(ca.w, 1e-6) * halfSize;
         float2 sb = cb.xy / max(cb.w, 1e-6) * halfSize;
         float2 d = sb - sa;
-        d = length(d) > 1e-6 ? normalize(d) : float2(1.0, 0.0);
+        float screenLength = length(d);
+        d = screenLength > 1e-6 ? d / screenLength : float2(1.0, 0.0);
+        if (p.minLength > 0.0 && screenLength < p.minLength) {
+            screenLength = p.minLength;
+            sb = sa + d * screenLength;
+            cb.xy = sb / halfSize * cb.w;
+        }
         float2 nrm = float2(-d.y, d.x);
         bool atB = vid >= 2;
         float side = (vid % 2 == 0) ? -1.0 : 1.0;
@@ -202,7 +222,9 @@ enum Shaders {
             // ends (and the shaft's square end stays hidden inside the head). The two back corners come
             // from vertices 0 and 1.
             c = cb;
-            offset = (atB ? d * 0.6 : nrm * side * 0.5 - d * 0.55) * thickness;
+            float g = max(p.grow, p.growSide) + 2.0;  // room for the outline layer and the soft edge
+            offset = (atB ? d * (0.45 * p.thickness + g)
+                          : nrm * side * (0.5 * p.thickness + g) - d * (0.416 * p.thickness + g));
         }
         c.xy += offset / halfSize * c.w;
         c.z -= p.depthBias;  // constant in clip space: a fixed fraction of the view depth (see Camera.depthBiasScale)
@@ -210,6 +232,9 @@ enum Shaders {
         o.position = c;
         o.across = side;
         o.dir = float2(d.x, -d.y);
+        float2 tipClip = sb + d * (0.45 * p.thickness);
+        float2 anchor = (p.style & 8u) != 0 ? tipClip : sa;
+        o.tip = float2(anchor.x + halfSize.x, halfSize.y - anchor.y);
         o.id = s.id;
         return o;
     }
@@ -218,6 +243,48 @@ enum Shaders {
                                      constant Uniforms& u [[buffer(1)]],
                                      constant uint* sel [[buffer(2)]],
                                      constant DrawParams& p [[buffer(3)]]) {
+        float coverage = 1.0;
+        if ((p.style & 8u) != 0) {
+            // An arrowhead: a triangle with rounded corners, laid out from its tip. The sharp triangle is
+            // pulled in by the radius, and the radius added back to the distance, which rounds it.
+            float L = 1 * p.thickness, H = 0.5 * p.thickness;
+            float2 rel = in.position.xy - in.tip;
+            float2 q = float2(-dot(rel, in.dir), dot(rel, float2(-in.dir.y, in.dir.x)));  // behind the tip, across
+            float s = sqrt(L * L + H * H);
+            float rho = L * H / (H + s);
+            float k = (rho - p.radius) / rho;
+            float cu = L - rho;
+            float2 v0 = float2(cu - cu * k, 0.0);
+            float2 v1 = float2(cu + (L - cu) * k, H * k);
+            float2 v2 = float2(v1.x, -v1.y);
+            // The distance to the triangle v0 v1 v2 (negative inside).
+            float2 e0 = v1 - v0, e1 = v2 - v1, e2 = v0 - v2;
+            float2 w0 = q - v0, w1 = q - v1, w2 = q - v2;
+            float2 a0 = w0 - e0 * clamp(dot(w0, e0) / dot(e0, e0), 0.0, 1.0);
+            float2 a1 = w1 - e1 * clamp(dot(w1, e1) / dot(e1, e1), 0.0, 1.0);
+            float2 a2 = w2 - e2 * clamp(dot(w2, e2) / dot(e2, e2), 0.0, 1.0);
+            float sgn = sign(e0.x * e2.y - e0.y * e2.x);
+            float2 dd = min(min(float2(dot(a0, a0), sgn * (w0.x * e0.y - w0.y * e0.x)),
+                                float2(dot(a1, a1), sgn * (w1.x * e1.y - w1.y * e1.x))),
+                            float2(dot(a2, a2), sgn * (w2.x * e2.y - w2.y * e2.x)));
+            float dist = -sqrt(dd.x) * sign(dd.y) - p.radius;
+            // The slanted sides take growSide; it eases to grow toward the back edge, where the shaft joins.
+            float sides = 1.0 - smoothstep(L - 0.35 * p.thickness, L, q.x);
+            coverage = 1.0 - smoothstep(-0.5, 0.5, dist - mix(p.grow, p.growSide, sides));
+            if (coverage <= 0.01) discard_fragment();
+        }
+        if ((p.style & 32u) != 0) {
+            // A dashed line: rounded dashes along it from its start, each with its outline (grow) around it.
+            float2 rel = in.position.xy - in.tip;
+            float s = dot(rel, in.dir) - p.dashLength * 0.5, across = dot(rel, float2(-in.dir.y, in.dir.x));
+            float cell = round(s / p.dashPitch);
+            if (cell < 0.0) discard_fragment();
+            float corner = p.radius * 0.5;
+            float2 q = abs(float2(s - cell * p.dashPitch, across)) - float2(p.dashLength * 0.5 - corner, p.radius - corner);
+            float dist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - corner;
+            coverage = 1.0 - smoothstep(-0.5, 0.5, dist - p.grow);
+            if (coverage <= 0.01) discard_fragment();
+        }
         // Dashes, measured along the line on screen (so a curve made of short pieces still dashes evenly).
         if ((p.style & 2u) != 0) {
             float period = max(p.thickness, 1.0) * 5.0;
@@ -237,7 +304,7 @@ enum Shaders {
                 c = float4(0.0, 0.0, 0.0, 1.0);
         }
         FragOut o;
-        o.color = c;
+        o.color = float4(c.rgb, c.a * coverage);
         o.id = p.pickable != 0 ? in.id : 0;
         return o;
     }

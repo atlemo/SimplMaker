@@ -9,14 +9,14 @@ import Testing
         #expect(MemoryLayout<FaceVertex>.stride == 28)       // packed_float3 ×2 + uint
         #expect(MemoryLayout<SegmentInstance>.stride == 28)  // packed_float3 ×2 + uint
         #expect(MemoryLayout<Uniforms>.stride == 176)          // …, 4 × float4 colours, then wholeBodies + 3 pad uints
-        #expect(MemoryLayout<DrawParams>.stride == 80)          // 3 × float4, 4 scalars, then style
+        #expect(MemoryLayout<DrawParams>.stride == 96)          // 3 × float4, then 10 scalars (thickness … dashLength), padded
     }
 
     @Test func shadersCompile() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }  // no GPU on this machine
         let library = try device.makeLibrary(source: Shaders.source, options: nil)
         for name in ["faceVertex", "faceFragment", "regionVertex", "regionFragment", "planeFragment",
-                     "segmentVertex", "segmentFragment"] {
+                     "segmentVertex", "segmentFragment", "pickSample"] {
             #expect(library.makeFunction(name: name) != nil, "\(name)")
         }
     }

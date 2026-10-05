@@ -257,6 +257,18 @@ struct DrawParams {
     var selectedThickness: Float = 0
     /// How to draw (DrawStyle bits).
     var style: UInt32 = 0
+    /// An arrowhead's outline layer reaches this far past its edge, in pixels.
+    var grow: Float = 0
+    /// The rounding of an arrowhead's corners, in pixels.
+    var radius: Float = 0
+    /// A segment shorter than this on screen is drawn this long, in pixels; 0 = as it is.
+    var minLength: Float = 0
+    /// An arrowhead's outline reaches this far past its slanted sides, in pixels (`grow` is the rest).
+    var growSide: Float = 0
+    /// A dashed line's dashes start this far apart, and are this long, in pixels; `radius` is half a
+    /// dash's width and `grow` the reach of its outline.
+    var dashPitch: Float = 0
+    var dashLength: Float = 0
 }
 
 /// Ways of drawing, as DrawParams.style bits.
@@ -268,6 +280,8 @@ enum DrawStyle {
     static let flat: UInt32 = 4
     /// A segment drawn as an arrowhead: a triangle whose tip is the segment's end.
     static let arrowHead: UInt32 = 8
+    /// A line drawn as rounded dashes, from its start (see DrawParams.dashPitch).
+    static let dashedRound: UInt32 = 32
 }
 
 /// How bodies are drawn (View ▸ Visual Style), as in Fusion.
@@ -305,6 +319,14 @@ final class Renderer {
     /// Lines drawn only to be seen (grid, axes, previews, the snap marker): they write colour but
     /// leave the ID buffer alone, so they never hide what's picked beneath them.
     private let decorationPipeline: MTLRenderPipelineState
+    /// For shapes the fragment shader cuts out (rounded arrowheads, dashes): their edges are antialiased
+    /// by alpha-to-coverage, which needs multisampling (without it they have hard edges).
+    private let shapePipeline: MTLRenderPipelineState
+    private let shapeDecorationPipeline: MTLRenderPipelineState
+    /// Reads a pixel of the multisampled ID buffer.
+    private var pickSamplePipeline: MTLComputePipelineState?
+    /// Samples per pixel (View ▸ Settings ▸ Viewport ▸ Antialiasing), fixed at launch.
+    let sampleCount: Int
     /// Lines written to the ID buffer only: an unseen band around each body edge, so a click
     /// just beside an edge still picks it.
     private let pickBandPipeline: MTLRenderPipelineState
@@ -396,17 +418,29 @@ final class Renderer {
     static let selectedEdgeWidth: Float = 6
     static let depthFormat = MTLPixelFormat.depth32Float
 
+    /// The antialiasing setting as it was at launch (changing it takes effect on the next launch), cut down to
+    /// what the GPU supports.
+    private static let launchSetting = Preferences.antialiasingSamples
+    static func sampleCount(for device: MTLDevice) -> Int {
+        [8, 4, 2].first { $0 <= launchSetting && device.supportsTextureSampleCount($0) } ?? 1
+    }
+
     init?() {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
               let pickBuffer = device.makeBuffer(length: 16, options: .storageModeShared) else { return nil }
+        let samples = Self.sampleCount(for: device)
+        self.sampleCount = samples
         self.device = device
         self.queue = queue
         self.pickBuffer = pickBuffer
         do {
             let library = try device.makeLibrary(source: Shaders.source, options: nil)
             func pipeline(_ vertex: String, _ fragment: String, blend: Bool = false, premultiplied: Bool = false,
-                          writesID: Bool = true, writesColor: Bool = true) throws -> MTLRenderPipelineState {
+                          writesID: Bool = true, writesColor: Bool = true,
+                          alphaToCoverage: Bool = false) throws -> MTLRenderPipelineState {
                 let d = MTLRenderPipelineDescriptor()
+                d.rasterSampleCount = samples
+                d.isAlphaToCoverageEnabled = alphaToCoverage && samples > 1
                 d.vertexFunction = library.makeFunction(name: vertex)
                 d.fragmentFunction = library.makeFunction(name: fragment)
                 d.colorAttachments[0].pixelFormat = Renderer.colorFormat
@@ -427,6 +461,11 @@ final class Renderer {
             faceIDPipeline = try pipeline("faceVertex", "faceFragment", writesColor: false)
             segmentPipeline = try pipeline("segmentVertex", "segmentFragment")
             decorationPipeline = try pipeline("segmentVertex", "segmentFragment", writesID: false)
+            shapePipeline = try pipeline("segmentVertex", "segmentFragment", alphaToCoverage: true)
+            shapeDecorationPipeline = try pipeline("segmentVertex", "segmentFragment", writesID: false, alphaToCoverage: true)
+            if samples > 1, let kernel = library.makeFunction(name: "pickSample") {
+                pickSamplePipeline = try device.makeComputePipelineState(function: kernel)
+            }
             pickBandPipeline = try pipeline("segmentVertex", "segmentFragment", writesColor: false)
             regionPipeline = try pipeline("regionVertex", "regionFragment", blend: true)
             planePipeline = try pipeline("regionVertex", "planeFragment", blend: true)
@@ -703,13 +742,18 @@ final class Renderer {
         if idTexture == nil || idTexture!.width != Int(size.width) || idTexture!.height != Int(size.height) {
             let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Uint, width: Int(size.width),
                                                              height: Int(size.height), mipmapped: false)
+            if sampleCount > 1 {
+                d.textureType = .type2DMultisample
+                d.sampleCount = sampleCount
+            }
             d.usage = [.renderTarget, .shaderRead]
             d.storageMode = .private
             idTexture = device.makeTexture(descriptor: d)
         }
         pass.colorAttachments[1].texture = idTexture
         pass.colorAttachments[1].loadAction = .clear
-        pass.colorAttachments[1].storeAction = .store
+        // The IDs are only read back for a pick, and a multisampled buffer is costly to keep.
+        pass.colorAttachments[1].storeAction = pickRequest == nil && sampleCount > 1 ? .dontCare : .store
         pass.colorAttachments[1].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
 
         let aspect = Float(size.width / size.height)
@@ -942,17 +986,37 @@ final class Renderer {
                  DrawParams(color: p.handle, hoverColor: p.handle, selectColor: p.handle, thickness: 2 * scale, depthBias: 0, pickable: 0))
         segments(overlay.measurePoints, overlay.measurePointCount,
                  DrawParams(color: p.handle, hoverColor: p.handle, selectColor: p.handle, thickness: 9 * scale, depthBias: 0, pickable: 0))
-        segments(overlay.handle, overlay.handleCount,
-                 DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: p.selection,
-                            thickness: 3 * scale, depthBias: 0, pickable: 1))
-        if let handle = overlay.handle, overlay.handleCount > 1 {
-            var tip = DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: p.selection,
-                                 thickness: 20 * scale, depthBias: 0, pickable: 1, style: DrawStyle.arrowHead)
-            enc.setVertexBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
-            enc.setFragmentBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
-            for head in stride(from: 1, to: overlay.handleCount, by: 2) {  // every arrow's second segment
-                enc.setVertexBuffer(handle, offset: MemoryLayout<SegmentInstance>.stride * head, index: 0)
-                enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: 1)
+        // The arrows (a shaft and a rounded head) are drawn in three layers, so their outline is one shape:
+        // dark, then white, then the colour itself.
+        let outlineWhite = SIMD4<Float>(1, 1, 1, 1), outlineDark = SIMD4<Float>(0.05, 0.05, 0.06, 1)
+        let ring: Float = 1.25 * scale
+        let headWidth = 16 * scale
+        // The slanted sides of the head look thinner than the shaft's at the same width; its back edge keeps the plain width.
+        let headOutlineBoost: Float = 1.8
+        // However short the arrow is (a fillet not yet dragged out), a little of its dashed shaft shows behind its head.
+        let tailLength = 0.416 * headWidth + 14 * scale
+        for (layer, color) in [(2, outlineDark), (1, outlineWhite), (0, handleColor)] {
+            let grow = Float(layer) * ring, solid = layer == 0
+            let hoverTint = solid ? (overlay.handleInvalid ? p.invalid : hover) : color
+            let selectTint = solid ? p.selection : color
+            segments(overlay.handle, overlay.handleCount,
+                     DrawParams(color: color, hoverColor: hoverTint, selectColor: selectTint,
+                                thickness: 3 * scale + 2 * grow, depthBias: 0, pickable: solid ? 1 : 0,
+                                style: DrawStyle.dashedRound, grow: grow, radius: 1.5 * scale, minLength: tailLength,
+                                dashPitch: 9 * scale, dashLength: 5 * scale),
+                     pipeline: solid ? shapePipeline : shapeDecorationPipeline)
+            if let handle = overlay.handle, overlay.handleCount > 1 {
+                var tip = DrawParams(color: color, hoverColor: hoverTint, selectColor: selectTint,
+                                     thickness: headWidth, depthBias: 0, pickable: solid ? 1 : 0,
+                                     style: DrawStyle.arrowHead, grow: grow, radius: 1.5 * scale, minLength: tailLength,
+                                     growSide: grow * headOutlineBoost)
+                enc.setRenderPipelineState(solid ? shapePipeline : shapeDecorationPipeline)
+                enc.setVertexBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
+                enc.setFragmentBytes(&tip, length: MemoryLayout<DrawParams>.stride, index: 3)
+                for head in stride(from: 1, to: overlay.handleCount, by: 2) {  // every arrow's second segment
+                    enc.setVertexBuffer(handle, offset: MemoryLayout<SegmentInstance>.stride * head, index: 0)
+                    enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: 1)
+                }
             }
         }
         segments(overlay.moveHandle, overlay.moveHandleCount,
@@ -961,12 +1025,21 @@ final class Renderer {
         enc.endEncoding()
 
         if let pick = pickRequest, let idTexture,
-           pick.x >= 0, pick.y >= 0, pick.x < idTexture.width, pick.y < idTexture.height,
-           let blit = cmd.makeBlitCommandEncoder() {
-            blit.copy(from: idTexture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: pick.x, y: pick.y, z: 0),
-                      sourceSize: MTLSize(width: 1, height: 1, depth: 1), to: pickBuffer, destinationOffset: 0,
-                      destinationBytesPerRow: 4, destinationBytesPerImage: 4)
-            blit.endEncoding()
+           pick.x >= 0, pick.y >= 0, pick.x < idTexture.width, pick.y < idTexture.height {
+            if let kernel = pickSamplePipeline, let compute = cmd.makeComputeCommandEncoder() {
+                var pixel = SIMD2<UInt32>(UInt32(pick.x), UInt32(pick.y))
+                compute.setComputePipelineState(kernel)
+                compute.setTexture(idTexture, index: 0)
+                compute.setBytes(&pixel, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+                compute.setBuffer(pickBuffer, offset: 0, index: 1)
+                compute.dispatchThreads(MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+                compute.endEncoding()
+            } else if let blit = cmd.makeBlitCommandEncoder() {
+                blit.copy(from: idTexture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: pick.x, y: pick.y, z: 0),
+                          sourceSize: MTLSize(width: 1, height: 1, depth: 1), to: pickBuffer, destinationOffset: 0,
+                          destinationBytesPerRow: 4, destinationBytesPerImage: 4)
+                blit.endEncoding()
+            }
             pickRequest = nil
             nonisolated(unsafe) let buffer = pickBuffer
             let callback = onPick

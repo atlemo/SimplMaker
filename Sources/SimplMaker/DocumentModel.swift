@@ -1007,7 +1007,9 @@ final class DocumentModel {
         if manipulatedFeature == nil {
             // Each arrow is its shaft and then its head (the same segment again, drawn as a triangle).
             for h in dragHandles {
-                let a = h.base, b = h.base + h.direction * h.value
+                // A tiny length at least, so the arrow still points along its direction before it is dragged out.
+                let length = abs(h.value) < 0.01 ? (h.value < 0 ? -0.01 : 0.01) : h.value
+                let a = h.base, b = h.base + h.direction * length
                 let fa = SIMD3<Float>(Float(a.x), Float(a.y), Float(a.z)), fb = SIMD3<Float>(Float(b.x), Float(b.y), Float(b.z))
                 let id = (h.slot == 0 ? PickID.handle : PickID.diameterHandle).raw
                 let segment = SegmentInstance(ax: fa.x, ay: fa.y, az: fa.z, bx: fb.x, by: fb.y, bz: fb.z, id: id)

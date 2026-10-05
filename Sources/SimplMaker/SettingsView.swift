@@ -14,6 +14,7 @@ enum Preferences {
     static let gridSizeMetric = "gridSizeMetric"
     static let gridSizeUS = "gridSizeUS"
     static let sketchPaper = "sketchPaper"
+    static let antialiasing = "antialiasing"
     /// The guided first part (the box with a lid) has been finished.
     static let tutorialCompleted = "tutorialCompleted"
 
@@ -35,6 +36,10 @@ enum Preferences {
     static var showsWelcome: Bool { UserDefaults.standard.object(forKey: showWelcome) as? Bool ?? true }
     /// Sketch points snap to a grid that follows the zoom (on by default; ⌥ turns all snapping off).
     static var snapsToGrid: Bool { UserDefaults.standard.object(forKey: snapToGrid) as? Bool ?? true }
+
+    /// Multisampling in the 3D view: samples per pixel (1 is off). Read at launch; 4 by default.
+    static var antialiasingSamples: Int { UserDefaults.standard.object(forKey: antialiasing) as? Int ?? 4 }
+    static let antialiasingChoices: [(samples: Int, title: String)] = [(1, "Off"), (2, "2×"), (4, "4×"), (8, "8×")]
 
     /// The colour of the background while a sketch is open, like tinted drafting paper, so it's obvious
     /// you're sketching. Soft blue by default; "None" keeps the model's background.
@@ -123,6 +128,7 @@ struct SettingsView: View {
     @AppStorage(Preferences.gridSizeMetric) private var gridSizeMetric = 0.0
     @AppStorage(Preferences.gridSizeUS) private var gridSizeUS = 0.0
     @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
+    @AppStorage(Preferences.antialiasing) private var antialiasing = 4
     @ObservedObject private var updater = Updater.shared
 
     var body: some View {
@@ -182,12 +188,20 @@ struct SettingsView: View {
                     Text("While a sketch is open the background is tinted like drafting paper, so it's clear you're in sketch mode.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                        Picker("Antialiasing", selection: $antialiasing) {
+                            ForEach(Preferences.antialiasingChoices, id: \.samples) { Text($0.title).tag($0.samples) }
+                        }
+                        Text("Smooths the jagged edges of lines and bodies. Takes effect the next time SimplMaker starts. Higher is smoother but uses more graphics memory; 4× is hardly noticeable on a Mac with Apple silicon.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Toggle("Show axes", isOn: $showAxes)
                     Toggle("Show sketch constraints", isOn: $showConstraints)
                 }
                 .formStyle(.grouped)
             }
         }
-        .frame(width: 460, height: 440)
+        .frame(width: 460, height: 500)
     }
 }

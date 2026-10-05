@@ -14,7 +14,8 @@ import MetalKit
 import SwiftUI
 
 final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
-    var renderer: Renderer?
+    /// The view's multisampling follows the renderer's, whose pipelines are built for it.
+    var renderer: Renderer? { didSet { sampleCount = renderer?.sampleCount ?? 1 } }
     weak var model: DocumentModel?
 
     private var lastDrag: NSPoint?
