@@ -412,10 +412,10 @@ final class Renderer {
     var onPick: (@MainActor @Sendable (UInt32) -> Void)?
 
     static let colorFormat = MTLPixelFormat.bgra8Unorm
-    /// How wide (in points) a body edge is for clicking and hovering; it is drawn 1.6 wide.
+    /// How wide (in points) a body edge is for clicking and hovering; it is drawn 0.8 wide.
     static let edgePickWidth: Float = 5
-    /// A selected body edge: 2 pt black, 2 pt selection colour, 2 pt black.
-    static let selectedEdgeWidth: Float = 6
+    /// A selected body edge: 1.33 pt black, 1.33 pt selection colour, 1.33 pt black.
+    static let selectedEdgeWidth: Float = 4
     static let depthFormat = MTLPixelFormat.depth32Float
 
     /// The antialiasing setting as it was at launch (changing it takes effect on the next launch), cut down to
@@ -930,7 +930,7 @@ final class Renderer {
         for (i, b) in bodies.enumerated() {
             segments(b.segments, b.segmentCount,
                      DrawParams(color: edgeColor, hoverColor: tints[i].edgeHover, selectColor: tints[i].edgeSelected,
-                                thickness: 1.6 * scale, depthBias: 0.0004, pickable: 1,
+                                thickness: 0.8 * scale, depthBias: 0.0004, pickable: 1,
                                 selectedThickness: Self.selectedEdgeWidth * scale,
                                 style: style == .shaded ? DrawStyle.highlightedOnly : 0))
         }
