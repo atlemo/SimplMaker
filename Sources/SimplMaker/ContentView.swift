@@ -174,12 +174,11 @@ struct DocumentWindow: View {
                     .help("Show or hide the browser (⌃⌘S)")
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                Button { model.fitView() } label: { toolLabel("Fit", "focus") }
-                    .help("Fit the model in view (⌘0)")
                 Button { model.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
                     .help("Show or hide the inspector (⌥⌘I)")
             }
         }
+        .modifier(AccentScope(sketching: model.sketchSession != nil))
         .focusedSceneValue(\.documentModel, model)
         .focusedSceneValue(\.tutorialGuide, guide)
         .environment(\.tutorialSpotlight, guide.spotlight)
@@ -356,8 +355,8 @@ extension View {
 }
 
 struct StatusBar: View {
-    @Environment(\.colorScheme) private var colorScheme
     let model: DocumentModel
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: DS.Spacing.space5) {
@@ -645,6 +644,7 @@ struct BrowserRow<Icon: View>: View {
 /// A name edited in place: focused and selected when it appears; Return or clicking away keeps
 /// it, Esc puts the old name back.
 struct InlineNameField: View {
+    @Environment(\.accent) private var accent
     let name: String
     let commit: (String) -> Void
     let cancel: () -> Void
@@ -661,7 +661,7 @@ struct InlineNameField: View {
             .textFieldStyle(.plain)
             .labelsHidden()
             .foregroundStyle(onSelection ? Color.white : Color.primary)
-            .tint(onSelection ? Color.white : Color.accentColor)
+            .tint(onSelection ? Color.white : accent)
             .padding(.horizontal, 4)
             .padding(.vertical, 2)
             .background(
@@ -691,12 +691,13 @@ struct InlineNameField: View {
 
 /// The browser row of a body or sketch that owns something selected in the viewport.
 struct BrowserHighlight: View {
+    @Environment(\.accent) private var accent
     let on: Bool
 
     var body: some View {
         if on {
             RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous)
-                .fill(Color.accentColor.opacity(0.18))
+                .fill(accent.opacity(0.18))
                 .padding(.horizontal, DS.Spacing.space2)
         }
     }
@@ -833,6 +834,9 @@ struct ExpressionField: View {
     var excluding: String?
     /// Focusing the field highlights its row (as in the Parameters list), so its text turns white.
     var whiteWhenFocused = false
+    /// `.increased` when the row sits on the accent-coloured selection; without it the field is light
+    /// and its text must stay dark.
+    @Environment(\.backgroundProminence) private var prominence
     @Environment(\.completionModel) private var completionModel
     @State private var draft = ""
     @State private var edited = false
@@ -854,7 +858,7 @@ struct ExpressionField: View {
             .labelsHidden()  // in a Form row the label beside the field would read "expression"
             .textFieldStyle(.roundedBorder)
             .font(monospaced ? .body.monospaced() : .body)
-            .foregroundStyle(whiteWhenFocused && focused ? Color.white : Color.primary)
+            .foregroundStyle(whiteWhenFocused && focused && prominence == .increased ? Color.white : Color.primary)
             .focused($focused)
             .completesParameters(completes ? completionModel : nil, excluding: excluding, focused: focused)
             .onSubmit { edited = false; commit(draft) }
@@ -876,6 +880,7 @@ struct ExpressionField: View {
 /// A toolbar tool: its icon with a short title underneath, so the tools are easy to learn.
 /// Highlighted while `active` (the current sketch tool, or a design tool waiting for picks).
 struct ToolButton: View {
+    @Environment(\.accent) private var accent
     let title: String
     let icon: String
     var active = false
@@ -887,8 +892,10 @@ struct ToolButton: View {
     @State private var hovering = false
 
     private var ink: Color { onTint ? .white : .primary }
+    /// The hover and active fill and the focus ring, as round as the popovers and toolbar these sit in.
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: DS.Radius.xl3, style: .continuous) }
     private var background: Color {
-        if active { return onTint ? Color.white.opacity(0.24) : Color.accentColor.opacity(0.16) }
+        if active { return onTint ? Color.white.opacity(0.24) : accent.opacity(0.16) }
         return hovering && isEnabled ? ink.opacity(onTint ? 0.14 : 0.07) : .clear
     }
 
@@ -906,9 +913,11 @@ struct ToolButton: View {
             .frame(minWidth: showsTitle ? 44 : 28, minHeight: showsTitle ? 0 : 24)
             .padding(.horizontal, showsTitle ? DS.Spacing.space2 : DS.Spacing.space1)
             .padding(.vertical, showsTitle ? DS.Spacing.space1 : 0)
-            .foregroundStyle(active && !onTint ? Color.accentColor : ink)
-            .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+            .foregroundStyle(active && !onTint ? accent : ink)
+            .background(background, in: shape)
             .contentShape(Rectangle())
+            // The keyboard focus ring follows the same rounded shape as the hover and active fill.
+            .contentShape(.focusEffect, shape)
             .opacity(isEnabled ? 1 : DS.opacityDisabled)
         }
         .buttonStyle(.plain)
@@ -1080,7 +1089,9 @@ struct DesignToolbar: View {
             ToolDivider()
             group("Shapes", id: "design.shapes", DesignTool.primitives, defaults: [.box, .cylinder, .sphere])
             ToolDivider()
-            group("Modify", id: "design.modify", DesignTool.modifiers, defaults: DesignTool.modifiers)
+            // Scale (sketches only for now) stays in the Modify menu and the sketch context menu, but has no button.
+            let modify = DesignTool.modifiers.filter { $0 != .scale }
+            group("Modify", id: "design.modify", modify, defaults: modify)
             ToolDivider()
             group("Construct", id: "design.construct", DesignTool.construct, defaults: [.plane, .mirror, .pattern, .canvas])
             ToolDivider()

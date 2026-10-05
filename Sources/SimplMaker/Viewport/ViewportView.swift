@@ -199,6 +199,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 self?.needsDisplay = true
             }
             c.home = { [weak self] in self?.model?.show(.home) }
+            c.accent = { [weak self] in Preferences.nsAccent(sketching: self?.model?.sketchSession != nil) }
             addSubview(c)
             viewCube = c
             return c
@@ -1384,8 +1385,8 @@ final class ConstraintGlyphView: NSTextField {
     /// Fixed colours (not the system's dynamic ones), so the symbol keeps its contrast over any sketch paper.
     private func updateAppearance() {
         if isSelectedGlyph {
-            backgroundColor = .selectedContentBackgroundColor
-            textColor = .alternateSelectedControlTextColor
+            backgroundColor = .controlAccentColor  // constraint symbols exist only while sketching
+            textColor = .white
         } else {
             backgroundColor = dark ? NSColor(white: 0.14, alpha: 0.92) : NSColor(white: 1, alpha: 0.92)
             textColor = dark ? NSColor(white: 0.85, alpha: 1) : NSColor(white: 0.2, alpha: 1)

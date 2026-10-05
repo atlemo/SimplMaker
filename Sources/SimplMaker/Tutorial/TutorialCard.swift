@@ -6,6 +6,7 @@ import AppKit
 import SwiftUI
 
 struct TutorialCard: View {
+    @Environment(\.accent) private var accent
     let model: DocumentModel
     let guide: TutorialGuide
     @State private var drag = CGSize.zero
@@ -73,7 +74,7 @@ struct TutorialCard: View {
                 Text(step.chapter.title.uppercased())
                     .font(.caption.weight(.semibold))
                     .tracking(0.6)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(accent)
                 Text("Step \(position.index + 1) of \(position.count)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -125,12 +126,12 @@ struct TutorialCard: View {
         .font(.callout)
     }
 
-    private func markdown(_ text: String) -> AttributedString { tutorialMarkdown(text) }
+    private func markdown(_ text: String) -> AttributedString { tutorialMarkdown(text, accent: accent) }
 }
 
 /// Inline Markdown in a step's text. What the user types or clicks stands out from the explanation around it:
 /// `code` (a parameter name, a value) is bright on an accent-tinted chip, **bold** (a tool, a key) is bright.
-func tutorialMarkdown(_ text: String) -> AttributedString {
+func tutorialMarkdown(_ text: String, accent: Color) -> AttributedString {
     guard let parsed = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
     else { return AttributedString(text) }
     var out = AttributedString()
@@ -141,7 +142,7 @@ func tutorialMarkdown(_ text: String) -> AttributedString {
             // Thin spaces inside the chip, so the background has some air around the letters.
             piece = AttributedString("\u{2009}") + piece + AttributedString("\u{2009}")
             piece.foregroundColor = Color.primary
-            piece.backgroundColor = Color.accentColor.opacity(0.32)
+            piece.backgroundColor = accent.opacity(0.32)
         } else if intent.contains(.stronglyEmphasized) {
             piece.foregroundColor = Color.primary
         }
@@ -152,20 +153,21 @@ func tutorialMarkdown(_ text: String) -> AttributedString {
 
 /// What to do next, set apart from the explanation above it.
 private struct HintRow: View {
+    @Environment(\.accent) private var accent
     let hint: TutorialHint
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.space4) {
             Image(systemName: hint.isProblem ? "exclamationmark.triangle.fill" : "arrow.right.circle.fill")
-                .foregroundStyle(hint.isProblem ? Color.orange : Color.accentColor)
-            Text(tutorialMarkdown(hint.text))
+                .foregroundStyle(hint.isProblem ? Color.orange : accent)
+            Text(tutorialMarkdown(hint.text, accent: accent))
                 .font(.callout.weight(.medium))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, DS.Spacing.space5)
         .padding(.vertical, DS.Spacing.space4)
-        .background((hint.isProblem ? Color.orange : Color.accentColor).opacity(0.14),
+        .background((hint.isProblem ? Color.orange : accent).opacity(0.14),
                     in: RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous))
         .accessibilityElement(children: .combine)
     }
@@ -173,6 +175,7 @@ private struct HintRow: View {
 
 /// One capsule per step: done, the current one, and what's left.
 private struct ProgressStrip: View {
+    @Environment(\.accent) private var accent
     let index: Int
     let count: Int
 
@@ -180,7 +183,7 @@ private struct ProgressStrip: View {
         HStack(spacing: 3) {
             ForEach(0..<count, id: \.self) { i in
                 Capsule()
-                    .fill(i <= index ? Color.accentColor : Color.primary.opacity(0.14))
+                    .fill(i <= index ? accent : Color.primary.opacity(0.14))
                     .opacity(i < index ? 0.55 : 1)
                     .frame(height: 3)
             }

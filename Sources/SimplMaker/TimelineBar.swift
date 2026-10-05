@@ -43,6 +43,7 @@ extension Feature {
 }
 
 struct TimelineBar: View {
+    @Environment(\.accent) private var accent
     let model: DocumentModel
     /// Where the marker is while it's being dragged.
     @State private var dragPosition: Int?
@@ -122,7 +123,7 @@ struct TimelineBar: View {
         let dx = moving?.id == f.id ? moving?.dx ?? 0 : 0
         return Icon(f.iconName, size: 17)
             .frame(width: Self.item, height: Self.item)
-            .background(selected ? Color.accentColor.opacity(0.28) : related ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.05),
+            .background(selected ? accent.opacity(0.28) : related ? accent.opacity(0.12) : Color.primary.opacity(0.05),
                         in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
             .overlay(alignment: .bottomTrailing) {
                 if error != nil {
@@ -172,7 +173,7 @@ struct TimelineBar: View {
     /// The marker: drag it left or right to roll the model back or forward.
     private var markerView: some View {
         Capsule()
-            .fill(Color.accentColor)
+            .fill(accent)
             .frame(width: 4, height: Self.item + 6)
             .padding(.horizontal, 2)
             .contentShape(Rectangle().inset(by: -6))

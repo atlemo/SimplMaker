@@ -69,7 +69,8 @@ enum Preferences {
             switch self {
             case .green: return Color(red: 0.16, green: 0.46, blue: 0.33)
             case .cream: return Color(red: 0.55, green: 0.47, blue: 0.27)
-            case .blue, .none: return .accentColor
+            case .blue: return Color(nsColor: .controlAccentColor)  // tones of the system's colour, as it is in sketch mode
+            case .none: return Color(nsColor: .controlAccentColor)
             }
         }
     }
@@ -129,79 +130,141 @@ struct SettingsView: View {
     @AppStorage(Preferences.gridSizeUS) private var gridSizeUS = 0.0
     @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
     @AppStorage(Preferences.antialiasing) private var antialiasing = 4
+    @AppStorage(Preferences.accentSource) private var accentSource = Preferences.AccentSource.simplMaker
     @ObservedObject private var updater = Updater.shared
 
-    var body: some View {
-        TabView {
-            Tab("General", systemImage: "gearshape") {
-                Form {
-                    Toggle("Show the welcome window at launch", isOn: $showWelcome)
-                    Text("Off, SimplMaker opens an empty part at launch instead. The window is always available under Window → Welcome to SimplMaker.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if updater.isAvailable {
-                        Toggle("Check for updates automatically", isOn: Binding(
-                            get: { updater.automaticallyChecksForUpdates },
-                            set: { updater.automaticallyChecksForUpdates = $0 }))
-                    }
-                }
-                .formStyle(.grouped)
-            }
-            if LicenseManager.shared.isEnforced {
-                Tab("License", systemImage: "key") {
-                    LicenseView(license: .shared)
-                }
-            }
-            Tab("Navigation", systemImage: "hand.draw") {
-                Form {
-                    Picker("Two-finger scroll", selection: $trackpadScroll) {
-                        ForEach(Preferences.TrackpadScroll.allCases) { Text($0.title).tag($0) }
-                    }
-                    Text("Hold ⇧ while scrolling to do the other one. Pinch zooms, rotate spins the view, and dragging on empty space orbits.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Toggle("Invert mouse-wheel zoom", isOn: $invertZoom)
-                }
-                .formStyle(.grouped)
-            }
-            Tab("Viewport", systemImage: "cube") {
-                Form {
-                    Toggle("Show grid", isOn: $showGrid)
-                    Picker("Units", selection: $unitSystem) {
-                        ForEach(Preferences.UnitSystem.allCases) { Text($0.title).tag($0) }
-                    }
-                    if unitSystem.isUS {
-                        Picker("Grid square", selection: $gridSizeUS) {
-                            ForEach(Preferences.usGridSizes) { Text($0.title).tag($0.mm) }
-                        }
-                    } else {
-                        Picker("Grid square", selection: $gridSizeMetric) {
-                            ForEach(Preferences.metricGridSizes) { Text($0.title).tag($0.mm) }
-                        }
-                    }
-                    Text("The size of one square of the sketch grid, which \"Snap to Grid\" snaps to. Automatic picks a round size that follows the zoom; a fixed size is thinned out only when zoomed far out.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Picker("Sketch background", selection: $sketchPaper) {
-                        ForEach(Preferences.SketchPaper.allCases) { Text($0.title).tag($0) }
-                    }
-                    Text("While a sketch is open the background is tinted like drafting paper, so it's clear you're in sketch mode.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
-                        Picker("Antialiasing", selection: $antialiasing) {
-                            ForEach(Preferences.antialiasingChoices, id: \.samples) { Text($0.title).tag($0.samples) }
-                        }
-                        Text("Smooths the jagged edges of lines and bodies. Takes effect the next time SimplMaker starts. Higher is smoother but uses more graphics memory; 4× is hardly noticeable on a Mac with Apple silicon.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Toggle("Show axes", isOn: $showAxes)
-                    Toggle("Show sketch constraints", isOn: $showConstraints)
-                }
-                .formStyle(.grouped)
+    private enum Pane: String, CaseIterable, Identifiable {
+        case general = "General", license = "License", navigation = "Navigation", viewport = "Viewport"
+        var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .general: return "gearshape"
+            case .license: return "key"
+            case .navigation: return "hand.draw"
+            case .viewport: return "cube"
             }
         }
-        .frame(width: 460, height: 500)
+    }
+    @State private var pane = Pane.general
+    @Environment(\.accent) private var accent
+
+    private var panes: [Pane] { Pane.allCases.filter { $0 != .license || LicenseManager.shared.isEnforced } }
+
+    /// The categories, as a row of buttons in the app's accent colour (a TabView draws its selection grey).
+    private var categoryBar: some View {
+        HStack(spacing: DS.Spacing.space2) {
+            ForEach(panes) { p in
+                let selected = p == pane
+                Button { pane = p } label: {
+                    VStack(spacing: DS.Spacing.space1) {
+                        Image(systemName: p.icon).font(.system(size: 17)).frame(height: 22)
+                        Text(p.rawValue).font(.system(size: 11))
+                    }
+                    .frame(minWidth: 62)
+                    .padding(.horizontal, DS.Spacing.space3)
+                    .padding(.vertical, DS.Spacing.space2)
+                    .foregroundStyle(selected ? accent : Color.primary)
+                    .background(selected ? accent.opacity(0.16) : .clear,
+                                in: RoundedRectangle(cornerRadius: DS.Radius.xl3, style: .continuous))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()  // the selection already shows in the accent colour; the ring would be the system's
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, DS.Spacing.space4)
+        .frame(maxWidth: .infinity)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            categoryBar
+            Divider()
+            switch pane {
+            case .general: generalPane
+            case .license: LicenseView(license: .shared)
+            case .navigation: navigationPane
+            case .viewport: viewportPane
+            }
+        }
+        .frame(width: 460, height: 560)
+        .navigationTitle(pane.rawValue)
+    }
+
+    @ViewBuilder private var generalPane: some View {
+        Form {
+            Toggle("Show the welcome window at launch", isOn: $showWelcome)
+            Text("Off, SimplMaker opens an empty part at launch instead. The window is always available under Window → Welcome to SimplMaker.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                Picker("Accent color", selection: $accentSource) {
+                    ForEach(Preferences.AccentSource.allCases) { Text($0.title).tag($0) }
+                }
+                Text("The highlight color of tools and selections. While you sketch, the system's color is always used, since the sketch paper is tinted to match it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if updater.isAvailable {
+                Toggle("Check for updates automatically", isOn: Binding(
+                    get: { updater.automaticallyChecksForUpdates },
+                    set: { updater.automaticallyChecksForUpdates = $0 }))
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    @ViewBuilder private var navigationPane: some View {
+        Form {
+            Picker("Two-finger scroll", selection: $trackpadScroll) {
+                ForEach(Preferences.TrackpadScroll.allCases) { Text($0.title).tag($0) }
+            }
+            Text("Hold ⇧ while scrolling to do the other one. Pinch zooms, rotate spins the view, and dragging on empty space orbits.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Toggle("Invert mouse-wheel zoom", isOn: $invertZoom)
+        }
+        .formStyle(.grouped)
+    }
+
+    @ViewBuilder private var viewportPane: some View {
+        Form {
+            Toggle("Show grid", isOn: $showGrid)
+            Picker("Units", selection: $unitSystem) {
+                ForEach(Preferences.UnitSystem.allCases) { Text($0.title).tag($0) }
+            }
+            if unitSystem.isUS {
+                Picker("Grid square", selection: $gridSizeUS) {
+                    ForEach(Preferences.usGridSizes) { Text($0.title).tag($0.mm) }
+                }
+            } else {
+                Picker("Grid square", selection: $gridSizeMetric) {
+                    ForEach(Preferences.metricGridSizes) { Text($0.title).tag($0.mm) }
+                }
+            }
+            Text("The size of one square of the sketch grid, which \"Snap to Grid\" snaps to. Automatic picks a round size that follows the zoom; a fixed size is thinned out only when zoomed far out.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                Picker("Sketch background", selection: $sketchPaper) {
+                    ForEach(Preferences.SketchPaper.allCases) { Text($0.title).tag($0) }
+                }
+                Text("While a sketch is open the background is tinted like drafting paper, so it's clear you're in sketch mode.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                Picker("Antialiasing", selection: $antialiasing) {
+                    ForEach(Preferences.antialiasingChoices, id: \.samples) { Text($0.title).tag($0.samples) }
+                }
+                Text("Smooths the jagged edges of lines and bodies. Takes effect the next time SimplMaker starts. Higher is smoother but uses more graphics memory; 4× is hardly noticeable on a Mac with Apple silicon.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Toggle("Show axes", isOn: $showAxes)
+            Toggle("Show sketch constraints", isOn: $showConstraints)
+        }
+        .formStyle(.grouped)
     }
 }

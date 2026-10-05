@@ -12,6 +12,7 @@ struct Icon: View {
     /// When set, the stroke is this many points thick on screen whatever the icon's size (the glyph
     /// grid is 24 units, so the stroke is drawn thicker on the grid the smaller the icon is shown).
     var renderedStroke: CGFloat?
+    @Environment(\.accent) private var accent
 
     /// The thickness of tool icons in the toolbars and their menus, in points as rendered.
     static let toolStroke: CGFloat = 1.2
@@ -49,7 +50,13 @@ struct Icon: View {
                 if element.filled {
                     element.path.fill().opacity(element.opacity)
                 } else {
-                    element.path.stroke(style: StrokeStyle(lineWidth: gridStrokeWidth, lineCap: .round, lineJoin: .round))
+                    let style = StrokeStyle(lineWidth: gridStrokeWidth * element.strokeWeight, lineCap: element.cap,
+                                            lineJoin: element.join)
+                    if let color = element.strokeIsAccent ? accent : element.strokeColor {
+                        element.path.stroke(color, style: style).opacity(element.strokeOpacity)
+                    } else {
+                        element.path.stroke(style: style).opacity(element.strokeOpacity)
+                    }
                 }
             }
         }
@@ -72,6 +79,16 @@ struct SVGPathElement {
     let path: Path
     let filled: Bool
     var opacity: Double = 1
+    /// A stroked element can differ from the rest: a colour of its own (`stroke="#RRGGBB"` or `"accent"`; otherwise the
+    /// glyph's ink), a fraction of its opacity (`stroke-opacity`), a multiple of the glyph's stroke width
+    /// (`stroke-weight`) and its own caps and joins.
+    var strokeColor: Color?
+    /// The stroke is the app's accent colour (`stroke="accent"`).
+    var strokeIsAccent = false
+    var strokeOpacity: Double = 1
+    var strokeWeight: Double = 1
+    var cap: CGLineCap = .round
+    var join: CGLineJoin = .round
 }
 
 /// Parses the tiny, self-closing-tags-only SVG fragments in IconGlyphs.table into drawable paths.
@@ -93,6 +110,21 @@ enum SVGGlyph {
             let attrs = String(body[space...])  // keeps the leading space, so lookups can require a word boundary
             let filled = attribute(attrs, "fill") == "currentColor"
             let opacity = number(attrs, "fill-opacity") ?? 1
+            let first = elements.count
+            defer {
+                for k in first..<elements.count {
+                    elements[k].strokeColor = attribute(attrs, "stroke").flatMap(color(hex:))
+                    elements[k].strokeIsAccent = attribute(attrs, "stroke") == "accent"
+                    elements[k].strokeOpacity = number(attrs, "stroke-opacity") ?? 1
+                    elements[k].strokeWeight = number(attrs, "stroke-weight") ?? 1
+                    switch attribute(attrs, "stroke-linecap") {
+                    case "butt": elements[k].cap = .butt
+                    case "square": elements[k].cap = .square
+                    default: break
+                    }
+                    if attribute(attrs, "stroke-linejoin") == "miter" { elements[k].join = .miter }
+                }
+            }
 
             switch tagName {
             case "path":
@@ -156,6 +188,13 @@ enum SVGGlyph {
         let rest = attrs[range.upperBound...]
         guard let end = rest.firstIndex(of: "\"") else { return nil }
         return String(rest[rest.startIndex..<end])
+    }
+
+    /// "#RRGGBB" or "accent" (the app's accent colour), or nil (also for "none" and "currentColor", which are
+    /// the glyph's ink).
+    private static func color(hex: String) -> Color? {
+        guard hex.hasPrefix("#"), hex.count == 7, let v = UInt32(hex.dropFirst(), radix: 16) else { return nil }
+        return Color(red: Double(v >> 16 & 0xFF) / 255, green: Double(v >> 8 & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
     }
 
     private static func number(_ attrs: String, _ name: String) -> Double? {

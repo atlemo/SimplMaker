@@ -175,6 +175,7 @@ struct AppearancePanel: View {
 
 /// One colour to pick: a round swatch, ringed when the selected bodies have it.
 struct ColorSwatch: View {
+    @Environment(\.accent) private var accent
     let color: Color
     let name: String
     let current: Bool
@@ -197,7 +198,7 @@ struct ColorSwatch: View {
                 }
                 .padding(3)
                 .overlay {
-                    Circle().strokeBorder(current ? Color.accentColor : hovering && isEnabled ? Color.primary.opacity(0.3) : .clear,
+                    Circle().strokeBorder(current ? accent : hovering && isEnabled ? Color.primary.opacity(0.3) : .clear,
                                           lineWidth: 2)
                 }
                 .frame(width: 30, height: 30)
@@ -215,6 +216,7 @@ struct ColorSwatch: View {
 
 /// A body in the Appearance panel: its colour and name; a click selects it.
 struct AppearanceBodyRow: View {
+    @Environment(\.accent) private var accent
     let name: String
     let color: Color
     let selected: Bool
@@ -238,7 +240,7 @@ struct AppearanceBodyRow: View {
             .foregroundStyle(hidden ? .secondary : .primary)
             .padding(.horizontal, DS.Spacing.space3)
             .frame(height: DS.ControlHeight.sidebarRow)
-            .background(selected ? Color.accentColor.opacity(0.18) : hovering ? Color.primary.opacity(0.07) : .clear,
+            .background(selected ? accent.opacity(0.18) : hovering ? Color.primary.opacity(0.07) : .clear,
                         in: RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous))
             .contentShape(Rectangle())
         }

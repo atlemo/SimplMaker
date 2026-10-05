@@ -145,6 +145,7 @@ struct SoloTool: View {
 
 /// A group's name under its tools, with an arrow when it opens the group.
 private struct GroupLabel: View {
+    @Environment(\.accent) private var accent
     let title: String
     let chevron: Bool
     let highlighted: Bool
@@ -162,16 +163,17 @@ private struct GroupLabel: View {
             }
             .padding(.horizontal, DS.Spacing.space2)
             .frame(minHeight: 14)
-            .foregroundStyle(highlighted && !onTint ? Color.accentColor : ink.opacity(highlighted ? 1 : 0.8))
+            .foregroundStyle(highlighted && !onTint ? accent : ink.opacity(highlighted ? 1 : 0.8))
             .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
             .contentShape(Rectangle())
+            .contentShape(.focusEffect, RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
     }
 
     private var background: Color {
-        if highlighted { return onTint ? Color.white.opacity(0.24) : Color.accentColor.opacity(0.16) }
+        if highlighted { return onTint ? Color.white.opacity(0.24) : accent.opacity(0.16) }
         return hovering ? ink.opacity(onTint ? 0.14 : 0.07) : .clear
     }
 }
@@ -261,6 +263,7 @@ private struct ToolGroupList: View {
 }
 
 private struct ToolGroupRow: View {
+    @Environment(\.accent) private var accent
     let tool: GroupTool
     let pinned: Bool
     let run: (GroupTool) -> Void
@@ -275,7 +278,7 @@ private struct ToolGroupRow: View {
                     Text(tool.title).lineLimit(1)
                     Spacer(minLength: DS.Spacing.space4)
                 }
-                .foregroundStyle(tool.active ? Color.accentColor : .primary)
+                .foregroundStyle(tool.active ? accent : .primary)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -286,10 +289,11 @@ private struct ToolGroupRow: View {
                 Button { run(mode) } label: {
                     Icon(mode.icon, size: 14, renderedStroke: Icon.toolStroke)
                         .frame(width: 22, height: 22)
-                        .background(mode.active ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.06),
+                        .background(mode.active ? accent.opacity(0.16) : Color.primary.opacity(0.06),
                                     in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
-                        .foregroundStyle(mode.active ? Color.accentColor : .primary)
+                        .foregroundStyle(mode.active ? accent : .primary)
                         .contentShape(Rectangle())
+                        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .help(mode.help)
@@ -303,7 +307,7 @@ private struct ToolGroupRow: View {
                 Image(systemName: pinned ? "pin.fill" : "pin")
                     .font(.system(size: 11))
                     .frame(width: 22, height: 22)
-                    .foregroundStyle(pinned ? Color.accentColor : .secondary)
+                    .foregroundStyle(pinned ? accent : .secondary)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

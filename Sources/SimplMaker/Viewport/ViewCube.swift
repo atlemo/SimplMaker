@@ -10,6 +10,8 @@ final class ViewCubeView: NSView {
     var lookAlong: (SIMD3<Float>) -> Void = { _ in }
     var orbit: (_ dx: Float, _ dy: Float) -> Void = { _, _ in }
     var home: () -> Void = {}
+    /// The colour of the hovered part (the accent, which while sketching is the system's).
+    var accent: () -> NSColor = { .controlAccentColor }
 
     static let size = NSSize(width: 124, height: 132)
     private let scale: CGFloat = 30  // half the cube's side, in points
@@ -151,7 +153,7 @@ final class ViewCubeView: NSView {
                         let t0 = [-1, -band, band][Int(j + 1)], t1 = [-band, band, 1][Int(j + 1)]
                         ctx.addLines(between: [point(fr, s0, t0), point(fr, s1, t0), point(fr, s1, t1), point(fr, s0, t1)])
                         ctx.closePath()
-                        ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.45).cgColor)
+                        ctx.setFillColor(accent().withAlphaComponent(0.45).cgColor)
                         ctx.fillPath()
                     }
                 }

@@ -26,7 +26,7 @@ struct SimplMakerApp: App {
         // The welcome window replaces the empty document macOS would otherwise open at launch
         // (see AppDelegate). It is never restored; launch decides whether it appears.
         Window("Welcome to SimplMaker", id: AppWindows.welcomeID) {
-            WelcomeView()
+            WelcomeView().modifier(AccentScope())
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -35,14 +35,14 @@ struct SimplMakerApp: App {
         .defaultLaunchBehavior(Preferences.showsWelcome ? .presented : .suppressed)
 
         Window("SimplMaker License", id: AppWindows.licenseID) {
-            LicenseWindow()
+            LicenseWindow().modifier(AccentScope())
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
         .restorationBehavior(.disabled)
 
         Settings {
-            SettingsView()
+            SettingsView().modifier(AccentScope())
         }
     }
 }

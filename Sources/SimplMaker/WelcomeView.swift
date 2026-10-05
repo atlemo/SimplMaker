@@ -196,6 +196,7 @@ struct WelcomeView: View {
 
 /// One of the big actions on the left: icon, bold title and a one-line description.
 private struct WelcomeAction: View {
+    @Environment(\.accent) private var accent
     let title: String
     let subtitle: String
     let systemImage: String
@@ -207,7 +208,7 @@ private struct WelcomeAction: View {
             HStack(alignment: .center, spacing: 14) {
                 Image(systemName: systemImage)
                     .font(.system(size: 30, weight: .light))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(accent)
                     .frame(width: 44)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title).font(.headline)
@@ -228,6 +229,7 @@ private struct WelcomeAction: View {
 
 /// A recent part: file icon, name, and where it lives; blue when selected, as in a source list.
 private struct RecentRow: View {
+    @Environment(\.accent) private var accent
     let url: URL
     let selected: Bool
     let opening: Bool
@@ -250,7 +252,7 @@ private struct RecentRow: View {
         .foregroundStyle(selected ? Color.white : Color.primary)
         .padding(.horizontal, DS.Spacing.space3)
         .padding(.vertical, 5)
-        .background(selected ? Color.accentColor : hovering ? Color.primary.opacity(0.06) : .clear,
+        .background(selected ? accent : hovering ? Color.primary.opacity(0.06) : .clear,
                     in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

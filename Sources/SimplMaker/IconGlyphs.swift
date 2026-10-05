@@ -204,11 +204,12 @@ enum IconGlyphs {
     "hole": "<path d=\"M12.78 15.98A3.6 3.6 0 1 1 8.02 11.22A3.6 3.6 0 0 0 12.78 15.98Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 21V8l5-5h13v13l-5 5Z\" /><path d=\"M3 8h13v13\" /><path d=\"m16 8 5-5\" /><circle cx=\"9.5\" cy=\"14.5\" r=\"3.6\" /><path d=\"M12.78 15.98A3.6 3.6 0 0 0 8.02 11.22\" />",
     // A box with its front-right edge cut (chamfer) or rounded (fillet); the new face is shaded.
     "chamfer": "<path d=\"M10 8 15 3l6 6-5 5Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 21V8l5-5h7l6 6v7l-5 5Z\" /><path d=\"M3 8h7l6 6v7\" /><path d=\"m10 8 5-5\" /><path d=\"m16 14 5-5\" />",
-    // A corner profile with its tip cut off (the cut shaded): equal legs with matching ticks, unequal legs with
-    // one tick and two, and a distance along the top with the angle the cut makes to it.
-    "chamfer-equal": "<path d=\"M14 3h7v7Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 3h11l7 7v11H3Z\" /><path d=\"M17.5 1.5v3\" /><path d=\"M19.5 6.5h3\" />",
-    "chamfer-two": "<path d=\"M16 3h5v9Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 3h13l5 9v9H3Z\" /><path d=\"M18.5 1.5v3\" /><path d=\"M19.5 6.5h3\" /><path d=\"M19.5 8.5h3\" />",
-    "chamfer-angle": "<path d=\"M11 3h10v6Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 3h8l10 6v12H3Z\" /><path d=\"M15 3A4 4 0 0 1 14.43 5.06\" />",
+    // A corner profile with its tip cut off by an accent-coloured line: equal legs, two different legs, and a distance
+    // along the top with the angle the cut makes to it (the grey marks). Drawn at 1:1 in an 18 pt box (see
+    // SVGGlyph for the stroke attributes).
+    "chamfer-equal": "<path d=\"M20.8 13.467L20.8 20.133L2.8 20.133L2.8 2.8L10.133 2.8\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" /><path d=\"M12.8 3.467L20.133 10.8\" stroke=\"accent\" stroke-weight=\"1.667\" />",
+    "chamfer-two": "<path d=\"M20.133 10L20.133 20.667L2.133 20.667L2.133 3.334L8.133 3.334\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" /><path d=\"M10.8 3.334L20.133 7.334\" stroke=\"accent\" stroke-weight=\"1.667\" />",
+    "chamfer-angle": "<path d=\"M20.8 14.667L20.8 21.333L2.8 21.333L2.8 4L9.467 4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" /><path d=\"M12.133 4.667L19.467 12\" stroke=\"accent\" stroke-weight=\"1.667\" /><path d=\"M20.8 0.667L20.8 8.667\" stroke-opacity=\"0.38\" stroke-weight=\"0.833\" stroke-linecap=\"butt\" /><path d=\"M20.8 4.667L16.8 4.667\" stroke-opacity=\"0.38\" stroke-weight=\"0.833\" stroke-linecap=\"butt\" />",
     "fillet": "<path d=\"M10 8A6 6 0 0 1 16 14l5-5A6 6 0 0 0 15 3Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M3 21V8l5-5h7A6 6 0 0 1 21 9v7l-5 5Z\" /><path d=\"M3 8h7A6 6 0 0 1 16 14v7\" /><path d=\"m10 8 5-5\" /><path d=\"m16 14 5-5\" />",
     ]
 }
