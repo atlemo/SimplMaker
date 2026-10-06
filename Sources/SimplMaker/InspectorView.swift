@@ -708,6 +708,59 @@ struct ThreadInspector: View {
 
     private func mm(_ x: Double) -> String { formatDimension(x, kind: .length) }
 
+    /// What the offset picker can say: no offset, a material's suggested percentage, or a value of your own.
+    private enum ToleranceChoice: Hashable {
+        case none, material(ThreadMaterial), percent, distance
+    }
+
+    private var toleranceChoice: ToleranceChoice {
+        if thread.tolerance == nil { return .none }
+        if let material = thread.toleranceMaterial { return .material(material) }
+        return thread.toleranceUnit == .percent ? .percent : .distance
+    }
+
+    /// The tolerance offset for printing, in one row so that no dividers fall between its parts: a
+    /// picker (none, the material presets, a percent or a distance of your own), the value, and a note.
+    private var tolerance: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Tolerance offset", selection: Binding(get: { toleranceChoice }, set: { choice in
+                edit.update(choice == .none ? "Remove Thread Tolerance" : "Change Thread Tolerance") { t in
+                    switch choice {
+                    case .none: t.tolerance = nil; t.toleranceMaterial = nil
+                    case .material(let m):
+                        t.toleranceUnit = .percent; t.tolerance = formatPercent(m.percent, unit: false); t.toleranceMaterial = m
+                    case .percent, .distance:
+                        let unit: ThreadToleranceUnit = choice == .percent ? .percent : .distance
+                        // Keep the value when only the unit changes between the two custom choices.
+                        if t.tolerance == nil || t.toleranceMaterial != nil || t.toleranceUnit != unit { t.tolerance = "0" }
+                        t.toleranceUnit = unit; t.toleranceMaterial = nil
+                    }
+                }
+            })) {
+                Text("None").tag(ToleranceChoice.none)
+                Divider()
+                ForEach(ThreadMaterial.allCases, id: \.self) {
+                    Text("\($0.rawValue) (+\(formatPercent($0.percent)))").tag(ToleranceChoice.material($0))
+                }
+                Divider()
+                Text("Custom percent").tag(ToleranceChoice.percent)
+                Text("Custom distance").tag(ToleranceChoice.distance)
+            }
+            if let value = thread.tolerance {
+                edit.row(thread.toleranceUnit == .percent ? "Offset (%)" : "Offset", value, "Edit Thread Tolerance") {
+                    $0.tolerance = $1; $0.toleranceMaterial = nil
+                }
+                Text("The thread is modeled this much larger (smaller if negative) on its major and minor diameters, to make up for printing.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func formatPercent(_ x: Double, unit: Bool = true) -> String {
+        let text = x == x.rounded() ? String(Int(x)) : String(format: "%g", x)
+        return unit ? text + " %" : text
+    }
+
     var body: some View {
         Section("Thread") {
             if let cylinder {
@@ -731,10 +784,13 @@ struct ThreadInspector: View {
             if let size {
                 LabeledContent("Pitch", value: thread.standard.isInch
                                ? "\(mm(size.pitch)) (\(Int((25.4 / size.pitch).rounded())) per inch)" : mm(size.pitch))
-                LabeledContent("Major Ø", value: mm(size.diameter))
-                LabeledContent("Minor Ø", value: mm(size.minorDiameter))
+                // As modeled, with the tolerance offset (the nominal sizes when there is none).
+                let grow = ((try? thread.modeledDiameter(of: size, model.parameterValues)) ?? size.diameter) - size.diameter
+                LabeledContent("Major Ø", value: mm(size.diameter + grow))
+                LabeledContent("Minor Ø", value: mm(size.minorDiameter + grow))
                 if cylinder?.isHole == true { LabeledContent("Tap drill", value: mm(size.tapDrill)) }
             }
+            tolerance
             Picker("Length", selection: Binding(get: { thread.length == nil }, set: { full in
                 let half = cylinder.map { mm(($0.length / 2).rounded()) } ?? "10 mm"
                 edit.update("Change Thread Length") { $0.length = full ? nil : half }

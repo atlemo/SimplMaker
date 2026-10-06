@@ -128,7 +128,10 @@ final class ImportCache: @unchecked Sendable {
 }
 
 public enum Regenerator {
-    public static func regenerate(_ doc: CADDocument, cache: RegenCache? = nil) -> RegenResult {
+    /// `progress` is told before each feature that has to be built (not those the cache still holds):
+    /// how many are done, how many there are to build, and the one about to be.
+    public static func regenerate(_ doc: CADDocument, cache: RegenCache? = nil,
+                                  progress: (@Sendable (_ done: Int, _ total: Int, _ feature: Feature) -> Void)? = nil) -> RegenResult {
         let start = Date()
         var r = RegenResult()
         r.parameters = ParameterEvaluator.evaluate(doc.parameters)
@@ -156,6 +159,7 @@ public enum Regenerator {
         for (index, feature) in features.enumerated() where index >= first {
             defer { if cache != nil { snapshots.append((keys[index], r)) } }
             guard !feature.suppressed else { continue }
+            progress?(index - first, features.count - first, feature)
             do {
                 switch feature.kind {
                 case .sketch(let f): r.sketches[feature.id] = try sketch(f, r)
@@ -694,6 +698,8 @@ public enum Regenerator {
         guard let size = f.standard.size(f.size) else { throw KernelError(message: "there is no \(f.standard.rawValue) size \(f.size)") }
         let length = try f.length.map { try r.parameters.value(of: $0, kind: .length) }
         if let length, length <= 0 { throw KernelError(message: "the thread length must be positive") }
+        let diameter = try f.modeledDiameter(of: size, r.parameters)
+        if diameter <= size.pitch * 1.2 { throw KernelError(message: "the tolerance offset leaves the thread too thin") }
         for (n, face) in f.faces.enumerated() {
             guard let i = r.bodies.firstIndex(where: { $0.id == face.body }) else {
                 throw KernelError(message: "the body with the thread's face is missing")
@@ -703,7 +709,7 @@ public enum Regenerator {
                 r.featureInputs[feature.id, default: [:]][face.body] = r.bodies[i].body
             }
             // The first face names its new faces after the feature, the rest "<id>.2", "<id>.3"...
-            r.bodies[i].body = try r.bodies[i].body.thread(face: face.face, majorDiameter: size.diameter, pitch: size.pitch,
+            r.bodies[i].body = try r.bodies[i].body.thread(face: face.face, majorDiameter: diameter, pitch: size.pitch,
                                                            length: length, flipped: f.flipped, leftHanded: f.leftHanded,
                                                            featureID: n == 0 ? feature.id : "\(feature.id).\(n + 1)")
         }

@@ -176,7 +176,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
 extension DocumentModel {
     /// A toolbar button or menu item: run the tool now if the selection allows, or wait for picks.
     func run(_ tool: DesignTool) {
-        if sketchSession != nil { finishSketch() }
+        if sketchSession != nil { finishSketch(keepingView: true) }
         cancelSketchPlanePick()
         if pendingTool == tool {  // pressing the waiting tool again finishes it, or cancels it
             if !perform(tool, confirmed: true) { cancelTool() }
@@ -441,7 +441,7 @@ extension DocumentModel {
     /// profiles, Return stores them in the feature, Esc leaves it as it was.
     func reselectProfiles(_ id: FeatureID) {
         guard let source = profileSource(id) else { return }
-        if sketchSession != nil { finishSketch() }
+        if sketchSession != nil { finishSketch(keepingView: true) }
         cancelSketchPlanePick()
         pendingTool = source.tool
         reselecting = id
@@ -484,7 +484,7 @@ extension DocumentModel {
     /// Moves whole sketches or bodies (from the browser or a right-click), with a drag handle to set how far.
     func move(sketches: [FeatureID] = [], bodies: [FeatureID] = []) {
         guard !sketches.isEmpty || !bodies.isEmpty else { return }
-        if sketchSession != nil { finishSketch() }
+        if sketchSession != nil { finishSketch(keepingView: true) }
         pendingTool = nil
         add(Feature(name: document.nextName(DesignTool.move.rawValue), .move(MoveFeature(
             bodies: bodies, sketches: sketches, arrow: .x, rotating: false))))
@@ -493,7 +493,7 @@ extension DocumentModel {
     /// Scales whole sketches (from the browser or a right-click), with a drag handle to set the factor.
     func scale(sketches: [FeatureID]) {
         guard !sketches.isEmpty else { return }
-        if sketchSession != nil { finishSketch() }
+        if sketchSession != nil { finishSketch(keepingView: true) }
         pendingTool = nil
         add(Feature(name: document.nextName(DesignTool.scale.rawValue), .scale(ScaleFeature(sketches: sketches))))
     }

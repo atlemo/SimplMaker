@@ -118,7 +118,7 @@ extension ExtrudeExtent {
 
     /// The same size, reaching the way `new` says. The size carries over; a second side starts as
     /// long as the first.
-    public func changed(to new: ExtrudeMode, fallback: String = "10 mm") -> ExtrudeExtent {
+    public func changed(to new: ExtrudeMode, fallback: String = "4 mm") -> ExtrudeExtent {
         let d = size ?? fallback
         switch new {
         case .oneDirection: return .distance(d)
@@ -153,7 +153,7 @@ public struct ExtrudeFeature: Codable, Hashable, Sendable {
     }
 
     /// Pulls a body's flat face out (join) or pushes it in (cut, with a negative distance).
-    public init(face: FaceRef, extent: ExtrudeExtent = .distance("10 mm")) {
+    public init(face: FaceRef, extent: ExtrudeExtent = .distance("4 mm")) {
         self.init(sketch: "", profiles: [], extent: extent, operation: .join, target: face.body)
         self.face = face
     }

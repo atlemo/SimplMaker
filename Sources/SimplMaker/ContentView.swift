@@ -98,6 +98,16 @@ struct DocumentWindow: View {
                     .transition(.opacity)
             }
         }
+        // A part that takes a while to open says what it is building, until the first model is on screen.
+        .overlay {
+            if model.result == nil, let progress = model.regenProgress {
+                LoadingCard(progress: progress)
+                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.regenProgress != nil)
         // The tutorial's card floats at the bottom of the free space, above the status bar and the OK bar, where it
         // stays clear of what is built at the middle of the view and of the size fields that appear beside it.
         .overlay(alignment: .bottom) {
@@ -317,12 +327,34 @@ struct StartCard: View {
             .controlSize(.large)
             Button { guide.start() } label: { Label("New to CAD? Follow the tutorial: a box with a lid", systemImage: "graduationcap") }
                 .buttonStyle(.link)
-            Text("Right-click in the view for more · File › New Demo Part for an example")
+                .padding(.top, DS.Spacing.space5)  // a bigger gap below the three buttons
+            Text("Right-click in the view for more · File › Open Example Parts to learn from")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
         .padding(DS.Spacing.space8)
         .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.window))
+    }
+}
+
+/// Shown while a part opens slowly: a bar for how many features are built, and the one being built.
+struct LoadingCard: View {
+    let progress: RegenProgress
+
+    var body: some View {
+        VStack(spacing: DS.Spacing.space4) {
+            Text("Building the model…").font(.headline)
+            ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                .frame(width: 220)
+            Text("\(progress.feature) · \(progress.done + 1) of \(progress.total)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: 220)
+        }
+        .padding(DS.Spacing.space8)
+        .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.window))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -366,6 +398,9 @@ struct StatusBar: View {
             Group {
                 if !model.selection.isEmpty { Text("\(model.selection.count) selected") }
                 if model.isImporting { Text("Reading the file…").foregroundStyle(.secondary) }
+                if let step = model.regenProgress {
+                    Text("Building \(step.feature) · \(step.done + 1) of \(step.total)").foregroundStyle(.secondary)
+                }
                 if model.isRegenerating || model.isImporting {
                     ProgressView().controlSize(.small)
                 } else if let r = model.result {

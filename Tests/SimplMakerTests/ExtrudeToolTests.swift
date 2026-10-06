@@ -30,6 +30,16 @@ import Testing
         model.click(region, additive: false)
     }
 
+    @Test func startingAToolFromASketchLeavesTheCameraWhereItIs() async throws {
+        let model = try await squareModel()
+        model.editSketch("sk")
+        model.finishSketch()
+        #expect(!model.sketchClosedKeepingView, "closing a sketch by itself turns back to the view it was opened from")
+        model.editSketch("sk")
+        model.run(.extrude)
+        #expect(model.sketchSession == nil && model.sketchClosedKeepingView, "extruding stays put")
+    }
+
     private var extrude: (DocumentModel) -> ExtrudeFeature? {
         { model in
             guard case .extrude(let e)? = model.document.features.last?.kind else { return nil }
@@ -48,11 +58,11 @@ import Testing
         #expect(model.extrudeMode == .oneDirection)
         model.run(.extrude)
         try pickProfile(model)
-        #expect(extrude(model)?.extent == .distance("10 mm"))
+        #expect(extrude(model)?.extent == .distance("4 mm"))
         try await settle(model)
         #expect(model.dragHandles.map(\.label) == ["Distance"])
         let z = try zRange(model)
-        #expect(abs(z.lowerBound) < 1e-6 && abs(z.upperBound - 10) < 1e-6, "\(z)")
+        #expect(abs(z.lowerBound) < 1e-6 && abs(z.upperBound - 4) < 1e-6, "\(z)")
     }
 
     @Test func choosingAWayWithAProfilePickedExtrudesThatWay() async throws {
@@ -60,7 +70,7 @@ import Testing
         try pickProfile(model)  // no tool yet: the profile is only selected
         #expect(model.document.features.count == 1)
         model.chooseExtrudeMode(.twoDirections)
-        #expect(extrude(model)?.extent == .twoSides("10 mm", back: "5 mm"))
+        #expect(extrude(model)?.extent == .twoSides("4 mm", back: "2 mm"))
         #expect(model.extrudeMode == .twoDirections, "the button now works that way")
     }
 
@@ -72,7 +82,7 @@ import Testing
         try await settle(model)
         #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
         let z = try zRange(model)
-        #expect(abs(z.lowerBound + 5) < 1e-6 && abs(z.upperBound - 10) < 1e-6, "10 up, 5 down: \(z)")
+        #expect(abs(z.lowerBound + 2) < 1e-6 && abs(z.upperBound - 4) < 1e-6, "4 up, 2 down: \(z)")
         let h = model.dragHandles
         #expect(h.map(\.label) == ["Distance 1", "Distance 2"])
         #expect(h[0].direction.z > 0.99 && h[1].direction.z < -0.99, "one arrow each way")
@@ -84,10 +94,10 @@ import Testing
         model.chooseExtrudeMode(.twoDirections)
         try pickProfile(model)
         try await settle(model)
-        #expect(model.handleFieldText(for: 0) == "10 mm" && model.handleFieldText(for: 1) == "5 mm")
+        #expect(model.handleFieldText(for: 0) == "4 mm" && model.handleFieldText(for: 1) == "2 mm")
         #expect(model.commitHandle("3", slot: 1))
         try await settle(model)
-        #expect(extrude(model)?.extent == .twoSides("10 mm", back: "3 mm"))
+        #expect(extrude(model)?.extent == .twoSides("4 mm", back: "3 mm"))
         #expect(model.commitHandle("7", slot: 0))
         try await settle(model)
         #expect(extrude(model)?.extent == .twoSides("7 mm", back: "3 mm"))
@@ -102,9 +112,9 @@ import Testing
         model.chooseExtrudeMode(.mirrored)
         try pickProfile(model)
         try await settle(model)
-        #expect(extrude(model)?.extent == .symmetric("10 mm"))
+        #expect(extrude(model)?.extent == .symmetric("4 mm"))
         let z = try zRange(model)
-        #expect(abs(z.lowerBound + 5) < 1e-6 && abs(z.upperBound - 5) < 1e-6, "\(z)")
+        #expect(abs(z.lowerBound + 2) < 1e-6 && abs(z.upperBound - 2) < 1e-6, "\(z)")
         #expect(model.dragHandles.count == 1)
     }
 
@@ -126,7 +136,7 @@ import Testing
     @Test func extentsWithoutASizeHaveNoMode() {
         #expect(ExtrudeExtent.throughAll.mode == nil)
         #expect(ExtrudeExtent.toFace(FaceRef(body: "b", face: "b.top")).mode == nil)
-        #expect(ExtrudeExtent.throughAll.changed(to: .twoDirections) == .twoSides("10 mm", back: "10 mm"))
+        #expect(ExtrudeExtent.throughAll.changed(to: .twoDirections) == .twoSides("4 mm", back: "4 mm"))
     }
 
     @Test func parametersWorkInBothDistances() async throws {

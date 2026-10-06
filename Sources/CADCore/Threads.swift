@@ -102,6 +102,35 @@ public struct ThreadSize: Hashable, Sendable {
     }
 }
 
+/// How a thread's tolerance offset is measured.
+public enum ThreadToleranceUnit: String, Codable, Hashable, Sendable, CaseIterable {
+    /// A share of the thread's nominal major diameter (unitless: 2 = 2 %).
+    case percent = "Percent"
+    /// A length on the diameter, in mm.
+    case distance = "Distance"
+}
+
+/// A 3D-printing material with a suggested tolerance offset. Printed threads come out off size (plastic
+/// shrinks as it cools, and printed holes come out tight), so the modeled thread is made a little larger.
+/// These are starting points that combine the material's shrinkage with the usual undersize of printed
+/// holes; print a test piece and adjust.
+public enum ThreadMaterial: String, Codable, Hashable, Sendable, CaseIterable {
+    case petg = "PETG"
+    case abs = "ABS"
+    case asa = "ASA"
+    case nylon = "Nylon"
+
+    /// The suggested offset, in percent of the major diameter.
+    public var percent: Double {
+        switch self {
+        case .petg: return 1
+        case .asa: return 1.5
+        case .abs: return 2
+        case .nylon: return 3
+        }
+    }
+}
+
 /// A screw thread cut into a round face: external on a shaft, internal in a hole (the face says
 /// which). The face is sized to the thread first: a shaft turned to its major diameter, a hole
 /// bored or filled to its minor one.
@@ -117,14 +146,32 @@ public struct ThreadFeature: Codable, Hashable, Sendable {
     /// Starts from the other end (by default the end with air beyond it: a shaft's tip, a hole's mouth).
     public var flipped: Bool
     public var leftHanded: Bool
+    /// A tolerance offset: how much larger (or, if negative, smaller) the thread is modeled than its
+    /// nominal size, on its major and minor diameters alike (the pitch stays), for printing. An
+    /// expression in `toleranceUnit`; nil = none.
+    public var tolerance: String?
+    public var toleranceUnit: ThreadToleranceUnit
+    /// The material preset the offset was taken from, for the inspector to show; editing the value clears it.
+    public var toleranceMaterial: ThreadMaterial?
 
     /// Every face the thread is cut into, `face` first.
     public var faces: [FaceRef] { [face] + moreFaces }
 
     public init(face: FaceRef, moreFaces: [FaceRef] = [], standard: ThreadStandard = .metric, size: String = "M6x1",
-                length: String? = nil, flipped: Bool = false, leftHanded: Bool = false) {
+                length: String? = nil, flipped: Bool = false, leftHanded: Bool = false, tolerance: String? = nil,
+                toleranceUnit: ThreadToleranceUnit = .percent, toleranceMaterial: ThreadMaterial? = nil) {
         self.face = face; self.moreFaces = moreFaces; self.standard = standard; self.size = size; self.length = length
-        self.flipped = flipped; self.leftHanded = leftHanded
+        self.flipped = flipped; self.leftHanded = leftHanded; self.tolerance = tolerance; self.toleranceUnit = toleranceUnit
+        self.toleranceMaterial = toleranceMaterial
+    }
+
+    /// The major diameter to model, mm: the size's own, plus the tolerance offset.
+    public func modeledDiameter(of size: ThreadSize, _ parameters: ParameterValues) throws -> Double {
+        guard let tolerance else { return size.diameter }
+        switch toleranceUnit {
+        case .percent: return size.diameter * (1 + (try parameters.value(of: tolerance, kind: .none)) / 100)
+        case .distance: return size.diameter + (try parameters.value(of: tolerance, kind: .length))
+        }
     }
 
     // Files from before several faces can share a thread have no `moreFaces`.
@@ -137,5 +184,9 @@ public struct ThreadFeature: Codable, Hashable, Sendable {
         length = try c.decodeIfPresent(String.self, forKey: .length)
         flipped = try c.decode(Bool.self, forKey: .flipped)
         leftHanded = try c.decode(Bool.self, forKey: .leftHanded)
+        // Files from before the tolerance offset have neither key.
+        tolerance = try c.decodeIfPresent(String.self, forKey: .tolerance)
+        toleranceUnit = try c.decodeIfPresent(ThreadToleranceUnit.self, forKey: .toleranceUnit) ?? .percent
+        toleranceMaterial = try c.decodeIfPresent(ThreadMaterial.self, forKey: .toleranceMaterial)
     }
 }

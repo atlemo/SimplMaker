@@ -65,7 +65,7 @@ import Testing
         #expect(field.currentEditor() != nil, "Return took the choice; it didn't end the field")
     }
 
-    @Test func returnWithNothingChosenEndsTheFieldAsUsual() throws {
+    @Test func returnTakesTheHighlightedSuggestion() throws {
         let (window, field) = try makeField()
         var ended = false
         let handler = Handler { ended = true }
@@ -73,8 +73,22 @@ import Testing
         type(window, "wi")
         #expect(ParameterCompleter.shared.isShowing)
         key(window, "\r", code: 36)
-        #expect(ended, "the field saw Return")
-        #expect(field.stringValue == "wi", "nothing was completed")
+        #expect(field.stringValue == "width", "Return completed the highlighted name")
+        #expect(!ended, "and didn't end the field")
+        #expect(!ParameterCompleter.shared.isShowing)
+        key(window, "\r", code: 36)
+        #expect(ended, "the next Return ends it")
+    }
+
+    @Test func returnEndsTheFieldWhenTheNameIsAlreadyWhole() throws {
+        let (window, field) = try makeField()
+        var ended = false
+        let handler = Handler { ended = true }
+        field.delegate = handler
+        type(window, "width")
+        key(window, "\r", code: 36)
+        #expect(ended, "nothing left to complete: Return ends the field")
+        #expect(field.stringValue == "width")
         #expect(!ParameterCompleter.shared.isShowing)
     }
 

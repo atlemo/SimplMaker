@@ -951,6 +951,7 @@ final class Renderer {
         segments(overlay.planeEdges, overlay.planeEdgeCount,
                  DrawParams(color: planeLine, hoverColor: hover, selectColor: planeLine,
                             thickness: 1.6 * scale, depthBias: 0.0005, pickable: 1))
+        
         if overlay.planesSeeThrough {
             // An unseen band along each plane's border, in the ID buffer over everything: a plane
             // covered by a body (the floor under a part) is still picked by clicking its border.

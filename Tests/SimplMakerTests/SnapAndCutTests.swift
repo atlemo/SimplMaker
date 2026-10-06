@@ -166,7 +166,7 @@ import Testing
         #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
         let body = try #require(model.result?.body("b"))
         #expect(model.result?.bodies.count == 1)
-        #expect(abs(body.volume - 200 * 15) < 1e-6, "pulled 10 mm up")
+        #expect(abs(body.volume - 200 * 9) < 1e-6, "pulled 4 mm up")
         #expect(body.isValid)
         let h = try #require(model.dragHandle)
         #expect(h.allowsNegative && abs(h.base.z - 5) < 1e-9 && abs(h.base.x) < 1e-9, "the arrow starts at the original face's centre")

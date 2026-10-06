@@ -66,7 +66,7 @@ extension Feature.Kind {
             f.tipAngle = change(f.tipAngle); f.headDiameter = change(f.headDiameter)
             f.headDepth = change(f.headDepth); f.headAngle = change(f.headAngle)
             self = .hole(f)
-        case .thread(var f): f.length = f.length.map(change); self = .thread(f)
+        case .thread(var f): f.length = f.length.map(change); f.tolerance = f.tolerance.map(change); self = .thread(f)
         case .primitive(var f):
             f.u = change(f.u); f.v = change(f.v); f.width = change(f.width); f.length = change(f.length)
             f.height = change(f.height); f.diameter = change(f.diameter); f.tube = change(f.tube)

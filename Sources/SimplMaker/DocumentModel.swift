@@ -43,6 +43,13 @@ final class MeshCache: @unchecked Sendable {
     }
 }
 
+/// A rebuild under way: the feature it is on, and how many of those it has to build are done.
+struct RegenProgress: Equatable {
+    var done: Int
+    var total: Int
+    var feature: String
+}
+
 @MainActor
 @Observable
 final class DocumentModel {
@@ -52,6 +59,14 @@ final class DocumentModel {
     private(set) var sceneRevision = 0
     private(set) var fitRevision = 0
     private(set) var isRegenerating = false
+    /// How far a rebuild has got, once it has taken long enough to be worth showing (nil otherwise).
+    private(set) var regenProgress: RegenProgress?
+    /// Sketches a new feature has just hidden, still drawn until its rebuild lands, so the profile doesn't
+    /// vanish for a moment before the solid made from it appears.
+    private var sketchesHiddenPendingRebuild: Set<FeatureID> = []
+    /// The highlight of what a new feature was made from, kept on screen (the selection itself is already
+    /// cleared) until the rebuild lands, so it doesn't fade out ahead of the solid.
+    private var highlightPendingRebuild: [UInt32] = []
     /// A STEP file is being read (see importSTEP).
     private(set) var isImporting = false
 
@@ -102,6 +117,8 @@ final class DocumentModel {
     var sketchPlaneSize: Double = 25
     /// Bumped whenever the sketch overlay needs rebuilding.
     var overlayRevision = 0
+    /// Whether the sketch that was closed last was closed to start a tool, which leaves the camera alone.
+    private(set) var sketchClosedKeepingView = false
     /// Camera request for the viewport (look at a sketch plane, standard views), with a revision counter.
     private(set) var cameraCommand: (command: CameraCommand, revision: Int)?
     var showInspector = true
@@ -501,9 +518,9 @@ final class DocumentModel {
     /// The extent a new extrude starts with, for the way the button works now.
     var newExtrudeExtent: ExtrudeExtent {
         switch extrudeMode {
-        case .oneDirection: return .distance("10 mm")
-        case .mirrored: return .symmetric("10 mm")
-        case .twoDirections: return .twoSides("10 mm", back: "5 mm")  // a different start, so the two arrows tell apart
+        case .oneDirection: return .distance("4 mm")
+        case .mirrored: return .symmetric("4 mm")
+        case .twoDirections: return .twoSides("4 mm", back: "2 mm")  // a different start, so the two arrows tell apart
         }
     }
 
@@ -530,10 +547,15 @@ final class DocumentModel {
     /// drag handle and size field appear.
     func add(_ feature: Feature) {
         documentBeforeNewFeature = document
+        let alreadyHidden = document.hidden
         mutate("Add \(feature.typeName)") { doc in
             // At the timeline marker: rolled back, a new feature goes where the marker is.
             doc.insertAtMarker(feature)
             doc.hidden.formUnion(feature.sketchesUsed)
+        }
+        if isRegenerating {
+            sketchesHiddenPendingRebuild = Set(feature.sketchesUsed).subtracting(alreadyHidden)
+            highlightPendingRebuild = highlighted
         }
         selection = []
         pendingTool = nil
@@ -557,13 +579,24 @@ final class DocumentModel {
         let cache = regenCache, meshCache = self.meshCache, snapshot = doc
         let job: @MainActor () -> Void = {
             self.regenRunning = true
+            let started = Date()
             Task.detached(priority: .userInitiated) {
-                let r = Regenerator.regenerate(snapshot, cache: cache)
+                let r = Regenerator.regenerate(snapshot, cache: cache) { done, total, feature in
+                    // Quick rebuilds (a drag) never show it; a slow one starts to after a moment.
+                    guard Date().timeIntervalSince(started) > 0.3 else { return }
+                    let step = RegenProgress(done: done, total: total, feature: feature.name)
+                    Task { @MainActor in self.noteProgress(step) }
+                }
                 let meshes = meshCache.meshes(for: r.bodies)
                 await self.finishRegen(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature)
             }
         }
         if regenRunning { queuedRegen = job } else { job() }
+    }
+
+    private func noteProgress(_ step: RegenProgress) {
+        guard isRegenerating else { return }  // the rebuild finished while this was on its way
+        regenProgress = step
     }
 
     private func finishRegen(_ r: RegenResult, _ meshes: [BodyMesh], generation gen: Int, fit: Bool, previewFeature: FeatureID?) {
@@ -578,7 +611,12 @@ final class DocumentModel {
     /// drag keeps moving; `final` is the last of them.
     private func apply(_ r: RegenResult, _ meshes: [BodyMesh], generation gen: Int, fit: Bool, previewFeature: FeatureID?,
                        final: Bool) {
-        if final { isRegenerating = false }
+        if final {
+            isRegenerating = false
+            regenProgress = nil
+            sketchesHiddenPendingRebuild = []
+            highlightPendingRebuild = []
+        }
         guard gen > appliedGeneration else { return }  // something newer is already on screen
         appliedGeneration = gen
         if let previewFeature, let error = r.errors[previewFeature] {
@@ -855,7 +893,10 @@ final class DocumentModel {
         session.references = refs
     }
 
-    func finishSketch() {
+    /// Leaves the sketch. The view goes back to the one from before it was opened, unless a tool is taking over
+    /// (extrude and the like): that stays where it is, so the picture doesn't jump.
+    func finishSketch(keepingView: Bool = false) {
+        sketchClosedKeepingView = keepingView
         sketchSession = nil
         overlayRevision += 1
         regenerate()
@@ -953,7 +994,7 @@ final class DocumentModel {
     func isSketchShown(_ id: FeatureID) -> Bool {
         guard document.activeFeatures.contains(where: { $0.id == id && !$0.suppressed }) else { return false }
         // A hidden sketch stays hidden when selected; it shows only while its profiles are being picked again.
-        return !document.hidden.contains(id) || reselecting.flatMap { profileSource($0)?.sketch } == id
+        return !document.hidden.contains(id) || sketchesHiddenPendingRebuild.contains(id) || reselecting.flatMap { profileSource($0)?.sketch } == id
     }
 
     /// The sketch, region and profile reference a profile pick points at.
@@ -1039,6 +1080,7 @@ final class DocumentModel {
 
     /// Pick IDs to highlight as selected.
     var highlighted: [UInt32] {
+        if selection.isEmpty, sketchSession == nil, !highlightPendingRebuild.isEmpty { return highlightPendingRebuild }
         if let session = sketchSession {
             return (session.selection + session.dimensionPicks).compactMap { session.pickID(for: $0)?.raw }
         }

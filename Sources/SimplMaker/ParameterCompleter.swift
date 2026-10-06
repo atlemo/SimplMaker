@@ -1,6 +1,6 @@
 // Auto-complete for the words in numeric fields: while a name is typed where a value belongs, a small
-// list under the field offers the parameters (and functions) that fit. Tab takes the first, ↑ ↓ then Return
-// choose another, Esc closes the list.
+// list under the field offers the parameters (and functions) that fit. Tab or Return takes the highlighted one
+// (the first, or the one ↑ ↓ moved to), Esc closes the list.
 //
 // One controller serves every field. It listens for edits in the window's field editor, so it works the same
 // for the AppKit fields in the viewport (ValueField) and for SwiftUI text fields, which can't be subclassed:
@@ -43,8 +43,6 @@ final class ParameterCompleter: NSObject {
     private var word: ExpressionCompletion.Word?
     private var items: [CompletionCandidate] = []
     private var selected = 0
-    /// The user has moved the selection with the arrows, so Return takes it rather than ending the field.
-    private var chosen = false
     private var applying = false
     private var keyMonitor: Any?
 
@@ -99,7 +97,7 @@ final class ParameterCompleter: NSObject {
         guard let words = words(for: tv), tv.window != nil, range.length == 0,
               let found = ExpressionCompletion.suggestions(in: tv.string, caret: range.location, parameters: words())
         else { return hide() }
-        if editor !== tv || found.items != items { selected = 0; chosen = false }
+        if editor !== tv || found.items != items { selected = 0 }
         editor = tv
         word = found.word
         items = found.items
@@ -120,7 +118,6 @@ final class ParameterCompleter: NSObject {
         panel.list.onHover = { [weak self] i in
             guard let self, i != selected else { return }
             selected = i
-            chosen = true
             panel.list.set(items, selected: i)
         }
         if panel.parent !== window {
@@ -145,7 +142,6 @@ final class ParameterCompleter: NSObject {
         word = nil
         items = []
         selected = 0
-        chosen = false
     }
 
     // MARK: keys
@@ -158,7 +154,6 @@ final class ParameterCompleter: NSObject {
         case 125, 126:  // ↓ ↑
             guard modifiers.isEmpty else { return false }
             selected = (selected + (event.keyCode == 125 ? 1 : items.count - 1)) % items.count
-            chosen = true
             panel.list.set(items, selected: selected)
             return true
         case 48:  // Tab
@@ -166,7 +161,8 @@ final class ParameterCompleter: NSObject {
             accept(selected)
             return true
         case 36, 76:  // Return
-            guard chosen else { hide(); return false }  // nothing was picked: Return ends the field as always
+            // The word is already whole (a name typed out in full): Return ends the field as always.
+            if let word, items.indices.contains(selected), word.prefix == items[selected].name { hide(); return false }
             accept(selected)
             return true
         case 53:  // Esc closes the list, and only the list

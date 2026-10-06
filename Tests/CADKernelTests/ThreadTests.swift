@@ -1,6 +1,6 @@
 // Threads: sizes from the tables, and threads cut into shafts and holes through the regenerator.
 // Copyright © 2026 Atle Mo. All rights reserved.
-import CADCore
+@testable import CADCore
 import Foundation
 import Testing
 @testable import CADKernel
@@ -13,9 +13,10 @@ import Testing
     }
 
     static func thread(_ face: FaceRef, _ size: String, _ standard: ThreadStandard = .metric, length: String? = nil,
-                       leftHanded: Bool = false) -> Feature {
+                       leftHanded: Bool = false, tolerance: String? = nil,
+                       unit: ThreadToleranceUnit = .percent) -> Feature {
         Feature(id: "th", name: "th", .thread(ThreadFeature(face: face, standard: standard, size: size, length: length,
-                                                            leftHanded: leftHanded)))
+                                                            leftHanded: leftHanded, tolerance: tolerance, toleranceUnit: unit)))
     }
 
     /// Volume of a basic-profile thread L long: the core, plus the teeth between the minor and major
@@ -220,5 +221,51 @@ import Testing
         #expect(t.faces == [FaceRef(body: "b", face: "b.side")])
         let again = try JSONDecoder().decode(ThreadFeature.self, from: try JSONEncoder().encode(t))
         #expect(again == t)
+    }
+
+    /// The same M8 thread on a shaft, modeled at `grow` mm larger than nominal.
+    static func grown(_ grow: Double) -> Double {
+        let m8 = ThreadStandard.metric.size("M8x1.25")!
+        return externalVolume(ThreadSize(name: m8.name, diameter: m8.diameter + grow, pitch: m8.pitch), 12)
+    }
+
+    @Test(arguments: [("2", ThreadToleranceUnit.percent, 0.16), ("0.2", .distance, 0.2), ("-0.1", .distance, -0.1)])
+    func aToleranceOffsetResizesTheThread(value: String, unit: ThreadToleranceUnit, grow: Double) throws {
+        // The shaft is the thread's own size, so the offset is the only thing that changes it.
+        let r = try NewFeatureTests.regen([Self.cylinder("c", d: "8", h: "12"),
+                                           Self.thread(FaceRef(body: "c", face: "c.side"), "M8x1.25", tolerance: value, unit: unit)])
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let body = try #require(r.body("c"))
+        #expect(body.isValid)
+        let expected = Self.grown(grow)
+        #expect(abs(body.volume - expected) / expected < 0.02, "volume \(body.volume), expected about \(expected)")
+    }
+
+    @Test func aHoleThreadWithAnOffsetIsBoredLarger() throws {
+        let (features, wall) = try Self.drilledBlock("6.8")
+        let plain = try #require(NewFeatureTests.regen(features + [Self.thread(wall, "M8x1.25")]).body("b")).volume
+        let loose = try #require(NewFeatureTests.regen(features + [Self.thread(wall, "M8x1.25", tolerance: "0.2", unit: .distance)]).body("b"))
+        #expect(loose.isValid)
+        #expect(loose.volume < plain - 5, "a larger hole leaves less material: \(loose.volume) against \(plain)")
+    }
+
+    @Test func presetsAndOldFilesAndParameters() throws {
+        #expect(ThreadMaterial.allCases.map(\.percent) == [1, 2, 1.5, 3])
+        // A file from before the offset has neither key.
+        var json = try #require(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(ThreadFeature(face: FaceRef(body: "b", face: "b.side"), tolerance: "2"))) as? [String: Any])
+        #expect(json.removeValue(forKey: "tolerance") != nil && json.removeValue(forKey: "toleranceUnit") != nil)
+        let old = try JSONDecoder().decode(ThreadFeature.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(old.tolerance == nil && old.toleranceUnit == .percent && old.toleranceMaterial == nil)
+        // The chosen material survives a save.
+        let petg = ThreadFeature(face: old.face, tolerance: "1", toleranceMaterial: .petg)
+        #expect(try JSONDecoder().decode(ThreadFeature.self, from: JSONEncoder().encode(petg)).toleranceMaterial == .petg)
+        // The offset is an expression, so it can use a parameter.
+        var doc = CADDocument()
+        doc.parameters = [Parameter("slop", "0.15 mm")]
+        let size = ThreadStandard.metric.size("M5x0.8")!
+        let t = ThreadFeature(face: FaceRef(body: "b", face: "b.side"), size: "M5x0.8", tolerance: "slop", toleranceUnit: .distance)
+        #expect(abs(try t.modeledDiameter(of: size, ParameterEvaluator.evaluate(doc.parameters)) - 5.15) < 1e-9)
+        #expect(abs(try ThreadFeature(face: t.face, tolerance: "2").modeledDiameter(of: size, ParameterValues()) - 5.1) < 1e-9)
     }
 }

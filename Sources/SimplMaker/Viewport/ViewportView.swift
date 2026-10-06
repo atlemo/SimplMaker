@@ -1641,7 +1641,7 @@ struct ViewportView: NSViewRepresentable {
             view.applyAppearance()
         }
         view.showConstraints = showConstraints
-        if let before { view.animateCamera(to: before) }
+        if let before, !model.sketchClosedKeepingView { view.animateCamera(to: before) }
         if c.cameraRevision != cameraRevision, let cmd = model.cameraCommand {
             c.cameraRevision = cameraRevision
             view.stopCameraAnimation()
