@@ -1,0 +1,50 @@
+---
+title: Fillet and chamfer
+description: Round or bevel the edges of a solid, with a size you can type, drag or set from a parameter.
+---
+
+**Fillet** rounds an edge. **Chamfer** bevels it. Keys: [[F]] for fillet, [[C]] for chamfer. They are in the **Modify** group.
+
+## Use it
+
+1. Click **edges** in the viewport. [[⇧]]-click to add more. Or click a **face** to treat every edge around it.
+2. Press **Fillet** or **Chamfer**. Or press the tool first and pick afterwards, then [[Return]].
+3. An arrow and a size field appear. Drag the arrow, or type a **radius** or **distance**, and press [[Return]].
+
+![The fillet handle and its radius field.](shot:fillet-handle)
+
+The size can be an expression such as `corner_r / 2`. While you drag, an edge that can't take that size stops the preview, and the inspector says *Too large for the neighbouring faces*.
+
+## Chamfer types
+
+The small arrow beside the Chamfer button picks how it is measured.
+
+| Type | You set |
+|---|---|
+| **Equal Distance** | One distance, the same on both faces |
+| **Distance and Angle** | A distance on one face, and the angle to it |
+| **Two Distance** | A distance on each face |
+
+The last two show an arrow and a size field for each value. [[Tab]] moves between them. **Flip** puts the first distance on the edge's other face. With faces picked, the first distance is on the picked face.
+
+## Inspector
+
+![The fillet inspector.](shot:inspector-fillet)
+
+| Field | What it does |
+|---|---|
+| **Radius** (fillet) | How round it is |
+| **Type**, **Distance**, **Angle** or **Distance 1/2** (chamfer) | As above |
+| **Measure on the other face**, **Swap the two faces** | The chamfer's flip switch |
+| **Edges** and **Faces** | What is rounded. Remove one with its minus button, or add more selected ones. |
+
+![The chamfer inspector.](shot:inspector-chamfer)
+
+## When it fails
+
+A fillet or chamfer that is too big for its neighbouring faces shows an error. Make it smaller. A fillet can also fail if a later edit moves the edge it was attached to. See [Troubleshooting](doc:reference/troubleshooting).
+
+## Tips
+
+- To keep a part strong when printing, fillet the inside corners where it carries load.
+- Chamfer the bottom edge of a part that sits on the bed, to avoid the "elephant's foot" bulge on the first layer. The size depends on your printer.
