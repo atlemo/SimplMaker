@@ -275,3 +275,39 @@ import Testing
         #expect(old.hidden.isEmpty && old.features.count == 6)
     }
 }
+
+@Suite struct RibDemoTests {
+    @Test func theRibExampleRegeneratesIntoOneValidBracket() throws {
+        let r = Regenerator.regenerate(.ribDemo())
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        #expect(r.bodies.count == 1)
+        let body = try #require(r.body("plate"))
+        #expect(body.isValid)
+        // Plate + wall, two 4 mm ribs (each a 24 × 32 mm triangle, less where the rib is cut off), minus two holes.
+        let plateAndWall = 80.0 * 60 * 6 + 80 * 6 * 44
+        let holes = 2 * Double.pi * 9 * 6
+        #expect(body.volume > plateAndWall - holes + 2 * 4 * 0.4 * 0.5 * 24 * 32)
+        #expect(body.volume < plateAndWall - holes + 2 * 4 * 0.5 * 30 * 32)
+    }
+}
+
+@Suite struct ManifoldDemoTests {
+    @Test func theManifoldExampleIsFiveColouredBodiesAndANestOfBolts() throws {
+        let doc = CADDocument.manifoldDemo()
+        let r = Regenerator.regenerate(doc)
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        #expect(Set(r.bodies.map(\.id)) == ["block", "oring", "flange", "pipe", "bolt", "bolts"])
+        for b in r.bodies { #expect(b.body.isValid, "\(b.id)") }
+        #expect(Set(doc.bodyColors.keys) == Set(r.bodies.map(\.id)))
+        // The pattern makes three more bolts, so four in all.
+        let bolt = try #require(r.body("bolt")).volume
+        #expect(abs(try #require(r.body("bolts")).volume - 3 * bolt) < 1e-6 * bolt)
+        // The pipe ends well clear of the block, so its path bends.
+        let end = try #require(r.body("pipe")).faceFrame("pipe.end").origin
+        #expect(end.x > 100 && end.z > 100)
+        // Threads are cut in the tapped holes, the side port and the bolts.
+        #expect(try #require(r.body("block")).faceNames.contains { $0.hasPrefix("tapthread") })
+        #expect(try #require(r.body("block")).faceNames.contains { $0.hasPrefix("portthread") })
+        #expect(try #require(r.body("bolt")).faceNames.contains { $0.hasPrefix("boltthread") })
+    }
+}

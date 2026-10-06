@@ -97,9 +97,14 @@ struct SimplMakerCommands: Commands {
         CommandGroup(replacing: .help) {
             Button(guide?.canResume == true ? "Resume Tutorial: Box with a Lid" : "Tutorial: Make a Box with a Lid") { startTutorial() }
         }
-        CommandGroup(after: .newItem) {
-            Button("New Demo Part") { newDocument { CADFile(document: .demo()) } }
-                .keyboardShortcut("n", modifiers: [.command, .option])
+        CommandGroup(before: .saveItem) {
+            Menu("Open Example Parts") {
+                Button("Plate with Holes, Fillets and a Chamfer") { newDocument { CADFile(document: .demo()) } }
+                    .keyboardShortcut("n", modifiers: [.command, .option])
+                Button("Bracket with Ribs") { newDocument { CADFile(document: .ribDemo()) } }
+                Button("Flanged Pipe on a Manifold (advanced)") { newDocument { CADFile(document: .manifoldDemo()) } }
+            }
+            Divider()
         }
         CommandGroup(before: .windowList) {
             Button("Welcome to SimplMaker") { openWindow(id: AppWindows.welcomeID) }
