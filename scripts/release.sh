@@ -36,8 +36,10 @@ MAJOR="${VERSION%%.*}"
 [ "$MAJOR" = "$LICENSE_GENERATION" ] || { [ "$MAJOR" = 0 ] && [ "$LICENSE_GENERATION" = 1 ]; } \
   || { echo "VERSION $VERSION does not belong to LICENSE_GENERATION $LICENSE_GENERATION (Packaging/licensing.conf)" >&2; exit 1; }
 # A release comes from committed code, so the build number identifies exactly what shipped.
-if [ -n "$(git status --porcelain)" ] && [ "${ALLOW_DIRTY:-0}" != 1 ]; then
-  echo "uncommitted changes: commit first (or ALLOW_DIRTY=1)" >&2; exit 1
+# Changes to tracked files count, and so do new files that go into the build; unrelated untracked folders (website/) do not.
+DIRTY="$(git status --porcelain --untracked-files=no; git ls-files --others --exclude-standard -- Sources Tests Packaging scripts Package.swift Package.resolved VERSION SimplMaker.xcodeproj)"
+if [ -n "$DIRTY" ] && [ "${ALLOW_DIRTY:-0}" != 1 ]; then
+  echo "uncommitted changes: commit first (or ALLOW_DIRTY=1)" >&2; printf '%s\n' "$DIRTY" >&2; exit 1
 fi
 [ -f Packaging/licensing.conf ] || [ "${ALLOW_UNLICENSED:-0}" = 1 ] \
   || { echo "Packaging/licensing.conf is missing, so the app would not ask for a license (ALLOW_UNLICENSED=1 to release anyway)" >&2; exit 1; }
