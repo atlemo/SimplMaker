@@ -1,0 +1,158 @@
+---
+title: Features
+nav: features
+description: What SimplMaker does: parametric sketches, constraints, extrude, revolve, sweep, loft, fillet, chamfer, shell, holes, threads, STEP import and STL export. Native on Mac.
+---
+<section class="page-head wrap">
+  <p class="mono">Features</p>
+  <h1 class="display display-page">Everything<br />a part needs.</h1>
+  <p class="lead">A focused CAD tool: sketch, shape, finish, export. Every value is an expression, so changing one number rebuilds the model.</p>
+</section>
+
+<section class="feature">
+  <div class="wrap">
+    <div class="feature-top">
+      <p class="mono num">01</p>
+      <h2 class="big">Parameters<br />drive it all.</h2>
+      <div class="copy">
+        <p>Define <code>width</code>, <code>wall</code> or <code>tolerance</code> once and use them anywhere. Values take units and maths: <code>depth / 3</code>, <code>1 in</code>, <code>hole_d + 0.2 mm</code>.</p>
+        <ul>
+          <li>Named parameters, shared across the part</li>
+          <li>Units: mm, cm, in and more</li>
+          <li>Autocomplete in every field</li>
+        </ul>
+      </div>
+    </div>
+    <div class="reveal">{{clip:parameters|16/9|Clip · edit the width parameter, the sketch, extrusion and fillet all follow}}</div>
+  </div>
+</section>
+
+<section class="feature">
+  <div class="wrap">
+    <div class="feature-top">
+      <p class="mono num">02</p>
+      <h2 class="big">Sketch with<br />constraints.</h2>
+      <div class="copy">
+        <p>Lines, arcs, circles, rectangles, splines and points, held in place by dimensions and constraints. Drag a corner and the sketch moves as far as the constraints allow.</p>
+        <ul>
+          <li>Coincident, parallel, perpendicular, tangent, equal, concentric and more</li>
+          <li>Trim, extend, offset, corner fillet</li>
+          <li>Live degrees-of-freedom count</li>
+        </ul>
+      </div>
+    </div>
+    <div class="reveal">{{clip:sketch|16/9|Clip · draw a bracket profile, add dimensions, drag a corner to see the solver work}}</div>
+  </div>
+</section>
+
+<section class="feature">
+  <div class="wrap">
+    <div class="feature-top">
+      <p class="mono num">03</p>
+      <h2 class="big">Pull it<br />into 3D.</h2>
+      <div class="copy">
+        <p>Extrude, revolve, sweep, loft, rib and pipe, all with a drag handle and a typed value. Start from a box, cylinder, sphere, torus or coil when that is quicker.</p>
+        <ul>
+          <li>One direction, two directions or mirrored</li>
+          <li>New body, join, cut or intersect</li>
+          <li>Move, rotate and scale bodies and sketches</li>
+        </ul>
+      </div>
+    </div>
+    <div class="reveal">{{clip:extrude|16/9|Clip · select a profile, drag the extrude arrow, switch between join and cut}}</div>
+  </div>
+</section>
+
+<section class="feature">
+  <div class="wrap">
+    <div class="feature-top">
+      <p class="mono num">04</p>
+      <h2 class="big">Finish<br />the details.</h2>
+      <div class="copy">
+        <p>Fillet and chamfer edges, shell a body hollow, drill holes and cut threads. Features refer to faces and edges by stable names, so they stay put when you change the dimensions upstream.</p>
+        <ul>
+          <li>Fillet, chamfer (equal, distance and angle, two distances)</li>
+          <li>Shell, hole, thread</li>
+          <li>Body colours that save with the part</li>
+        </ul>
+      </div>
+    </div>
+    <div class="reveal">{{clip:finish|16/9|Clip · fillet the edges, shell it hollow, add a threaded hole}}</div>
+  </div>
+</section>
+
+<section class="feature">
+  <div class="wrap">
+    <div class="feature-top">
+      <p class="mono num">05</p>
+      <h2 class="big">A timeline<br />you can edit.</h2>
+      <div class="copy">
+        <p>Every step is a feature in the timeline. Click one to edit it, suppress it, or roll back and change an earlier sketch. If a feature fails, the ones after it still rebuild and the problem is marked.</p>
+        <ul>
+          <li>Edit any sketch or feature later</li>
+          <li>Suppress and delete</li>
+          <li>Errors explain themselves on hover</li>
+        </ul>
+      </div>
+    </div>
+    <div class="reveal">{{clip:timeline|16/9|Clip · roll back the timeline, edit an early sketch, everything after rebuilds}}</div>
+  </div>
+</section>
+
+<section class="feature">
+  <div class="wrap">
+    <div class="feature-top">
+      <p class="mono num">06</p>
+      <h2 class="big">In from STEP.<br />Out to STL.</h2>
+      <div class="copy">
+        <p>Import a STEP file and keep modelling on it: fillet it, cut it, move it. Export your bodies as STL for the slicer, or as STEP for any other CAD tool.</p>
+        <ul>
+          <li>STEP import, STEP and STL export</li>
+          <li>Imported files are stored inside the part</li>
+          <li>Your files are yours: no cloud, no lock-in</li>
+        </ul>
+      </div>
+    </div>
+    <div class="reveal">{{clip:export|16/9|Clip · import a STEP file, modify it, export an STL and open it in the slicer}}</div>
+  </div>
+</section>
+
+<section class="feature">
+  <div class="wrap">
+    <div class="feature-top">
+      <p class="mono num">07</p>
+      <h2 class="big">Properly<br />a Mac app.</h2>
+      <div class="copy">
+        <p>Native, fast and quiet. Metal viewport, one window per part, autosave and versions, light and dark mode, trackpad gestures. It works offline and needs no account.</p>
+        <ul>
+          <li>Built for Apple Silicon</li>
+          <li>Autosave, versions and Open Recent</li>
+          <li>No browser tab, no upload, no waiting on a server</li>
+        </ul>
+      </div>
+    </div>
+    <div class="reveal">{{clip:mac|16/9|Clip · orbit with the trackpad, switch to dark mode, open a recent part}}</div>
+  </div>
+</section>
+
+<section class="section dark">
+  <div class="wrap honest">
+    <h2 class="big">What it<br />doesn't do.</h2>
+    <ul>
+      <li>No assemblies with joints, yet</li>
+      <li>No CAM, simulation or rendering</li>
+      <li>Mac only: macOS 26, Apple Silicon</li>
+      <li>A young app: expect rough edges, and tell me about them</li>
+    </ul>
+  </div>
+</section>
+
+<section class="section final">
+  <div class="wrap">
+    <h2 class="big">See if it<br />fits your work.</h2>
+    <div class="btn-row">
+      <a class="btn btn-accent btn-lg" href="/download/">Try free for {{trial_days}} days</a>
+      <a class="btn btn-ghost btn-lg" href="/pricing/">${{price}} once</a>
+    </div>
+  </div>
+</section>

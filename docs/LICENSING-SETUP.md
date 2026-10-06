@@ -4,7 +4,7 @@ SimplMaker sells through [Polar](https://polar.sh), a merchant of record: Polar 
 the customer, collects and pays the VAT and sales tax, and emails the license key. The app needs no server of
 its own. It checks the trial itself and activates keys against Polar's public license endpoints.
 
-**The model: $39 per major version.** A license covers one major version (1.x, 2.x) for good, with all its
+**The model: $49 per major version.** A license covers one major version (1.x, 2.x) for good, with all its
 updates. SimplMaker 1 keeps working, and keeps getting its own updates, when SimplMaker 2 comes out; whoever wants
 2.0 buys it again. In the code this is the *generation* (`LICENSE_GENERATION` in `Packaging/licensing.conf`):
 
@@ -32,7 +32,7 @@ How it behaves (see `Sources/SimplMaker/Licensing/`):
 1. **Create the account.** Sign up at polar.sh, create an organization, and finish the payout setup (Polar pays out
    through Stripe Connect Express; Norway is supported). Individuals and companies can both sell; your legal note
    suggests selling through a company if you can.
-2. **Create the product** "SimplMaker 1" at $39, one-time. Add the **License Keys** benefit:
+2. **Create the product** "SimplMaker 1" at $49, one-time. Add the **License Keys** benefit:
    - prefix `SIMPL`
    - **activation limit: 2** (a desktop and a laptop). This is Polar's *activation* limit, a different field from the
      *usage* limit, which must stay empty: the app never counts usage, and a key whose benefit has no activation
@@ -87,10 +87,10 @@ as a member and read the key in the sandbox customer portal.
 
 ## Cost (checked October 2026; verify on polar.sh before relying on it)
 
-- Polar: 5 % + $0.50 per sale on the free plan, no monthly fee, so about $2.45 of each $39 (6.3 %). The Pro plan
-  ($20 a month) is 3.8 % + $0.40: it pays for itself above roughly 40 sales a month. Prices are
-  tax-inclusive: for a buyer in Norway the checkout shows $39 total, of which $7.80 is 25 % VAT (so you receive
-  less than $39 there; Polar's fee comes off the total and the VAT is passed on). Other countries differ.
+- Polar: 5 % + $0.50 per sale on the free plan, no monthly fee, so about $2.95 of each $49 (6.0 %). The Pro plan
+  ($20 a month) is 3.8 % + $0.40: it pays for itself above roughly 30 sales a month. Prices are
+  tax-inclusive: for a buyer in Norway the checkout shows $49 total, of which $9.80 is 25 % VAT (so you receive
+  less than $49 there; Polar's fee comes off the total and the VAT is passed on). Other countries differ.
 - Already paid for: the Apple Developer Program ($99 a year), the domain and the hosting.
 - No cost for the licensing code itself: there is no server to run.
 

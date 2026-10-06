@@ -9,3 +9,4 @@ ThirdParty/occt/
 .swiftpm/
 dist/
 Packaging/licensing.sandbox.conf
+website/public/

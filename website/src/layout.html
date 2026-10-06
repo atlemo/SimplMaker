@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{page:title}}</title>
+  <meta name="description" content="{{page:description}}" />
+  <link rel="canonical" href="{{page:canonical}}" />
+  <meta name="robots" content="{{page:robots}}" />
+  <meta name="author" content="Atle Mo" />
+  <meta name="theme-color" content="#F3F1EA" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="SimplMaker" />
+  <meta property="og:title" content="{{page:title}}" />
+  <meta property="og:description" content="{{page:description}}" />
+  <meta property="og:url" content="{{page:canonical}}" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="icon" href="/favicon.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="preload" href="/fonts/InterTight.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="{{asset:css/style.css}}" />
+  <script>document.documentElement.classList.add('js')</script>
+</head>
+<body class="{{page:body_class}}">
+  <a class="skip-link" href="#main">Skip to content</a>
+{{include:header.html}}
+  <main id="main">
+{{page:content}}
+  </main>
+{{include:footer.html}}
+  <script src="{{asset:js/site.js}}" defer></script>
+</body>
+</html>
