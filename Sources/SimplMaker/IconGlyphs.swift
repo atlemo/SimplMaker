@@ -67,7 +67,7 @@ enum IconGlyphs {
     "film": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /><path d=\"M7 3v18\" /><path d=\"M3 7.5h4\" /><path d=\"M3 12h18\" /><path d=\"M3 16.5h4\" /><path d=\"M17 3v18\" /><path d=\"M17 7.5h4\" /><path d=\"M17 16.5h4\" />",
     "filter": "<polygon points=\"22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3\" />",
     "flag": "<path d=\"M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z\" /><line x1=\"4\" x2=\"4\" y1=\"22\" y2=\"15\" />",
-    "flip-horizontal-2": "<path d=\"m3 7 5 5-5 5V7\" /><path d=\"m21 7-5 5 5 5V7\" /><path d=\"M12 20v2\" /><path d=\"M12 14v2\" /><path d=\"M12 8v2\" /><path d=\"M12 2v2\" />",
+    "flip-horizontal-2": "<path d=\"m3 7 5 5-5 5V7\" /><path d=\"m21 7-5 5 5 5V7\" /><path d=\"M12 20v2\" stroke=\"accent\" /><path d=\"M12 14v2\" stroke=\"accent\" /><path d=\"M12 8v2\" stroke=\"accent\" /><path d=\"M12 2v2\" stroke=\"accent\" />",
     "flip-vertical-2": "<path d=\"m17 3-5 5-5-5h10\" /><path d=\"m17 21-5-5-5 5h10\" /><path d=\"M4 12H2\" /><path d=\"M10 12H8\" /><path d=\"M16 12h-2\" /><path d=\"M22 12h-2\" />",
     "focus": "<circle cx=\"12\" cy=\"12\" r=\"3\" /><path d=\"M3 7V5a2 2 0 0 1 2-2h2\" /><path d=\"M17 3h2a2 2 0 0 1 2 2v2\" /><path d=\"M21 17v2a2 2 0 0 1-2 2h-2\" /><path d=\"M7 21H5a2 2 0 0 1-2-2v-2\" />",
     "folder": "<path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\" />",
@@ -89,7 +89,7 @@ enum IconGlyphs {
     "laptop": "<path d=\"M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16\" />",
     "lasso": "<path d=\"M7 22a5 5 0 0 1-2-4\" /><path d=\"M3.3 14A6.8 6.8 0 0 1 2 10c0-4.4 4.5-8 10-8s10 3.6 10 8-4.5 8-10 8a12 12 0 0 1-5-1\" /><path d=\"M5 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z\" />",
     "layers": "<path d=\"m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z\" /><path d=\"m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65\" /><path d=\"m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65\" />",
-    "layers-2": "<path d=\"m16.02 12 5.48 3.13a1 1 0 0 1 0 1.74L13 21.74a2 2 0 0 1-2 0l-8.5-4.87a1 1 0 0 1 0-1.74L7.98 12\" /><path d=\"M13 13.74a2 2 0 0 1-2 0L2.5 8.87a1 1 0 0 1 0-1.74L11 2.26a2 2 0 0 1 2 0l8.5 4.87a1 1 0 0 1 0 1.74Z\" />",
+    "layers-2": "<path d=\"m16.02 12 5.48 3.13a1 1 0 0 1 0 1.74L13 21.74a2 2 0 0 1-2 0l-8.5-4.87a1 1 0 0 1 0-1.74L7.98 12\" /><path d=\"M13 13.74a2 2 0 0 1-2 0L2.5 8.87a1 1 0 0 1 0-1.74L11 2.26a2 2 0 0 1 2 0l8.5 4.87a1 1 0 0 1 0 1.74Z\" stroke=\"accent\" />",
     "layout-grid": "<rect width=\"7\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\" /><rect width=\"7\" height=\"7\" x=\"14\" y=\"3\" rx=\"1\" /><rect width=\"7\" height=\"7\" x=\"14\" y=\"14\" rx=\"1\" /><rect width=\"7\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\" />",
     "link": "<path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\" /><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\" />",
     "list": "<path d=\"M3 12h.01\" /><path d=\"M3 18h.01\" /><path d=\"M3 6h.01\" /><path d=\"M8 12h13\" /><path d=\"M8 18h13\" /><path d=\"M8 6h13\" />",
@@ -186,18 +186,18 @@ enum IconGlyphs {
 "bezier": "<path d=\"M3 19C6 6 18 6 21 19\" /><path d=\"M3 19 6.5 7\" /><path d=\"M21 19 17.5 7\" /><circle cx=\"6.5\" cy=\"6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"17.5\" cy=\"6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",
     "plane": "<path d=\"M3 17 8 7h13l-5 10Z\" />",
     "pattern": "<rect width=\"5\" height=\"5\" x=\"2\" y=\"9.5\" rx=\"1\" /><rect width=\"5\" height=\"5\" x=\"9.5\" y=\"9.5\" rx=\"1\" /><rect width=\"5\" height=\"5\" x=\"17\" y=\"9.5\" rx=\"1\" />",
-    "shell": "<path d=\"M3 7v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7\" /><path d=\"M7 7v9h10V7\" />",
+    "shell": "<path d=\"M3 7v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7\" /><path d=\"M7 7v9h10V7\" stroke=\"accent\" />",
     "square-center": "<rect width=\"18\" height=\"14\" x=\"3\" y=\"5\" rx=\"1\" /><circle cx=\"12\" cy=\"12\" r=\"1.4\" fill=\"currentColor\" stroke=\"none\" />",
     "arc-3-point": "<path d=\"M4 18A9 9 0 0 1 20 18\" /><circle cx=\"4\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"12\" cy=\"9.6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"20\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",
     "corner-round": "<path d=\"M4 20v-8a8 8 0 0 1 8-8h8\" /><circle cx=\"4\" cy=\"4\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\" />",
     // A threaded shaft: its outline, with the thread's slanted crests across it.
     "thread": "<rect width=\"12\" height=\"20\" x=\"6\" y=\"2\" rx=\"1.5\" /><path d=\"m6 8.75 12-3.5\" /><path d=\"m6 14 12-3.5\" /><path d=\"m6 19.25 12-3.5\" />",
     // A box grown up from its profile (shaded), with an arrow up beside it.
-    "extrude": "<path d=\"M2 9.5 6.5 5H16l-4.5 4.5Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M2 21V9.5L6.5 5H16v11.5L11.5 21Z\" /><path d=\"M2 9.5h9.5V21\" /><path d=\"M11.5 9.5 16 5\" /><path d=\"M20.5 20V3\" /><path d=\"m17.5 6 3-3 3 3\" />",
+    "extrude": "<path d=\"M2 9.5 6.5 5H16l-4.5 4.5Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M2 21V9.5L6.5 5H16v11.5L11.5 21Z\" /><path d=\"M2 9.5h9.5V21\" /><path d=\"M11.5 9.5 16 5\" /><path d=\"M20.5 20V3\" stroke=\"accent\" /><path d=\"m17.5 6 3-3 3 3\" stroke=\"accent\" />",
     // The same box with an arrow each way from a tick on the sketch plane: unequal lengths for two distances,
     // equal ones for a mirrored (symmetric) extrude.
-    "extrude-two": "<path d=\"M2 9.5 6.5 5H16l-4.5 4.5Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M2 21V9.5L6.5 5H16v11.5L11.5 21Z\" /><path d=\"M2 9.5h9.5V21\" /><path d=\"M11.5 9.5 16 5\" /><path d=\"M20.5 3v18\" /><path d=\"m17.5 6 3-3 3 3\" /><path d=\"m17.5 18 3 3 3-3\" /><path d=\"M18 15h5\" />",
-    "extrude-mirrored": "<path d=\"M2 9.5 6.5 5H16l-4.5 4.5Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M2 21V9.5L6.5 5H16v11.5L11.5 21Z\" /><path d=\"M2 9.5h9.5V21\" /><path d=\"M11.5 9.5 16 5\" /><path d=\"M20.5 3v18\" /><path d=\"m17.5 6 3-3 3 3\" /><path d=\"m17.5 18 3 3 3-3\" /><path d=\"M18 12h5\" />",
+    "extrude-two": "<path d=\"M2 9.5 6.5 5H16l-4.5 4.5Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M2 21V9.5L6.5 5H16v11.5L11.5 21Z\" /><path d=\"M2 9.5h9.5V21\" /><path d=\"M11.5 9.5 16 5\" /><path d=\"M20.5 3v18\" stroke=\"accent\" /><path d=\"m17.5 6 3-3 3 3\" stroke=\"accent\" /><path d=\"m17.5 18 3 3 3-3\" stroke=\"accent\" /><path d=\"M18 15h5\" />",
+    "extrude-mirrored": "<path d=\"M2 9.5 6.5 5H16l-4.5 4.5Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M2 21V9.5L6.5 5H16v11.5L11.5 21Z\" /><path d=\"M2 9.5h9.5V21\" /><path d=\"M11.5 9.5 16 5\" /><path d=\"M20.5 3v18\" stroke=\"accent\" /><path d=\"m17.5 6 3-3 3 3\" stroke=\"accent\" /><path d=\"m17.5 18 3 3 3-3\" stroke=\"accent\" /><path d=\"M18 12h5\" />",
     // A profile swept part way round (its shaded top), with a curved arrow over it.
     "revolve": "<path d=\"M2.94 12.92A11.5 11.5 0 0 1 21.06 12.92L15.15 17.54A4 4 0 0 0 8.85 17.54Z\" fill=\"currentColor\" fill-opacity=\"0.35\" stroke=\"none\" /><path d=\"M2.94 12.92A11.5 11.5 0 0 1 21.06 12.92L15.15 17.54A4 4 0 0 0 8.85 17.54Z\" /><path d=\"M2.94 12.92V16.42A11.5 11.5 0 0 1 21.06 16.42V12.92\" /><path d=\"M21.06 16.42L15.15 21.04V17.54\" /><path d=\"M18.9 7.02A14.7 14.7 0 0 0 4.21 7.53\" /><path d=\"M6.97 8.02L4.21 7.53L4.98 4.84\" />",
     // A box with a hole in its front face, the hole in the accent colour (drawn 1:1 in an 18 pt box, like the chamfer modes).
