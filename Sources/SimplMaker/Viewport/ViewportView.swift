@@ -613,14 +613,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             refreshOverlay()
             return
         }
-        // In a sketch the view stays square to the sketch plane: a drag on empty ground slides the view with
-        // the cursor. (Orbiting a top-down view turned it about its middle, so the half above the middle
-        // went right as the pointer went left.)
-        if model?.sketchSession != nil {
-            drag(event, pan)
-        } else {
-            drag(event) { self.renderer?.camera.orbit(dx: $0, dy: $1) }
-        }
+        drag(event) { self.renderer?.camera.orbit(dx: $0, dy: $1) }
     }
 
     override func mouseUp(with event: NSEvent) {
