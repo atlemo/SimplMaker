@@ -1304,7 +1304,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             session.clearTyped()
             window?.makeFirstResponder(self)
         } else if tab || backtab {
-            session.setTyped(input, field.stringValue)
+            // Edits already went to the session as they were typed: setting it here too would lock in the
+            // live value an untouched field shows, and the shape would stop following the cursor.
             let order = sketchFieldOrder
             guard let i = order.firstIndex(of: input) else { return true }
             let next = order[(i + (tab ? 1 : order.count - 1)) % order.count]

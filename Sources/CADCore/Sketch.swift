@@ -77,6 +77,7 @@ public struct SketchDimension: Codable, Hashable, Sendable, Identifiable {
         case radius(EntityID)                         // circle/arc
         case diameter(EntityID)                       // circle/arc
         case angle(EntityID, EntityID)                // line, line: counter-clockwise from first to second
+        case lineAngle(EntityID)                      // line: its angle to the sketch's x-axis, 0° to 180°; the line stays on the side (above or below) it is on
         case radialOffset(from: EntityID, to: EntityID)  // circle/arc radii difference (concentric offsets)
         /// Clear space from a circle's or arc's rim (first) to a point, a line, or another circle or arc's rim.
         case gap(EntityID, EntityID)
@@ -94,8 +95,10 @@ public struct SketchDimension: Codable, Hashable, Sendable, Identifiable {
         self.id = id; self.kind = kind; self.expression = expression; self.offset = offset
     }
     public var unitKind: UnitKind {
-        if case .angle = kind { return .angle }
-        return .length
+        switch kind {
+        case .angle, .lineAngle: return .angle
+        default: return .length
+        }
     }
 }
 

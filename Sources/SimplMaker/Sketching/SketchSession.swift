@@ -655,7 +655,7 @@ final class SketchSession {
             let start = clicks[0]
             guard distance(start, s) > 1e-6 else { clicks.removeLast(); pendingDimensions = []; return nil }
             let r = sketch.addLine(from: start, to: s, startPoint: chainPoint)
-            addPendingDimensions([.length: .length(r.line)])
+            addPendingDimensions([.length: .length(r.line), .angle: .lineAngle(r.line)])
             // Keep chaining from the new end, unless we just connected to existing geometry.
             if s.point != nil || s.curve != nil {
                 clicks = []
@@ -870,6 +870,7 @@ final class SketchSession {
     /// A bare number becomes "25 mm" / "30 deg"; anything else (units, parameters) is kept as typed.
     private static func expression(_ text: String, _ field: SketchInput) -> String {
         guard let v = Double(text) else { return text }
+        if field == .angle { return formatDimension(Sketch.foldedAngle(v * .pi / 180), kind: .angle) }  // a line's angle: 325° is 35°
         return formatDimension(field.unit == .angle ? v * .pi / 180 : v, kind: field.unit)
     }
 

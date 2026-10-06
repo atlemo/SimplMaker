@@ -60,6 +60,43 @@ import Testing
         #expect(abs(atan2(d.y, d.x) - .pi / 3) < 1e-6)
     }
 
+    @Test func lineAngleTurnsTheLineAboutItsStart() {
+        var s = Sketch()
+        let a = s.addPoint(5, 5), b = s.addPoint(15, 5)
+        let l = s.addLine(a, b)
+        s.dimension(.lineAngle(l), "220 deg", id: "ang")
+        s.dimension(.length(l), "10 mm", id: "len")
+        let target = 220.0 * .pi / 180
+        #expect(abs((s.measure(.lineAngle(l)) ?? -1) - 0) < 1e-9)
+        let r = SketchSolver.solveLocally(&s, dimensionValues: ["ang": target, "len": 10])
+        #expect(r.status == .solved)
+        let pa = s.point(a)!.position, pb = s.point(b)!.position
+        #expect(abs(pa.x - 5) < 1e-6 && abs(pa.y - 5) < 1e-6, "the start stays")
+        #expect(abs((s.measure(.lineAngle(l)) ?? -1) - (140 * .pi / 180)) < 1e-6, "measured as the angle to the x-axis: 140°")
+        #expect(abs(vlen(pb - pa) - 10) < 1e-3, "and the length is kept")
+        // Change it again: it follows, and the old value isn't a second solution.
+        _ = SketchSolver.solveLocally(&s, dimensionValues: ["ang": 30 * .pi / 180, "len": 10])
+        #expect(abs((s.measure(.lineAngle(l)) ?? -1) - 30 * .pi / 180) < 1e-6)
+    }
+
+    @Test func angleBetweenTwoLinesIsDrawnAtTheirCorner() throws {
+        var s = Sketch()
+        let o = s.addPoint(2, 1), a = s.addPoint(12, 1), b = s.addPoint(2 + 5, 1 + 5 * 3.0.squareRoot())
+        let l1 = s.addLine(o, a), l2 = s.addLine(o, b)
+        let d = SketchDimension(.angle(l1, l2), "60 deg")
+        let arc = try #require(s.angleArc(of: d, size: 1))
+        #expect(arc.center == SIMD2(2, 1) && abs(arc.start) < 1e-9 && abs(arc.sweep - .pi / 3) < 1e-9)
+        // The same corner, with the lines the other way round: the arc still lies between them.
+        let back = try #require(s.angleArc(of: SketchDimension(.angle(l2, l1), "300 deg"), size: 1))
+        #expect(abs(back.sweep - 5 * .pi / 3) < 1e-9)
+        // Lines that only cross meet at the crossing.
+        var t = Sketch()
+        let p = (t.addPoint(0, 0), t.addPoint(10, 0), t.addPoint(5, -5), t.addPoint(5, 5))
+        let h = t.addLine(p.0, p.1), v = t.addLine(p.2, p.3)
+        let cross = try #require(t.angleArc(of: SketchDimension(.angle(h, v), "90 deg"), size: 1))
+        #expect(abs(cross.center.x - 5) < 1e-9 && abs(cross.center.y) < 1e-9)
+    }
+
     @Test func demoSketchesAreFullyConstrained() {
         let doc = CADDocument.demo()
         let values = ParameterEvaluator.evaluate(doc.parameters)

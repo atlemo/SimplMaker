@@ -60,7 +60,61 @@ extension Sketch {
             out.center = cp
             out.arrowAtStart = d.kind != .radius(c)
             return out
-        case .length, .angle, .radialOffset: return nil
+        case .length, .angle, .lineAngle, .radialOffset: return nil
+        }
+    }
+
+    /// The drawn arc of an angle dimension: about `center`, from direction `start` sweeping `sweep` (counter-clockwise
+    /// positive). A line's angle is drawn from the sketch's x-axis (`axis`) round to the line; two lines' angle
+    /// between them, at the point where they meet. `size` (a few pixels, in mm) keeps it clear on short lines.
+    public struct AngleArc: Sendable {
+        public var center: SIMD2<Double>
+        public var radius: Double
+        public var start: Double
+        public var sweep: Double
+        public var axis: Bool
+        /// The direction the label stands in: through the middle of the arc.
+        public var middle: Double { start + sweep / 2 }
+    }
+
+    public func angleArc(of d: SketchDimension, size: Double) -> AngleArc? {
+        func radius(_ length: Double) -> Double { min(max(length * 0.45, size * 5), size * 14) }
+        switch d.kind {
+        case .lineAngle(let l):
+            guard case let (a, b)? = lineEnds(l), vlen(b - a) > 1e-9, let direction = lineDirection(l) else { return nil }
+            return AngleArc(center: a, radius: radius(vlen(b - a)), start: 0, sweep: direction, axis: true)
+        case .angle(let l1, let l2):
+            guard case let (a1, b1)? = lineEnds(l1), case let (a2, b2)? = lineEnds(l2),
+                  case .line(let s1, let e1)? = curve(l1)?.geometry, case .line(let s2, let e2)? = curve(l2)?.geometry,
+                  let t = measure(d.kind) else { return nil }
+            let u = b1 - a1, w = b2 - a2
+            guard vlen(u) > 1e-9, vlen(w) > 1e-9 else { return nil }
+            // Where the lines meet: the point they share, or where they cross.
+            var vertex: SIMD2<Double>
+            if let shared = [s1, e1].first(where: { $0 == s2 || $0 == e2 }), let p = position(shared) {
+                vertex = p
+            } else {
+                let denom = vcross(u, w)
+                guard abs(denom) > 1e-12 else { return nil }
+                vertex = a1 + u * (vcross(a2 - a1, w) / denom)
+            }
+            // The rays run from there along the lines' bodies; the arc between them is the one whose size is the value.
+            func ray(_ a: SIMD2<Double>, _ b: SIMD2<Double>) -> Double {
+                let far = vlen(a - vertex) > vlen(b - vertex) ? a : b
+                let mid = (a + b) / 2
+                let toward = vlen(far - vertex) > 1e-9 ? far : mid
+                return atan2(toward.y - vertex.y, toward.x - vertex.x)
+            }
+            let r1 = ray(a1, b1), r2 = ray(a2, b2)
+            func ccw(_ from: Double, _ to: Double) -> Double {
+                var x = (to - from).truncatingRemainder(dividingBy: 2 * .pi)
+                if x < 0 { x += 2 * .pi }
+                return x
+            }
+            var start = atan2(u.y, u.x)  // the lines' own directions, when the value is neither of the angles between the bodies
+            if abs(ccw(r1, r2) - t) < 1e-6 { start = r1 } else if abs(ccw(r2, r1) - t) < 1e-6 { start = r2 }
+            return AngleArc(center: vertex, radius: radius(min(vlen(u), vlen(w))), start: start, sweep: t, axis: false)
+        default: return nil
         }
     }
 
@@ -93,7 +147,7 @@ extension Sketch {
         case .gap(_, let other): return [other]
         case .pointLineDistance(_, let line): return [line]
         case .distance(let a, _), .horizontalDistance(let a, _), .verticalDistance(let a, _): return [a]
-        case .length, .radius, .diameter, .angle, .radialOffset: return []
+        case .length, .radius, .diameter, .angle, .lineAngle, .radialOffset: return []
         }
     }
 }

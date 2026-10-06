@@ -416,6 +416,14 @@ public enum SketchSolver {
                 guard let g0 = me.rimGap(a, b, x0) else { return }
                 let side = g0.side, sign: Double = g0.gap(side) >= 0 ? 1 : -1  // keep the current side
                 add { me.rimGap(a, b, $0).map { sign * $0.gap(side) - v } ?? 0 }
+            case .lineAngle(let l):
+                // The line's direction from the x-axis, less the value on the side it is on (above or below),
+                // wrapped to ±π: no second solution, and a long turn runs straight to the target.
+                let side: Double = me.dir(l, x0).y < 0 ? -1 : 1, target = side * Sketch.foldedAngle(v)
+                add {
+                    let u = me.dir(l, $0), d = atan2(u.y, u.x) - target
+                    return atan2(sin(d), cos(d))
+                }
             case .angle(let a, let b):
                 // sin(θ - v) where θ is the ccw angle from a to b; zero at θ = v.
                 add {
@@ -526,7 +534,7 @@ extension SketchSolver {
         var moving = Set<EntityID>(), anchored = Set<EntityID>()
         for d in sketch.dimensions {
             guard let target = dimensionValues[d.id], let now = sketch.measure(d.kind), abs(now - target) > 1e-9 else { continue }
-            let anchors = sketch.points(of: Sketch.anchors(of: d.kind))
+            let anchors = sketch.anchorPoints(of: d.kind)
             moving.formUnion(sketch.points(of: Sketch.references(d.kind)).subtracting(anchors))
             anchored.formUnion(anchors)
         }
@@ -549,6 +557,13 @@ extension SketchSolver {
 }
 
 extension Sketch {
+    /// The points that stay put when a dimension's value is changed (see anchors(of:)); a line's angle turns it about its start.
+    func anchorPoints(of kind: SketchDimension.Kind) -> Set<EntityID> {
+        var out = points(of: Sketch.anchors(of: kind))
+        if case .lineAngle(let l) = kind, case .line(let start, _)? = curve(l)?.geometry { out.insert(start) }
+        return out
+    }
+
     /// The points of some entities: points themselves, and the points curves are built from.
     func points(of ids: [EntityID]) -> Set<EntityID> {
         var out = Set<EntityID>()

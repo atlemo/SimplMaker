@@ -39,10 +39,27 @@ import Testing
         #expect(s.typed.isEmpty)
         #expect(s.inputFields == [.length, .angle])  // the chain continues from the new end
         let line = try #require(s.sketch.curves.first)
-        #expect(s.sketch.dimensions.map(\.expression) == ["25 mm"])
-        #expect(s.sketch.dimensions.first?.kind == .length(line.id))
+        #expect(s.sketch.dimensions.map(\.expression) == ["25 mm", "30 deg"])
+        #expect(s.sketch.dimensions.map(\.kind) == [.length(line.id), .lineAngle(line.id)])
         let ends = try #require(s.sketch.lineEnds(line.id))
         #expect(abs(simdLength(ends.1 - ends.0) - 25) < 1e-6)
+    }
+
+    @Test func lineStillFollowsTheCursorAfterTheAngleIsTyped() throws {
+        let s = session()
+        s.setTool(.line)
+        click(s, 0, 0)
+        s.setTyped(.angle, "220")
+        move(s, 10, 0)
+        let short = try #require(s.target()).position
+        move(s, 40, 0)
+        let long = try #require(s.target()).position
+        #expect(abs(simdLength(short) - 10) < 1e-9 && abs(simdLength(long) - 40) < 1e-9, "the length keeps following the cursor")
+        #expect(abs(long.x - 40 * cos(220 * .pi / 180)) < 1e-9 && abs(long.y - 40 * sin(220 * .pi / 180)) < 1e-9)
+        #expect(s.liveValue(.length).map { abs($0 - 40) < 1e-9 } == true)
+        #expect(s.typed[.length] == nil)
+        #expect(s.commitTyped() == "Line")
+        #expect(s.sketch.dimensions.map(\.expression) == ["140 deg"], "only what was typed is dimensioned")
     }
 
     @Test func rectangleKeepsTheCursorsQuadrantAndParameters() throws {

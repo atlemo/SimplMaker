@@ -158,8 +158,11 @@ enum SketchOverlayBuilder {
             }
         }
         for d in s.dimensions {
-            guard let line = s.dimensionLine(of: d) else { continue }
-            o.preview += dimensionSegments(line, size: session.snapTolerance, frame: f)
+            if let arc = s.angleArc(of: d, size: session.snapTolerance) {
+                o.preview += angleSegments(arc, size: session.snapTolerance, frame: f)
+            } else if let line = s.dimensionLine(of: d) {
+                o.preview += dimensionSegments(line, size: session.snapTolerance, frame: f)
+            }
         }
         for line in session.previewPolylines() { o.preview += segments(line, frame: f, id: 0) }
         if let snap = session.lastSnap {
@@ -196,6 +199,25 @@ enum SketchOverlayBuilder {
         return out
     }
 
+    /// A line's angle drawn out: the x-axis direction it is measured from, an arc round to the line, and an
+    /// arrowhead where the arc meets the line.
+    static func angleSegments(_ arc: Sketch.AngleArc, size: Double, frame: Frame) -> [SegmentInstance] {
+        let c = arc.center, r = arc.radius, start = arc.start, sweep = arc.sweep
+        func at(_ t: Double, _ radius: Double = r) -> SIMD2<Double> { c + radius * SIMD2(cos(t), sin(t)) }
+        var out: [SegmentInstance] = []
+        if arc.axis { out += segments([c, at(start, r + size * 0.8)], frame: frame, id: 0) }  // the axis it starts from, a little past the arc
+        guard abs(sweep) > 1e-6 else { return out }
+        let steps = max(Int(abs(sweep) / (.pi / 48)), 4)
+        out += segments((0...steps).map { at(start + sweep * Double($0) / Double(steps)) }, frame: frame, id: 0)
+        // The arrowhead points along the arc's end, back toward where it began.
+        let end = start + sweep, turn: Double = sweep < 0 ? -1 : 1
+        let tip = at(end), tangent = turn * SIMD2(sin(end), -cos(end))
+        let head = min(size * 2.2, r * abs(sweep) / 2)
+        let back = tip + tangent * head, side = SIMD2(cos(end), sin(end)) * head * 0.3
+        out += segments([tip, back + side, back - side, tip], frame: frame, id: 0)
+        return out
+    }
+
     /// A finished sketch's curves, pickable (as paths, axes and rib lines) under its slot.
     static func finished(_ r: SketchResult, slot: Int, parameters: ParameterValues, into o: inout SketchOverlay) {
         let s = r.solved
@@ -228,8 +250,8 @@ enum SketchOverlayBuilder {
     static func labels(_ session: SketchSession) -> [DimensionLabel] {
         let s = session.sketch
         var out: [DimensionLabel] = s.dimensions.compactMap { d in
-            guard let anchor = s.dimensionLine(of: d).map(labelAnchor) ?? anchor(d.kind, s) else { return nil }
-            let value = session.values[d.id].map { d.unitKind.format($0) } ?? "?"
+            guard let anchor = s.dimensionLine(of: d).map(labelAnchor) ?? anchor(d.kind, s, size: session.snapTolerance) else { return nil }
+            let value = session.values[d.id].map { d.unitKind.format(isLineAngle(d.kind) ? Sketch.foldedAngle($0) : $0) } ?? "?"
             let isParametric = ((try? Expressions.parse(d.expression))?.references.isEmpty == false)
             return DimensionLabel(id: d.id, world: world(session.frame, anchor),
                                   text: prefix(d.kind) + (isParametric ? "\(d.expression) = \(value)" : value),
@@ -249,6 +271,11 @@ enum SketchOverlayBuilder {
                                       text: "\(measured(length)) · click again to place", editing: true))
         }
         return out
+    }
+
+    private static func isLineAngle(_ k: SketchDimension.Kind) -> Bool {
+        if case .lineAngle = k { return true }
+        return false
     }
 
     /// The direction a label stands in from its anchor, away from the curve it measures (radius and diameter only:
@@ -281,7 +308,7 @@ enum SketchOverlayBuilder {
         }
     }
 
-    static func anchor(_ k: SketchDimension.Kind, _ s: Sketch) -> SIMD2<Double>? {
+    static func anchor(_ k: SketchDimension.Kind, _ s: Sketch, size: Double = 1) -> SIMD2<Double>? {
         func mid(_ a: SIMD2<Double>?, _ b: SIMD2<Double>?) -> SIMD2<Double>? {
             guard let a, let b else { return nil }
             return (a + b) / 2
@@ -297,7 +324,12 @@ enum SketchOverlayBuilder {
             guard let curve = s.curve(c), let center = s.center(of: c).flatMap({ s.position($0) }),
                   let r = s.radius(of: curve) else { return nil }
             return center + r * SIMD2(0.7071, 0.7071)
-        case .angle(let a, let b): return mid(lineMid(a), lineMid(b))
+        case .angle(let a, let b):
+            guard let arc = s.angleArc(of: SketchDimension(k, ""), size: size) else { return mid(lineMid(a), lineMid(b)) }
+            return arc.center + arc.radius * 1.15 * SIMD2(cos(arc.middle), sin(arc.middle))
+        case .lineAngle:
+            guard let arc = s.angleArc(of: SketchDimension(k, ""), size: size) else { return nil }
+            return arc.center + arc.radius * 1.15 * SIMD2(cos(arc.middle), sin(arc.middle))
         case .radialOffset(_, let b):
             guard let curve = s.curve(b), let center = s.center(of: b).flatMap({ s.position($0) }),
                   let r = s.radius(of: curve) else { return nil }

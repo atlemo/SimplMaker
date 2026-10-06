@@ -117,7 +117,7 @@ extension Sketch {
         case .distance(let a, let b), .horizontalDistance(let a, let b), .verticalDistance(let a, let b),
              .angle(let a, let b), .radialOffset(let a, let b), .gap(let a, let b): return [a, b]
         case .pointLineDistance(let p, let l): return [p, l]
-        case .length(let a), .radius(let a), .diameter(let a): return [a]
+        case .length(let a), .radius(let a), .diameter(let a), .lineAngle(let a): return [a]
         }
     }
 
@@ -432,8 +432,20 @@ extension Sketch {
             var t = atan2(vcross(u, w), vdot(u, w))
             if t < 0 { t += 2 * .pi }
             return t
+        case .lineAngle(let l):
+            guard case let (a, b)? = lineEnds(l) else { return nil }
+            return abs(atan2(b.y - a.y, b.x - a.x))
         }
     }
+
+    /// A line's direction from the sketch's x-axis, counter-clockwise, -180° to 180°: which side of it the line is on.
+    public func lineDirection(_ l: EntityID) -> Double? {
+        guard case let (a, b)? = lineEnds(l) else { return nil }
+        return atan2(b.y - a.y, b.x - a.x)
+    }
+
+    /// A line-angle value as measured: 0° to 180°, whatever turn was typed (325° and -35° are both 35°).
+    public static func foldedAngle(_ v: Double) -> Double { abs(atan2(sin(v), cos(v))) }
 
     /// A line's full extent when corners were rounded off it: the outermost of its ends and the
     /// points kept on it (a rounded corner's "virtual sharp"). Nil when that's just its own ends.
