@@ -570,6 +570,16 @@ SKHandle storeChecked(const TopoDS_Shape &shape, const std::vector<Named> &names
   return store(std::move(b));
 }
 
+/// The outward normal of a planar face. A plane's own axis is not enough: its coordinate system can be
+/// left-handed (booleans and chamfers make such planes), and then the surface normal is X × Y, the opposite of
+/// its axis. Taking the axis there points a sketch's camera into the solid.
+gp_Dir planeNormal(const TopoDS_Face &f, const gp_Pln &plane) {
+  const gp_Ax3 &pos = plane.Position();
+  gp_Dir n = pos.XDirection().Crossed(pos.YDirection());
+  if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
+  return n;
+}
+
 /// Names unnamed faces by where they face in `frame`: top/bottom (along the normal),
 /// right/left (x), back/front (y); curved or slanted faces are "side".
 void nameByDirection(const TopoDS_Shape &shape, const gp_Ax3 &frame, const std::string &feat, std::vector<Named> &names) {
@@ -2314,8 +2324,7 @@ bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out) {
     return false;
   }
   gp_Ax3 pos = s.Plane().Position();
-  gp_Dir n = pos.Direction();
-  if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
+  const gp_Dir n = planeNormal(f, s.Plane());
   const gp_Pnt &o = pos.Location();
   const gp_Dir &x = pos.XDirection();
   *out = SKFrame{o.X(), o.Y(), o.Z(), n.X(), n.Y(), n.Z(), x.X(), x.Y(), x.Z()};
@@ -2553,8 +2562,7 @@ bool sk_measure_element(SKHandle body, bool isFace, const char *name, SKMeasure 
     switch (s.GetType()) {
       case GeomAbs_Plane: {
         out->geom = SK_GEOM_PLANE;
-        gp_Dir n = s.Plane().Axis().Direction();
-        if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
+        const gp_Dir n = planeNormal(f, s.Plane());
         out->hasDirection = true;
         copyXYZ(out->direction, n);
         break;
