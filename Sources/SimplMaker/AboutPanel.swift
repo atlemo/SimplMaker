@@ -8,7 +8,23 @@ import CADKernel
 enum AboutPanel {
     static func show() {
         NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+        // The standard panel frames the credits with a border line; take it off.
+        for window in NSApp.windows where window.isVisible {
+            styleCredits(in: window.contentView)
+        }
         NSApp.activate()
+    }
+
+    /// Border and side padding for the scroll view that holds our credits, so no other window is touched.
+    private static func styleCredits(in view: NSView?) {
+        guard let view else { return }
+        if let scroll = view as? NSScrollView, let text = scroll.documentView as? NSTextView,
+           text.string.hasPrefix("Acknowledgements") {
+            scroll.borderType = .noBorder
+            // Without the border the text runs to the panel edges; give it room at the sides.
+            text.textContainerInset = NSSize(width: 20, height: 4)
+        }
+        for sub in view.subviews { styleCredits(in: sub) }
     }
 
     /// Something SimplMaker includes, credited by name, with its licence notice further down.
@@ -89,9 +105,8 @@ enum AboutPanel {
             add(string, font: .boldSystemFont(ofSize: small + 1), style: style)
         }
 
-        add("Copyright © 2026 Atle Mo. All rights reserved.", color: .secondaryLabelColor)
-
-        heading("Acknowledgements")
+        // The copyright line is already under the credits, from Info.plist.
+        add("Acknowledgements", font: .boldSystemFont(ofSize: small + 1))
         add("SimplMaker makes use of facilities provided by the Open CASCADE Technology software.",
             color: .secondaryLabelColor)
         for c in components {
