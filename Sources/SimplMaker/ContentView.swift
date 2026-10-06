@@ -911,21 +911,38 @@ struct ToolButton: View {
                 }
             }
             .frame(minWidth: showsTitle ? 44 : 28, minHeight: showsTitle ? 0 : 24)
-            .padding(.horizontal, showsTitle ? DS.Spacing.space2 : DS.Spacing.space1)
+            .padding(.horizontal, showsTitle ? DS.Spacing.space4 : DS.Spacing.space1)
             .padding(.vertical, showsTitle ? DS.Spacing.space1 : 0)
             .foregroundStyle(active && !onTint ? accent : ink)
             .background(background, in: shape)
             .contentShape(Rectangle())
-            // The keyboard focus ring follows the same rounded shape as the hover and active fill.
+            // The keyboard focus ring follows the same rounded shape as the hover and active fill,
+            // drawn in the app's accent (the system's own ring would use the system colour).
             .contentShape(.focusEffect, shape)
+            .modifier(AccentFocusRing(shape: shape))
             .opacity(isEnabled ? 1 : DS.opacityDisabled)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .onHover { hovering = $0 }
         .toolTip(help ?? title)
         .tutorialSpot(title)
         .accessibilityLabel(title)
         .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+/// Draws the keyboard focus ring in the accent colour; applied inside a button's label, where
+/// `isFocused` reflects the button.
+private struct AccentFocusRing<S: InsettableShape>: ViewModifier {
+    @Environment(\.accent) private var accent
+    @Environment(\.isFocused) private var focused
+    let shape: S
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if focused { shape.strokeBorder(accent.opacity(0.75), lineWidth: 3) }
+        }
     }
 }
 
