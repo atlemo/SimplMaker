@@ -5,7 +5,10 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
 ---
 <section class="hero">
   <div class="wrap">
-    <h1 class="display">Model it.<br />Print it.<br /><span class="accent">Own it.</span></h1>
+    <div class="hero-top">
+      <h1 class="display">Model it.<br />Print it.<br /><span class="accent">Own it.</span></h1>
+      <canvas class="hero-model" tabindex="0" role="img" aria-label="A wireframe cube with two holes drilled through it, slowly turning. Drag to rotate it."></canvas>
+    </div>
     <div class="hero-meta">
       <p class="lead">Parametric CAD for Mac, made for makers.</p>
       <div class="hero-cta">
@@ -18,7 +21,7 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
     </div>
   </div>
   <div class="hero-media">
-    {{clip:hero|16/9|Hero clip · sketch a box, extrude it, change a parameter, watch it rebuild}}
+    {{clip:hero|16/10|Hero clip · sketch a box, extrude it, change a parameter, watch it rebuild}}
     <p class="caption mono"><span>A part, from sketch to STL</span><span>00:12</span></p>
   </div>
 </section>
@@ -31,19 +34,19 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
     </div>
     <div class="tiles">
       <article class="tile reveal">
-        {{clip:parameters|4/3|Clip · change width from 40 to 60 mm, the whole bracket rebuilds}}
+        {{clip:parameters_4_3|4/3|Clip · change width from 40 to 60 mm, the whole bracket rebuilds}}
         <p class="mono">01 · Parameters</p>
         <h3 class="mid">Change a number.</h3>
         <p>Name a size once: <code>wall</code>, <code>tolerance</code>, <code>hole_d</code>. Edit it and everything built on it rebuilds.</p>
       </article>
       <article class="tile reveal">
-        {{clip:extrude|4/3|Clip · sketch a profile, drag the arrow, it becomes solid}}
+        {{clip:extrude_4_3|4/3|Clip · sketch a profile, drag the arrow, it becomes solid}}
         <p class="mono">02 · Shape</p>
         <h3 class="mid">Drag to extrude.</h3>
         <p>Sketch with constraints, pull it into 3D, then fillet, chamfer, shell and drill. Type a value or just drag.</p>
       </article>
       <article class="tile reveal">
-        {{clip:export|4/3|Clip · export an STL and open it in the slicer}}
+        {{clip:export_4_3|4/3|Clip · export an STL and open it in the slicer}}
         <p class="mono">03 · Print</p>
         <h3 class="mid">Export. Slice.</h3>
         <p>STL and STEP out, STEP in. Straight to your slicer, and no cloud in between.</p>
@@ -91,3 +94,5 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
     <p class="mono muted" style="margin-top:24px">No card. No account. {{min_os}}+, Apple Silicon.</p>
   </div>
 </section>
+
+<script src="{{asset:js/hero-model.js}}" defer></script>

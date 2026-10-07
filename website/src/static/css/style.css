@@ -238,7 +238,15 @@ main { padding-top: 64px; }
 
 /* ---------- Home: hero ---------- */
 .hero { padding-top: clamp(40px, 7vw, 100px); }
-.hero .display { margin-bottom: clamp(32px, 5vw, 72px); }
+.hero-top { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: clamp(16px, 3vw, 56px); margin-bottom: clamp(32px, 5vw, 72px); }
+.hero-top .display { margin-bottom: 0; }
+/* The spinning wireframe of the logo part; hero-model.js draws into it. */
+.hero-model {
+  display: block; width: 100%; max-width: 560px; aspect-ratio: 1; justify-self: end;
+  cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none;
+}
+.hero-model.grabbing { cursor: grabbing; }
+.hero-model:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 .hero-meta { display: grid; grid-template-columns: repeat(12, 1fr); column-gap: clamp(16px, 2vw, 32px); row-gap: 28px; align-items: end; margin-bottom: clamp(32px, 5vw, 72px); }
 .hero-meta .lead { grid-column: 1 / span 6; }
 .hero-meta .hero-cta { grid-column: 8 / span 5; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
@@ -249,6 +257,8 @@ main { padding-top: 64px; }
 
 @media (max-width: 860px) {
   .hero-meta .lead, .hero-meta .hero-cta { grid-column: 1 / -1; }
+  .hero-top { grid-template-columns: 1fr; }
+  .hero-model { display: none; }
 }
 
 /* ---------- Home: teaser tiles ---------- */
