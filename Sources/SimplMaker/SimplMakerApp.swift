@@ -102,10 +102,22 @@ struct SimplMakerCommands: Commands {
             Menu("Open Example Parts") {
                 Button("Plate with Holes, Fillets and a Chamfer") { newDocument { CADFile(document: .demo()) } }
                     .shortcut(.exampleParts)
+                Button("Bracket Profile (try the sketch solver)") { newDocument { CADFile(document: .bracketProfileDemo()) } }
                 Button("Bracket with Ribs") { newDocument { CADFile(document: .ribDemo()) } }
                 Button("Flanged Pipe on a Manifold (advanced)") { newDocument { CADFile(document: .manifoldDemo()) } }
             }
             Divider()
+        }
+        CommandGroup(replacing: .pasteboard) {
+            Button("Cut") { EditCommands.send("cut:") }
+                .keyboardShortcut("x")
+            Button("Copy") { EditCommands.copy(model) }
+                .keyboardShortcut("c")
+            Button("Paste") { EditCommands.paste(model) }
+                .keyboardShortcut("v")
+            Divider()
+            Button("Select All") { EditCommands.send("selectAll:") }
+                .keyboardShortcut("a")
         }
         CommandGroup(before: .windowList) {
             Button("Welcome to SimplMaker") { openWindow(id: AppWindows.welcomeID) }

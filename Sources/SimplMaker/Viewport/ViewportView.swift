@@ -896,8 +896,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             }
             view.stringValue = l.text
             view.isReference = l.reference
+            view.isDimension = l.isDimension
             view.isEditingHighlight = l.editing
-            view.toolTip = l.reference ? "Measured size · click to make it a dimension you can set" : nil
+            view.toolTip = l.reference ? "Measured size · click to make it a dimension you can set"
+                : l.isDimension ? "Dimension · click to change its value" : nil
             view.sizeToFit()
             guard let p = renderer.camera.project(l.world, viewSize: bounds.size) else {
                 view.isHidden = true
@@ -1456,12 +1458,14 @@ final class ConstraintGlyphView: NSTextField {
     }
 }
 
-/// A small clickable value label for a sketch dimension (or, lighter, a measured size).
+/// A small clickable value label for a sketch dimension (an accent-outlined pill), or a measured size (plain grey text).
 final class DimensionLabelView: NSTextField {
     var onClick: (() -> Void)?
     /// The pointer went over the label (true) or left it.
     var onHover: ((Bool) -> Void)?
     var isReference = false { didSet { updateAppearance() } }
+    /// A sketch dimension, the only kind of label whose value can be edited.
+    var isDimension = false { didSet { updateAppearance() } }
     var isEditingHighlight = false { didSet { updateAppearance() } }
     /// See ConstraintGlyphView.dark: the colours are fixed, chosen for the viewport's light or dark look.
     var dark = false { didSet { updateAppearance() } }
@@ -1481,11 +1485,24 @@ final class DimensionLabelView: NSTextField {
             layer?.borderColor = NSColor.controlAccentColor.cgColor
             layer?.borderWidth = 1
         } else {
-            // Opaque enough to read over the grid and a tinted paper; a measured size is the quieter of the two.
-            backgroundColor = dark ? NSColor(white: 0.12, alpha: isReference ? 0.8 : 0.92) : NSColor(white: 1, alpha: isReference ? 0.8 : 0.92)
-            textColor = dark ? NSColor(white: isReference ? 0.78 : 1, alpha: 1) : NSColor(white: isReference ? 0.3 : 0, alpha: 1)
-            layer?.borderColor = (dark ? NSColor(white: 1, alpha: 0.25) : NSColor(white: 0, alpha: 0.25)).cgColor
-            layer?.borderWidth = 0.5
+            let base = dark ? NSColor(white: 0.12, alpha: 0.92) : NSColor(white: 1, alpha: 0.92)
+            if isReference {
+                // A measurement, not something to edit: plain grey text, no pill, no outline.
+                backgroundColor = dark ? NSColor(white: 0.12, alpha: 0.45) : NSColor(white: 1, alpha: 0.45)
+                textColor = NSColor(white: dark ? 0.72 : 0.38, alpha: 1)
+                layer?.borderWidth = 0
+            } else if isDimension {
+                // A dimension: a tinted pill with an accent outline, like a field. Opaque enough to read over the grid.
+                backgroundColor = base.blended(withFraction: 0.22, of: .controlAccentColor)
+                textColor = dark ? .white : .black
+                layer?.borderColor = NSColor.controlAccentColor.cgColor
+                layer?.borderWidth = 1
+            } else {
+                backgroundColor = base
+                textColor = dark ? .white : .black
+                layer?.borderColor = (dark ? NSColor(white: 1, alpha: 0.25) : NSColor(white: 0, alpha: 0.25)).cgColor
+                layer?.borderWidth = 0.5
+            }
         }
     }
 

@@ -11,6 +11,8 @@ struct DimensionLabel: Identifiable, Equatable {
     var world: SIMD3<Float>
     var text: String
     var editing: Bool
+    /// A sketch dimension: a value you can click and change (drawn as an outlined pill).
+    var isDimension = false
     /// A measured size that isn't a dimension yet (drawn lighter; a click makes it a dimension).
     var reference = false
     /// For a radius or diameter: which way is away from the curve, so the label can stand clear of it.
@@ -255,7 +257,7 @@ enum SketchOverlayBuilder {
             let isParametric = ((try? Expressions.parse(d.expression))?.references.isEmpty == false)
             return DimensionLabel(id: d.id, world: world(session.frame, anchor),
                                   text: prefix(d.kind) + (isParametric ? "\(d.expression) = \(value)" : value),
-                                  editing: session.editingDimension == d.id,
+                                  editing: session.editingDimension == d.id, isDimension: true,
                                   outward: s.dimensionLine(of: d) == nil ? outward(d.kind, session.frame) : nil)
         }
         // Every other line, circle and arc shows its measured size, lighter.

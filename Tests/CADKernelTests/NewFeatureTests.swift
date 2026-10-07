@@ -291,6 +291,36 @@ import Testing
     }
 }
 
+@Suite struct BracketProfileDemoTests {
+    @Test func theBracketProfileIsOneSolidThatFollowsItsParametersAndLeavesOneCornerFree() throws {
+        var doc = CADDocument.bracketProfileDemo()
+        let r = Regenerator.regenerate(doc)
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let body = try #require(r.body("bracket"))
+        #expect(body.isValid)
+        // Foot 50 × 6 and upright 6 × 54 above it, less the slanted top (a 6-wide wedge, 14 mm high at the back), 40 wide.
+        let area = 50.0 * 6 + 6 * 54 - 0.5 * 6 * 14
+        #expect(abs(body.volume - area * 40) < 1)
+        // The solver leaves one degree of freedom, the slant's low corner, and a drag moves only that.
+        guard case .sketch(let sf) = doc.features[0].kind else {
+            Issue.record("the first feature is not the sketch"); return
+        }
+        var sketch = sf.sketch
+        let values = Dictionary(uniqueKeysWithValues: sketch.dimensions.map { ($0.id, $0.expression == "foot_len" ? 50.0
+            : $0.expression == "wall_h" ? 60 : 6) })
+        #expect(SketchSolver.solve(&sketch, dimensionValues: values).degreesOfFreedom == 1)
+        let back = sketch.points[6].id
+        let drag = SketchSolver.solve(&sketch, dimensionValues: values, soft: [.point(back, [0, 30])])
+        #expect(drag.status == .solved)
+        #expect(abs(sketch.points[6].y - 30) < 1 && abs(sketch.points[6].x) < 1e-6)
+        #expect(abs(sketch.points[5].y - 60) < 1e-6)
+        // Editing a parameter rebuilds the part.
+        doc.parameters[0].expression = "70 mm"
+        let wider = try #require(Regenerator.regenerate(doc).body("bracket"))
+        #expect(abs(wider.volume - body.volume - 20 * 6 * 40) < 1)
+    }
+}
+
 @Suite struct ManifoldDemoTests {
     @Test func theManifoldExampleIsFiveColouredBodiesAndANestOfBolts() throws {
         let doc = CADDocument.manifoldDemo()
