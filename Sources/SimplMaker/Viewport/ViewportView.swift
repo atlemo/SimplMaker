@@ -1028,9 +1028,17 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         for h in handles {
             guard let field = handleFields[h.slot], let text = model.handleFieldText(for: h.slot) else { continue }
             field.toolTip = "\(h.label): type a size or an expression, then press Return · Tab for the next · Esc cancels"
-            if reset { handleFieldFeatures[h.slot] = (h.featureID, text); field.stringValue = text }
+            // Another feature took the field over (picked in the timeline, which leaves focus where it was):
+            // end editing first, which stores what was typed on the feature it was for, then show the new one's size.
+            let otherFeature = handleFieldFeatures[h.slot].map { $0.id != h.featureID } ?? false
+            if otherFeature, field.currentEditor() != nil {
+                handlePreviewTask?.cancel()
+                window?.makeFirstResponder(self)
+                if field.currentEditor() != nil { field.abortEditing() }
+            }
+            if reset || otherFeature { handleFieldFeatures[h.slot] = (h.featureID, text); field.stringValue = text }
             if field.currentEditor() == nil { field.stringValue = text }
-            if field.currentEditor() == nil || handleFieldFeatures[h.slot]?.id != h.featureID { handleFieldFeatures[h.slot] = (h.featureID, text) }
+            if field.currentEditor() == nil { handleFieldFeatures[h.slot] = (h.featureID, text) }
             field.textColor = model.previewInvalid && h.slot == model.activeHandleSlot ? .systemRed : .labelColor
             let tip = h.base + h.direction * h.value
             var anchor = renderer.camera.project(SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)), viewSize: bounds.size)
