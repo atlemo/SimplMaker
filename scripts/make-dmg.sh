@@ -71,6 +71,7 @@ if [ "$NOTARIZE" = 1 ]; then
   xcrun stapler validate "$DMG"
   spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
 fi
+SIZE="$(stat -f %z "$DMG")"  # stapling adds the ticket, so measure again
 echo "DMG ready: $DMG ($(( SIZE / 1000000 )) MB)"
 
 [ -n "$UPLOAD" ] || exit 0
