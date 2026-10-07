@@ -20,16 +20,18 @@ Your recent parts are listed on the right. Double-click one, or select it and pr
 
 To stop it appearing at launch, untick **Show this window when SimplMaker launches**, or turn it off in **Settings → General**. **Window → Welcome to SimplMaker** ([[⇧⌘1]]) brings it back.
 
-## The tutorial: a phone stand
+## The tutorial: a desk organizer
 
-A guided tutorial of about five minutes. A card at the bottom of the view walks you through making a phone stand you can print:
+A guided tutorial of about ten minutes. A card at the bottom of the view walks you through making a desk organizer you can print:
 
 - five named parameters
-- a sketch and an extrusion for the base
-- a construction plane that leans by an angle, with a second sketch and extrusion on it for the backrest
-- changing `width` at the end, to turn the phone stand into a tablet stand
+- a sketch and an extrusion for the floor
+- a second sketch on top of the floor: its outline, traced from the floor's corners, and a guide drawn one wall thickness inside it
+- three sections hung from the guide's corners, sized with typed expressions such as `(width - 3 * wall) / 2`, and one **Equal** constraint that keeps the two back sections the same depth
+- an extrusion that raises the walls
+- changing `width` and `depth` at the end, to watch the walls and every section follow
 
-The card follows what you actually do. It moves on when the part shows a step is done, steps back if you undo it, and tells you when something is off, such as a rectangle drawn with plain numbers instead of parameters, or a backrest that isn't joined to the base.
+The card follows what you actually do. It moves on when the part shows a step is done, steps back if you undo it, and tells you when something is off, such as a rectangle drawn with plain numbers instead of parameters, an inset that went outwards, or a section filled in instead of the wall.
 
 - The **‹** button goes back a step and undoes what you did in it.
 - **Do it for me** performs the current step the way the interface would, so you can see how.

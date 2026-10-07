@@ -15,7 +15,7 @@ enum Preferences {
     static let gridSizeUS = "gridSizeUS"
     static let sketchPaper = "sketchPaper"
     static let antialiasing = "antialiasing"
-    /// The guided first part (the phone stand) has been finished.
+    /// The guided first part (the desk organizer) has been finished.
     static let tutorialCompleted = "tutorialCompleted"
 
     /// The tools pinned to a toolbar group (see ToolGroups.swift), by the group's id.

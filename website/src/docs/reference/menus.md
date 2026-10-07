@@ -72,7 +72,7 @@ Standard window commands, plus **Welcome to SimplMaker** ([[⇧⌘1]]), and the 
 
 ## Help
 
-**Tutorial: Make a Phone Stand**, or **Resume Tutorial** if you closed it.
+**Tutorial: Make a Desk Organizer**, or **Resume Tutorial** if you closed it.
 
 ---
 

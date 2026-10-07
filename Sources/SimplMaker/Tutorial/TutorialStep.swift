@@ -19,13 +19,13 @@ struct TutorialHint: Equatable {
 @MainActor
 struct TutorialStep: Identifiable {
     enum Chapter: Int, CaseIterable {
-        case start, base, backrest, change
+        case start, floor, walls, change
 
         var title: String {
             switch self {
             case .start: return "Get started"
-            case .base: return "The base"
-            case .backrest: return "The backrest"
+            case .floor: return "The floor"
+            case .walls: return "The walls and sections"
             case .change: return "Make it yours"
             }
         }

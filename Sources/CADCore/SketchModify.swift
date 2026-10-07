@@ -544,6 +544,9 @@ extension Sketch {
                 let nid = addLine(a, b)
                 constrain(.parallel(item.id, nid))
                 dimension(.pointLineDistance(point: a, line: item.id), expression)
+                // The dimension is drawn from the new line's start, which is a corner: its label would sit on the
+                // corner, over the very place where the next shape is started. Slide it to the middle of the edge.
+                if let ends = lineEnds(item.id) { dimensions[dimensions.count - 1].offset = vlen(ends.1 - ends.0) / 2 }
                 created.append(nid)
             case .arc(let center, _, _):
                 let nid = addArc(center: center, start: a, end: b)

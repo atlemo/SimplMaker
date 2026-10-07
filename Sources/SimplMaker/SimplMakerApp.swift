@@ -96,7 +96,7 @@ struct SimplMakerCommands: Commands {
             }
         }
         CommandGroup(replacing: .help) {
-            Button(guide?.canResume == true ? "Resume Tutorial: Phone Stand" : "Tutorial: Make a Phone Stand") { startTutorial() }
+            Button(guide?.canResume == true ? "Resume Tutorial: Desk Organizer" : "Tutorial: Make a Desk Organizer") { startTutorial() }
         }
         CommandGroup(before: .saveItem) {
             Menu("Open Example Parts") {

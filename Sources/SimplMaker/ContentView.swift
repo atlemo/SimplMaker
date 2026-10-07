@@ -331,7 +331,7 @@ struct StartCard: View {
                 Button { model.run(.cylinder) } label: { Label("Cylinder", systemImage: "cylinder") }
             }
             .controlSize(.large)
-            Button { guide.start() } label: { Label("New to CAD? Follow the tutorial: a phone stand", systemImage: "graduationcap") }
+            Button { guide.start() } label: { Label("New to CAD? Follow the tutorial: a desk organizer", systemImage: "graduationcap") }
                 .buttonStyle(.link)
                 .padding(.top, DS.Spacing.space5)  // a bigger gap below the three buttons
             Text("Right-click in the view for more · File › Open Example Parts to learn from")
@@ -1220,6 +1220,7 @@ struct SketchToolbar: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(!session.canApply(c))
+                .tutorialSpot(c.rawValue)
             }
         }
         .padding(DS.Spacing.space5)
