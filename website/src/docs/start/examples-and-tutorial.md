@@ -1,6 +1,6 @@
 ---
 title: Examples and the tutorial
-description: The welcome window, the guided tutorial, and three example parts to learn from.
+description: The welcome window, the guided tutorial, and four example parts to learn from.
 ---
 
 ## The welcome window
@@ -42,9 +42,10 @@ What to use next pulses gently in the toolbar.
 
 ## Example parts
 
-**File → Open Example Parts** has three parts to open and take apart:
+**File → Open Example Parts** has four parts to open and take apart:
 
 - **Plate with Holes, Fillets and a Chamfer**: a plate with a pin hole cut from a sketch on its top face, two filleted corners and a chamfered edge.
+- **Bracket Profile (try the sketch solver)**: an L-bracket drawn as one closed sketch, every size tied to a parameter. One corner of the slanted top is left free, so you can drag it and watch the solver hold everything else in place.
 - **Bracket with Ribs**: an L-bracket braced by two ribs, each grown from a sketched line.
 - **Flanged Pipe on a Manifold**: an advanced five-body assembly: a manifold block, an O-ring, a flange, a pipe swept along a curved path and four threaded bolts, each body in its own colour.
 
