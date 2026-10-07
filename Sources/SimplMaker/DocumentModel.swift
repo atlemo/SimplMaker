@@ -351,6 +351,14 @@ final class DocumentModel {
         }
     }
 
+    /// Shows a parameter's new expression while its name is dragged, without an undo step.
+    func previewParameter(_ name: String, expression: String) {
+        var doc = document
+        guard let i = doc.parameters.firstIndex(where: { $0.name == name }) else { return }
+        doc.parameters[i].expression = expression
+        regenerate(preview: doc)
+    }
+
     /// Makes a parameter a length, an angle or a plain number. A plain value ("10 mm") moves to
     /// the new unit ("10 deg", "10"); an expression stays as it is.
     func setParameterUnit(_ name: String, _ unit: UnitKind) {

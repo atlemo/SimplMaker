@@ -905,6 +905,50 @@ struct ParameterRow: View {
     @Binding var renaming: Bool
     /// Why the last rename was refused (a taken or invalid name).
     @State private var renameError: String?
+    /// The drag on the name that is changing the value: nil when none is going on.
+    @State private var scrub: Scrub?
+
+    /// A value being dragged, in the units shown (mm, degrees, or a plain number).
+    struct Scrub {
+        var value: Double
+        var unit: UnitKind
+        /// What the value snaps to when shown, set by the modifier keys held at the last move.
+        var grid = 0.1
+
+        /// Units per point dragged, and the grid the value snaps to, for the modifier keys held:
+        /// Shift is coarse, Option is fine.
+        static func step(unit: UnitKind, _ flags: NSEvent.ModifierFlags) -> Double {
+            let base = unit == .angle ? 0.5 : 0.1
+            return flags.contains(.shift) ? base * 10 : flags.contains(.option) ? base / 10 : base
+        }
+
+        var expression: String {
+            // Snapped, so a drag gives 12.3 mm and not 12.3456.
+            let rounded = ((value / grid).rounded() * grid * 1e6).rounded() / 1e6
+            return formatDimension(unit == .angle ? rounded * .pi / 180 : rounded, kind: unit)
+        }
+    }
+
+    private func beginScrub() {
+        let q = model.result?.parameters.values[parameter.name]?.value ?? 0
+        scrub = Scrub(value: parameter.unit == .angle ? q * 180 / .pi : q, unit: parameter.unit)
+    }
+
+    private func moveScrub(by dx: CGFloat, _ flags: NSEvent.ModifierFlags) {
+        guard var s = scrub else { return }
+        let step = Scrub.step(unit: s.unit, flags)
+        s.value += Double(dx) * step
+        s.grid = step
+        scrub = s
+        model.previewParameter(parameter.name, expression: s.expression)
+    }
+
+    private func endScrub() {
+        guard let s = scrub else { return }
+        scrub = nil
+        if s.expression == parameter.expression { model.regenerate() }  // drop the preview
+        else { model.setParameter(parameter.name, expression: s.expression) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -917,8 +961,13 @@ struct ParameterRow: View {
                     .font(.body.monospaced())
                 } else {
                     Text(parameter.name).font(.body.monospaced())
-                        .onTapGesture(count: 2) { renameError = nil; renaming = true }
-                        .help("Double-click to rename; every expression that uses it follows")
+                        .overlay(ScrubHandle(
+                            began: beginScrub,
+                            moved: { dx, flags in moveScrub(by: dx, flags) },
+                            ended: endScrub,
+                            doubleClicked: { renameError = nil; renaming = true }))
+                        .scrubCursor(active: scrub != nil)
+                        .help("Drag left or right to change the value (Shift: coarse, Option: fine); double-click to rename, and every expression that uses it follows")
                 }
                 Spacer()
                 if let error = model.result?.parameters.errors[parameter.name] {
@@ -947,7 +996,7 @@ struct ParameterRow: View {
             if let renameError {
                 Text(renameError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
-            ExpressionField(text: parameter.expression, excluding: parameter.name, inSelectableRow: true) { model.setParameter(parameter.name, expression: $0) }
+            ExpressionField(text: scrub?.expression ?? parameter.expression, excluding: parameter.name, inSelectableRow: true) { model.setParameter(parameter.name, expression: $0) }
             let users = model.document.features(using: parameter.name).map(\.name)
             Text(users.isEmpty ? "Not used yet · type \(parameter.name) in any size field" : "Used by \(users.joined(separator: ", "))")
                 .font(.caption)
@@ -956,6 +1005,85 @@ struct ParameterRow: View {
         }
         .padding(.vertical, DS.Spacing.space2)
         .onChange(of: renaming) { if renaming { renameError = nil } }
+    }
+}
+
+extension View {
+    /// The left-right arrow cursor over a title that can be dragged to change a value, held for as
+    /// long as the drag lasts even if the pointer leaves the title.
+    func scrubCursor(active: Bool) -> some View { modifier(ScrubCursor(active: active)) }
+}
+
+private struct ScrubCursor: ViewModifier {
+    let active: Bool
+    @State private var hovering = false
+    @State private var pushed = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering = $0; update() }
+            .onChange(of: active) { update() }
+            .onDisappear { hovering = false; update(forcing: false) }
+    }
+
+    private func update(forcing want: Bool? = nil) {
+        let want = want ?? (hovering || active)
+        if want, !pushed { NSCursor.resizeLeftRight.push(); pushed = true }
+        else if !want, pushed { NSCursor.pop(); pushed = false }
+    }
+}
+
+/// Sits over a title that can be dragged to change a value. It takes the mouse itself, because a
+/// list row's own tracking swallows drags that start in SwiftUI content.
+private struct ScrubHandle: NSViewRepresentable {
+    let began: () -> Void
+    /// Points moved since the last call, with the modifier keys held.
+    let moved: (CGFloat, NSEvent.ModifierFlags) -> Void
+    let ended: () -> Void
+    let doubleClicked: () -> Void
+
+    func makeNSView(context: Context) -> HandleView { HandleView() }
+
+    func updateNSView(_ view: HandleView, context: Context) {
+        view.began = began; view.moved = moved; view.ended = ended; view.doubleClicked = doubleClicked
+    }
+
+    final class HandleView: NSView {
+        var began: () -> Void = {}
+        var moved: (CGFloat, NSEvent.ModifierFlags) -> Void = { _, _ in }
+        var ended: () -> Void = {}
+        var doubleClicked: () -> Void = {}
+        private var startX: CGFloat = 0
+        private var lastX: CGFloat = 0
+        private var dragging = false
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            startX = event.locationInWindow.x
+            lastX = startX
+            dragging = false
+            if event.clickCount == 2 { doubleClicked() }
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            let x = event.locationInWindow.x
+            if !dragging {
+                guard abs(x - startX) >= 3 else { return }  // a click, not a drag
+                dragging = true
+                lastX = startX
+                began()
+            }
+            NSCursor.resizeLeftRight.set()
+            moved(x - lastX, event.modifierFlags)
+            lastX = x
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            guard dragging else { return }
+            dragging = false
+            ended()
+        }
     }
 }
 
