@@ -215,6 +215,16 @@ struct TutorialFacts {
             }
         }
 
+        /// Whether a dimension is on one of the box's upright sides: its depth is then fixed by a number, so an Equal
+        /// constraint to another box can't set it.
+        func depthIsDimensioned(_ box: Box) -> Bool {
+            let sides = [side(of: box, right: false), side(of: box, right: true)].compactMap { $0 }
+            return solved.dimensions.contains { d in
+                if case .length(let line) = d.kind { return sides.contains(line) }
+                return false
+            }
+        }
+
         // MARK: how well each part is made
 
         /// How far a part is along: not there, or there but not following the parameters, or done.

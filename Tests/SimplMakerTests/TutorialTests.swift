@@ -465,6 +465,51 @@ import simd
         #expect(TutorialFacts(model2).walls?.backRight == .good && guide2.current(in: model2)?.id == "finish-walls")
     }
 
+    @Test func aRightSectionWithItsOwnDepthIsCalledOutAndRedrawn() async throws {
+        let model = DocumentModel()
+        await settle(model)
+        let guide = TutorialGuide(active: true)
+        await run(guide, model, until: "back-right")
+        let layout = try #require(TutorialFacts(model).layout)
+        // Typed the depth as well, as pressing Tab then Return does.
+        await TutorialActions.drawSection(replacing: layout.backRight, from: layout.guide.max, toward: SIMD2(-12, -10),
+                                          width: "(width - 3 * wall) / 2", height: "19", model)
+        await settle(model)
+        let step = try #require(guide.current(in: model))
+        #expect(step.id == "equal")
+        let session = try #require(model.sketchSession)
+        let walls = try #require(TutorialFacts(model).walls)
+        let drawn = try #require(walls.backRightDrawn)
+        #expect(walls.depthIsDimensioned(drawn))
+        #expect(step.hint(model)?.isProblem == true)
+
+        await guide.assist(step, in: model)
+        await settle(model)
+        #expect(TutorialFacts(model).walls?.backRight == .good && guide.current(in: model)?.id == "finish-walls")
+        _ = session
+    }
+
+    @Test func theEqualStepStartsWithNothingSelectedAndSaysWhenThereIsTooMuch() async throws {
+        let model = DocumentModel()
+        await settle(model)
+        let guide = TutorialGuide(active: true)
+        await run(guide, model, until: "back-right")
+        await guide.assist(try #require(guide.current(in: model)), in: model)
+        await settle(model)
+        let step = try #require(guide.current(in: model))
+        let session = try #require(model.sketchSession)
+        let walls = try #require(TutorialFacts(model).walls)
+        let left = try #require(walls.match(walls.layout.backLeft, in: walls.solid)), right = try #require(walls.backRightDrawn)
+        let a = try #require(walls.side(of: left, right: true)), b = try #require(walls.side(of: right, right: false))
+        // The guide's four lines were left selected by the Construction step.
+        session.selection = try #require(walls.guideBox).lines
+        step.enter?(model)
+        #expect(session.selection.isEmpty)
+        session.selection = try #require(walls.guideBox).lines + [a, b]
+        #expect(step.hint(model)?.text.contains("Other things are selected") == true)
+        #expect(step.spotlight(model).isEmpty)
+    }
+
     @Test func fillingASectionInsteadOfTheWallIsCalledOutAndReplaced() async throws {
         let model = DocumentModel()
         await settle(model)

@@ -288,6 +288,9 @@ enum TutorialScript {
             default:
                 break
             }
+            if walls.depthIsDimensioned(right) {
+                return .problem("The right section's depth was fixed by a number, so Equal can't set it. Press ⌘Z until the right section is gone, then draw it again and type only its width. **Do it for me** draws it again.")
+            }
             if walls.areEqual(left, right) {
                 return .problem("Those two edges are equal, but not the pair that makes the sections the same depth. Press ⌘Z and pick the two edges that face each other.")
             }
@@ -299,6 +302,9 @@ enum TutorialScript {
             let picked = Set(session.selection)
             if let a, let b, picked == [a, b] { return .next("Click **Constrain** in the toolbar, then **Equal**.") }
             if let a, let b, picked == [a] || picked == [b] { return .next("Now ⇧-click the \(picked == [a] ? "left edge of the right" : "right edge of the left") section.") }
+            if picked.count > 2 || (!picked.isEmpty && !picked.isSubset(of: Set([a, b].compactMap { $0 }))) {
+                return .next("Other things are selected too. Click an empty spot to deselect everything, then click the right edge of the left section and ⇧-click the left edge of the right section.")
+            }
             return session.tool == .select
                 ? .next("Click the right edge of the left section, then ⇧-click the left edge of the right section.")
                 : .next("Choose **Select**\(selectKey), click the right edge of the left section, then ⇧-click the left edge of the right section.")
@@ -311,7 +317,11 @@ enum TutorialScript {
                   Set(session.selection) == [a, b] else { return [] }
             return ["Constrain", "Equal"]
         },
-        enter: { $0.setSketchTool(.select) },
+        // What the step before left selected (the guide's lines) would be selected along with the two edges.
+        enter: { model in
+            model.setSketchTool(.select)
+            if let session = wallSession(model) { session.selection = [] }
+        },
         assist: { await TutorialActions.equalSections($0) })
 
     static let finishWalls = TutorialStep(

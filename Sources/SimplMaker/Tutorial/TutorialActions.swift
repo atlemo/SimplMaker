@@ -201,9 +201,12 @@ enum TutorialActions {
     /// The right section made as deep as the left one: Equal on the two sides that face each other.
     static func equalSections(_ model: DocumentModel) async {
         // A right section that isn't sized by the parameters is drawn again first.
-        switch TutorialFacts(model).walls?.backRight {
+        let walls = TutorialFacts(model).walls
+        switch walls?.backRight {
         case .plainNumbers?, .missingParameters?: await backRightSection(model)
-        default: break
+        default:
+            // So is one whose depth a number fixes: Equal couldn't change it.
+            if let drawn = walls?.backRightDrawn, walls?.depthIsDimensioned(drawn) == true { await backRightSection(model) }
         }
         guard let session = await openWallSketch(model), let walls = TutorialFacts(model).walls,
               let left = walls.match(walls.layout.backLeft, in: walls.solid),
