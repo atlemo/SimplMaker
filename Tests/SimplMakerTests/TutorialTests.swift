@@ -56,9 +56,9 @@ import simd
 
     // MARK: the script
 
-    @Test func scriptHasNineteenWellFormedSteps() {
+    @Test func scriptHasEighteenWellFormedSteps() {
         let steps = TutorialScript.steps
-        #expect(steps.count == 19)
+        #expect(steps.count == 18)
         #expect(Set(steps.map(\.id)).count == steps.count, "ids are unique")
         #expect(steps.map(\.chapter.rawValue) == steps.map(\.chapter.rawValue).sorted(), "chapters run in order")
         for step in steps where step.isTask { #expect(step.assist != nil, "\(step.id) can't be done for the user") }
@@ -119,7 +119,6 @@ import simd
         let walls2 = try #require(facts.walls)
         #expect(walls2.outline == .good && walls2.frontSection == .good && walls2.backLeft == .good && walls2.backRight == .good)
         #expect(walls2.guide == .construction)
-        #expect(walls2.solved.constraints.contains { if case .equal = $0.kind { true } else { false } }, "the sections are tied by Equal")
     }
 
     @Test func theUsersOwnWorkIsEnoughAndStepsTakeTheFirstUndoneOne() async throws {
@@ -413,101 +412,34 @@ import simd
         #expect(guide.current(in: model)?.id == "back-right")
     }
 
-    @Test func theRightSectionTakesItsWidthFromTheParametersAndItsDepthFromEqual() async throws {
+    @Test func theRightSectionIsSizedByTheSameParametersAsTheLeftOne() async throws {
         let model = DocumentModel()
         await settle(model)
         let guide = TutorialGuide(active: true)
         await run(guide, model, until: "back-right")
-        await guide.assist(try #require(guide.current(in: model)), in: model)
+        let step = try #require(guide.current(in: model))
+        #expect(step.id == "back-right")
+        await guide.assist(step, in: model)
         await settle(model)
 
-        // Drawn: the right width, hanging from the back-right corner, but not as deep as the left one yet.
         let walls = try #require(TutorialFacts(model).walls)
-        let drawn = try #require(walls.backRightDrawn)
-        #expect(abs(drawn.depth - 10) < 0.05, "the depth is where the mouse was: \(drawn.depth)")
-        #expect(walls.backRight != .good)
-        var step = try #require(guide.current(in: model))
-        #expect(step.id == "equal")
-
-        // The two edges that face each other, selected: the card asks for Constrain ▸ Equal and points at it.
         let left = try #require(walls.match(walls.layout.backLeft, in: walls.solid))
-        let a = try #require(walls.side(of: left, right: true)), b = try #require(walls.side(of: drawn, right: false))
-        let session = try #require(model.sketchSession)
-        model.setSketchTool(.select)
-        session.selection = [a, b]
-        #expect(step.hint(model)?.text.contains("Equal") == true && step.spotlight(model) == ["Constrain", "Equal"])
-        model.sketchCommand { $0.apply(.equal) }
-        await settle(model)
-        step = try #require(guide.current(in: model))
-        #expect(step.id == "finish-walls")
-        #expect(TutorialFacts(model).walls?.backRight == .good)
+        let right = try #require(walls.match(walls.layout.backRight, in: walls.solid))
+        #expect(abs(left.depth - right.depth) < 1e-6 && abs(left.width - right.width) < 1e-6)
+        #expect(walls.backRight == .good)
+        #expect(guide.current(in: model)?.id == "finish-walls")
 
-        // Equal on the wrong pair (the two bottoms) doesn't make them the same depth: a different run.
-        let model2 = DocumentModel()
-        await settle(model2)
-        let guide2 = TutorialGuide(active: true)
-        await run(guide2, model2, until: "back-right")
-        await guide2.assist(try #require(guide2.current(in: model2)), in: model2)
-        await settle(model2)
-        let w2 = try #require(TutorialFacts(model2).walls)
-        let l2 = try #require(w2.match(w2.layout.backLeft, in: w2.solid)), r2 = try #require(w2.backRightDrawn)
-        let bottom: (TutorialFacts.Box) -> EntityID? = { box in
-            box.lines.first { id in w2.solved.lineEnds(id).map { abs($0.0.y - $0.1.y) < 1e-6 && abs($0.0.y - box.min.y) < 1e-6 } ?? false }
-        }
-        let session2 = try #require(model2.sketchSession)
-        session2.selection = [try #require(bottom(l2)), try #require(bottom(r2))]
-        model2.sketchCommand { $0.apply(.equal) }
-        await settle(model2)
-        let step2 = try #require(guide2.current(in: model2))
-        #expect(step2.id == "equal" && step2.hint(model2)?.isProblem == true)
-        await guide2.assist(step2, in: model2)
-        await settle(model2)
-        #expect(TutorialFacts(model2).walls?.backRight == .good && guide2.current(in: model2)?.id == "finish-walls")
-    }
-
-    @Test func aRightSectionWithItsOwnDepthIsCalledOutAndRedrawn() async throws {
-        let model = DocumentModel()
-        await settle(model)
-        let guide = TutorialGuide(active: true)
-        await run(guide, model, until: "back-right")
+        // A depth typed as a plain number leaves the section the wrong depth: it is called out and drawn again.
         let layout = try #require(TutorialFacts(model).layout)
-        // Typed the depth as well, as pressing Tab then Return does.
         await TutorialActions.drawSection(replacing: layout.backRight, from: layout.guide.max, toward: SIMD2(-12, -10),
                                           width: "(width - 3 * wall) / 2", height: "19", model)
         await settle(model)
-        let step = try #require(guide.current(in: model))
-        #expect(step.id == "equal")
-        let session = try #require(model.sketchSession)
-        let walls = try #require(TutorialFacts(model).walls)
-        let drawn = try #require(walls.backRightDrawn)
-        #expect(walls.depthIsDimensioned(drawn))
-        #expect(step.hint(model)?.isProblem == true)
-
-        await guide.assist(step, in: model)
+        #expect(TutorialFacts(model).walls?.backRight != .good)
+        let again = try #require(guide.current(in: model))
+        #expect(again.id == "back-right" && again.hint(model)?.isProblem == true)
+        await guide.assist(again, in: model)
         await settle(model)
         #expect(TutorialFacts(model).walls?.backRight == .good && guide.current(in: model)?.id == "finish-walls")
-        _ = session
-    }
-
-    @Test func theEqualStepStartsWithNothingSelectedAndSaysWhenThereIsTooMuch() async throws {
-        let model = DocumentModel()
-        await settle(model)
-        let guide = TutorialGuide(active: true)
-        await run(guide, model, until: "back-right")
-        await guide.assist(try #require(guide.current(in: model)), in: model)
-        await settle(model)
-        let step = try #require(guide.current(in: model))
-        let session = try #require(model.sketchSession)
-        let walls = try #require(TutorialFacts(model).walls)
-        let left = try #require(walls.match(walls.layout.backLeft, in: walls.solid)), right = try #require(walls.backRightDrawn)
-        let a = try #require(walls.side(of: left, right: true)), b = try #require(walls.side(of: right, right: false))
-        // The guide's four lines were left selected by the Construction step.
-        session.selection = try #require(walls.guideBox).lines
-        step.enter?(model)
-        #expect(session.selection.isEmpty)
-        session.selection = try #require(walls.guideBox).lines + [a, b]
-        #expect(step.hint(model)?.text.contains("Other things are selected") == true)
-        #expect(step.spotlight(model).isEmpty)
     }
 
     @Test func fillingASectionInsteadOfTheWallIsCalledOutAndReplaced() async throws {

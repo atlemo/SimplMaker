@@ -192,37 +192,10 @@ struct TutorialFacts {
             return names
         }
 
-        /// Whether an Equal constraint ties a line of one box to a line of the other.
-        func areEqual(_ a: Box, _ b: Box) -> Bool {
-            solved.constraints.contains { c in
-                guard case .equal(let x, let y) = c.kind else { return false }
-                return (a.lines.contains(x) && b.lines.contains(y)) || (a.lines.contains(y) && b.lines.contains(x))
-            }
-        }
-
         /// Whether a corner of the box is a corner of the floor, which the sketch then follows.
         func followsFloor(_ box: Box) -> Bool {
             let projected = Set(solved.projections.flatMap { [$0.start, $0.end] }.map(roots))
             return box.points.contains { projected.contains(roots($0)) }
-        }
-
-        /// The vertical edge of a box on its left or right side.
-        func side(of box: Box, right: Bool) -> EntityID? {
-            let x = right ? box.max.x : box.min.x
-            return box.lines.first { id in
-                guard let ends = solved.lineEnds(id) else { return false }
-                return abs(ends.0.x - ends.1.x) < Self.tolerance && abs(ends.0.x - x) < Self.tolerance
-            }
-        }
-
-        /// Whether a dimension is on one of the box's upright sides: its depth is then fixed by a number, so an Equal
-        /// constraint to another box can't set it.
-        func depthIsDimensioned(_ box: Box) -> Bool {
-            let sides = [side(of: box, right: false), side(of: box, right: true)].compactMap { $0 }
-            return solved.dimensions.contains { d in
-                if case .length(let line) = d.kind { return sides.contains(line) }
-                return false
-            }
         }
 
         // MARK: how well each part is made
@@ -237,15 +210,12 @@ struct TutorialFacts {
             case good
         }
 
-        /// `own` are parameters that the box's own dimensions must use; the rest of `names` may also come through an Equal
-        /// constraint to the `other` box (equal sides share their size).
-        private func status(_ box: Box?, needing names: [String], own: [String] = [], tiedTo other: Box? = nil) -> Status {
+        /// How far along a box is, given the parameters its dimensions must use.
+        private func status(_ box: Box?, needing names: [String]) -> Status {
             guard let box else { return .missing }
             let used = parameters(of: box)
-            var usedAll = used
-            if let other, areEqual(box, other) { usedAll.formUnion(parameters(of: other)) }
-            guard !usedAll.isEmpty else { return .plainNumbers }
-            let missing = own.filter { !used.contains($0) } + names.filter { !usedAll.contains($0) && !own.contains($0) }
+            guard !used.isEmpty else { return .plainNumbers }
+            let missing = names.filter { !used.contains($0) }
             return missing.isEmpty ? .good : .missingParameters(missing)
         }
 
@@ -258,15 +228,7 @@ struct TutorialFacts {
         var frontSection: Status { status(match(layout.frontSection, in: solid), needing: ["width", "front"]) }
         var backLeft: Status { status(match(layout.backLeft, in: solid), needing: ["width", "depth", "front"]) }
 
-        /// The right section hangs from the back-right corner of the guide with the right width: its depth is
-        /// still whatever the mouse made it until the Equal constraint comes.
-        var backRightDrawn: Box? {
-            solid.first { near($0.max, layout.backRight.max) && abs($0.width - layout.sectionWidth) < Self.tolerance && $0.depth > Self.tolerance }
-        }
-
-        var backRight: Status {
-            status(match(layout.backRight, in: solid), needing: ["depth", "front"], own: ["width"], tiedTo: match(layout.backLeft, in: solid))
-        }
+        var backRight: Status { status(match(layout.backRight, in: solid), needing: ["width", "depth", "front"]) }
 
         // MARK: the guide
 
@@ -303,10 +265,7 @@ struct TutorialFacts {
         /// Rectangles that aren't the outline, the guide or a section: something drawn in the wrong place.
         var strays: [Box] {
             let expected = [layout.outline, layout.guide, layout.outsideGuide, layout.frontSection, layout.backLeft, layout.backRight]
-            return solid.filter { box in
-                if expected.contains(where: { near(box.min, $0.min) && near(box.max, $0.max) }) { return false }
-                return backRightDrawn.map { $0.lines != box.lines } ?? true
-            }
+            return solid.filter { box in !expected.contains { near(box.min, $0.min) && near(box.max, $0.max) } }
         }
     }
 

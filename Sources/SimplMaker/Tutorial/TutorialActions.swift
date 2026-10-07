@@ -190,32 +190,10 @@ enum TutorialActions {
                           width: "(width - 3 * wall) / 2", height: "depth - 3 * wall - front", model)
     }
 
-    /// The right section, its width typed and its depth left to the mouse: the Equal constraint sets that.
     static func backRightSection(_ model: DocumentModel) async {
         guard let layout = TutorialFacts(model).layout else { return }
-        let drawn = TutorialFacts(model).walls?.backRightDrawn
-        await drawSection(replacing: drawn.map { ($0.min, $0.max) } ?? layout.backRight, from: layout.guide.max, toward: SIMD2(-12, -10),
-                          width: "(width - 3 * wall) / 2", height: nil, model)
-    }
-
-    /// The right section made as deep as the left one: Equal on the two sides that face each other.
-    static func equalSections(_ model: DocumentModel) async {
-        // A right section that isn't sized by the parameters is drawn again first.
-        let walls = TutorialFacts(model).walls
-        switch walls?.backRight {
-        case .plainNumbers?, .missingParameters?: await backRightSection(model)
-        default:
-            // So is one whose depth a number fixes: Equal couldn't change it.
-            if let drawn = walls?.backRightDrawn, walls?.depthIsDimensioned(drawn) == true { await backRightSection(model) }
-        }
-        guard let session = await openWallSketch(model), let walls = TutorialFacts(model).walls,
-              let left = walls.match(walls.layout.backLeft, in: walls.solid),
-              let right = walls.backRightDrawn ?? walls.match(walls.layout.backRight, in: walls.solid),
-              let a = walls.side(of: left, right: true), let b = walls.side(of: right, right: false) else { return }
-        model.setSketchTool(.select)
-        session.selection = [a, b]
-        model.sketchCommand { $0.apply(.equal) }
-        await settle(model)
+        await drawSection(replacing: layout.backRight, from: layout.guide.max, toward: SIMD2(-12, -10),
+                          width: "(width - 3 * wall) / 2", height: "depth - 3 * wall - front", model)
     }
 
     // MARK: picking things the way a click would

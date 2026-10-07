@@ -1,8 +1,8 @@
-// The tutorial: a desk organizer, in 19 steps.
+// The tutorial: a desk organizer, in 18 steps.
 //
 // A few named numbers (width, depth, height, wall, front) drive a sketch and an extrude for the floor. A second
 // sketch on top of the floor traces its outline, insets it by the wall thickness as a guide, and hangs three
-// sections from the guide's corners with sizes typed as expressions and one Equal constraint. Extruding the thin
+// sections from the guide's corners with sizes typed as expressions. Extruding the thin
 // wall that is left raises the walls. The last step changes `width` and `depth` and watches everything follow.
 // Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
@@ -18,7 +18,7 @@ enum TutorialScript {
     static let steps: [TutorialStep] = [
         welcome, look, parameters,
         sketchPlane, baseRectangle, finishBase, extrudeBase,
-        wallSketch, outline, inset, guide, frontSection, backLeft, backRight, equal, finishWalls, extrudeWalls,
+        wallSketch, outline, inset, guide, frontSection, backLeft, backRight, finishWalls, extrudeWalls,
         change, done,
     ]
 
@@ -261,68 +261,14 @@ enum TutorialScript {
     static let backRight = TutorialStep(
         id: "back-right", chapter: .walls,
         title: "The right section",
-        text: "Click the **top-right corner** of the dashed square and move the mouse **down and to the left**. Press **Tab**, type `(width - 3 * wall) / 2` and press **Return**. Its depth comes from where the mouse was: the next step makes it match the left section.",
-        kind: .task(done: { model in TutorialFacts(model).walls?.backRightDrawn != nil }),
+        text: "Click the **top-right corner** of the dashed square and move the mouse **down and to the left**. Press **Tab**, type `(width - 3 * wall) / 2`, press **Tab**, type `depth - 3 * wall - front` and press **Return**. The same sizes as the left section, so the two stay equally deep whatever you do to the parameters.",
+        kind: .task(done: { model in TutorialFacts(model).walls?.backRight == .good }),
         hint: { model in
             sectionHint(model, name: "right section", corner: "top-right corner", direction: "down and to the left",
-                        typing: "press **Tab**, type `(width - 3 * wall) / 2`, then press **Return**.") { walls in
-                walls.backRightDrawn != nil ? .good : .missing
-            }
+                        typing: "press **Tab**, type `(width - 3 * wall) / 2`, press **Tab**, type `depth - 3 * wall - front`, then press **Return**.") { $0.backRight }
         },
         enter: { $0.setSketchTool(.rectangle) },
         assist: { await TutorialActions.backRightSection($0) })
-
-    static let equal = TutorialStep(
-        id: "equal", chapter: .walls,
-        title: "Make them the same depth",
-        text: "Click the right edge of the left section, then ⇧-click the left edge of the right section. Click **Constrain**, then **Equal**. A *constraint* is a rule the sketch keeps: the two sections stay equally deep, whatever you do to the parameters.",
-        kind: .task(done: { model in TutorialFacts(model).walls?.backRight == .good }),
-        hint: { model in
-            guard let session = wallSession(model) else { return reopenOrNil(model) }
-            guard let walls = TutorialFacts(model).walls,
-                  let left = walls.match(walls.layout.backLeft, in: walls.solid),
-                  let right = walls.backRightDrawn ?? walls.match(walls.layout.backRight, in: walls.solid) else { return nil }
-            switch walls.backRight {
-            case .plainNumbers, .missingParameters:
-                return .problem("The right section isn't sized by the parameters. Press ⌘Z until it is gone, then draw it again as shown.")
-            default:
-                break
-            }
-            if walls.depthIsDimensioned(right) {
-                return .problem("The right section's depth was fixed by a number, so Equal can't set it. Press ⌘Z until the right section is gone, then draw it again and type only its width. **Do it for me** draws it again.")
-            }
-            if walls.areEqual(left, right) {
-                return .problem("Those two edges are equal, but not the pair that makes the sections the same depth. Press ⌘Z and pick the two edges that face each other.")
-            }
-            // The sketch said why it wouldn't take the constraint: pass that on.
-            if let message = session.message, message.contains("Equal") {
-                return .problem("\(message). **Do it for me** adds it for you.")
-            }
-            let a = walls.side(of: left, right: true), b = walls.side(of: right, right: false)
-            let picked = Set(session.selection)
-            if let a, let b, picked == [a, b] { return .next("Click **Constrain** in the toolbar, then **Equal**.") }
-            if let a, let b, picked == [a] || picked == [b] { return .next("Now ⇧-click the \(picked == [a] ? "left edge of the right" : "right edge of the left") section.") }
-            if picked.count > 2 || (!picked.isEmpty && !picked.isSubset(of: Set([a, b].compactMap { $0 }))) {
-                return .next("Other things are selected too. Click an empty spot to deselect everything, then click the right edge of the left section and ⇧-click the left edge of the right section.")
-            }
-            return session.tool == .select
-                ? .next("Click the right edge of the left section, then ⇧-click the left edge of the right section.")
-                : .next("Choose **Select**\(selectKey), click the right edge of the left section, then ⇧-click the left edge of the right section.")
-        },
-        spotlight: { model in
-            guard let session = wallSession(model), let walls = TutorialFacts(model).walls,
-                  let left = walls.match(walls.layout.backLeft, in: walls.solid),
-                  let right = walls.backRightDrawn,
-                  let a = walls.side(of: left, right: true), let b = walls.side(of: right, right: false),
-                  Set(session.selection) == [a, b] else { return [] }
-            return ["Constrain", "Equal"]
-        },
-        // What the step before left selected (the guide's lines) would be selected along with the two edges.
-        enter: { model in
-            model.setSketchTool(.select)
-            if let session = wallSession(model) { session.selection = [] }
-        },
-        assist: { await TutorialActions.equalSections($0) })
 
     static let finishWalls = TutorialStep(
         id: "finish-walls", chapter: .walls,
