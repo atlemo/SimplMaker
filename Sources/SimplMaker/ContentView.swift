@@ -697,37 +697,123 @@ struct BrowserRow<Icon: View>: View {
     }
 }
 
+/// Colours of a text field inside a list row, one set per state. Spelled out rather than inherited:
+/// a selected row makes `.primary` white and the stock field draws its own light fill, which left
+/// white text on white (typing looked broken). Each text colour is always chosen with its fill.
+///
+/// - Regular: the row isn't selected and the field isn't focused. Field fill, normal text.
+/// - Selected: the row is on the accent colour. Darkened translucent fill, white text.
+/// - Focused: being edited, whatever the row. Field fill, normal text, accent border and caret.
+struct RowFieldStyle: ViewModifier {
+    enum Mode { case regular, selected, focused }
+    /// What a mode draws with. `darkFill` says whether the text must be light.
+    struct Palette: Equatable {
+        let text: NSColor
+        let fill: NSColor
+        let darkFill: Bool
+    }
+
+    static func mode(focused: Bool, rowSelected: Bool) -> Mode { focused ? .focused : rowSelected ? .selected : .regular }
+
+    static func palette(_ mode: Mode) -> Palette {
+        switch mode {
+        case .selected: Palette(text: .white, fill: NSColor.black.withAlphaComponent(0.25), darkFill: true)
+        case .regular, .focused: Palette(text: .textColor, fill: .textBackgroundColor, darkFill: false)
+        }
+    }
+
+    @Environment(\.accent) private var accent
+    @Environment(\.backgroundProminence) private var prominence
+    let focused: Bool
+
+    func body(content: Content) -> some View {
+        let mode = Self.mode(focused: focused, rowSelected: prominence == .increased)
+        let palette = Self.palette(mode)
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+        content
+            .textFieldStyle(.plain)
+            .foregroundStyle(Color(nsColor: palette.text))
+            .tint(mode == .selected ? Color.white : accent)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(shape.fill(Color(nsColor: palette.fill)))
+            .background(FieldEditorColors(active: focused, accent: NSColor(accent)))
+            .overlay(shape.strokeBorder(
+                mode == .selected ? Color.white.opacity(0.4) : mode == .focused ? accent : Color.secondary.opacity(0.4),
+                lineWidth: mode == .focused ? 2 : 1))
+    }
+}
+
+/// The caret and the selection of the field being edited. The text view that edits the field draws them in
+/// colours of its own, which inside a selected list row come out white on the white field (the caret and the
+/// highlight vanish), so while the field is active they are set explicitly, and put back when it isn't.
+private struct FieldEditorColors: NSViewRepresentable {
+    let active: Bool
+    let accent: NSColor
+
+    /// Which field's colours are on the shared field editor, so a field that lost the focus doesn't undo the
+    /// colours of the one that just got it.
+    @MainActor final class Owner {
+        static var current: ObjectIdentifier?
+    }
+    final class Coordinator {}
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let (active, accent, id) = (active, accent, ObjectIdentifier(context.coordinator))
+        // The field editor is installed a moment after the focus changes.
+        for delay in [0.0, 0.05, 0.2] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in
+                guard let editor = view?.window?.firstResponder as? NSTextView, editor.isFieldEditor else { return }
+                if active {
+                    Owner.current = id
+                    editor.insertionPointColor = .textColor
+                    editor.selectedTextAttributes = [.backgroundColor: accent, .foregroundColor: NSColor.white]
+                } else if Owner.current == nil || Owner.current == id {
+                    Owner.current = nil
+                    Self.restore(editor)
+                }
+            }
+        }
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        guard Owner.current == ObjectIdentifier(coordinator) else { return }
+        Owner.current = nil
+        if let editor = view.window?.firstResponder as? NSTextView, editor.isFieldEditor { restore(editor) }
+    }
+
+    private static func restore(_ editor: NSTextView) {
+        editor.insertionPointColor = .textInsertionPointColor
+        editor.selectedTextAttributes = [.backgroundColor: NSColor.selectedTextBackgroundColor, .foregroundColor: NSColor.selectedTextColor]
+    }
+}
+
+extension View {
+    func rowFieldStyle(focused: Bool) -> some View { modifier(RowFieldStyle(focused: focused)) }
+
+    /// The stock bordered field, except in a selectable row, where it takes `rowFieldStyle`.
+    @ViewBuilder func fieldAppearance(inSelectableRow: Bool, focused: Bool) -> some View {
+        if inSelectableRow { rowFieldStyle(focused: focused) } else { textFieldStyle(.roundedBorder) }
+    }
+}
+
 /// A name edited in place: focused and selected when it appears; Return or clicking away keeps
 /// it, Esc puts the old name back.
 struct InlineNameField: View {
-    @Environment(\.accent) private var accent
     let name: String
     let commit: (String) -> Void
     let cancel: () -> Void
     @State private var draft = ""
     @State private var done = false
     @FocusState private var focused: Bool
-    /// `.increased` when the row sits on the accent-coloured selection, where the stock field's
-    /// dark text is unreadable.
-    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
-        let onSelection = prominence == .increased
         TextField("Name", text: $draft)
-            .textFieldStyle(.plain)
             .labelsHidden()
-            .foregroundStyle(onSelection ? Color.white : Color.primary)
-            .tint(onSelection ? Color.white : accent)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(onSelection ? Color.black.opacity(0.25) : Color(nsColor: .textBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(onSelection ? Color.white.opacity(0.4) : Color.secondary.opacity(0.4), lineWidth: 1)
-            )
+            .rowFieldStyle(focused: focused)
             .focused($focused)
             .onAppear {
                 draft = name
@@ -861,7 +947,7 @@ struct ParameterRow: View {
             if let renameError {
                 Text(renameError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
-            ExpressionField(text: parameter.expression, excluding: parameter.name, whiteWhenFocused: true) { model.setParameter(parameter.name, expression: $0) }
+            ExpressionField(text: parameter.expression, excluding: parameter.name, inSelectableRow: true) { model.setParameter(parameter.name, expression: $0) }
             let users = model.document.features(using: parameter.name).map(\.name)
             Text(users.isEmpty ? "Not used yet · type \(parameter.name) in any size field" : "Used by \(users.joined(separator: ", "))")
                 .font(.caption)
@@ -885,23 +971,21 @@ struct ExpressionField: View {
     var completes = true
     /// A parameter's own name, which its expression can't use.
     var excluding: String?
-    /// Focusing the field highlights its row (as in the Parameters list), so its text turns white.
-    var whiteWhenFocused = false
-    /// `.increased` when the row sits on the accent-coloured selection; without it the field is light
-    /// and its text must stay dark.
-    @Environment(\.backgroundProminence) private var prominence
+    /// The field sits in a list row that can be selected (the Parameters list), so it takes
+    /// `rowFieldStyle`'s explicit per-state colours instead of the stock bordered field's.
+    var inSelectableRow = false
     @Environment(\.completionModel) private var completionModel
     @State private var draft = ""
     @State private var edited = false
     @FocusState private var focused: Bool
 
     init(text: String, monospaced: Bool = true, completes: Bool = true, excluding: String? = nil,
-         whiteWhenFocused: Bool = false, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
+         inSelectableRow: Bool = false, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
         self.text = text
         self.monospaced = monospaced
         self.completes = completes
         self.excluding = excluding
-        self.whiteWhenFocused = whiteWhenFocused
+        self.inSelectableRow = inSelectableRow
         self.preview = preview
         self.commit = commit
     }
@@ -909,12 +993,14 @@ struct ExpressionField: View {
     var body: some View {
         TextField("expression", text: $draft)
             .labelsHidden()  // in a Form row the label beside the field would read "expression"
-            .textFieldStyle(.roundedBorder)
             .font(monospaced ? .body.monospaced() : .body)
-            .foregroundStyle(whiteWhenFocused && focused && prominence == .increased ? Color.white : Color.primary)
+            .fieldAppearance(inSelectableRow: inSelectableRow, focused: focused)
             .focused($focused)
             .completesParameters(completes ? completionModel : nil, excluding: excluding, focused: focused)
-            .onSubmit { edited = false; commit(draft) }
+            .onSubmit {
+                if ParameterCompleter.shared.complete(&draft) { focused = true; return }
+                edited = false; commit(draft)
+            }
             .onAppear { draft = text }
             .onChange(of: text) { draft = text; edited = false }
             .onChange(of: focused) { if !focused, draft != text { edited = false; commit(draft) } }
@@ -1213,9 +1299,11 @@ struct DimensionEditor: View {
                     .frame(width: 180)
                     .focused($focused)
                     .completesParameters(model, focused: focused)
-                    .onSubmit(commit)
+                    .onSubmit { submit() }
+                    .onChange(of: draft) { session.message = nil }  // an old complaint isn't about this text
                     .onExitCommand(perform: onDone)
-                Button("Set", action: commit).keyboardShortcut(.defaultAction)
+                Button("Set") { submit(unlessClicked: true) }
+                    .keyboardShortcut(.defaultAction)
             }
             if let direction = session.distanceDirection(of: dimensionID) {
                 Picker("Measured", selection: Binding(get: { direction }, set: { d in
@@ -1243,6 +1331,11 @@ struct DimensionEditor: View {
         focused = true
     }
 
+    /// Return or Set: completes a half-typed name first, otherwise sets the dimension.
+    private func submit(unlessClicked: Bool = false) {
+        if ParameterCompleter.shared.complete(&draft, unlessClicked: unlessClicked) { focused = true } else { commit() }
+    }
+
     private func commit() {
         let id = dimensionID, text = draft
         model.sketchCommand { $0.setDimension(id, expression: text) }
@@ -1268,7 +1361,8 @@ struct TransformPopover: View {
             HStack {
                 Text("Works on \(session.transformTargetDescription).").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button(tool.rawValue, action: commit).keyboardShortcut(.defaultAction)
+                Button(tool.rawValue) { submit(unlessClicked: true) }
+                    .keyboardShortcut(.defaultAction)
             }
             if let message = session.message { Text(message).font(.caption).foregroundStyle(.red).frame(width: 240, alignment: .leading) }
         }
@@ -1283,7 +1377,7 @@ struct TransformPopover: View {
                 .font(.body.monospaced())
                 .frame(width: 140)
                 .completesParameters(model, focused: focus && focused)
-                .onSubmit(commit)
+                .onSubmit { submit() }
             if focus { box.focused($focused) } else { box }
         }
     }
@@ -1292,6 +1386,11 @@ struct TransformPopover: View {
         Picker("About", selection: $pivot) {
             ForEach(TransformPivot.allCases) { Text($0.rawValue).tag($0) }
         }
+    }
+
+    /// Return or the button: completes a half-typed name first, otherwise applies the factor.
+    private func submit(unlessClicked: Bool = false) {
+        if ParameterCompleter.shared.complete(&factor, unlessClicked: unlessClicked) { focused = true } else { commit() }
     }
 
     private func commit() {

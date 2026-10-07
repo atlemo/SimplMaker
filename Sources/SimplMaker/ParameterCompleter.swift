@@ -45,6 +45,8 @@ final class ParameterCompleter: NSObject {
     private var selected = 0
     private var applying = false
     private var keyMonitor: Any?
+    /// The text a Return that ended the field would have completed it to; valid for the submit that follows.
+    private var endedOffer: String?
 
     var isShowing: Bool { editor != nil && !items.isEmpty }
     /// The suggestions on offer, for tests.
@@ -70,10 +72,24 @@ final class ParameterCompleter: NSObject {
     }
 
     @objc private func editingEnded(_ note: Notification) {
-        if note.object as AnyObject? === editor { hide() }
+        guard note.object as AnyObject? === editor else { return }
+        // Return ended the field with the list still up (the key monitor never saw it): remember what it
+        // offered for the field's submit handler, which runs just after this.
+        if let editor, let word, items.indices.contains(selected), word.prefix != items[selected].name,
+           (note.userInfo?["NSTextMovement"] as? Int) == NSTextMovement.return.rawValue {
+            let done = ExpressionCompletion.applying(items[selected], to: editor.string, replacing: word.range).text
+            endedOffer = done
+            DispatchQueue.main.async { [weak self] in self?.endedOffer = nil }
+        }
+        hide()
     }
 
-    @objc private func windowLeft(_ note: Notification) { hide() }
+    /// The window the list belongs to stopped being key or closed. Another window doing so (the main window
+    /// as a popover opens over it) doesn't end the typing here.
+    @objc private func windowLeft(_ note: Notification) {
+        guard let editor, let left = note.object as? NSWindow, left === editor.window || left === panel else { return }
+        hide()
+    }
 
     // MARK: SwiftUI fields
 
@@ -148,7 +164,7 @@ final class ParameterCompleter: NSObject {
 
     /// Keys for the list while it shows; true when it used the key (the field never sees it).
     func handle(_ event: NSEvent) -> Bool {
-        guard isShowing, let editor, event.window === editor.window else { return false }
+        guard isShowing, let editor, (event.window ?? NSApp.keyWindow) === editor.window else { return false }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function])
         switch event.keyCode {
         case 125, 126:  // ↓ ↑
@@ -171,6 +187,27 @@ final class ParameterCompleter: NSObject {
         default:
             return false
         }
+    }
+
+    /// For a field's own submit (a SwiftUI `onSubmit`, a default button): when the word typed isn't whole and a
+    /// suggestion is on offer, completes it into `text` and returns true, so the field doesn't commit the half-typed
+    /// word. A second line of defence behind the key monitor, which normally takes the Return first. Where
+    /// Return had already ended the field the caller should put the keyboard back in it.
+    ///
+    /// A default button's Return reaches the button before the field, so a button's action asks too; a mouse
+    /// click on it (`unlessClicked`) is a decision to set what is typed, and isn't taken for a Return.
+    func complete(_ text: inout String, unlessClicked: Bool = false) -> Bool {
+        if unlessClicked, let type = NSApp.currentEvent?.type, type == .leftMouseDown || type == .leftMouseUp { return false }
+        if let endedOffer {
+            text = endedOffer
+            self.endedOffer = nil
+            return true
+        }
+        guard isShowing, let editor, items.indices.contains(selected) else { return false }
+        if let word, word.prefix == items[selected].name { return false }
+        accept(selected)
+        text = editor.string
+        return true
     }
 
     /// Puts the chosen word in the field, in place of what was typed of it.
