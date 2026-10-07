@@ -108,9 +108,7 @@ struct WelcomeView: View {
     }
 
     static var versionText: String {
-        let info = Bundle.main.infoDictionary
-        guard let version = info?["CFBundleShortVersionString"] as? String else { return "Development build" }
-        if let build = info?["CFBundleVersion"] as? String, build != version { return "Version \(version) (\(build))" }
+        guard let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String else { return "Development build" }
         return "Version \(version)"
     }
 
