@@ -42,13 +42,14 @@ enum TransformPivot: String, CaseIterable, Identifiable {
 enum SketchTool: String, CaseIterable, Identifiable {
     case select = "Select", line = "Line", rectangle = "Rectangle", centerRectangle = "Center Rectangle"
     case circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", arc3Point = "3-Point Arc", bezier = "Spline"
+    case polygon = "Polygon", triangle = "Triangle"
     case point = "Point", text = "Text", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
     case distance = "Distance"
 
     var id: String { rawValue }
 
     /// Toolbar groups: drawing, changing curves, and dimensions (Select stands alone).
-    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .circle, .circle2Point, .arc, .arc3Point, .bezier, .point, .text]
+    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .point, .text]
     static let modify: [SketchTool] = [.fillet, .trim, .extend]
 
     /// The name under the icon in the toolbar (menus use the full `rawValue`).
@@ -65,7 +66,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     /// Tools whose clicks place points (and so snap to shape centers).
     var placesPoints: Bool {
         switch self {
-        case .line, .rectangle, .centerRectangle, .circle, .circle2Point, .arc, .arc3Point, .bezier, .point, .text: return true
+        case .line, .rectangle, .centerRectangle, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .point, .text: return true
         case .select, .fillet, .trim, .extend, .dimension, .distance: return false
         }
     }
@@ -75,6 +76,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         switch self {
         case .rectangle, .centerRectangle: return [.rectangle, .centerRectangle]
         case .circle, .circle2Point: return [.circle, .circle2Point]
+        case .polygon, .triangle: return [.polygon, .triangle]
         case .arc, .arc3Point: return [.arc, .arc3Point]
         default: return [self]
         }
@@ -87,6 +89,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .centerRectangle: return "Center"
         case .circle: return "Center"
         case .circle2Point: return "2-Point"
+        case .polygon: return "Polygon"
+        case .triangle: return "Triangle"
         case .arc: return "Center"
         case .arc3Point: return "3-Point"
         default: return shortTitle
@@ -97,7 +101,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
 
     /// The tool for a key press: pressing the key again switches to the next way of drawing that shape.
     static func forKey(_ key: Character, current: SketchTool) -> SketchTool? {
-        guard let tool = allCases.first(where: { $0.key == key }) else { return nil }
+        guard let tool = allCases.first(where: { $0.key == key }) else { return nil }  // a family's first tool holds the key
         let family = tool.family
         if family.count > 1, let i = family.firstIndex(of: current) { return family[(i + 1) % family.count] }
         return tool
@@ -105,9 +109,10 @@ enum SketchTool: String, CaseIterable, Identifiable {
 
     /// Tooltip: the name, its key, and what it does.
     var help: String {
+        let name = keyLabel.map { "\(rawValue) (\($0))" } ?? rawValue
         switch self {
-        case .fillet: return "Round Corner (F): round a sketch corner where two lines meet, with an arc and a radius. For rounding edges of a solid, use Fillet in Design mode."
-        default: return "\(rawValue) (\(String(key).uppercased())): \(hint)"
+        case .fillet: return "\(name): round a sketch corner where two lines meet, with an arc and a radius. For rounding edges of a solid, use Fillet in Design mode."
+        default: return "\(name): \(hint)"
         }
     }
 
@@ -121,6 +126,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .arc3Point: return "arc-3-point"
         case .circle: return "circle"
         case .circle2Point: return "diameter"
+        case .polygon: return "hexagon"
+        case .triangle: return "triangle"
         case .arc: return "spline"
         case .bezier: return "bezier"
         case .point: return "dot"
@@ -132,13 +139,18 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .distance: return "dimension-line"
         }
     }
-    /// Single-key shortcut while the viewport has focus.
-    var key: Character {
+    /// The key now, while the viewport has focus. The user can change it (see Shortcuts.swift), and
+    /// a family shares one key, held by its first tool.
+    var key: Character? { Shortcuts.chord(.sketch(family[0]))?.key }
+    var keyLabel: String? { key.map { String($0).uppercased() } }
+    /// What the key is until the user changes it.
+    var defaultKey: Character {
         switch self {
         case .select: return "s"
         case .line: return "l"
         case .rectangle, .centerRectangle: return "r"
         case .circle, .circle2Point: return "c"
+        case .polygon, .triangle: return "g"
         case .arc, .arc3Point: return "a"
         case .bezier: return "b"
         case .point: return "p"
@@ -150,16 +162,21 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .distance: return "d"
         }
     }
+    /// "R again": pressing the key a second time picks the next way of drawing the shape.
+    private var again: String { keyLabel.map { "\($0) again" } ?? "The key again" }
+
     var hint: String {
         switch self {
         case .select: return "Click to select, double-click for all joined curves, drag to move, ⌫ deletes"
         case .line: return "Click points to draw connected lines · Esc ends the chain"
-        case .rectangle: return "Click two opposite corners · R again for a center rectangle"
-        case .centerRectangle: return "Click the center, then a corner · R again for two corners"
-        case .circle: return "Click the center, then a point on the circle · C again for 2-point"
-        case .circle2Point: return "Click two points on opposite sides of the circle · C again for center"
-        case .arc: return "Click the center, the start, then the end (counter-clockwise) · A again for 3-point"
-        case .arc3Point: return "Click the start, the end, then a point the arc passes through · A again for center"
+        case .rectangle: return "Click two opposite corners · \(again) for a center rectangle"
+        case .centerRectangle: return "Click the center, then a corner · \(again) for two corners"
+        case .circle: return "Click the center, then a point on the circle · \(again) for 2-point"
+        case .circle2Point: return "Click two points on opposite sides of the circle · \(again) for center"
+        case .polygon: return "Click the center, then a corner · type the number of sides, or press ↑ ↓ · \(again) for a triangle"
+        case .triangle: return "Click the center, then a corner · \(again) for a polygon with any number of sides"
+        case .arc: return "Click the center, the start, then the end (counter-clockwise) · \(again) for 3-point"
+        case .arc3Point: return "Click the start, the end, then a point the arc passes through · \(again) for center"
         case .bezier: return "Click points to draw a smooth spline through them, or press and drag to pull a handle · click the first point to close it · Esc ends the spline"
         case .point: return "Click to place a point"
         case .text: return "Click where the text starts, type it, and press Return · click a text (or double-click it) to change its words"
@@ -176,6 +193,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
 enum SketchInput: String, CaseIterable, Identifiable {
     case length = "Length", angle = "Angle", width = "Width", height = "Height"
     case diameter = "Diameter", radius = "Radius", sweep = "Sweep"
+    /// How many sides a polygon has.
+    case sides = "Sides"
     /// What Move takes, for the manipulator: how far along x and y, and how far to turn.
     case moveX = "Move X", moveY = "Move Y", turn = "Rotate"
     /// What Pattern takes: how many copies (the original counts) and how far apart.
@@ -188,7 +207,7 @@ enum SketchInput: String, CaseIterable, Identifiable {
     var unit: UnitKind {
         switch self {
         case .angle, .sweep, .turn, .spread: return .angle
-        case .countX, .countY, .copies: return .none
+        case .countX, .countY, .copies, .sides: return .none
         default: return .length
         }
     }
@@ -214,6 +233,7 @@ enum SketchInput: String, CaseIterable, Identifiable {
         case .height: return "H"
         case .diameter: return "⌀"
         case .radius: return "R"
+        case .sides: return "#"
         }
     }
 }
@@ -271,6 +291,18 @@ final class SketchSession {
     private var lastInFamily: [SketchTool: SketchTool] = [:]
     func mode(of tool: SketchTool) -> SketchTool { lastInFamily[tool.family[0]] ?? tool.family[0] }
     var circleMode: SketchTool { mode(of: .circle) }
+    /// How many sides the Polygon tool draws (kept from one polygon to the next).
+    private(set) var polygonSides = 6
+    /// How many sides the polygon being drawn has: three for the Triangle tool.
+    var sidesCount: Int { tool == .triangle ? 3 : polygonSides }
+    var drawsPolygon: Bool { tool == .polygon || tool == .triangle }
+
+    /// Gives the Polygon tool more or fewer sides (↑ ↓).
+    func adjustSides(by delta: Int) {
+        guard tool == .polygon else { return }
+        polygonSides = min(max(polygonSides + delta, Sketch.polygonSides.lowerBound), Sketch.polygonSides.upperBound)
+        typed[.sides] = nil
+    }
     var selection: [EntityID] = []
     private(set) var hover: EntityID?
     /// Set by Scale to ask the toolbar to show that tool's popover.
@@ -644,7 +676,7 @@ final class SketchSession {
     }
 
     private func toolClick(_ s: SketchSnap) -> String? {
-        for f in inputFields {
+        for f in inputFields where f != .sides {
             if let v = typedValue(f), let text = typed[f] { pendingDimensions.append((f, Self.expression(text, f), v)) }
         }
         typed = [:]
@@ -681,6 +713,13 @@ final class SketchSession {
             let lines = sketch.addCenterRectangle(center: clicks[0], corner: s)
             addPendingDimensions([.width: .length(lines[0]), .height: .length(lines[1])])
             return finish("Rectangle")
+        case .polygon, .triangle:
+            guard clicks.count == 2 else { return nil }
+            defer { clicks = [] }
+            guard distance(clicks[0], s) > 1e-6 else { pendingDimensions = []; return nil }
+            let polygon = sketch.addPolygon(center: clicks[0], corner: s, sides: sidesCount)
+            addPendingDimensions([.length: .length(polygon.lines[0]), .diameter: .diameter(polygon.circle)])
+            return finish(tool.rawValue)
         case .arc3Point:
             if clicks.count == 2, distance(clicks[0], s) <= 1e-6 { clicks.removeLast(); return nil }
             guard clicks.count == 3 else { return nil }
@@ -756,6 +795,9 @@ final class SketchSession {
         case (.line, 1): return [.length, .angle]
         case (.rectangle, 1), (.centerRectangle, 1): return [.width, .height]
         case (.circle, 1), (.circle2Point, 1): return [.diameter]
+        case (.polygon, 0): return [.sides]
+        case (.polygon, 1): return [.length, .diameter, .sides]
+        case (.triangle, 1): return [.length, .diameter]
         case (.arc, 1): return [.radius]
         case (.arc, 2): return [.sweep]
         default: return []
@@ -766,6 +808,7 @@ final class SketchSession {
     func setTyped(_ field: SketchInput, _ text: String) {
         let t = text.trimmingCharacters(in: .whitespaces)
         typed[field] = t.isEmpty ? nil : t
+        if field == .sides, let n = typedValue(.sides) { polygonSides = Int(n) }
         if manipulating != nil { previewTyped() }
         if patternSetup != nil { applyTypedPattern() }
         if offsetSetup != nil { applyTypedOffset() }
@@ -782,6 +825,9 @@ final class SketchSession {
     func typedValue(_ field: SketchInput) -> Double? {
         guard let text = typed[field], let v = try? parameters.value(of: text, kind: field.unit) else { return nil }
         if field.unit == .length, !field.isOffset, v <= 1e-9 { return nil }
+        if field == .sides {
+            return abs(v - v.rounded()) > 1e-9 || !Sketch.polygonSides.contains(Int(v.rounded())) ? nil : v
+        }
         if field.isCount, abs(v - v.rounded()) > 1e-9 || v < 1 || v > Double(SketchPattern.maxCopies) { return nil }
         if field == .sweep, abs(v) <= 1e-9 { return nil }
         return v
@@ -814,6 +860,11 @@ final class SketchSession {
             return SketchSnap(a + dir * ((typedValue(.diameter) ?? 2 * len) / 2))
         case .circle2Point:
             return SketchSnap(a + dir * (typedValue(.diameter) ?? len))
+        case .polygon, .triangle:
+            // Typed sizes are the circle round the corners, or the length of a side.
+            let radius = typedValue(.diameter).map { $0 / 2 }
+                ?? typedValue(.length).map { $0 / (2 * sin(.pi / Double(sidesCount))) } ?? len
+            return SketchSnap(a + dir * radius)
         case .arc where clicks.count == 1:
             return SketchSnap(a + dir * (typedValue(.radius) ?? len))
         case .arc:
@@ -835,11 +886,13 @@ final class SketchSession {
         case .turn: return manipulatorValues.turn.z
         case .countX, .countY, .copies, .spacingX, .spacingY, .spread: return patternValue(field)
         case .offsetDistance: return offsetDistance
+        case .sides: return Double(sidesCount)
         default: break
         }
         guard let t = target()?.position, let a = clicks.first?.position else { return nil }
         let d = t - a
         switch field {
+        case .length where drawsPolygon: return 2 * simdLength(d) * sin(.pi / Double(sidesCount))  // a side of the polygon
         case .length, .radius: return simdLength(d)
         case .diameter: return tool == .circle2Point ? simdLength(d) : 2 * simdLength(d)
         case .width: return tool == .centerRectangle ? 2 * abs(d.x) : abs(d.x)
@@ -853,7 +906,7 @@ final class SketchSession {
             var sweep = atan2(d.y, d.x) - atan2(s.y, s.x)
             while sweep <= 0 { sweep += 2 * .pi }
             return sweep
-        case .moveX, .moveY, .turn, .countX, .countY, .copies, .spacingX, .spacingY, .spread, .offsetDistance: return nil
+        case .moveX, .moveY, .turn, .countX, .countY, .copies, .spacingX, .spacingY, .spread, .offsetDistance, .sides: return nil
         }
     }
 
@@ -862,6 +915,10 @@ final class SketchSession {
         if patternSetup != nil { return commitPattern() }
         if offsetSetup != nil { return commitOffset() }
         if manipulating != nil { return commitTypedTransform() }
+        if tool == .polygon, clicks.isEmpty {  // the number of sides is set: nothing to place yet
+            typed = [:]
+            return nil
+        }
         guard !inputFields.isEmpty, let t = target() else { return nil }
         message = nil
         return toolClick(t)
@@ -1798,6 +1855,12 @@ final class SketchSession {
             return [circle(a, r, 0, 2 * .pi)]
         case .circle2Point:
             return [circle((a + c) / 2, simdLength(c - a) / 2, 0, 2 * .pi), [a, c]]
+        case .polygon, .triangle:
+            let r = simdLength(c - a), first = atan2(c.y - a.y, c.x - a.x), n = sidesCount
+            return [(0...n).map { k in
+                let t = first + 2 * .pi * Double(k) / Double(n)
+                return a + r * SIMD2(cos(t), sin(t))
+            }, [a, c]]
         case .arc:
             let r = simdLength(clicks.count > 1 ? clicks[1].position - a : c - a)
             if clicks.count == 1 { return [[a, c]] }

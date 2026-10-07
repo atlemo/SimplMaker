@@ -402,7 +402,26 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         needsDisplay = true
     }
 
-    func pickResult(_ raw: UInt32) {
+    /// The origin plane whose name the pointer is over (while the planes are offered): that plane lights up, not
+    /// whichever plane happens to lie under the label in this view.
+    private var hoveredPlaneLabel: OriginPlane?
+
+    private func labelHover(_ id: EntityID, inside: Bool) {
+        guard let model, let renderer else { return }
+        let plane = inside && model.showsOriginPlanes ? OriginPlane(labelID: id) : nil
+        guard hoveredPlaneLabel != plane else { return }
+        hoveredPlaneLabel = plane
+        if let plane {
+            renderer.hovered = plane.pickID.raw
+            model.hover(plane.pickID)
+            needsDisplay = true
+        } else {
+            if let lastPoint { requestPick(at: lastPoint) }  // back to what is under the pointer
+        }
+    }
+
+    func pickResult(_ result: UInt32) {
+        let raw = hoveredPlaneLabel?.pickID.raw ?? result
         guard let renderer, renderer.hovered != raw else { return }
         renderer.hovered = raw
         model?.hover(raw == 0 ? nil : PickID(raw: raw))
@@ -747,6 +766,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             case 36, 76:                                                                              // Return
                 if session.typed.isEmpty, !session.isPatterning, !session.isOffsetting { model.finishSketch() } else { model.commitSketchTyped(); refreshOverlay() }
                 return
+            case 125 where session.tool == .polygon, 126 where session.tool == .polygon:             // ↓ ↑: fewer or more sides
+                session.adjustSides(by: event.keyCode == 126 ? 1 : -1)
+                refreshOverlay()
+                return
             case 48 where !session.inputFields.isEmpty:                                               // Tab
                 focusSketchField(session.inputFields[0], typing: nil)
                 return
@@ -775,7 +798,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             if model.pendingTool != nil { model.confirmTool() } else { model.finishFeatureEdit() }
             refreshOverlay()
             return
-        } else if plainKey, event.charactersIgnoringModifiers?.lowercased() == "e" {
+        } else if Shortcuts.matches(.tool(.extrude), event) {
             model.run(.extrude)
             refreshOverlay()
             return
@@ -867,6 +890,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 view.dark = isDark
                 let id = l.id
                 view.onClick = { [weak self] in self?.labelClicked(id) }
+                view.onHover = { [weak self] inside in self?.labelHover(id, inside: inside) }
                 addSubview(view)
                 labels[l.id] = view
             }
@@ -1107,7 +1131,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             }
             f.textColor = session.typedIsInvalid(input) ? .systemRed : (session.typed[input] != nil ? .labelColor : .secondaryLabelColor)
         }
-        let world = session.frame.point(t.x, t.y)
+        // Beside where the shape starts (a rectangle's corner, a circle's center), so the sizes are typed where
+        // they apply; for the other tools beside the next point.
+        let startsAtFirstClick: Set<SketchTool> = [.rectangle, .centerRectangle, .circle, .circle2Point, .polygon, .triangle]
+        let anchor = session.manipulatorMiddle == nil && startsAtFirstClick.contains(session.tool)
+            ? session.clicks.first?.position ?? t : t
+        let world = session.frame.point(anchor.x, anchor.y)
         guard let p = renderer.camera.project(SIMD3(Float(world.x), Float(world.y), Float(world.z)), viewSize: bounds.size) else {
             panel.isHidden = true
             return
@@ -1116,14 +1145,19 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let size = panel.fittingSize
         // Beside the next point; under the ring when the manipulator is on.
         let below = session.manipulatorMiddle != nil && !session.isOffsetting
-        var x = min(max(below ? p.x - size.width / 2 : p.x + 20, 0), max(bounds.width - size.width, 0))
+        var x = below ? p.x - size.width / 2 : p.x + 20
         var y = p.y + (below ? ManipulatorLayout.ringRadius + 12 : 20)
         if below, y + size.height > bounds.height - 48 { y = p.y - ManipulatorLayout.ringRadius - 12 - size.height }  // no room: above the ring
         if session.isOffsetting, let tip = manipulatorLayout?.anchor(for: .axis(.x)) {  // beside the arrow's tip
-            x = min(max(tip.x + 12, 0), max(bounds.width - size.width, 0))
+            x = tip.x + 12
             y = tip.y - size.height / 2
         }
-        y = min(max(y, 0), max(bounds.height - size.height, 0))
+        // Never under the floating browser or inspector, where it would look like part of them.
+        let minX = min(panelInsets.left, bounds.width * 0.45)
+        let maxX = max(bounds.width - min(panelInsets.right, bounds.width * 0.45) - size.width, minX)
+        x = min(max(x, minX), maxX)
+        let maxY = max(bounds.height - min(panelInsets.bottom, bounds.height * 0.3) - size.height, 0)
+        y = min(max(y, 0), maxY)
         panel.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
     }
 
@@ -1160,8 +1194,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         panel.wantsLayer = true
         panel.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
         panel.layer?.cornerRadius = DS.Radius.sm
-        panel.layer?.borderWidth = 0.5
-        panel.layer?.borderColor = NSColor.separatorColor.cgColor
+        // An accent outline and a shadow set it apart from the panels around the viewport.
+        panel.layer?.borderWidth = 1.5
+        panel.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        panel.layer?.shadowColor = NSColor.black.cgColor
+        panel.layer?.shadowOpacity = 0.25
+        panel.layer?.shadowRadius = 6
+        panel.layer?.shadowOffset = CGSize(width: 0, height: -2)
         for input in inputs {
             let label = NSTextField(labelWithString: input.symbol)
             label.font = .systemFont(ofSize: 12, weight: .semibold)
@@ -1420,6 +1459,8 @@ final class ConstraintGlyphView: NSTextField {
 /// A small clickable value label for a sketch dimension (or, lighter, a measured size).
 final class DimensionLabelView: NSTextField {
     var onClick: (() -> Void)?
+    /// The pointer went over the label (true) or left it.
+    var onHover: ((Bool) -> Void)?
     var isReference = false { didSet { updateAppearance() } }
     var isEditingHighlight = false { didSet { updateAppearance() } }
     /// See ConstraintGlyphView.dark: the colours are fixed, chosen for the viewport's light or dark look.
@@ -1457,8 +1498,8 @@ final class DimensionLabelView: NSTextField {
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; NSCursor.pointingHand.set() }
-    override func mouseExited(with event: NSEvent) { isHovered = false }
+    override func mouseEntered(with event: NSEvent) { isHovered = true; NSCursor.pointingHand.set(); onHover?(true) }
+    override func mouseExited(with event: NSEvent) { isHovered = false; onHover?(false) }
     override func resetCursorRects() { addCursorRect(bounds.insetBy(dx: -6, dy: -6), cursor: .pointingHand) }
 
     override init(frame: NSRect) {

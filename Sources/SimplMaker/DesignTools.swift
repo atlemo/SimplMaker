@@ -61,8 +61,9 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// The single-letter shortcut in the Create and Modify menus (as in Fusion: E extrude, F fillet,
-    /// H hole, M move). While sketching, the letters pick sketch tools instead.
-    var key: Character {
+    /// H hole, M move). While sketching, the letters pick sketch tools instead. The user can change it
+    /// (see Shortcuts.swift); this is what it starts as.
+    var defaultKey: Character {
         switch self {
         case .extrude: return "e"
         case .revolve: return "r"
@@ -92,33 +93,39 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The tooltip: the name, its current shortcut, and what the tool does.
     var help: String {
+        let name = Shortcuts.label(.tool(self)).map { "\(rawValue) (\($0))" } ?? rawValue
+        return "\(name): \(summary)"
+    }
+
+    private var summary: String {
         switch self {
-        case .extrude: return "Extrude (E): push a profile into a solid"
-        case .revolve: return "Revolve (R): turn a profile around an axis"
-        case .sweep: return "Sweep (W): move a profile along a path"
-        case .loft: return "Loft (L): blend between two or more profiles"
-        case .rib: return "Rib (B): a thin wall from an open sketch line to the body"
-        case .hole: return "Hole (H): drill a hole in a flat face"
-        case .box: return "Box (X): place a box on a plane or face"
-        case .cylinder: return "Cylinder (Y): place a cylinder on a plane or face"
-        case .sphere: return "Sphere (G): place a sphere on a plane or face"
-        case .torus: return "Torus (U): place a torus on a plane or face"
-        case .coil: return "Coil (K): place a coil spring on a plane or face"
-        case .pipe: return "Pipe (P): a round tube along sketch curves"
-        case .fillet: return "Fillet (F): round the selected edges, or every edge around a selected face"
-        case .move: return "Move (M): slide or turn bodies and sketches with the arrows, squares and rings, or type a distance or an angle"
-        case .scale: return "Scale (Z): make sketches bigger or smaller, about their origins"
-        case .chamfer: return "Chamfer (C): bevel the selected edges, or every edge around a selected face"
-        case .thread: return "Thread (D): cut a metric or inch screw thread on a shaft or in a hole"
-        case .combine: return "Combine (J): join, cut or intersect bodies (e.g. cut text out of a plate)"
-        case .plane: return "Plane (N): a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
-        case .mirror: return "Mirror (Q): copy bodies across a plane"
-        case .pattern: return "Pattern (T): copy bodies in a row or around an axis"
-        case .shell: return "Shell (S): hollow a body, leaving the picked faces open"
-        case .canvas: return "Canvas (V): place a reference image on a plane or flat face, to trace over; its opacity is adjustable"
-        case .project: return "Project (O): throw sketch profiles, like text, onto a body so they follow its surface, raised out of it or cut into it"
-        case .measure: return "Measure (I): click a face, an edge or a body for its size, or two for the distance and angle between them"
+        case .extrude: return "push a profile into a solid"
+        case .revolve: return "turn a profile around an axis"
+        case .sweep: return "move a profile along a path"
+        case .loft: return "blend between two or more profiles"
+        case .rib: return "a thin wall from an open sketch line to the body"
+        case .hole: return "drill a hole in a flat face"
+        case .box: return "place a box on a plane or face"
+        case .cylinder: return "place a cylinder on a plane or face"
+        case .sphere: return "place a sphere on a plane or face"
+        case .torus: return "place a torus on a plane or face"
+        case .coil: return "place a coil spring on a plane or face"
+        case .pipe: return "a round tube along sketch curves"
+        case .fillet: return "round the selected edges, or every edge around a selected face"
+        case .move: return "slide or turn bodies and sketches with the arrows, squares and rings, or type a distance or an angle"
+        case .scale: return "make sketches bigger or smaller, about their origins"
+        case .chamfer: return "bevel the selected edges, or every edge around a selected face"
+        case .thread: return "cut a metric or inch screw thread on a shaft or in a hole"
+        case .combine: return "join, cut or intersect bodies (e.g. cut text out of a plate)"
+        case .plane: return "a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
+        case .mirror: return "copy bodies across a plane"
+        case .pattern: return "copy bodies in a row or around an axis"
+        case .shell: return "hollow a body, leaving the picked faces open"
+        case .canvas: return "place a reference image on a plane or flat face, to trace over; its opacity is adjustable"
+        case .project: return "throw sketch profiles, like text, onto a body so they follow its surface, raised out of it or cut into it"
+        case .measure: return "click a face, an edge or a body for its size, or two for the distance and angle between them"
         }
     }
 

@@ -29,14 +29,14 @@ enum TutorialActions {
     // MARK: sketches
 
     /// A sketch on the floor, replacing one begun on another plane.
-    static func startBoxSketch(_ model: DocumentModel) async {
+    static func startBaseSketch(_ model: DocumentModel) async {
         let facts = TutorialFacts(model)
         if let wrong = facts.misplacedSketch {
             model.finishSketch()
             model.deleteFeature(wrong.id)
             await settle(model)
         }
-        if let session = model.sketchSession, TutorialFacts(model).boxSketch?.id == session.featureID { return }
+        if let session = model.sketchSession, TutorialFacts(model).baseSketch?.id == session.featureID { return }
         model.cancelTool()
         model.selectedFeature = nil
         model.clearSelection()
@@ -45,9 +45,16 @@ enum TutorialActions {
         await settle(model)
     }
 
-    /// A sketch on the lid's plane.
-    static func startLidSketch(_ model: DocumentModel) async {
-        guard let plane = TutorialFacts(model).plane else { return }
+    /// A sketch on the leaning plane, replacing one begun somewhere else.
+    static func startBackSketch(_ model: DocumentModel) async {
+        let facts = TutorialFacts(model)
+        guard let plane = facts.plane else { return }
+        if let wrong = facts.misplacedBackSketch {
+            if model.sketchSession != nil { model.finishSketch() }
+            model.deleteFeature(wrong.id)
+            await settle(model)
+        }
+        if let session = model.sketchSession, TutorialFacts(model).backSketch?.id == session.featureID { return }
         if model.sketchSession != nil { model.finishSketch() }
         model.cancelTool()
         model.cancelSketchPlanePick()
@@ -56,15 +63,15 @@ enum TutorialActions {
         await settle(model)
     }
 
-    private static func click(_ model: DocumentModel, _ uv: SIMD2<Double>) {
-        for phase in [SketchMouse.Phase.moved, .down, .up] {
-            _ = model.sketchMouse(SketchMouse(phase: phase, uv: uv, pick: nil))
-        }
+    /// A mouse event in the sketch; picking waits for the move before a click.
+    private static func mouse(_ model: DocumentModel, _ phases: [SketchMouse.Phase], _ uv: SIMD2<Double>) {
+        for phase in phases { _ = model.sketchMouse(SketchMouse(phase: phase, uv: uv, pick: nil)) }
     }
 
-    /// The tutorial's rectangle in a sketch, drawn like a user would: the center rectangle tool, a click on
-    /// the origin, then `width` and `depth` typed. Anything already drawn in the sketch goes.
-    static func drawRectangle(in sketchID: FeatureID, _ model: DocumentModel) async {
+    /// A rectangle in a sketch, drawn like a user would: the rectangle tool, a click on the origin, the mouse moved
+    /// the way it should grow, then the two sizes typed. Anything already drawn in the sketch goes.
+    static func drawRectangle(in sketchID: FeatureID, across: String, along: String, growing: TutorialFacts.Growth,
+                              _ model: DocumentModel) async {
         if model.sketchSession?.featureID != sketchID {
             model.cancelTool()
             model.editSketch(sketchID)
@@ -79,10 +86,11 @@ enum TutorialActions {
             }
             await settle(model)
         }
-        model.setSketchTool(.centerRectangle)
-        click(model, .zero)
-        session.setTyped(.width, "width")
-        session.setTyped(.height, "depth")
+        model.setSketchTool(.rectangle)
+        mouse(model, [.moved, .down, .up], .zero)
+        mouse(model, [.moved], SIMD2(1, growing == .rightDown ? -1 : 1))
+        session.setTyped(.width, across)
+        session.setTyped(.height, along)
         model.commitSketchTyped()
         await settle(model)
     }
@@ -96,13 +104,6 @@ enum TutorialActions {
         return regions.indices.map { PickID(region: $0, slot: slot) }.first { model.profile(of: $0) != nil }
     }
 
-    /// The pick for a face of a body, by its persistent name.
-    static func facePick(_ ref: FaceRef, _ model: DocumentModel) -> PickID? {
-        guard let body = model.meshes.firstIndex(where: { $0.id == ref.body }),
-              let face = model.meshes[body].mesh.faceNames.firstIndex(of: ref.face) else { return nil }
-        return PickID(body: body, face: face)
-    }
-
     /// Starts a tool the way its button does, from a clean slate.
     private static func startTool(_ tool: DesignTool, _ model: DocumentModel) {
         model.cancelTool()
@@ -111,86 +112,45 @@ enum TutorialActions {
 
     // MARK: features
 
-    /// Extrudes the profile of a sketch, sizes it, and (for the lid) makes it a body of its own.
-    static func extrude(_ sketchID: FeatureID, size: String, newBody: Bool, _ model: DocumentModel) async {
+    /// Extrudes the profile of a sketch and sizes it (a join, when there already is a body).
+    static func extrude(_ sketchID: FeatureID, size: String, _ model: DocumentModel) async {
         if model.sketchSession != nil { model.finishSketch(); await settle(model) }
         startTool(.extrude, model)
         guard let pick = profilePick(of: sketchID, model) else { return }
         model.click(pick, additive: false)
         await settle(model)
         guard let id = model.selectedFeature else { return }
-        if newBody {
-            model.updateFeature(id, "Change Operation") { f in
-                if case .extrude(var e) = f.kind { e.operation = .newBody; f.kind = .extrude(e) }
-            }
-            await settle(model)
-        }
         model.commitHandle(size, for: id)
         await settle(model)
         model.finishFeatureEdit()
     }
 
-    /// Hollows the box through its top face, `wall` thick.
-    static func shell(_ model: DocumentModel) async {
-        guard let top = TutorialFacts(model).boxTopFace, let pick = facePick(top, model) else { return }
-        startTool(.shell, model)
-        model.click(pick, additive: false)
-        model.confirmTool()
-        await settle(model)
-        guard let shell = TutorialFacts(model).shell else { return }
-        model.commitHandle("wall", for: shell.id)
-        await settle(model)
-        model.finishFeatureEdit()
-    }
-
-    /// A construction plane on the floor, lifted by `height`.
-    static func plane(_ model: DocumentModel) async {
+    /// A construction plane on the floor, with its offset left as it comes.
+    static func makePlane(_ model: DocumentModel) async {
+        if let plane = TutorialFacts(model).plane {
+            if model.newFeature == plane.id { model.finishFeatureEdit() }
+            return
+        }
         startTool(.plane, model)
         model.click(OriginPlane.xy.pickID, additive: false)
         await settle(model)
+        model.finishFeatureEdit()
+    }
+
+    /// The plane's angle set to `lean`, as typing it in the inspector does.
+    static func tiltPlane(_ model: DocumentModel) async {
+        if TutorialFacts(model).plane == nil { await makePlane(model) }
         guard let plane = TutorialFacts(model).plane else { return }
-        model.commitHandle("height", for: plane.id)
-        await settle(model)
-        model.finishFeatureEdit()
-    }
-
-    /// Rounds every edge around the lid's top face, `wall` in radius.
-    static func fillet(_ model: DocumentModel) async {
-        guard let top = TutorialFacts(model).lidTopFace, let pick = facePick(top, model) else { return }
-        startTool(.fillet, model)
-        model.click(pick, additive: false)
-        model.confirmTool()
-        await settle(model)
-        guard let fillet = TutorialFacts(model).lidFillet else { return }
-        model.commitHandle("wall", for: fillet.id)
-        await settle(model)
-        model.finishFeatureEdit()
-    }
-
-    /// A hole in the middle of the lid's top face.
-    static func hole(_ model: DocumentModel) async {
-        guard let top = TutorialFacts(model).lidTopFace, let pick = facePick(top, model) else { return }
-        startTool(.hole, model)
-        model.clickRay = nil
-        model.click(pick, additive: false)
+        if model.newFeature == plane.id { model.finishFeatureEdit() }
+        model.updateFeature(plane.id, "Edit Angle") { f in
+            if case .plane(var p) = f.kind { p.angle = "lean"; f.kind = .plane(p) }
+        }
         await settle(model)
     }
 
-    /// A thread in the hole: a click on the top face a few millimetres from the hole's axis.
-    static func thread(_ model: DocumentModel) async {
-        let facts = TutorialFacts(model)
-        guard let top = facts.lidTopFace, let pick = facePick(top, model),
-              let body = model.result?.body(top.body), let frame = try? body.faceFrame(top.face) else { return }
-        startTool(.thread, model)
-        let hit = frame.point(3, 0)
-        model.clickRay = (origin: hit + frame.normal * 10, direction: -frame.normal)
-        model.click(pick, additive: false)
-        await settle(model)
-    }
-
-    /// `width` set to 80 mm.
+    /// `width` set wide enough for a tablet.
     static func widen(_ model: DocumentModel) async {
-        model.setParameter("width", expression: "80 mm")
+        model.setParameter("width", expression: TutorialPart.tabletWidth)
         await settle(model)
     }
 }

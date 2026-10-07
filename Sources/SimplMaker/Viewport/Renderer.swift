@@ -107,6 +107,9 @@ struct SketchOverlay {
     /// Origin planes offered while choosing where to sketch: 4 vertices and 6 indices per plane.
     var planeVertices: [FaceVertex] = []
     var planeIndices: [UInt32] = []
+    /// How many of the planes, the first ones, are origin planes: the planes after them are the user's own
+    /// construction planes, drawn over the origin planes so one that overlaps them can still be picked.
+    var originPlaneCount = 0
     var planeOutline: [SegmentInstance] = []
     /// The borders of the construction planes, one segment per side, to drag a side and resize the plane.
     var planeEdges: [SegmentInstance] = []
@@ -371,6 +374,7 @@ final class Renderer {
         var planeIndices: MTLBuffer?
         /// One centre per plane (6 indices each), to draw them back to front.
         var planeCenters: [SIMD3<Float>] = []
+        var originPlaneCount = 0
         var planeOutline: MTLBuffer?, planeOutlineCount = 0
         var planeEdges: MTLBuffer?, planeEdgeCount = 0
         var planesSeeThrough = false
@@ -521,6 +525,7 @@ final class Renderer {
             for v in o.planeVertices[(i * 4)..<min(i * 4 + 4, o.planeVertices.count)] { c += SIMD3(v.px, v.py, v.pz) }
             return c / 4
         }
+        g.originPlaneCount = o.originPlaneCount
         g.planeOutline = makeBuffer(o.planeOutline); g.planeOutlineCount = o.planeOutline.count
         g.planeEdges = makeBuffer(o.planeEdges); g.planeEdgeCount = o.planeEdges.count
         g.planesSeeThrough = o.planesSeeThrough
@@ -875,8 +880,12 @@ final class Renderer {
             enc.setVertexBuffer(planes, offset: 0, index: 0)
             enc.setVertexBytes(&planeParams, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.setFragmentBytes(&planeParams, length: MemoryLayout<DrawParams>.stride, index: 3)
-            let forward = camera.forward, centers = overlay.planeCenters  // farthest along the view direction first
-            let order = centers.indices.sorted { simd_dot(centers[$0], forward) > simd_dot(centers[$1], forward) }
+            // The origin planes first, farthest along the view direction first; then the construction planes the same way.
+            let forward = camera.forward, centers = overlay.planeCenters, origin = overlay.originPlaneCount
+            let order = centers.indices.sorted { a, b in
+                let ga = a < origin ? 0 : 1, gb = b < origin ? 0 : 1
+                return ga != gb ? ga < gb : simd_dot(centers[a], forward) > simd_dot(centers[b], forward)
+            }
             for i in order {
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: 6, indexType: .uint32,
                                           indexBuffer: indices, indexBufferOffset: i * 6 * MemoryLayout<UInt32>.stride)

@@ -1,6 +1,6 @@
 ---
 title: Drawing tools
-description: Line, rectangle, circle, arc, spline and point. How to draw them, type exact values and snap.
+description: Line, rectangle, circle, polygon, triangle, arc, spline and point. How to draw them, type exact values and snap.
 ---
 
 The **Draw** group holds the shapes. The key in brackets picks the tool while you sketch.
@@ -12,6 +12,7 @@ The **Draw** group holds the shapes. The key in brackets picks the tool while yo
 | **Line** | [[L]] | Click points to draw connected lines. [[Esc]] ends the chain. |
 | **Rectangle** | [[R]] | **Two corners:** click two opposite corners. **Center:** click the centre, then a corner. Press [[R]] again to switch between the two. |
 | **Circle** | [[C]] | **Center:** click the centre, then a point on the circle. **2-Point:** click two points on opposite sides. Press [[C]] again to switch. |
+| **Polygon** | [[G]] | Click the centre, then a corner. The polygon has six sides until you change it: type a number (3 to 64) or press [[↑]] and [[↓]] before the first click. The sides are always equal. Press [[G]] again for a **Triangle** (three sides). |
 | **Arc** | [[A]] | **Center:** click the centre, the start, then the end (counter-clockwise). **3-Point:** click the start, the end, then a point the arc passes through. Press [[A]] again to switch. |
 | **Spline** | [[B]] | Click points for a smooth curve through them, or press and drag to pull a handle. Click the first point to close the shape. [[Esc]] ends it. |
 | **Point** | [[P]] | Click to place a point. |
@@ -32,6 +33,7 @@ You don't have to place every point with the mouse. After the first click, small
 | Line | Length, Angle |
 | Rectangle | Width, Height |
 | Circle | Diameter |
+| Polygon, Triangle | Length (of one side) or Diameter (of the circle round the corners). Polygon also has Sides, the number of sides |
 | Arc (centre) | Radius after the first click, then Sweep after the second |
 
 ![Width and height fields while drawing a rectangle.](shot:draw-typed-values)

@@ -5,7 +5,7 @@ import Foundation
 import Testing
 @testable import SimplMaker
 
-/// The guided first part: its steps, how each knows it is done, and "Do it for me" for all of them.
+/// The guided first part (a phone stand): its steps, how each knows it is done, and "Do it for me" for all of them.
 @Suite @MainActor struct TutorialTests {
     private func settle(_ model: DocumentModel) async { await TutorialActions.settle(model) }
 
@@ -18,6 +18,10 @@ import Testing
             guard let step = guide.current(in: model) else { break }
             if step.id == stop { break }
             seen.append(step.id)
+            // Without a run loop turning, a step's changes would all land in one undo group: make each step its own.
+            let grouping = model.undoManager.map { !$0.groupsByEvent } ?? false
+            if grouping { model.undoManager?.beginUndoGrouping() }
+            defer { if grouping { model.undoManager?.endUndoGrouping() } }
             step.enter?(model)
             await settle(model)
             switch step.kind {
@@ -37,14 +41,15 @@ import Testing
 
     // MARK: the script
 
-    @Test func scriptHasSeventeenWellFormedSteps() {
+    @Test func scriptHasFifteenWellFormedSteps() {
         let steps = TutorialScript.steps
-        #expect(steps.count == 17)
+        #expect(steps.count == 15)
         #expect(Set(steps.map(\.id)).count == steps.count, "ids are unique")
         #expect(steps.map(\.chapter.rawValue) == steps.map(\.chapter.rawValue).sorted(), "chapters run in order")
         for step in steps where step.isTask { #expect(step.assist != nil, "\(step.id) can't be done for the user") }
         for step in steps { #expect(!step.title.isEmpty && !step.text.isEmpty) }
         #expect(steps.first?.id == "welcome" && steps.last?.id == "done")
+        #expect(TutorialScript.welcome.text.count < 160, "the first card says little: \(TutorialScript.welcome.text.count) characters")
     }
 
     @Test func aFreshPartStartsAtTheWelcome() {
@@ -66,7 +71,7 @@ import Testing
 
     // MARK: doing everything for the user
 
-    @Test func doItForMeBuildsTheWholeBoxAndLid() async throws {
+    @Test func doItForMeBuildsTheWholeStandAndWidensIt() async throws {
         let model = DocumentModel()
         await settle(model)
         let guide = TutorialGuide(active: true)
@@ -78,77 +83,138 @@ import Testing
 
         let r = try #require(model.result)
         #expect(r.errors.isEmpty, "\(r.errors)")
-        #expect(r.bodies.count == 2, "a box and a lid: \(r.bodies.map(\.id))")
+        #expect(r.bodies.count == 1, "one body, the stand: \(r.bodies.map(\.id))")
         let facts = TutorialFacts(model)
-        let box = try #require(facts.boxExtrude), lid = try #require(facts.lidExtrude)
-        let boxBody = try #require(r.body(box.id)), lidBody = try #require(r.body(lid.id))
+        let base = try #require(facts.baseExtrude), back = try #require(facts.backExtrude)
+        #expect(back.value.operation == .join)
+        let body = try #require(r.body(base.id))
 
-        // The box: 80 × 40 × 25 once `width` was changed to 80 mm, hollow, open at the top.
-        let b = try #require(boxBody.bounds)
-        #expect(abs(b.max.x - 40) < 1e-3 && abs(b.min.x + 40) < 1e-3, "width follows: \(b)")
-        #expect(abs(b.max.z - 25) < 1e-3 && abs(b.max.y - 20) < 1e-3)
-        #expect(boxBody.volume < 80 * 40 * 25 * 0.3, "hollow: \(boxBody.volume)")
-
-        // The lid: rests on the box, 4 mm thick (wall × 2), same footprint. (The box around a filleted and
-        // threaded body is only approximate, so a little slack.)
-        let l = try #require(lidBody.bounds)
-        #expect(abs(l.min.z - 25) < 0.05 && abs(l.max.z - 29) < 0.05, "\(l)")
-        #expect(abs(l.max.x - 40) < 0.05 && abs(l.max.y - 20) < 0.05)
-
-        // Fillet, hole and thread on the lid.
-        #expect(facts.lidFillet != nil && facts.lidHole != nil && facts.lidThread != nil)
-        let thread = try #require(facts.lidThread)
-        #expect(thread.value.standard == .metric && thread.value.size == "M6x1", "\(thread.value.size)")
-        let hole = try #require(facts.lidHole)
-        #expect(hole.value.u == "0 mm" && hole.value.v == "0 mm", "the hole is in the middle: \(hole.value.u), \(hole.value.v)")
+        // The base is 190 mm wide once `width` was changed (a tablet), 60 deep toward the viewer, and the
+        // backrest rises from its rear edge and leans back past it.
+        let b = try #require(body.bounds)
+        #expect(abs(b.min.x) < 0.05 && abs(b.max.x - 190) < 0.05, "width follows: \(b)")
+        #expect(b.min.y < -50 && b.min.y > -65, "the base reaches toward the viewer: \(b)")
+        #expect(b.max.y > 5, "the backrest leans back past the base: \(b)")
+        #expect(b.max.z > 60 && b.max.z < 75, "70 mm of backrest at 70 degrees: \(b)")
+        #expect(facts.planeLeans)
+        let width = 190.0
+        #expect(body.volume > width * 60 * 4 * 0.95 + width * 70 * 4 * 0.9, "base and backrest: \(body.volume)")
     }
 
     @Test func theUsersOwnWorkIsEnoughAndStepsTakeTheFirstUndoneOne() async throws {
         let model = DocumentModel()
         await settle(model)
         let guide = TutorialGuide(active: true)
-        await run(guide, model, until: "extrude-box")
-        #expect(guide.current(in: model)?.id == "extrude-box")
+        await run(guide, model, until: "extrude-base")
+        #expect(guide.current(in: model)?.id == "extrude-base")
 
         // Undo the sketch's rectangle: the guide goes back to drawing it.
         model.undoManager = UndoManager()
-        let box = try #require(TutorialFacts(model).boxSketch)
+        let base = try #require(TutorialFacts(model).baseSketch)
         model.mutate("Clear") { doc in
-            guard let i = doc.index(of: box.id), case .sketch(var sf) = doc.features[i].kind else { return }
+            guard let i = doc.index(of: base.id), case .sketch(var sf) = doc.features[i].kind else { return }
             sf.sketch = Sketch()
             doc.features[i].kind = .sketch(sf)
         }
         await settle(model)
-        #expect(guide.current(in: model)?.id == "box-rectangle")
+        #expect(guide.current(in: model)?.id == "base-rectangle")
+    }
+
+    // MARK: going back
+
+    @Test func backUnreadsAReadStep() async throws {
+        let model = DocumentModel()
+        await settle(model)
+        let guide = TutorialGuide(active: true)
+        guide.acknowledge(TutorialScript.welcome)
+        guide.acknowledge(TutorialScript.look)
+        #expect(guide.current(in: model)?.id == "parameters")
+        await guide.goBack(from: TutorialScript.parameters, in: model)
+        #expect(guide.current(in: model)?.id == "look")
+        #expect(guide.previous(of: TutorialScript.welcome) == nil, "nothing before the welcome")
+        await guide.goBack(from: TutorialScript.welcome, in: model)
+        #expect(guide.current(in: model)?.id == "look", "no step to go back to: nothing changes")
+    }
+
+    @Test func backUndoesTheWorkOfTheStepBefore() async throws {
+        let model = DocumentModel()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        model.undoManager = undo
+        await settle(model)
+        let guide = TutorialGuide(active: true)
+        await run(guide, model, until: "plane")
+        #expect(guide.current(in: model)?.id == "plane")
+        #expect(TutorialFacts(model).baseExtrude != nil)
+
+        // Back from "plane" takes the extrude away and shows "extrude-base" again; the sketch stays.
+        let step = try #require(guide.current(in: model))
+        await guide.goBack(from: step, in: model)
+        await settle(model)
+        #expect(guide.current(in: model)?.id == "extrude-base")
+        #expect(TutorialFacts(model).baseExtrude == nil && TutorialFacts(model).baseSketch != nil)
+        #expect(model.result?.errors.isEmpty == true)
+
+        // Once more: leaving the sketch can't be undone, so the sketch opens again, and the card asks to finish it.
+        let again = try #require(guide.current(in: model))
+        await guide.goBack(from: again, in: model)
+        await settle(model)
+        #expect(guide.current(in: model)?.id == "finish-base")
+        #expect(model.sketchSession?.featureID == TutorialFacts(model).baseSketch?.id)
+        #expect(TutorialFacts(model).baseSketch.map { TutorialFacts.baseOutline(of: $0.value.sketch) } == .good, "the rectangle is kept")
+
+        // And once more: the rectangle goes, and the card asks for it.
+        let third = try #require(guide.current(in: model))
+        await guide.goBack(from: third, in: model)
+        await settle(model)
+        #expect(guide.current(in: model)?.id == "base-rectangle")
+
+        // Forward again with "Do it for me" all the way: the same stand.
+        await run(guide, model)
+        #expect(guide.isFinished)
+        #expect(model.result?.errors.isEmpty == true && model.result?.bodies.count == 1)
     }
 
     // MARK: what each step looks for
 
-    @Test func theRectangleMustUseTheParametersAndSitOnTheOrigin() async throws {
+    @Test func theRectanglesMustUseTheParametersAndGrowFromTheOrigin() async throws {
+        func sketch(_ x0: Double, _ y0: Double, _ x1: Double, _ y1: Double, _ first: String, _ second: String) -> Sketch {
+            var s = Sketch()
+            s.addRectangle(x0, y0, x1, y1)
+            s.dimension(.length(s.curves[0].id), first)
+            s.dimension(.length(s.curves[1].id), second)
+            return s
+        }
         var plain = Sketch()
-        plain.addRectangle(-30, -20, 30, 20)
-        plain.dimension(.length(plain.curves[0].id), "60 mm")
-        #expect(TutorialFacts.outline(of: plain) == .plainNumbers)
+        plain.addRectangle(0, -60, 80, 0)
+        plain.dimension(.length(plain.curves[0].id), "80 mm")
+        #expect(TutorialFacts.baseOutline(of: plain) == .plainNumbers)
 
         // Sized by parameters, but the wrong ones: not "plain numbers", and the hint names what's missing.
-        var wrong = Sketch()
-        wrong.addRectangle(-30, -20, 30, 20)
-        wrong.dimension(.length(wrong.curves[0].id), "width")
-        wrong.dimension(.length(wrong.curves[1].id), "height")
-        #expect(TutorialFacts.outline(of: wrong) == .missingParameters(["depth"]))
+        #expect(TutorialFacts.baseOutline(of: sketch(0, -60, 80, 0, "width", "thickness")) == .missingParameters(["depth"]))
 
-        var shifted = Sketch()
-        shifted.addRectangle(0, 0, 60, 40)
-        shifted.dimension(.length(shifted.curves[0].id), "width")
-        shifted.dimension(.length(shifted.curves[1].id), "depth")
-        #expect(TutorialFacts.outline(of: shifted) == .offCenter)
+        // The base grows toward the viewer (down), the backrest up: the wrong way round is called out.
+        #expect(TutorialFacts.baseOutline(of: sketch(0, -60, 80, 0, "width", "depth")) == .good)
+        #expect(TutorialFacts.baseOutline(of: sketch(0, 0, 80, 60, "width", "depth")) == .offOrigin)
+        #expect(TutorialFacts.baseOutline(of: sketch(10, -70, 90, -10, "width", "depth")) == .offOrigin)
+        #expect(TutorialFacts.backOutline(of: sketch(0, 0, 80, 70, "width", "backrest")) == .good)
+        #expect(TutorialFacts.backOutline(of: sketch(0, -70, 80, 0, "width", "backrest")) == .offOrigin)
+        #expect(TutorialFacts.backOutline(of: sketch(0, 0, 80, 70, "width / 1", "backrest * 1")) == .good)
+        #expect(TutorialFacts.baseOutline(of: Sketch()) == .missing)
+    }
 
-        var good = Sketch()
-        good.addRectangle(-30, -20, 30, 20)
-        good.dimension(.length(good.curves[0].id), "width")
-        good.dimension(.length(good.curves[1].id), "depth / 1")
-        #expect(TutorialFacts.outline(of: good) == .good)
-        #expect(TutorialFacts.outline(of: Sketch()) == .missing)
+    @Test func theCardWaitsForFinishSketchBeforeAskingForTheExtrude() async throws {
+        let model = DocumentModel()
+        await settle(model)
+        let guide = TutorialGuide(active: true)
+        await run(guide, model, until: "finish-base")
+        // The rectangle is drawn and the sketch is still open: this is the step that asks to finish it.
+        let step = try #require(guide.current(in: model))
+        #expect(step.id == "finish-base" && model.sketchSession != nil)
+        #expect(step.spotlight(model) == ["Finish Sketch"])
+        model.finishSketch()
+        await settle(model)
+        #expect(guide.current(in: model)?.id == "extrude-base")
     }
 
     @Test func aSketchOnTheWrongPlaneIsCalledOut() async throws {
@@ -166,47 +232,84 @@ import Testing
         await guide.assist(step, in: model)
         await settle(model)
         let facts = TutorialFacts(model)
-        #expect(facts.boxSketch != nil && facts.misplacedSketch == nil)
-        #expect(model.sketchSession?.featureID == facts.boxSketch?.id)
+        #expect(facts.baseSketch != nil && facts.misplacedSketch == nil)
+        #expect(model.sketchSession?.featureID == facts.baseSketch?.id)
     }
 
-    @Test func aLidThatJoinsTheBoxIsNotDone() async throws {
+    @Test func aNewPlaneIsNotDoneUntilItsOffsetIsSettledAndItMustLeanByTheParameter() async throws {
         let model = DocumentModel()
         await settle(model)
         let guide = TutorialGuide(active: true)
-        await run(guide, model, until: "extrude-lid")
-        // Extrude the lid as the tool's default (a join), with the right size: still not done.
-        let lid = try #require(TutorialFacts(model).lidSketch)
+        await run(guide, model, until: "plane")
+        model.run(.plane)
+        model.click(OriginPlane.xy.pickID, additive: false)
+        await settle(model)
+
+        // The new plane's offset field is still open: the card asks for Return, and `lean` typed there would be wrong.
+        var step = try #require(guide.current(in: model))
+        #expect(step.id == "plane" && step.hint(model)?.text.contains("Return") == true)
+        model.finishFeatureEdit()
+        step = try #require(guide.current(in: model))
+        #expect(step.id == "tilt" && step.hint(model)?.text.lowercased().contains("select") == true, "\(step.id)")
+
+        // The step selects the plane for the user, so the inspector has its Angle field ready (clicking the plane
+        // in the viewport isn't needed). It asks for the angle; a plain number tilts it too, but won't follow `lean`.
+        let plane = try #require(TutorialFacts(model).plane)
+        step.enter?(model)
+        #expect(model.selectedFeature == plane.id)
+        #expect(step.hint(model)?.text.contains("Angle") == true && step.spotlight(model) == ["inspector"])
+        model.updateFeature(plane.id, "Angle") { f in if case .plane(var p) = f.kind { p.angle = "60 deg"; f.kind = .plane(p) } }
+        await settle(model)
+        #expect(guide.current(in: model)?.id == "tilt" && step.hint(model)?.isProblem == true)
+        await guide.assist(step, in: model)
+        await settle(model)
+        #expect(TutorialFacts(model).planeLeans && guide.current(in: model)?.id == "back-sketch")
+        #expect(model.document.features.filter { if case .plane = $0.kind { true } else { false } }.count == 1)
+    }
+
+    @Test func aBackrestSketchedAnywhereButOnThePlaneIsCalledOut() async throws {
+        let model = DocumentModel()
+        await settle(model)
+        let guide = TutorialGuide(active: true)
+        await run(guide, model, until: "back-sketch")
+        model.beginSketch(on: .xz)
+        await settle(model)
+        model.finishSketch()
+        await settle(model)
+        let step = try #require(guide.current(in: model))
+        #expect(step.id == "back-sketch" && step.hint(model)?.isProblem == true)
+        await guide.assist(step, in: model)
+        await settle(model)
+        let facts = TutorialFacts(model)
+        #expect(facts.backSketch != nil && facts.misplacedBackSketch == nil)
+        #expect(guide.current(in: model)?.id == "back-rectangle")
+    }
+
+    @Test func aBackrestThatIsNotJoinedIsNotDone() async throws {
+        let model = DocumentModel()
+        await settle(model)
+        let guide = TutorialGuide(active: true)
+        await run(guide, model, until: "extrude-back")
+        let back = try #require(TutorialFacts(model).backSketch)
         model.finishSketch()
         await settle(model)
         model.run(.extrude)
-        let pick = try #require(TutorialActions.profilePick(of: lid.id, model))
+        let pick = try #require(TutorialActions.profilePick(of: back.id, model))
         model.click(pick, additive: false)
         await settle(model)
         let id = try #require(model.selectedFeature)
-        model.commitHandle("wall * 2", for: id)
+        model.updateFeature(id, "Change Operation") { f in
+            if case .extrude(var e) = f.kind { e.operation = .newBody; f.kind = .extrude(e) }
+        }
+        model.commitHandle("thickness", for: id)
         await settle(model)
         let step = try #require(guide.current(in: model))
-        #expect(step.id == "extrude-lid", "joined to the box, so not a lid yet")
-        #expect(step.hint(model)?.isProblem == true)
+        #expect(step.id == "extrude-back" && step.hint(model)?.isProblem == true)
         #expect(step.spotlight(model) == ["inspector"])
         await guide.assist(step, in: model)
         await settle(model)
-        #expect(guide.current(in: model)?.id == "fillet")
-        #expect(model.result?.bodies.count == 2)
-    }
-
-    @Test func aShellThroughASideIsCalledOut() async throws {
-        let model = DocumentModel()
-        await settle(model)
-        let guide = TutorialGuide(active: true)
-        await run(guide, model, until: "shell")
-        let ex = try #require(TutorialFacts(model).boxExtrude)
-        let side = FaceRef(body: ex.id, face: "\(ex.id).start")  // the bottom, not the top
-        model.add(Feature(name: "Shell1", .shell(ShellFeature(body: ex.id, faces: [side]))))
-        await settle(model)
-        let step = try #require(guide.current(in: model))
-        #expect(step.id == "shell" && step.hint(model)?.isProblem == true)
+        #expect(guide.current(in: model)?.id == "change")
+        #expect(model.result?.bodies.count == 1)
     }
 
     @Test func parametersAreOnlyAddedOnce() async throws {
@@ -214,7 +317,8 @@ import Testing
         await settle(model)
         TutorialActions.seedParameters(model)
         TutorialActions.seedParameters(model)
-        #expect(model.document.parameters.map(\.name) == ["width", "depth", "height", "wall"])
+        #expect(model.document.parameters.map(\.name) == ["width", "depth", "thickness", "backrest", "lean"])
+        #expect(model.document.parameters.first { $0.name == "lean" }?.unit == .angle)
         model.setParameter("width", expression: "70 mm")
         TutorialActions.seedParameters(model)
         #expect(model.document.parameters.first { $0.name == "width" }?.expression == "70 mm", "the user's value stays")

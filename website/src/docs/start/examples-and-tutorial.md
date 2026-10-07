@@ -20,18 +20,18 @@ Your recent parts are listed on the right. Double-click one, or select it and pr
 
 To stop it appearing at launch, untick **Show this window when SimplMaker launches**, or turn it off in **Settings → General**. **Window → Welcome to SimplMaker** ([[⇧⌘1]]) brings it back.
 
-## The tutorial: a box with a lid
+## The tutorial: a phone stand
 
-A guided tutorial of about ten minutes. A card at the bottom of the view walks you through building a box with a lid:
+A guided tutorial of about five minutes. A card at the bottom of the view walks you through making a phone stand you can print:
 
-- four named parameters
-- a sketch, an extrusion and a shell
-- a construction plane for the lid
-- a fillet, a hole and an M6 thread
-- changing `width` at the end, to watch everything follow
+- five named parameters
+- a sketch and an extrusion for the base
+- a construction plane that leans by an angle, with a second sketch and extrusion on it for the backrest
+- changing `width` at the end, to turn the phone stand into a tablet stand
 
-The card follows what you actually do. It moves on when the part shows a step is done, steps back if you undo it, and tells you when something is off, such as a rectangle drawn with plain numbers instead of parameters.
+The card follows what you actually do. It moves on when the part shows a step is done, steps back if you undo it, and tells you when something is off, such as a rectangle drawn with plain numbers instead of parameters, or a backrest that isn't joined to the base.
 
+- The **‹** button goes back a step and undoes what you did in it.
 - **Do it for me** performs the current step the way the interface would, so you can see how.
 - **Leave tutorial** (or the ✕) closes the card.
 - **Help → Resume Tutorial** brings it back.

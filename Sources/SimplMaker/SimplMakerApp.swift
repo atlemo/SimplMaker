@@ -75,6 +75,7 @@ struct SimplMakerCommands: Commands {
     @Environment(\.newDocument) private var newDocument
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var updater = Updater.shared
+    @ObservedObject private var shortcuts = ShortcutStore.shared  // the menus show the user's shortcuts
     private let license = LicenseManager.shared
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     @AppStorage(Preferences.snapToGrid) private var snapToGrid = true
@@ -95,12 +96,12 @@ struct SimplMakerCommands: Commands {
             }
         }
         CommandGroup(replacing: .help) {
-            Button(guide?.canResume == true ? "Resume Tutorial: Box with a Lid" : "Tutorial: Make a Box with a Lid") { startTutorial() }
+            Button(guide?.canResume == true ? "Resume Tutorial: Phone Stand" : "Tutorial: Make a Phone Stand") { startTutorial() }
         }
         CommandGroup(before: .saveItem) {
             Menu("Open Example Parts") {
                 Button("Plate with Holes, Fillets and a Chamfer") { newDocument { CADFile(document: .demo()) } }
-                    .keyboardShortcut("n", modifiers: [.command, .option])
+                    .shortcut(.exampleParts)
                 Button("Bracket with Ribs") { newDocument { CADFile(document: .ribDemo()) } }
                 Button("Flanged Pipe on a Manifold (advanced)") { newDocument { CADFile(document: .manifoldDemo()) } }
             }
@@ -108,11 +109,11 @@ struct SimplMakerCommands: Commands {
         }
         CommandGroup(before: .windowList) {
             Button("Welcome to SimplMaker") { openWindow(id: AppWindows.welcomeID) }
-                .keyboardShortcut("1", modifiers: [.command, .shift])
+                .shortcut(.welcome)
         }
         CommandGroup(after: .importExport) {
             Button("Import STEP…") { model?.importSTEP() }
-                .keyboardShortcut("i", modifiers: [.command, .shift])
+                .shortcut(.importSTEP)
                 .disabled(model == nil)
             Button("Import SVG as Sketch…") { model?.importSVG() }
                 .disabled(model == nil)
@@ -121,16 +122,16 @@ struct SimplMakerCommands: Commands {
             Button("Export STL…") { model?.export(stl: true) }.disabled(model == nil)
         }
         CommandGroup(before: .toolbar) {
-            Button("Fit All") { model?.fitView() }
-                .keyboardShortcut("0")
+            Button("Fit All") { LetterShortcut.perform(model) { model?.fitView() } }
+                .shortcut(.fitAll)
             Menu("Standard Views") {
                 ForEach(StandardView.allCases) { v in
-                    Button(v.title) { model?.show(v) }.keyboardShortcut(v.shortcut)
+                    Button(v.title) { LetterShortcut.perform(model) { model?.show(v) } }.shortcut(.view(v))
                 }
             }
             Toggle("Orthographic Projection", isOn: Binding(get: { model?.orthographic ?? false },
                                                             set: { model?.orthographic = $0 }))
-                .keyboardShortcut("o", modifiers: [.command, .option])
+                .shortcut(.orthographic)
             Picker("Visual Style", selection: Binding(get: { model?.visualStyle ?? .standard },
                                                       set: { model?.visualStyle = $0 })) {
                 ForEach(VisualStyle.allCases) { style in
@@ -141,24 +142,24 @@ struct SimplMakerCommands: Commands {
             .disabled(model == nil)
             Divider()
             Toggle("Show Grid", isOn: $showGrid)
-                .keyboardShortcut("g", modifiers: [.command, .option])
+                .shortcut(.showGrid)
             Toggle("Show Axes", isOn: $showAxes)
-                .keyboardShortcut("a", modifiers: [.command, .option])
+                .shortcut(.showAxes)
             Toggle("Show Constraints", isOn: $showConstraints)
             Toggle("Snap to Grid", isOn: $snapToGrid)
-                .keyboardShortcut("'", modifiers: [.command])
+                .shortcut(.snapToGrid)
             Divider()
-            Button((model?.showSidebar ?? true) ? "Hide Browser" : "Show Browser") { model?.showSidebar.toggle() }
-                .keyboardShortcut("s", modifiers: [.command, .control])
-            Button((model?.showTimeline ?? true) ? "Hide Timeline" : "Show Timeline") { model?.showTimeline.toggle() }
-                .keyboardShortcut("t", modifiers: [.command, .option])
-            Button((model?.showInspector ?? true) ? "Hide Inspector" : "Show Inspector") { model?.showInspector.toggle() }
-                .keyboardShortcut("i", modifiers: [.command, .option])
+            Button((model?.showSidebar ?? true) ? "Hide Browser" : "Show Browser") { LetterShortcut.perform(model) { model?.showSidebar.toggle() } }
+                .shortcut(.browser)
+            Button((model?.showTimeline ?? true) ? "Hide Timeline" : "Show Timeline") { LetterShortcut.perform(model) { model?.showTimeline.toggle() } }
+                .shortcut(.timeline)
+            Button((model?.showInspector ?? true) ? "Hide Inspector" : "Show Inspector") { LetterShortcut.perform(model) { model?.showInspector.toggle() } }
+                .shortcut(.inspector)
             Button((model?.showAppearance ?? false) ? "Hide Appearance" : "Show Appearance") {
                 LetterShortcut.perform(model) { model?.toggleAppearance() }
             }
-            .keyboardShortcut("a", modifiers: [])
-            .disabled(model == nil || model?.sketchSession != nil)  // sketching, A draws an arc
+            .shortcut(.appearance)
+            .disabled(model == nil || model?.sketchSession != nil)  // sketching, the key belongs to the sketch tools (A draws an arc)
             Divider()
         }
         CommandMenu("Sketch") {
@@ -196,8 +197,8 @@ struct SimplMakerCommands: Commands {
             toolItem(.plane, title: "Construction Plane")
             toolItem(.canvas, title: "Canvas (Reference Image)…")
             Divider()
-            Button("Rebuild") { model?.regenerate() }
-                .keyboardShortcut("r", modifiers: [.command])
+            Button("Rebuild") { LetterShortcut.perform(model) { model?.regenerate() } }
+                .shortcut(.rebuild)
                 .disabled(model == nil)
         }
         CommandMenu("Modify") {
@@ -223,22 +224,24 @@ struct SimplMakerCommands: Commands {
         newDocument { CADFile(tutorial: true) }
     }
 
-    /// A Create or Modify tool, with its single-letter shortcut (E for Extrude, F for Fillet...).
+    /// A Create or Modify tool, with its shortcut (by default a single letter: E for Extrude, F for Fillet...).
     private func toolItem(_ tool: DesignTool, title: String? = nil) -> some View {
         Button(title ?? tool.rawValue) { LetterShortcut.perform(model) { model?.run(tool) } }
-            .keyboardShortcut(KeyEquivalent(tool.key), modifiers: [])
+            .shortcut(.tool(tool))
             .disabled(model == nil)
     }
 }
 
-/// Menu items with single-letter shortcuts, the way CAD tools work (E extrude, A appearance).
-/// A menu shortcut sees the key before the view with focus does, so the letter is handed back
-/// where it belongs instead: to a text field being typed in, to a sheet or alert, and while
-/// sketching to the sketch, whose tools use the same letters (A arc, E extend, F round corner).
+/// Menu items whose shortcut is a plain key, the way CAD tools work (E extrude, A appearance); the
+/// user can give any command one. A menu shortcut sees the key before the view with focus does, so
+/// the key is handed back where it belongs instead: to a text field being typed in, to a sheet or
+/// alert, and while sketching to the sketch, whose tools use the same letters (A arc, E extend,
+/// F round corner). Shortcuts with ⌘, ⌃ or ⌥ always run the command.
 @MainActor
 enum LetterShortcut {
     static func perform(_ model: DocumentModel?, _ action: () -> Void) {
         if let event = NSApp.currentEvent, event.type == .keyDown,
+           event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
            let window = NSApp.keyWindow, let responder = window.firstResponder,
            responder is NSText || model?.sketchSession != nil || window.sheetParent != nil || window.attachedSheet != nil {
             responder.keyDown(with: event)

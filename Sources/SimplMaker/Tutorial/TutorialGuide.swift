@@ -76,6 +76,35 @@ final class TutorialGuide {
         if step.id == TutorialScript.done.id { finish() }
     }
 
+    /// The step before this one, if there is one to go back to.
+    func previous(of step: TutorialStep) -> TutorialStep? {
+        guard let i = steps.firstIndex(where: { $0.id == step.id }), i > 0 else { return nil }
+        return steps[i - 1]
+    }
+
+    /// Goes back a step. A "read" step is simply unread. A step that was done is undone, one ⌘Z at a time, until
+    /// the part no longer satisfies it, so the card (which always shows the first step not done) comes back to it.
+    func goBack(from step: TutorialStep, in model: DocumentModel) async {
+        guard !isAssisting, let before = previous(of: step) else { return }
+        isAssisting = true
+        defer { isAssisting = false }
+        isFinished = false
+        switch before.kind {
+        case .read:
+            acknowledged.remove(before.id)
+        case .task:
+            model.cancelTool()
+            model.cancelSketchPlanePick()
+            if let rewind = before.rewind { await rewind(model); return }
+            var undone = 0
+            while isDone(before, in: model), undone < 40, let undo = model.undoManager, undo.canUndo {
+                undo.undo()
+                undone += 1
+                await TutorialActions.settle(model)
+            }
+        }
+    }
+
     /// Does the step for the user, with the parameters it needs in place first.
     func assist(_ step: TutorialStep, in model: DocumentModel) async {
         guard !isAssisting, let assist = step.assist else { return }

@@ -290,6 +290,34 @@ extension Sketch {
         return r.lines
     }
 
+    /// The fewest and most corners a polygon can have.
+    public static let polygonSides = 3...64
+
+    /// Regular polygon of `sides` corners around `center`, with its first corner at `corner`. The
+    /// corners sit on a construction circle and the sides are all equal, so it stays regular as it is
+    /// resized or dragged. Returns the sides (counter-clockwise from the first corner) and the circle.
+    @discardableResult
+    public mutating func addPolygon(center: SketchSnap, corner: SketchSnap, sides: Int) -> (lines: [EntityID], circle: EntityID) {
+        let n = min(max(sides, Sketch.polygonSides.lowerBound), Sketch.polygonSides.upperBound)
+        let center = concrete(center), corner = concrete(corner)
+        let c = center.point.flatMap { position($0) } ?? center.position
+        let d = corner.position - c
+        let r = max(vlen(d), 1e-3)
+        let first = atan2(d.y, d.x)
+        let middle = resolve(center)
+        let circle = addCircle(center: middle, radius: r)
+        if let i = curves.firstIndex(where: { $0.id == circle }) { curves[i].construction = true }
+        let corners = (0..<n).map { k -> EntityID in
+            let a = first + 2 * .pi * Double(k) / Double(n)
+            return addPoint(c.x + r * cos(a), c.y + r * sin(a))
+        }
+        let lines = (0..<n).map { addLine(corners[$0], corners[($0 + 1) % n]) }
+        for p in corners { constrain(.pointOnCurve(point: p, curve: circle)) }
+        for l in lines.dropFirst() { constrain(.equal(lines[0], l)) }
+        attach(corners[0], to: corner)
+        return (lines, circle)
+    }
+
     /// Arc from `start` to `end` through `through`, with a new center point; nil if the three are
     /// in a line.
     @discardableResult

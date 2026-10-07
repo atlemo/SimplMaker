@@ -102,6 +102,64 @@ import Testing
         #expect(a.sketch.dimensions.map(\.expression) == ["8 mm"])
     }
 
+    @Test func polygonIsRegularWithTheChosenNumberOfSides() throws {
+        let p = session()
+        p.setTool(.polygon)
+        #expect(p.inputFields == [.sides])
+        #expect(p.sidesCount == 6, "a hexagon until told otherwise")
+        p.adjustSides(by: 2)
+        #expect(p.sidesCount == 8)
+        p.setTyped(.sides, "5")
+        #expect(p.sidesCount == 5)
+        #expect(p.commitTyped() == nil && p.clicks.isEmpty, "Return only sets the sides")
+        click(p, 0, 0)
+        #expect(p.inputFields == [.length, .diameter, .sides])
+        click(p, 10, 0)
+        #expect(p.solve?.status == .solved)
+        let lines = p.sketch.curves.filter { !$0.construction }
+        #expect(lines.count == 5)
+        #expect(p.sketch.curves.contains { $0.construction }, "the circle round the corners")
+        let lengths = lines.compactMap { p.sketch.geometry(of: $0.id) }.map { simdLength($0.point(1) - $0.point(0)) }
+        let side = 2 * 10 * sin(Double.pi / 5)
+        #expect(lengths.allSatisfy { abs($0 - side) < 1e-6 })
+
+        p.adjustSides(by: -100)
+        #expect(p.sidesCount == 3, "never fewer than three")
+    }
+
+    @Test func triangleIsEquilateralAndTakesASideLength() throws {
+        let t = session()
+        t.setTool(.triangle)
+        #expect(t.sidesCount == 3)
+        click(t, 0, 0)
+        #expect(t.inputFields == [.length, .diameter])
+        move(t, 5, 0)
+        t.setTyped(.length, "12")
+        #expect(t.commitTyped() == "Triangle")
+        let lines = t.sketch.curves.filter { !$0.construction }
+        #expect(lines.count == 3)
+        #expect(t.solve?.status == .solved)
+        for l in lines {
+            let g = try #require(t.sketch.geometry(of: l.id))
+            #expect(abs(simdLength(g.point(1) - g.point(0)) - 12) < 1e-6)
+        }
+        #expect(t.sketch.dimensions.map(\.expression) == ["12 mm"])
+        #expect(SketchTool.forKey("g", current: .polygon) == .triangle)
+        #expect(SketchTool.forKey("g", current: .triangle) == .polygon)
+    }
+
+    @Test func polygonStaysRegularWhenADimensionChanges() throws {
+        let p = session()
+        p.setTool(.polygon)
+        click(p, 0, 0)
+        p.setTyped(.diameter, "30")
+        #expect(p.commitTyped() == "Polygon")
+        #expect(p.sketch.dimensions.map(\.expression) == ["30 mm"])
+        let lines = p.sketch.curves.filter { !$0.construction }
+        let lengths = lines.compactMap { p.sketch.geometry(of: $0.id) }.map { simdLength($0.point(1) - $0.point(0)) }
+        #expect(lengths.count == 6 && lengths.allSatisfy { abs($0 - 15) < 1e-6 }, "a hexagon's side is its radius")
+    }
+
     @Test func twoPointCircleSpansItsDiameter() throws {
         let c = session()
         c.setTool(.circle2Point)

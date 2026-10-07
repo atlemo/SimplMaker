@@ -19,6 +19,7 @@ struct DocumentWindow: View {
     @Bindable var model: DocumentModel
     let guide: TutorialGuide
     let fileURL: URL?
+    @ObservedObject private var shortcuts = ShortcutStore.shared  // tooltips name the shortcuts, which the user can change
     @Environment(\.undoManager) private var undoManager
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -44,6 +45,11 @@ struct DocumentWindow: View {
     private var unlinkTitle: String {
         guard let p = model.unlinkPrompt else { return "" }
         return "Replace \(p.expression) with \(p.valueText)?"
+    }
+
+    /// A toolbar button's tooltip with its shortcut: "Show or hide the browser (⌃⌘S)".
+    private func helpWithShortcut(_ text: String, _ command: ShortcutCommand) -> String {
+        Shortcuts.label(command).map { "\(text) (\($0))" } ?? text
     }
 
     var body: some View {
@@ -181,11 +187,11 @@ struct DocumentWindow: View {
             .sharedBackgroundVisibility(.hidden)  // the tools sit on the toolbar itself, with no glass of their own
             ToolbarItem(placement: .navigation) {
                 Button { model.showSidebar.toggle() } label: { Label("Browser", systemImage: "sidebar.left") }
-                    .help("Show or hide the browser (⌃⌘S)")
+                    .help(helpWithShortcut("Show or hide the browser", .browser))
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { model.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
-                    .help("Show or hide the inspector (⌥⌘I)")
+                    .help(helpWithShortcut("Show or hide the inspector", .inspector))
             }
         }
         .modifier(AccentScope(sketching: model.sketchSession != nil))
@@ -325,7 +331,7 @@ struct StartCard: View {
                 Button { model.run(.cylinder) } label: { Label("Cylinder", systemImage: "cylinder") }
             }
             .controlSize(.large)
-            Button { guide.start() } label: { Label("New to CAD? Follow the tutorial: a box with a lid", systemImage: "graduationcap") }
+            Button { guide.start() } label: { Label("New to CAD? Follow the tutorial: a phone stand", systemImage: "graduationcap") }
                 .buttonStyle(.link)
                 .padding(.top, DS.Spacing.space5)  // a bigger gap below the three buttons
             Text("Right-click in the view for more · File › Open Example Parts to learn from")
@@ -1017,6 +1023,7 @@ struct ToolDivider: View {
 struct SketchToolbar: View {
     let model: DocumentModel
     let session: SketchSession
+    @ObservedObject private var shortcuts = ShortcutStore.shared  // the tooltips and keys shown follow the user's changes
     @State private var constrainOpen = false
     @Environment(\.toolTitles) private var showsTitles
     @Environment(\.controlActiveState) private var activeState
@@ -1026,7 +1033,7 @@ struct SketchToolbar: View {
             SoloTool(tool: tool(.select))
             ToolDivider()
             // Tools in a family (rectangle, circle, arc) share one button, under the first one's name.
-            ToolGroup("Draw", id: "sketch.draw", defaults: ["Line", "Rectangle", "Circle", "Spline", "Text"],
+            ToolGroup("Draw", id: "sketch.draw", defaults: ["Line", "Rectangle", "Circle", "Polygon", "Spline", "Text"],
                       tools: SketchTool.draw.filter { $0.family.first == $0 }.map(tool))
             ToolDivider()
             ToolGroup("Modify", id: "sketch.modify", defaults: ["Round Corner", "Trim", "Extend", "Offset"],
@@ -1063,7 +1070,7 @@ struct SketchToolbar: View {
                 model.setSketchTool(t)
             }
         }
-        return GroupTool(id: head.rawValue, title: head.shortTitle, icon: mode.symbol, help: mode.help, shortcut: head.key,
+        return GroupTool(id: head.rawValue, title: head.shortTitle, icon: mode.symbol, help: mode.help, shortcut: head.keyLabel,
                          active: head.family.contains(session.tool), modes: modes) { model.setSketchTool(mode) }
     }
 
@@ -1126,6 +1133,7 @@ struct SketchToolbar: View {
 /// it; its name opens the rest. A tool that is waiting for picks is highlighted.
 struct DesignToolbar: View {
     let model: DocumentModel
+    @ObservedObject private var shortcuts = ShortcutStore.shared  // the tooltips and keys shown follow the user's changes
 
     var body: some View {
         HStack(spacing: DS.Spacing.space1) {
@@ -1169,7 +1177,7 @@ struct DesignToolbar: View {
                               active: model.extrudeMode == mode) { model.chooseExtrudeMode(mode) }
                 }
             }
-            return GroupTool(id: tool.rawValue, title: tool.rawValue, icon: icon, help: help, shortcut: tool.key,
+            return GroupTool(id: tool.rawValue, title: tool.rawValue, icon: icon, help: help, shortcut: Shortcuts.label(.tool(tool)),
                              active: model.pendingTool == tool, modes: modes) { model.run(tool) }
         })
     }

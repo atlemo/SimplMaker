@@ -103,6 +103,15 @@ struct TutorialCard: View {
     @ViewBuilder
     private func buttons(_ step: TutorialStep) -> some View {
         HStack(spacing: DS.Spacing.space4) {
+            if guide.previous(of: step) != nil {
+                Button { Task { await guide.goBack(from: step, in: model) } } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+                .disabled(guide.isAssisting)
+                .help("Go back a step. What you did in it is undone.")
+                .accessibilityLabel("Back")
+            }
             switch step.kind {
             case .read(let title):
                 Button(step.id == TutorialScript.welcome.id ? "Not now" : "Leave tutorial") { guide.stop() }

@@ -103,7 +103,7 @@ struct WelcomeView: View {
 
     private var tutorialAction: some View {
         WelcomeAction(title: tutorialCompleted ? "Do the tutorial again" : "Make your first part",
-                      subtitle: "A guided tutorial: build a box with a lid, step by step.",
+                      subtitle: "A guided tutorial: make a phone stand, step by step.",
                       systemImage: "graduationcap") { newDocument { CADFile(tutorial: true) } }
     }
 

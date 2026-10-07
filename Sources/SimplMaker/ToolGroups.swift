@@ -32,7 +32,7 @@ struct GroupTool: Identifiable {
     let title: String
     let icon: String
     var help: String
-    var shortcut: Character?
+    var shortcut: String?
     var active = false
     var enabled = true
     /// Ways of doing it (a rectangle from two corners, or from its center). The button does the
@@ -299,9 +299,9 @@ private struct ToolGroupRow: View {
                 .help(mode.help)
                 .accessibilityLabel("\(tool.title), \(mode.title)")
             }
-            Text(tool.shortcut.map { String($0).uppercased() } ?? "")
+            Text(tool.shortcut ?? "")
                 .foregroundStyle(.secondary)
-                .frame(width: 16)
+                .frame(minWidth: 16)
                 .accessibilityHidden(true)
             Button(action: toggle) {
                 Image(systemName: pinned ? "pin.fill" : "pin")

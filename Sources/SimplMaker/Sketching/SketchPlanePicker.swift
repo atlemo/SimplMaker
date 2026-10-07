@@ -58,6 +58,7 @@ enum OriginPlane: Int, CaseIterable, Sendable {
 extension SketchOverlayBuilder {
     /// The origin planes as translucent, pickable squares in the positive quadrant of each plane.
     static func originPlanes(size s: Double, into o: inout SketchOverlay) {
+        o.originPlaneCount = OriginPlane.allCases.count
         for plane in OriginPlane.allCases {
             let f = plane.frame, id = plane.pickID.raw
             let n = SIMD3<Float>(Float(f.normal.x), Float(f.normal.y), Float(f.normal.z))

@@ -46,6 +46,7 @@ While you sketch, the letters pick sketch tools instead.
 | [[L]] | Line |
 | [[R]] | Rectangle. Press again for the centre rectangle. |
 | [[C]] | Circle. Press again for the 2-point circle. |
+| [[G]] | Polygon. Press again for a triangle. |
 | [[A]] | Arc. Press again for the 3-point arc. |
 | [[B]] | Spline |
 | [[P]] | Point |

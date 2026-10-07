@@ -19,14 +19,13 @@ struct TutorialHint: Equatable {
 @MainActor
 struct TutorialStep: Identifiable {
     enum Chapter: Int, CaseIterable {
-        case start, box, lid, details, change
+        case start, base, backrest, change
 
         var title: String {
             switch self {
             case .start: return "Get started"
-            case .box: return "The box"
-            case .lid: return "The lid"
-            case .details: return "The details"
+            case .base: return "The base"
+            case .backrest: return "The backrest"
             case .change: return "Make it yours"
             }
         }
@@ -53,6 +52,8 @@ struct TutorialStep: Identifiable {
     var enter: (@MainActor (DocumentModel) -> Void)?
     /// Does the step for the user ("Do it for me"), the way the interface would.
     var assist: (@MainActor (DocumentModel) async -> Void)?
+    /// Takes the step back, when undoing isn't how (leaving sketch mode makes nothing to undo: the sketch is opened again).
+    var rewind: (@MainActor (DocumentModel) async -> Void)?
 
     var isTask: Bool { if case .task = kind { true } else { false } }
 }

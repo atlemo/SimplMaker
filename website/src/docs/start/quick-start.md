@@ -6,7 +6,7 @@ description: Model a small plate with a hole from scratch, change a size, and ex
 This walkthrough builds a plate with a hole and rounded edges. You will meet the main ideas: parameters, a sketch, an extrusion, and an export.
 
 :::tip
-Prefer to be guided inside the app? Choose **Help → Tutorial: Make a Box with a Lid**. See [Examples and the tutorial](doc:start/examples-and-tutorial).
+Prefer to be guided inside the app? Choose **Help → Tutorial: Make a Phone Stand**. See [Examples and the tutorial](doc:start/examples-and-tutorial).
 :::
 
 ## 1. Start a part

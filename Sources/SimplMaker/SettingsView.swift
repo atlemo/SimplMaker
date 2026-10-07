@@ -15,7 +15,7 @@ enum Preferences {
     static let gridSizeUS = "gridSizeUS"
     static let sketchPaper = "sketchPaper"
     static let antialiasing = "antialiasing"
-    /// The guided first part (the box with a lid) has been finished.
+    /// The guided first part (the phone stand) has been finished.
     static let tutorialCompleted = "tutorialCompleted"
 
     /// The tools pinned to a toolbar group (see ToolGroups.swift), by the group's id.
@@ -134,7 +134,7 @@ struct SettingsView: View {
     @ObservedObject private var updater = Updater.shared
 
     private enum Pane: String, CaseIterable, Identifiable {
-        case general = "General", license = "License", navigation = "Navigation", viewport = "Viewport"
+        case general = "General", license = "License", navigation = "Navigation", viewport = "Viewport", shortcuts = "Shortcuts"
         var id: String { rawValue }
         var icon: String {
             switch self {
@@ -142,6 +142,7 @@ struct SettingsView: View {
             case .license: return "key"
             case .navigation: return "hand.draw"
             case .viewport: return "cube"
+            case .shortcuts: return "keyboard"
             }
         }
     }
@@ -186,9 +187,10 @@ struct SettingsView: View {
             case .license: LicenseView(license: .shared)
             case .navigation: navigationPane
             case .viewport: viewportPane
+            case .shortcuts: ShortcutsPane()
             }
         }
-        .frame(width: 460, height: 560)
+        .frame(width: 520, height: 560)
         .navigationTitle(pane.rawValue)
     }
 
