@@ -465,6 +465,8 @@ struct Sidebar: View {
     @State private var imagesOpen = true
     /// The body or sketch whose name is being edited in place.
     @State private var renaming: FeatureID?
+    /// The parameter whose name is being edited in place.
+    @State private var renamingParameter: String?
 
     /// Body rows are tagged apart from features ("body:<id>"): a click selects the body, not the
     /// feature that made it (that one opens on double-click).
@@ -476,6 +478,9 @@ struct Sidebar: View {
                     else { model.selectedFeature = tag }
                 })
     }
+    /// Parameter rows are tagged too ("param:<name>"): without a tag the list tags each row with its name,
+    /// and its own context menu then shows Hide / Show instead of the row's.
+    private static let parameterTag = "param:"
     private func featureID(_ tag: FeatureID) -> FeatureID {
         tag.hasPrefix(Self.bodyTag) ? String(tag.dropFirst(Self.bodyTag.count)) : tag
     }
@@ -544,8 +549,9 @@ struct Sidebar: View {
             Section {
                 if parametersOpen {
                     ForEach(model.document.parameters) { p in
-                        ParameterRow(model: model, parameter: p)
+                        ParameterRow(model: model, parameter: p, renaming: parameterRenamingBinding(p.name))
                             .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
+                            .tag(Self.parameterTag + p.name)
                     }
                 }
             } header: {
@@ -569,7 +575,7 @@ struct Sidebar: View {
         }
         .listStyle(.sidebar)
         .contextMenu(forSelectionType: FeatureID.self) { ids in
-            menu(for: Set(ids.map(featureID)))
+            menu(for: ids)
         } primaryAction: { ids in
             // Double-click to edit: a sketch opens in sketch mode, other features (and the one that
             // made a body) show their handle.
@@ -586,13 +592,22 @@ struct Sidebar: View {
         Binding(get: { renaming == id }, set: { if !$0, renaming == id { renaming = nil } })
     }
 
+    private func parameterRenamingBinding(_ name: String) -> Binding<Bool> {
+        Binding(get: { renamingParameter == name }, set: { if !$0, renamingParameter == name { renamingParameter = nil } else if $0 { renamingParameter = name } })
+    }
+
     private func isSketch(_ id: FeatureID) -> Bool {
         if case .sketch? = model.document.features.first(where: { $0.id == id })?.kind { return true }
         return false
     }
 
-    @ViewBuilder private func menu(for ids: Set<FeatureID>) -> some View {
-        if ids.count == 1, let id = ids.first, let f = model.document.features.first(where: { $0.id == id }) {
+    @ViewBuilder private func menu(for tags: Set<FeatureID>) -> some View {
+        let ids = Set(tags.map(featureID))
+        if tags.count == 1, let tag = tags.first, tag.hasPrefix(Self.parameterTag) {
+            let name = String(tag.dropFirst(Self.parameterTag.count))
+            Button("Rename") { renamingParameter = name }
+            Button("Delete", role: .destructive) { model.removeParameter(name) }
+        } else if ids.count == 1, let id = ids.first, let f = model.document.features.first(where: { $0.id == id }) {
             if isSketch(id) {
                 Button(model.sketchSession?.featureID == id ? "Finish Sketch" : "Edit Sketch") {
                     if model.sketchSession?.featureID == id { model.finishSketch() } else { model.editSketch(id) }
@@ -801,7 +816,7 @@ struct SketchIcon: View {
 struct ParameterRow: View {
     let model: DocumentModel
     let parameter: Parameter
-    @State private var renaming = false
+    @Binding var renaming: Bool
     /// Why the last rename was refused (a taken or invalid name).
     @State private var renameError: String?
 
@@ -854,10 +869,7 @@ struct ParameterRow: View {
                 .lineLimit(2)
         }
         .padding(.vertical, DS.Spacing.space2)
-        .contextMenu {
-            Button("Rename") { renameError = nil; renaming = true }
-            Button("Delete", role: .destructive) { model.removeParameter(parameter.name) }
-        }
+        .onChange(of: renaming) { if renaming { renameError = nil } }
     }
 }
 
