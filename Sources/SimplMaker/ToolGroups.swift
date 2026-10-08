@@ -67,6 +67,8 @@ struct ToolGroup: View {
         _stored = AppStorage(Preferences.toolbarPins(id))
     }
 
+    init(_ spec: ToolGroupSpec) { self.init(spec.title, id: spec.id, defaults: spec.defaults, tools: spec.tools) }
+
     private var pins: ToolPins { ToolPins(stored: stored, available: tools.map(\.id), defaults: defaults) }
 
     var body: some View {
@@ -127,6 +129,127 @@ struct ToolGroup: View {
         } else {
             tool.action()
         }
+    }
+}
+
+/// What a toolbar group is made of, so the toolbar and its compact forms list the same tools.
+struct ToolGroupSpec: Identifiable {
+    let title: String
+    let id: String
+    let defaults: [String]
+    let tools: [GroupTool]
+}
+
+/// How much room the toolbar's tools take, widest first: the groups with their pinned tools, one
+/// menu per group, and last of all one menu holding everything.
+enum ToolbarLayout: String {
+    case full, groups, single
+}
+
+/// The rows of a tool menu: every tool, pinned or not. A tool with several ways of working
+/// (a rectangle from corners or from its center) is a submenu of them.
+private struct ToolMenuRows: View {
+    let tools: [GroupTool]
+
+    var body: some View {
+        ForEach(tools) { tool in
+            if tool.modes.isEmpty {
+                Toggle(tool.title, isOn: Binding(get: { tool.active }, set: { _ in run(tool) }))
+                    .disabled(!tool.enabled)
+            } else {
+                Menu(tool.title) {
+                    ForEach(tool.modes) { mode in
+                        Toggle(mode.title, isOn: Binding(get: { mode.active }, set: { _ in mode.action() }))
+                    }
+                }
+                .disabled(!tool.enabled)
+            }
+        }
+    }
+
+    /// Runs a tool. The menu closes first, so a popover the tool asks for can open in its place.
+    private func run(_ tool: GroupTool) {
+        guard tool.popover != nil else { return tool.action() }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            tool.action()
+        }
+    }
+}
+
+private extension View {
+    /// The popovers of tools that sit in a menu, which open on the menu's button.
+    func toolPopovers(_ tools: [GroupTool]) -> some View {
+        background {
+            ForEach(tools.filter { $0.popover != nil }) { tool in
+                Color.clear.toolPopover(tool.popover)
+            }
+        }
+    }
+}
+
+/// A group as one menu with all its tools, for a window too narrow for the pinned tools.
+struct ToolGroupMenu: View {
+    let group: ToolGroupSpec
+    @Environment(\.toolsOnTint) private var onTint
+
+    var body: some View {
+        Menu(group.title) { ToolMenuRows(tools: group.tools) }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.visible)
+            .tint(onTint ? Color.white : Color.primary)  // not the accent colour
+            .fixedSize()
+            .toolPopovers(group.tools)
+            .help("All \(group.title) tools")
+            .accessibilityLabel("\(group.title) tools")
+    }
+}
+
+/// A tool that stands alone, as a text button next to the group menus.
+struct SoloToolButton: View {
+    let tool: GroupTool
+    @Environment(\.toolsOnTint) private var onTint
+    @Environment(\.accent) private var accent
+
+    var body: some View {
+        Button(action: tool.action) {
+            Text(tool.title).font(.system(size: 13))
+                .foregroundStyle(tool.active && !onTint ? accent : onTint ? Color.white : Color.primary)
+                .padding(.horizontal, DS.Spacing.space3)
+                .frame(minHeight: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!tool.enabled)
+        .help(tool.help)
+    }
+}
+
+/// The whole toolbar as one menu, for a window too narrow even for the group menus: every tool of
+/// every group. A tool that asks for a popover gets it on the menu's button.
+struct ToolsMenu: View {
+    let solo: GroupTool
+    let groups: [ToolGroupSpec]
+    /// What comes after the groups (Finish Sketch).
+    var trailing: GroupTool?
+
+    var body: some View {
+        Menu {
+            ToolMenuRows(tools: [solo])
+            ForEach(groups) { group in
+                Section(group.title) { ToolMenuRows(tools: group.tools) }
+            }
+            if let trailing {
+                Divider()
+                ToolMenuRows(tools: [trailing])
+            }
+        } label: {
+            Label("Tools", systemImage: "wrench.and.screwdriver")
+        }
+        .menuIndicator(.visible)
+        .help("All the tools")
+        .accessibilityLabel("Tools")
+        .toolPopovers([solo] + groups.flatMap(\.tools))
     }
 }
 

@@ -31,9 +31,30 @@ struct DocumentWindow: View {
     @AppStorage(Preferences.showAxes) private var showAxes = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     /// The window's width: below this, the Finish Sketch button drops its title so the sketch
-    /// tools still fit (otherwise macOS folds the whole row into the toolbar's overflow menu).
+    /// tools still fit, and below the width they need, they become a menu per group, then one Tools menu (otherwise
+    /// macOS folds the whole row away into the toolbar's overflow menu, which can't show it).
     @State private var windowWidth: CGFloat = 1200
     static let titledSketchWidth: CGFloat = 1100
+    /// How wide the tool groups last laid out, by mode and title setting. Below this width plus the
+    /// room the other toolbar items take, the groups give way to one menu holding every tool.
+    @State private var toolRowWidths: [String: CGFloat] = [:]
+    /// Where the title and subtitle in the toolbar end, measured from the window's left edge.
+    @State private var titleEdge: CGFloat?
+    static let toolbarGap: CGFloat = 16
+
+    private func toolRowKey(_ layout: ToolbarLayout) -> String {
+        "\(layout.rawValue)-\(model.sketchSession != nil)-\(model.sketchSession == nil || windowWidth >= Self.titledSketchWidth)"
+    }
+    /// The widest layout that fits. The tools are centred, so each side needs as much room as the
+    /// title takes on the left. A layout not shown yet has no width to go by, so it is tried.
+    private var toolbarLayout: ToolbarLayout {
+        guard let titleEdge else { return .full }
+        let room = windowWidth - 2 * (titleEdge + Self.toolbarGap)
+        for layout in [ToolbarLayout.full, .groups] {
+            if let width = toolRowWidths[toolRowKey(layout)] { if room >= width { return layout } } else { return layout }
+        }
+        return .single
+    }
 
     @Environment(\.controlActiveState) private var activeState
     /// Sketch mode tints the toolbar while the window is active.
@@ -50,6 +71,25 @@ struct DocumentWindow: View {
     /// A toolbar button's tooltip with its shortcut: "Show or hide the browser (⌃⌘S)".
     private func helpWithShortcut(_ text: String, _ command: ShortcutCommand) -> String {
         Shortcuts.label(command).map { "\(text) (\($0))" } ?? text
+    }
+
+    @ToolbarContentBuilder private var toolsItem: some ToolbarContent {
+            ToolbarItem(placement: .principal) {
+                Group {
+                    if let session = model.sketchSession {
+                        SketchToolbar(model: model, session: session, layout: toolbarLayout)
+                    } else {
+                        DesignToolbar(model: model, layout: toolbarLayout)
+                    }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                    if toolbarLayout != .single { toolRowWidths[toolRowKey(toolbarLayout)] = width }
+                }
+                .environment(\.toolTitles, model.sketchSession == nil || windowWidth >= Self.titledSketchWidth)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Tools")
+            }
+            .sharedBackgroundVisibility(.hidden)  // the tools sit on the toolbar itself, with no glass of their own
     }
 
     var body: some View {
@@ -167,24 +207,20 @@ struct DocumentWindow: View {
         .overlay { CursorPrompt(model: model) }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
+        .background(ToolbarTitleReader(edge: $titleEdge))
         .background(TitlebarAppearance(dark: sketchTint, tabTint: sketchTint ? NSColor(sketchPaper.toolbarTint) : nil))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
         .toolbar {
-            // The tools sit in the middle of the toolbar, in Design and in Sketch mode.
-            ToolbarItem(placement: .principal) {
-                Group {
-                    if let session = model.sketchSession {
-                        SketchToolbar(model: model, session: session)
-                    } else {
-                        DesignToolbar(model: model)
-                    }
-                }
-                .environment(\.toolTitles, model.sketchSession == nil || windowWidth >= Self.titledSketchWidth)
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Tools")
+            // The tools sit in the middle of the toolbar, in Design and in Sketch mode. Each layout is its own
+            // item: once macOS has folded the tools away, it doesn't bring a narrower layout back in the same item.
+            if toolbarLayout == .full {
+                toolsItem
+            } else if toolbarLayout == .groups {
+                toolsItem
+            } else {
+                toolsItem
             }
-            .sharedBackgroundVisibility(.hidden)  // the tools sit on the toolbar itself, with no glass of their own
             ToolbarItem(placement: .navigation) {
                 Button { model.showSidebar.toggle() } label: { Label("Browser", systemImage: "sidebar.left") }
                     .help(helpWithShortcut("Show or hide the browser", .browser))
@@ -272,6 +308,58 @@ struct ToolbarFade: View {
         .animation(.easeInOut(duration: DS.Duration.base), value: visible)
         .animation(.easeInOut(duration: DS.Duration.base), value: tint)
         .allowsHitTesting(false)
+    }
+}
+
+/// Reads where the window's title and subtitle end in the toolbar, which the centred tools must
+/// clear: a longer name leaves less room for them.
+struct ToolbarTitleReader: NSViewRepresentable {
+    @Binding var edge: CGFloat?
+
+    func makeNSView(context: Context) -> ReaderView { ReaderView() }
+
+    func updateNSView(_ view: ReaderView, context: Context) {
+        let binding = $edge
+        view.onChange = { if binding.wrappedValue != $0 { binding.wrappedValue = $0 } }
+        view.measureSoon()
+    }
+
+    final class ReaderView: NSView {
+        var onChange: (CGFloat?) -> Void = { _ in }
+        private var observations: [NSKeyValueObservation] = []
+
+        override func viewDidMoveToWindow() {
+            observations = []
+            guard let window else { return }
+            observations = [window.observe(\.title) { [weak self] _, _ in Task { @MainActor in self?.measureSoon() } },
+                            window.observe(\.subtitle) { [weak self] _, _ in Task { @MainActor in self?.measureSoon() } }]
+            measureSoon()
+        }
+
+        /// The title view lays itself out a moment after its text changes.
+        func measureSoon() {
+            for delay in [0.0, 0.25] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.measure() }
+            }
+        }
+
+        private func measure() {
+            guard let root = window?.contentView?.superview,
+                  let titleView = Self.find("NSToolbarTitleView", in: root) else { return }
+            let labels = Self.labels(in: titleView).filter { !$0.stringValue.isEmpty }
+            let edges = labels.map { $0.convert($0.bounds, to: nil).minX + ceil($0.attributedStringValue.size().width) }
+            if let edge = edges.max() { onChange(edge) }
+        }
+
+        private static func find(_ className: String, in view: NSView) -> NSView? {
+            if view.className == className { return view }
+            for sub in view.subviews { if let found = find(className, in: sub) { return found } }
+            return nil
+        }
+
+        private static func labels(in view: NSView) -> [NSTextField] {
+            view.subviews.flatMap { sub in (sub as? NSTextField).map { [$0] } ?? labels(in: sub) }
+        }
     }
 }
 
@@ -959,15 +1047,19 @@ struct ParameterRow: View {
                     }, cancel: { renaming = false })
                     .font(.body.monospaced())
                 } else {
+                    // The whole stretch up to the value is the handle, not just the letters.
                     Text(parameter.name).font(.body.monospaced())
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                         .overlay(ScrubHandle(
                             began: beginScrub,
                             moved: { dx, flags in moveScrub(by: dx, flags) },
                             ended: endScrub,
                             doubleClicked: { renameError = nil; renaming = true }))
+                        .pointerStyle(.columnResize)
                         .help("Drag left or right to change the value (Shift: coarse, Option: fine); double-click to rename, and every expression that uses it follows")
                 }
-                Spacer()
+                if renaming { Spacer() }
                 if let error = model.result?.parameters.errors[parameter.name] {
                     Text(error).foregroundStyle(.red).font(.caption).lineLimit(1)
                 } else if let q = model.result?.parameters.values[parameter.name] {
@@ -1037,12 +1129,6 @@ private struct ScrubHandle: NSViewRepresentable {
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-        // The left-right arrow over the title: a cursor rect, so it holds however the list under it
-        // sets the cursor, and follows the title when the row moves or resizes.
-        override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
-        override func layout() { super.layout(); window?.invalidateCursorRects(for: self) }
-        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); window?.invalidateCursorRects(for: self) }
-
         override func mouseDown(with event: NSEvent) {
             startX = event.locationInWindow.x
             lastX = startX
@@ -1058,7 +1144,6 @@ private struct ScrubHandle: NSViewRepresentable {
                 lastX = startX
                 began()
             }
-            NSCursor.resizeLeftRight.set()
             moved(x - lastX, event.modifierFlags)
             lastX = x
         }
@@ -1233,38 +1318,65 @@ struct ToolDivider: View {
 struct SketchToolbar: View {
     let model: DocumentModel
     let session: SketchSession
+    /// How much of the toolbar the window has room for.
+    var layout = ToolbarLayout.full
     @ObservedObject private var shortcuts = ShortcutStore.shared  // the tooltips and keys shown follow the user's changes
     @State private var constrainOpen = false
     @Environment(\.toolTitles) private var showsTitles
     @Environment(\.controlActiveState) private var activeState
 
+    private var groups: [ToolGroupSpec] {
+        [ToolGroupSpec(title: "Draw", id: "sketch.draw", defaults: ["Line", "Rectangle", "Circle", "Polygon", "Spline", "Text"],
+                       // Tools in a family (rectangle, circle, arc) share one button, under the first one's name.
+                       tools: SketchTool.draw.filter { $0.family.first == $0 }.map(tool) + [canvas]),
+         ToolGroupSpec(title: "Modify", id: "sketch.modify", defaults: ["Round Corner", "Trim", "Extend", "Offset"],
+                       tools: SketchTool.modify.map(tool) + [offset]),
+         ToolGroupSpec(title: "Transform", id: "sketch.transform", defaults: SketchTransformTool.allCases.map(\.rawValue),
+                       tools: SketchTransformTool.allCases.map(transform)),
+         ToolGroupSpec(title: "Constraints", id: "sketch.constraints", defaults: ["Dimension", "Distance", "Constrain", "Construction"],
+                       tools: [tool(.dimension), tool(.distance), constrain, construction])]
+    }
+
+    private var finish: GroupTool {
+        GroupTool(id: "Finish Sketch", title: "Finish Sketch", icon: "check", help: "Finish the sketch (Return)") { model.finishSketch() }
+    }
+
+    private var finishButton: some View {
+        Button { model.finishSketch() } label: {
+            if showsTitles {
+                Label("Finish Sketch", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon)
+            } else {
+                Label("Finish Sketch", systemImage: "checkmark.circle.fill").labelStyle(.iconOnly)
+            }
+        }
+        .toolTip("Finish the sketch (Return)")
+        .buttonStyle(.borderedProminent)
+        .tutorialSpot("Finish Sketch", cornerRadius: 10, outset: 3)
+    }
+
     var body: some View {
-        HStack(spacing: DS.Spacing.space1) {
-            SoloTool(tool: tool(.select))
-            ToolDivider()
-            // Tools in a family (rectangle, circle, arc) share one button, under the first one's name.
-            ToolGroup("Draw", id: "sketch.draw", defaults: ["Line", "Rectangle", "Circle", "Polygon", "Spline", "Text"],
-                      tools: SketchTool.draw.filter { $0.family.first == $0 }.map(tool) + [canvas])
-            ToolDivider()
-            ToolGroup("Modify", id: "sketch.modify", defaults: ["Round Corner", "Trim", "Extend", "Offset"],
-                      tools: SketchTool.modify.map(tool) + [offset])
-            ToolDivider()
-            ToolGroup("Transform", id: "sketch.transform", defaults: SketchTransformTool.allCases.map(\.rawValue),
-                      tools: SketchTransformTool.allCases.map(transform))
-            ToolDivider()
-            ToolGroup("Constraints", id: "sketch.constraints", defaults: ["Dimension", "Distance", "Constrain", "Construction"],
-                      tools: [tool(.dimension), tool(.distance), constrain, construction])
-            ToolDivider()
-            Button { model.finishSketch() } label: {
-                if showsTitles {
-                    Label("Finish Sketch", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon)
-                } else {
-                    Label("Finish Sketch", systemImage: "checkmark.circle.fill").labelStyle(.iconOnly)
+        Group {
+            switch layout {
+            case .single:
+                ToolsMenu(solo: tool(.select), groups: groups, trailing: finish)
+            case .groups:
+                HStack(spacing: DS.Spacing.space1) {
+                    SoloToolButton(tool: tool(.select))
+                    ForEach(groups) { ToolGroupMenu(group: $0) }
+                    ToolDivider()
+                    finishButton
+                }
+            case .full:
+                HStack(spacing: DS.Spacing.space1) {
+                    SoloTool(tool: tool(.select))
+                    ForEach(groups) { group in
+                        ToolDivider()
+                        ToolGroup(group)
+                    }
+                    ToolDivider()
+                    finishButton
                 }
             }
-            .toolTip("Finish the sketch (Return)")
-            .buttonStyle(.borderedProminent)
-            .tutorialSpot("Finish Sketch", cornerRadius: 10, outset: 3)
         }
         // Sketch mode tints the tools' glass while the window is active.
         .environment(\.toolsOnTint, activeState != .inactive)
@@ -1351,35 +1463,55 @@ struct SketchToolbar: View {
 /// it; its name opens the rest. A tool that is waiting for picks is highlighted.
 struct DesignToolbar: View {
     let model: DocumentModel
+    /// How much of the toolbar the window has room for.
+    var layout = ToolbarLayout.full
     @ObservedObject private var shortcuts = ShortcutStore.shared  // the tooltips and keys shown follow the user's changes
 
+    private var solo: GroupTool {
+        if model.isPickingSketchPlane {
+            GroupTool(id: "Cancel", title: "Cancel", icon: "circle-x", help: "Stop choosing a sketch plane (Esc)",
+                      active: true) { model.cancelSketchPlanePick() }
+        } else {
+            GroupTool(id: "Sketch", title: "Sketch", icon: "pen-tool",
+                      help: "Create a sketch: then click an origin plane or a flat face in the viewport") { model.startSketch() }
+        }
+    }
+
+    private var groups: [ToolGroupSpec] {
+        // Scale (sketches only for now) stays in the Modify menu and the sketch context menu, but has no button.
+        let modify = DesignTool.modifiers.filter { $0 != .scale }
+        return [group("Create", id: "design.create", DesignTool.shapes, defaults: [.extrude, .revolve, .sweep, .loft]),
+                group("Shapes", id: "design.shapes", DesignTool.primitives, defaults: [.box, .cylinder, .sphere]),
+                group("Modify", id: "design.modify", modify, defaults: modify),
+                group("Construct", id: "design.construct", DesignTool.construct, defaults: [.plane, .mirror, .pattern, .canvas]),
+                group("Inspect", id: "design.inspect", DesignTool.inspect, defaults: DesignTool.inspect)]
+    }
+
     var body: some View {
-        HStack(spacing: DS.Spacing.space1) {
-            if model.isPickingSketchPlane {
-                SoloTool(tool: GroupTool(id: "Cancel", title: "Cancel", icon: "circle-x", help: "Stop choosing a sketch plane (Esc)",
-                                         active: true) { model.cancelSketchPlanePick() })
-            } else {
-                SoloTool(tool: GroupTool(id: "Sketch", title: "Sketch", icon: "pen-tool",
-                                         help: "Create a sketch: then click an origin plane or a flat face in the viewport") { model.startSketch() })
+        Group {
+            switch layout {
+            case .single:
+                ToolsMenu(solo: solo, groups: groups)
+            case .groups:
+                HStack(spacing: DS.Spacing.space1) {
+                    SoloToolButton(tool: solo)
+                    ForEach(groups) { ToolGroupMenu(group: $0) }
+                }
+            case .full:
+                HStack(spacing: DS.Spacing.space1) {
+                    SoloTool(tool: solo)
+                    ForEach(groups) { group in
+                        ToolDivider()
+                        ToolGroup(group)
+                    }
+                }
             }
-            ToolDivider()
-            group("Create", id: "design.create", DesignTool.shapes, defaults: [.extrude, .revolve, .sweep, .loft])
-            ToolDivider()
-            group("Shapes", id: "design.shapes", DesignTool.primitives, defaults: [.box, .cylinder, .sphere])
-            ToolDivider()
-            // Scale (sketches only for now) stays in the Modify menu and the sketch context menu, but has no button.
-            let modify = DesignTool.modifiers.filter { $0 != .scale }
-            group("Modify", id: "design.modify", modify, defaults: modify)
-            ToolDivider()
-            group("Construct", id: "design.construct", DesignTool.construct, defaults: [.plane, .mirror, .pattern, .canvas])
-            ToolDivider()
-            group("Inspect", id: "design.inspect", DesignTool.inspect, defaults: DesignTool.inspect)
         }
         .toolsPanel()
     }
 
-    private func group(_ title: String, id: String, _ tools: [DesignTool], defaults: [DesignTool]) -> some View {
-        ToolGroup(title, id: id, defaults: defaults.map(\.rawValue), tools: tools.map { tool in
+    private func group(_ title: String, id: String, _ tools: [DesignTool], defaults: [DesignTool]) -> ToolGroupSpec {
+        ToolGroupSpec(title: title, id: id, defaults: defaults.map(\.rawValue), tools: tools.map { tool in
             // Chamfer and Extrude have three ways each: the button works the way chosen last, and the arrow beside it chooses.
             var modes: [GroupTool] = [], icon = tool.symbol, help = tool.help
             if tool == .chamfer {
