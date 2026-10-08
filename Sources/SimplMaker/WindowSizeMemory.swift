@@ -120,7 +120,7 @@ struct TitlebarAppearance: NSViewRepresentable {
     /// does nothing if they aren't there.
     static func applyTabTint(_ tint: NSColor?, in window: NSWindow) {
         guard let frame = window.contentView?.superview else { return }
-        recolorSelectedTabTitle(in: frame, window: window, tinted: tint != nil)
+        recolorSelectedTabTitle(in: frame, window: window, tint: tint)
         for view in allSubviews(of: frame) {
             if let glass = view as? NSGlassEffectView, glass.className == "NSGlassEffectView", isInTabBar(glass) {
                 glass.tintColor = tint
@@ -141,16 +141,27 @@ struct TitlebarAppearance: NSViewRepresentable {
         }
     }
 
-    /// The selected tab's title is drawn in the system's dark text, which is hard to read on the
-    /// tint, so that tab draws in the dark appearance (white text); the others keep the system's.
-    private static func recolorSelectedTabTitle(in frame: NSView, window: NSWindow, tinted: Bool) {
+    /// The selected tab's title is drawn in the system's own text colour, which can be hard to read
+    /// on the tint. Whichever of white and black contrasts more with the tint wins: that tab draws
+    /// in the dark or the light appearance to get it, and the others keep the system's.
+    private static func recolorSelectedTabTitle(in frame: NSView, window: NSWindow, tint: NSColor?) {
         guard let bar = allSubviews(of: frame).first(where: { $0.className == "NSTabBar" }) else { return }
         let buttons = allSubviews(of: bar).filter { $0.className == "NSTabButton" }.sorted { $0.frame.minX < $1.frame.minX }
         let tabs = window.tabGroup?.windows ?? []
         let selected = window.tabGroup?.selectedWindow.flatMap { tabs.firstIndex(of: $0) }
+        let appearance = tint.map { prefersWhiteText(on: $0) ? NSAppearance(named: .darkAqua) : NSAppearance(named: .aqua) }
         for (i, button) in buttons.enumerated() {
-            button.appearance = tinted && i == selected ? NSAppearance(named: .darkAqua) : nil
+            button.appearance = i == selected ? appearance ?? nil : nil
         }
+    }
+
+    /// True when white text contrasts more than black on `color` (WCAG relative luminance: the two
+    /// have equal contrast at a luminance of about 0.179).
+    static func prefersWhiteText(on color: NSColor) -> Bool {
+        guard let rgb = color.usingColorSpace(.sRGB) else { return true }
+        func linear(_ c: CGFloat) -> CGFloat { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        let luminance = 0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent) + 0.0722 * linear(rgb.blueComponent)
+        return luminance < 0.179
     }
 
     private static func isInTabBar(_ view: NSView) -> Bool {
