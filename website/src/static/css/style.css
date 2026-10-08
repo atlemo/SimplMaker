@@ -415,9 +415,10 @@ main { padding-top: 64px; }
 .text-page a { text-decoration: underline; text-underline-offset: 0.2em; }
 .notice { border: 1.5px solid var(--ink); padding: 16px 20px; margin-bottom: 2em; font-size: 0.95rem; }
 .release { border-top: 1px solid var(--line); padding-block: 36px; display: grid; grid-template-columns: 1fr 2fr; gap: 24px; }
-.release h2 { margin: 0; font-size: clamp(1.4rem, 3vw, 2.2rem); }
+.release h2 { margin: 0; font-size: clamp(1.4rem, 3vw, 2.2rem); grid-column: 1; }
+.release > :not(h2) { grid-column: 2; margin-block: 0; }
 .release ul { margin: 0; }
-@media (max-width: 700px) { .release { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .release { grid-template-columns: 1fr; } .release > :not(h2) { grid-column: 1; } }
 
 /* ---------- Footer ---------- */
 .footer { background: var(--dark); color: var(--on-dark); padding-top: clamp(64px, 9vw, 130px); overflow: hidden; }
