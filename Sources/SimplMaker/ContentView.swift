@@ -913,17 +913,16 @@ struct ParameterRow: View {
         var value: Double
         var unit: UnitKind
         /// What the value snaps to when shown, set by the modifier keys held at the last move.
-        var grid = 0.1
+        var grid = 1.0
 
         /// Units per point dragged, and the grid the value snaps to, for the modifier keys held:
-        /// Shift is coarse, Option is fine.
+        /// whole units to begin with, Shift is coarse (tens), Option is fine (tenths).
         static func step(unit: UnitKind, _ flags: NSEvent.ModifierFlags) -> Double {
-            let base = unit == .angle ? 0.5 : 0.1
-            return flags.contains(.shift) ? base * 10 : flags.contains(.option) ? base / 10 : base
+            flags.contains(.shift) ? 10 : flags.contains(.option) ? 0.1 : 1
         }
 
         var expression: String {
-            // Snapped, so a drag gives 12.3 mm and not 12.3456.
+            // Snapped, so a drag gives 12 mm and not 12.3456.
             let rounded = ((value / grid).rounded() * grid * 1e6).rounded() / 1e6
             return formatDimension(unit == .angle ? rounded * .pi / 180 : rounded, kind: unit)
         }
