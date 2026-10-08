@@ -24,14 +24,14 @@ import Testing
     @Test func gridMakesCountMinusOneCopiesPerCellWithStableIds() throws {
         var (s, corners, lines, _) = sample()
         s.patterns = [SketchPatternDef(id: "p", sources: lines, countX: "3", spacingX: "15 mm", countY: "2", spacingY: "-8 mm")]
-        #expect(s.refreshPatterns(none).isEmpty)
+        #expect(s.refreshGenerated(none).isEmpty)
         let g = generated(s)
         #expect(g.curves.count == 5 * 4 && g.points.count == 5 * 4)
         #expect(g.points.allSatisfy { $0.fixed }, "copies are not the solver's to move")
         #expect(s.point(corners[0])!.position == SIMD2(20, 20), "the original stays")
         #expect(s.points.contains { vlen($0.position - SIMD2(50, 12)) < 1e-9 }, "column 3, row 2: 30 right and 8 down")
         #expect(s.point("p~1~\(corners[0])")?.position == SIMD2(35, 20), "the first copy is a column along")
-        let ids = Set(s.points.map(\.id)), again = s.refreshPatterns(none)
+        let ids = Set(s.points.map(\.id)), again = s.refreshGenerated(none)
         #expect(again.isEmpty && Set(s.points.map(\.id)) == ids, "the same copies have the same ids")
     }
 
@@ -40,14 +40,14 @@ import Testing
         s.patterns = [SketchPatternDef(id: "p", sources: lines, countX: "n", spacingX: "gap", countY: "1")]
         var params = ParameterValues()
         params = ParameterEvaluator.evaluate([Parameter("n", "2", unit: .none), Parameter("gap", "15 mm")])
-        s.refreshPatterns(params)
+        s.refreshGenerated(params)
         #expect(s.curves.filter { Sketch.isGenerated($0.id) }.count == 4)
         let k = s.points.firstIndex { $0.id == corners[2] }!
         s.points[k].x += 3  // the original's corner moves
-        s.refreshPatterns(params)
+        s.refreshGenerated(params)
         #expect(s.point("p~1~\(corners[2])")!.position.x == 30 + 3 + 15, "the copy moved with it")
         params = ParameterEvaluator.evaluate([Parameter("n", "3", unit: .none), Parameter("gap", "12 mm")])
-        s.refreshPatterns(params)
+        s.refreshGenerated(params)
         #expect(generated(s).curves.count == 8)
         #expect(s.point("p~2~\(corners[0])")!.position.x == 20 + 24)
     }
@@ -57,19 +57,19 @@ import Testing
         let p = s.addPoint(10, 0), q = s.addPoint(12, 0)
         let line = s.addLine(p, q)
         s.patterns = [SketchPatternDef(id: "c", kind: .circular, sources: [line], count: "4", angle: "360 deg")]
-        s.refreshPatterns(none)
+        s.refreshGenerated(none)
         let ends = generated(s).points.map(\.position)
         #expect(ends.count == 6)
         #expect(ends.contains { vlen($0 - SIMD2(0, 10)) < 1e-9 } && ends.contains { vlen($0 - SIMD2(-10, 0)) < 1e-9 } && ends.contains { vlen($0 - SIMD2(0, -10)) < 1e-9 })
 
         s.patterns[0].count = "3"
         s.patterns[0].angle = "90 deg"
-        s.refreshPatterns(none)
+        s.refreshGenerated(none)
         #expect(generated(s).points.contains { vlen($0.position - SIMD2(0, 10)) < 1e-9 }, "the last copy lands at the end of the angle")
 
         let pivot = s.addPoint(0, 10)
         s.patterns[0].center = pivot
-        s.refreshPatterns(none)
+        s.refreshGenerated(none)
         #expect(generated(s).points.contains { vlen($0.position - SIMD2(10, 20)) < 1e-9 }, "going round another point")
     }
 
@@ -79,7 +79,7 @@ import Testing
         s.texts.append(SketchText(id: "t", text: "A", position: anchor))
         let circle = s.addCircle(center: s.addPoint(0, 5), radius: 2)
         s.patterns = [SketchPatternDef(id: "c", kind: .circular, sources: s.patternSources([]), count: "2", angle: "90 deg")]
-        s.refreshPatterns(none)
+        s.refreshGenerated(none)
         let copy = try #require(s.texts.first { $0.id == "c~1~t" })
         #expect(abs(copy.angle - .pi / 2) < 1e-12 && vlen(s.point(copy.position)!.position - SIMD2(0, 5)) < 1e-9)
         #expect(s.curve("c~1~\(circle)") != nil)
@@ -88,19 +88,19 @@ import Testing
     @Test func badCountsMakeNoCopiesAndSayWhy() {
         var (s, _, lines, _) = sample()
         s.patterns = [SketchPatternDef(id: "p", sources: lines, countX: "2.5")]
-        let problems = s.refreshPatterns(none)
+        let problems = s.refreshGenerated(none)
         #expect(problems["p"] != nil && generated(s).curves.isEmpty)
         s.patterns[0].countX = "30"; s.patterns[0].countY = "30"
-        #expect(s.refreshPatterns(none)["p"]?.contains("400") == true)
+        #expect(s.refreshGenerated(none)["p"]?.contains("400") == true)
         s.patterns[0].countX = "1"; s.patterns[0].countY = "1"
-        #expect(s.refreshPatterns(none).isEmpty && generated(s).curves.isEmpty, "a count of 1 is just the original")
+        #expect(s.refreshGenerated(none).isEmpty && generated(s).curves.isEmpty, "a count of 1 is just the original")
     }
 
     @Test func copiesDontTakePartInSolvingOrFreedom() {
         var (s, _, lines, _) = sample()
         let before = SketchSolver.solve(&s, dimensionValues: s.dimensionValues(none))
         s.patterns = [SketchPatternDef(id: "p", sources: lines + s.patternSources([]).filter { s.curve($0).map { if case .circle = $0.geometry { return true } else { return false } } ?? false })]
-        s.refreshPatterns(none)
+        s.refreshGenerated(none)
         let count = s.points.count
         let after = SketchSolver.solve(&s, dimensionValues: s.dimensionValues(none))
         #expect(after.status == .solved && after.degreesOfFreedom == before.degreesOfFreedom)
@@ -111,14 +111,14 @@ import Testing
     @Test func deletingTheOriginalsRemovesThePatternAndSavingKeepsIt() throws {
         var (s, _, lines, circle) = sample()
         s.patterns = [SketchPatternDef(id: "p", sources: lines + [circle])]
-        s.refreshPatterns(none)
+        s.refreshGenerated(none)
         let data = try JSONEncoder().encode(s)
         var back = try JSONDecoder().decode(Sketch.self, from: data)
         #expect(back == s && back.patterns.count == 1)
         back.delete(Set(lines))
         #expect(back.patterns[0].sources == [circle], "a pattern keeps what is left")
         back.delete([circle])
-        back.refreshPatterns(none)
+        back.refreshGenerated(none)
         #expect(back.patterns.isEmpty && generated(back).curves.isEmpty)
     }
 
@@ -130,7 +130,7 @@ import Testing
         s.projections.append(SketchProjection(edge: EdgeRef(body: "b", edge: "e"), start: a, end: b, line: line))
         #expect(s.patternSources([]).count == 1)
         s.patterns = [SketchPatternDef(id: "p", sources: s.patternSources([]), countX: "2", countY: "1")]
-        s.refreshPatterns(none)
+        s.refreshGenerated(none)
         #expect(generated(s).curves.count == 1)
         #expect(s.patternSources([]).count == 1, "the copy is not a source")
     }
@@ -143,7 +143,7 @@ import Testing
         #expect(s.patternSources([centre]) == [circle], "the dot stands for the shape it centres")
         #expect(s.patternSources([corner]) == [corner], "a loose point is copied as a point")
         s.patterns = [SketchPatternDef(id: "p", sources: s.patternSources([centre]), countX: "3", countY: "1")]
-        s.refreshPatterns(none)
+        s.refreshGenerated(none)
         #expect(generated(s).curves.count == 2, "two circles, not just their dots")
     }
 }

@@ -49,6 +49,7 @@ While you sketch, the letters pick sketch tools instead.
 | [[G]] | Polygon. Press again for a triangle. |
 | [[A]] | Arc. Press again for the 3-point arc. |
 | [[B]] | Spline |
+| [[K]] | Gear |
 | [[P]] | Point |
 | [[X]] | Text |
 | [[F]] | Round Corner |

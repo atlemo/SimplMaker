@@ -1281,7 +1281,7 @@ struct SketchToolbar: View {
             }
         }
         return GroupTool(id: head.rawValue, title: head.shortTitle, icon: mode.symbol, help: mode.help, shortcut: head.keyLabel,
-                         active: head.family.contains(session.tool), modes: modes) { model.setSketchTool(mode) }
+                         badge: head.isExperimental ? "Experimental" : nil, active: head.family.contains(session.tool), modes: modes) { model.setSketchTool(mode) }
     }
 
     private func transform(_ tool: SketchTransformTool) -> GroupTool {

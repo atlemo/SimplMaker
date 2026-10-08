@@ -925,6 +925,7 @@ final class DocumentModel {
     /// Leaves the sketch. The view goes back to the one from before it was opened, unless a tool is taking over
     /// (extrude and the like): that stays where it is, so the picture doesn't jump.
     func finishSketch(keepingView: Bool = false) {
+        if let session = sketchSession, let action = session.keepGearEdit() { commitSketch(action) }
         sketchClosedKeepingView = keepingView
         sketchSession = nil
         overlayRevision += 1
@@ -971,13 +972,14 @@ final class DocumentModel {
     func sketchMouse(_ m: SketchMouse) -> Bool {
         guard let session = sketchSession else { return false }
         let r = session.handle(m)
-        if m.phase != .moved || !session.clicks.isEmpty { overlayRevision += 1 }
+        if m.phase != .moved || !session.clicks.isEmpty || (session.tool == .gear && session.gearActive == nil) { overlayRevision += 1 }  // the ghost gear follows the cursor
         commitSketch(r.commit)
         return r.handled
     }
 
     func sketchCommand(_ command: (SketchSession) -> String?) {
         guard let session = sketchSession else { return }
+        if let action = session.keepGearEdit() { commitSketch(action) }  // a gear the fields were changing is kept
         session.cancelPattern()  // a command works on the sketch as it is, not with the pattern's copies shown
         session.cancelOffset()   // nor with an offset's preview
         commitSketch(command(session))
@@ -1009,6 +1011,7 @@ final class DocumentModel {
     }
 
     func setSketchTool(_ tool: SketchTool) {
+        if let session = sketchSession, tool != .gear, let action = session.keepGearEdit() { commitSketch(action) }
         sketchSession?.setTool(tool)
         overlayRevision += 1
     }
@@ -1057,7 +1060,8 @@ final class DocumentModel {
         o.imageBorder = imageBorder()
         if let session = sketchSession {
             SketchOverlayBuilder.editing(session, into: &o)
-            if let r = result?.sketches[session.featureID] { SketchOverlayBuilder.regions(r, slot: 0, into: &o) }
+            // The fill is from the last rebuild: while a gear's fields are changing it, it would show the old gear.
+            if !session.hasPendingGearEdit, let r = result?.sketches[session.featureID] { SketchOverlayBuilder.regions(r, slot: 0, into: &o) }
             return o
         }
         if showsOriginPlanes {

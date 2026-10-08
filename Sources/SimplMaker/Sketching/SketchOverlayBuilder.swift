@@ -91,7 +91,8 @@ enum SketchOverlayBuilder {
     }
 
     /// Points along a sketch curve (in sketch coordinates).
-    static func polyline(_ c: SketchCurve, in s: Sketch) -> [SIMD2<Double>] {
+    static func polyline(_ c: SketchCurve, in s: Sketch, positions: [EntityID: SIMD2<Double>]? = nil) -> [SIMD2<Double>] {
+        func position(_ id: EntityID) -> SIMD2<Double>? { positions.map { $0[id] } ?? s.position(id) }
         func arc(_ center: SIMD2<Double>, _ r: Double, _ a0: Double, _ a1: Double) -> [SIMD2<Double>] {
             let n = max(6, Int(abs(a1 - a0) / (2 * .pi) * 96))
             return (0...n).map { i in
@@ -101,19 +102,19 @@ enum SketchOverlayBuilder {
         }
         switch c.geometry {
         case .line(let a, let b):
-            guard let pa = s.position(a), let pb = s.position(b) else { return [] }
+            guard let pa = position(a), let pb = position(b) else { return [] }
             return [pa, pb]
         case .circle(let center, let r):
-            guard let pc = s.position(center) else { return [] }
+            guard let pc = position(center) else { return [] }
             return arc(pc, r, 0, 2 * .pi)
         case .arc(let center, let start, let end):
-            guard let pc = s.position(center), let ps = s.position(start), let pe = s.position(end) else { return [] }
+            guard let pc = position(center), let ps = position(start), let pe = position(end) else { return [] }
             let a0 = atan2(ps.y - pc.y, ps.x - pc.x)
             var a1 = atan2(pe.y - pc.y, pe.x - pc.x)
             while a1 <= a0 { a1 += 2 * .pi }
             return arc(pc, simdLength(ps - pc), a0, a1)
         case .bezier:
-            let poles = s.pointIDs(of: c).compactMap { s.position($0) }
+            let poles = s.pointIDs(of: c).compactMap { position($0) }
             return poles.count == 4 ? Bezier.flatten(poles) : []
         }
     }
@@ -129,19 +130,23 @@ enum SketchOverlayBuilder {
     /// The sketch being edited: pickable curves and points, plus the tool preview.
     static func editing(_ session: SketchSession, into o: inout SketchOverlay) {
         let s = session.sketch, f = session.frame
+        let positions = s.positionTable()
         let redrawn = session.redrawnCurves
+        // A gear's outline is generated: drawn, but without its points, handles and centre marks, which would bury it.
+        let gears = Set(s.gears.map(\.id))
+        func ofGear(_ id: EntityID) -> Bool { !gears.isEmpty && Sketch.pattern(ofGenerated: id).map(gears.contains) == true }
         for (i, c) in s.curves.enumerated() where !redrawn.contains(c.id) {
-            let segs = segments(polyline(c, in: s), frame: f, id: PickID(sketchCurve: i).raw)
+            let segs = segments(polyline(c, in: s, positions: positions), frame: f, id: PickID(sketchCurve: i).raw)
             if c.construction { o.construction += segs } else { o.curves += segs }
             // A Bézier's handles: thin lines from each end to its control point.
-            if case .bezier(let a, let c1, let c2, let b) = c.geometry {
+            if case .bezier(let a, let c1, let c2, let b) = c.geometry, !ofGear(c.id) {
                 for (end, handle) in [(a, c1), (b, c2)] {
                     guard let pe = s.position(end), let ph = s.position(handle) else { continue }
                     o.preview += segments([pe, ph], frame: f, id: 0)
                 }
             }
         }
-        for (i, p) in s.points.enumerated() {
+        for (i, p) in s.points.enumerated() where !ofGear(p.id) {
             let w = world(f, p.position)
             o.points.append(SegmentInstance(ax: w.x, ay: w.y, az: w.z, bx: w.x, by: w.y, bz: w.z,
                                             id: PickID(sketchPoint: i).raw))
@@ -153,7 +158,7 @@ enum SketchOverlayBuilder {
         // While drawing, a small + marks the middle of each closed shape, where the cursor snaps.
         if session.tool.placesPoints {
             let r = session.snapTolerance
-            for c in s.shapeCenters() {
+            for c in s.shapeCenters() where !c.points.contains(where: Sketch.isGenerated) {
                 let p = c.position
                 o.construction += segments([p - SIMD2(r, 0), p + SIMD2(r, 0)], frame: f, id: 0)
                 o.construction += segments([p - SIMD2(0, r), p + SIMD2(0, r)], frame: f, id: 0)

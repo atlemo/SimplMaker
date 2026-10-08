@@ -42,14 +42,14 @@ enum TransformPivot: String, CaseIterable, Identifiable {
 enum SketchTool: String, CaseIterable, Identifiable {
     case select = "Select", line = "Line", rectangle = "Rectangle", centerRectangle = "Center Rectangle"
     case circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", arc3Point = "3-Point Arc", bezier = "Spline"
-    case polygon = "Polygon", triangle = "Triangle"
+    case polygon = "Polygon", triangle = "Triangle", gear = "Gear"
     case point = "Point", text = "Text", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
     case distance = "Distance"
 
     var id: String { rawValue }
 
     /// Toolbar groups: drawing, changing curves, and dimensions (Select stands alone).
-    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .point, .text]
+    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .gear, .point, .text]
     static let modify: [SketchTool] = [.fillet, .trim, .extend]
 
     /// The name under the icon in the toolbar (menus use the full `rawValue`).
@@ -66,7 +66,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     /// Tools whose clicks place points (and so snap to shape centers).
     var placesPoints: Bool {
         switch self {
-        case .line, .rectangle, .centerRectangle, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .point, .text: return true
+        case .line, .rectangle, .centerRectangle, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .gear, .point, .text: return true
         case .select, .fillet, .trim, .extend, .dimension, .distance: return false
         }
     }
@@ -107,9 +107,12 @@ enum SketchTool: String, CaseIterable, Identifiable {
         return tool
     }
 
+    /// Tools still being tried out: the Draw list marks them, and their tooltip says so.
+    var isExperimental: Bool { self == .gear }
+
     /// Tooltip: the name, its key, and what it does.
     var help: String {
-        let name = keyLabel.map { "\(rawValue) (\($0))" } ?? rawValue
+        let name = (keyLabel.map { "\(rawValue) (\($0))" } ?? rawValue) + (isExperimental ? " · Experimental" : "")
         switch self {
         case .fillet: return "\(name): round a sketch corner where two lines meet, with an arc and a radius. For rounding edges of a solid, use Fillet in Design mode."
         default: return "\(name): \(hint)"
@@ -130,6 +133,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .triangle: return "triangle"
         case .arc: return "spline"
         case .bezier: return "bezier"
+        case .gear: return "settings"
         case .point: return "dot"
         case .text: return "type"
         case .fillet: return "corner-round"
@@ -153,6 +157,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .polygon, .triangle: return "g"
         case .arc, .arc3Point: return "a"
         case .bezier: return "b"
+        case .gear: return "k"
         case .point: return "p"
         case .text: return "x"
         case .fillet: return "f"
@@ -178,6 +183,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .arc: return "Click the center, the start, then the end (counter-clockwise) · \(again) for 3-point"
         case .arc3Point: return "Click the start, the end, then a point the arc passes through · \(again) for center"
         case .bezier: return "Click points to draw a smooth spline through them, or press and drag to pull a handle · click the first point to close it · Esc ends the spline"
+        case .gear: return "Click where the center goes · set the teeth, module, pressure angle, backlash and bore before or after · gears that mesh share a module · click a gear to change it"
         case .point: return "Click to place a point"
         case .text: return "Click where the text starts, type it, and press Return · click a text (or double-click it) to change its words"
         case .fillet: return "Click the corner point where two lines meet to round it with an arc"
@@ -195,6 +201,8 @@ enum SketchInput: String, CaseIterable, Identifiable {
     case diameter = "Diameter", radius = "Radius", sweep = "Sweep"
     /// How many sides a polygon has.
     case sides = "Sides"
+    /// What Gear takes: tooth count, tooth size (mm), flank angle, thinning of each tooth (mm) and the hole through the middle.
+    case teeth = "Teeth", module = "Module", pressureAngle = "Pressure angle", backlash = "Backlash", bore = "Bore"
     /// What Move takes, for the manipulator: how far along x and y, and how far to turn.
     case moveX = "Move X", moveY = "Move Y", turn = "Rotate"
     /// What Pattern takes: how many copies (the original counts) and how far apart.
@@ -206,13 +214,13 @@ enum SketchInput: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var unit: UnitKind {
         switch self {
-        case .angle, .sweep, .turn, .spread: return .angle
-        case .countX, .countY, .copies, .sides: return .none
+        case .angle, .sweep, .turn, .spread, .pressureAngle: return .angle
+        case .countX, .countY, .copies, .sides, .teeth: return .none
         default: return .length
         }
     }
     /// Whether zero and negative values mean something (a move back, a turn clockwise).
-    var isOffset: Bool { [.moveX, .moveY, .turn, .spacingX, .spacingY, .spread, .offsetDistance].contains(self) }
+    var isOffset: Bool { [.moveX, .moveY, .turn, .spacingX, .spacingY, .spread, .offsetDistance, .backlash, .bore].contains(self) }
     /// A whole number of copies.
     var isCount: Bool { self == .countX || self == .countY || self == .copies }
     /// Short label shown in front of the field.
@@ -234,8 +242,14 @@ enum SketchInput: String, CaseIterable, Identifiable {
         case .diameter: return "⌀"
         case .radius: return "R"
         case .sides: return "#"
+        case .teeth: return "#"
+        case .module: return "m"
+        case .pressureAngle: return "∠"
+        case .backlash: return "±"
+        case .bore: return "⌀"
         }
     }
+    var isGear: Bool { [.teeth, .module, .pressureAngle, .backlash, .bore].contains(self) }
 }
 
 struct SketchMouse {
@@ -283,6 +297,7 @@ final class SketchSession {
 
     func setTool(_ t: SketchTool) {
         if t != .select { stopManipulating(); cancelPattern(); cancelOffset() }
+        if t != .gear || tool != .gear { gearBackup = nil; gearActive = nil }  // what the fields did stays, with the next change
         tool = t
         if t.family.count > 1 { lastInFamily[t.family[0]] = t }
         resetToolState()
@@ -296,6 +311,69 @@ final class SketchSession {
     /// How many sides the polygon being drawn has: three for the Triangle tool.
     var sidesCount: Int { tool == .triangle ? 3 : polygonSides }
     var drawsPolygon: Bool { tool == .polygon || tool == .triangle }
+    /// What the next gear will be (kept from one gear to the next); its id and centre are not used.
+    private(set) var gearDefaults = SketchGearDef()
+    /// The gear the Gear tool's fields are changing: the one just placed, or one clicked in Select.
+    private(set) var gearActive: EntityID?
+    /// The sketch as it was before the fields changed the active gear, to go back to (Esc).
+    @ObservationIgnored private var gearBackup: Sketch?
+    var activeGear: SketchGearDef? { gearActive.flatMap { id in sketch.gears.first { $0.id == id } } }
+    /// The gear whose values the fields show: the active one, else what the next one will be.
+    private var gearShown: SketchGearDef { activeGear ?? gearDefaults }
+
+    /// Where the Gear tool's fields stand: beside the active gear's right side, so they don't cover it.
+    var gearAnchor: SIMD2<Double>? {
+        guard tool == .gear, let g = activeGear, let c = sketch.position(g.center) else { return nil }
+        return c + SIMD2((try? g.spec(parameters).tipRadius) ?? 0, 0)
+    }
+
+    /// Changes a value of the next gear and, if one is active, of that gear too (drawn again at once).
+    private func setGear(_ field: SketchInput, _ expression: String) {
+        func apply(_ g: inout SketchGearDef) {
+            switch field {
+            case .teeth: g.teeth = expression
+            case .module: g.module = expression
+            case .pressureAngle: g.pressureAngle = expression
+            case .backlash: g.backlash = expression
+            case .bore: g.bore = expression
+            default: break
+            }
+        }
+        apply(&gearDefaults)
+        guard let i = sketch.gears.firstIndex(where: { $0.id == gearActive }) else { return }
+        if gearBackup == nil { gearBackup = sketch }
+        apply(&sketch.gears[i])
+        let problems = sketch.refreshGenerated(parameters)
+        message = problems[sketch.gears[i].id]
+    }
+
+    /// The fields have changed the active gear and it is not yet kept (the last rebuild still has the old gear).
+    var hasPendingGearEdit: Bool { gearBackup != nil }
+
+    /// What the fields did to the active gear is to be kept: the action name to commit it under, or nil if nothing changed.
+    func keepGearEdit() -> String? {
+        guard gearBackup != nil else { return nil }
+        gearBackup = nil
+        return "Edit Gear"
+    }
+
+    /// Takes back what the fields did to the active gear.
+    func cancelGearEdit() {
+        guard let backup = gearBackup else { return }
+        sketch = backup
+        gearBackup = nil
+        message = nil
+    }
+
+    /// Deletes the active gear (its centre too, if the Gear tool made it and nothing else uses it).
+    private func deleteActiveGear() -> String? {
+        guard let id = gearActive else { return nil }
+        cancelGearEdit()
+        sketch.removeGear(id)
+        gearActive = nil
+        typed = [:]
+        return finish("Delete Gear")
+    }
 
     /// Gives the Polygon tool more or fewer sides (↑ ↓).
     func adjustSides(by delta: Int) {
@@ -377,8 +455,10 @@ final class SketchSession {
         patternSetup = nil
         patternBase = nil
         patternBackup = nil
+        gearBackup = nil
         sketch = s
         self.parameters = parameters
+        if gearActive != nil, activeGear == nil { gearActive = nil }
         if let chain = curveChain, !s.contains(chain) { resetToolState() }  // undone: start the curve again
         selection = selection.filter { s.kind(of: $0) != nil }
         if let d = editingDimension, !s.dimensions.contains(where: { $0.id == d }) { editingDimension = nil }
@@ -403,7 +483,7 @@ final class SketchSession {
 
     /// Makes the pattern copies again after the originals changed.
     private func refreshCopies() {
-        if !sketch.patterns.isEmpty { sketch.refreshPatterns(parameters) }
+        if !sketch.patterns.isEmpty || !sketch.gears.isEmpty { sketch.refreshGenerated(parameters) }
     }
 
     private func resetToolState() {
@@ -592,6 +672,11 @@ final class SketchSession {
         if offsetSetup != nil { return (hover != nil, nil) }  // the arrow and the field set it; clicks on curves are ignored
         switch tool {
         case .select:
+            if let h = hover, let gid = sketch.gear(ofGenerated: h) {  // a gear: change it with the Gear tool's fields
+                setTool(.gear)
+                gearActive = gid
+                return (true, nil)
+            }
             if let h = hover, let pid = Sketch.pattern(ofGenerated: h) {  // a copy: change its pattern
                 beginPattern(editing: pid)
                 return (true, nil)
@@ -676,7 +761,7 @@ final class SketchSession {
     }
 
     private func toolClick(_ s: SketchSnap) -> String? {
-        for f in inputFields where f != .sides {
+        for f in inputFields where f != .sides && !f.isGear {
             if let v = typedValue(f), let text = typed[f] { pendingDimensions.append((f, Self.expression(text, f), v)) }
         }
         typed = [:]
@@ -713,6 +798,21 @@ final class SketchSession {
             let lines = sketch.addCenterRectangle(center: clicks[0], corner: s)
             addPendingDimensions([.width: .length(lines[0]), .height: .length(lines[1])])
             return finish("Rectangle")
+        case .gear:
+            defer { clicks = [] }
+            cancelGearEdit()
+            var def = gearDefaults
+            def.id = IDs.make()
+            def.ownsCenter = s.point == nil
+            let centre = s.point ?? sketch.addPoint(s.position.x, s.position.y)
+            def.center = centre
+            do { try sketch.addGear(def, parameters) } catch {
+                if s.point == nil { sketch.delete([centre]) }
+                message = "\(error)"
+                return nil
+            }
+            gearActive = def.id
+            return finish("Gear")
         case .polygon, .triangle:
             guard clicks.count == 2 else { return nil }
             defer { clicks = [] }
@@ -796,6 +896,7 @@ final class SketchSession {
         case (.rectangle, 1), (.centerRectangle, 1): return [.width, .height]
         case (.circle, 1), (.circle2Point, 1): return [.diameter]
         case (.polygon, 0): return [.sides]
+        case (.gear, _): return [.teeth, .module, .pressureAngle, .backlash, .bore]
         case (.polygon, 1): return [.length, .diameter, .sides]
         case (.triangle, 1): return [.length, .diameter]
         case (.arc, 1): return [.radius]
@@ -809,6 +910,7 @@ final class SketchSession {
         let t = text.trimmingCharacters(in: .whitespaces)
         typed[field] = t.isEmpty ? nil : t
         if field == .sides, let n = typedValue(.sides) { polygonSides = Int(n) }
+        if field.isGear, typedValue(field) != nil, let text = typed[field] { setGear(field, Self.expression(text, field)) }
         if manipulating != nil { previewTyped() }
         if patternSetup != nil { applyTypedPattern() }
         if offsetSetup != nil { applyTypedOffset() }
@@ -816,6 +918,7 @@ final class SketchSession {
 
     func clearTyped() {
         typed = [:]
+        cancelGearEdit()
         if patternSetup != nil { cancelPattern() }
         if offsetSetup != nil { cancelOffset() }
         if manipulating != nil { cancelManipulatorPreview() }
@@ -830,6 +933,13 @@ final class SketchSession {
         }
         if field.isCount, abs(v - v.rounded()) > 1e-9 || v < 1 || v > Double(SketchPattern.maxCopies) { return nil }
         if field == .sweep, abs(v) <= 1e-9 { return nil }
+        switch field {
+        case .teeth: if abs(v - v.rounded()) > 1e-9 || !(GearSpec.minTeeth...GearSpec.maxTeeth).contains(Int(v.rounded())) { return nil }
+        case .module: if v <= 1e-9 { return nil }
+        case .pressureAngle: if v < 6 * .pi / 180 || v > 34 * .pi / 180 { return nil }
+        case .bore: if v < 0 { return nil }
+        default: break
+        }
         return v
     }
 
@@ -887,6 +997,11 @@ final class SketchSession {
         case .countX, .countY, .copies, .spacingX, .spacingY, .spread: return patternValue(field)
         case .offsetDistance: return offsetDistance
         case .sides: return Double(sidesCount)
+        case .teeth: return evaluated(gearShown.teeth, .none)
+        case .module: return evaluated(gearShown.module, .length)
+        case .pressureAngle: return evaluated(gearShown.pressureAngle, .angle)
+        case .backlash: return evaluated(gearShown.backlash, .length)
+        case .bore: return evaluated(gearShown.bore, .length)
         default: break
         }
         guard let t = target()?.position, let a = clicks.first?.position else { return nil }
@@ -906,7 +1021,7 @@ final class SketchSession {
             var sweep = atan2(d.y, d.x) - atan2(s.y, s.x)
             while sweep <= 0 { sweep += 2 * .pi }
             return sweep
-        case .moveX, .moveY, .turn, .countX, .countY, .copies, .spacingX, .spacingY, .spread, .offsetDistance, .sides: return nil
+        case .moveX, .moveY, .turn, .countX, .countY, .copies, .spacingX, .spacingY, .spread, .offsetDistance, .sides, .teeth, .module, .pressureAngle, .backlash, .bore: return nil
         }
     }
 
@@ -915,6 +1030,12 @@ final class SketchSession {
         if patternSetup != nil { return commitPattern() }
         if offsetSetup != nil { return commitOffset() }
         if manipulating != nil { return commitTypedTransform() }
+        if tool == .gear {  // Return keeps what the fields did to the active gear; with none, the size is set and there is nothing to place yet
+            typed = [:]
+            guard gearBackup != nil else { return nil }
+            gearBackup = nil
+            return finish("Edit Gear")
+        }
         if tool == .polygon, clicks.isEmpty {  // the number of sides is set: nothing to place yet
             typed = [:]
             return nil
@@ -1232,7 +1353,7 @@ final class SketchSession {
         patternBackup = sketch
         var base = sketch
         base.patterns.removeAll { $0.id == def.id }
-        base.refreshPatterns(parameters)
+        base.refreshGenerated(parameters)
         patternBase = base
         patternIsNew = isNew
         patternSetup = def
@@ -1320,7 +1441,7 @@ final class SketchSession {
         guard let def = patternSetup, let base = patternBase else { return }
         var shown = base
         shown.patterns.append(def)
-        shown.refreshPatterns(parameters)
+        shown.refreshGenerated(parameters)
         sketch = shown
     }
 
@@ -1546,12 +1667,40 @@ final class SketchSession {
             if d <= tolerance, d < (best?.1 ?? .infinity) { best = (p.id, d) }
         }
         if let best { return best.0 }
+        let positions = sketch.positionTable()
         for c in sketch.curves where tool == .select || !Sketch.isGenerated(c.id) {
-            guard let g = sketch.geometry(of: c.id) else { continue }
+            guard mayBeNear(c, uv, positions), let g = sketch.geometry(of: c.id) else { continue }
             let d = simdLength(Self.closest(uv, on: g) - uv)
             if d <= tolerance, d < (best?.1 ?? .infinity) { best = (c.id, d) }
         }
         return best?.0
+    }
+
+    /// A cheap test that rules out most curves before the exact distance is worked out: false only when the
+    /// curve is certainly farther than the pick tolerance (a circle or arc is never nearer than its whole
+    /// circle; a Bézier lies inside the box of its four points).
+    private func mayBeNear(_ c: SketchCurve, _ uv: SIMD2<Double>, _ position: [EntityID: SIMD2<Double>]) -> Bool {
+        let tol = tolerance
+        switch c.geometry {
+        case .circle(let m, let r):
+            guard let p = position[m] else { return true }
+            return abs(simdLength(uv - p) - r) <= tol
+        case .arc(let m, let a, _):
+            guard let p = position[m], let pa = position[a] else { return true }
+            return abs(simdLength(uv - p) - simdLength(pa - p)) <= tol
+        case .line(let a, let b):
+            guard let pa = position[a], let pb = position[b] else { return true }
+            return Self.box([pa, pb], contains: uv, within: tol)
+        case .bezier(let a, let c1, let c2, let b):
+            guard let pa = position[a], let pc1 = position[c1], let pc2 = position[c2], let pb = position[b] else { return true }
+            return Self.box([pa, pc1, pc2, pb], contains: uv, within: tol)
+        }
+    }
+
+    private static func box(_ pts: [SIMD2<Double>], contains p: SIMD2<Double>, within tol: Double) -> Bool {
+        var lo = pts[0], hi = pts[0]
+        for q in pts.dropFirst() { lo = pointwiseMin(lo, q); hi = pointwiseMax(hi, q) }
+        return p.x >= lo.x - tol && p.x <= hi.x + tol && p.y >= lo.y - tol && p.y <= hi.y + tol
     }
 
     // MARK: text
@@ -1637,7 +1786,7 @@ final class SketchSession {
             }
         }
         return sketch.curves.compactMap { c in
-            guard !c.construction, !sized.contains(c.id), let s = sketch.suggestDimension(for: [c.id]) else { return nil }
+            guard !c.construction, !Sketch.isGenerated(c.id), !sized.contains(c.id), let s = sketch.suggestDimension(for: [c.id]) else { return nil }
             return (c.id, s.kind, s.value)
         }
     }
@@ -1706,6 +1855,8 @@ final class SketchSession {
         if editingDimension != nil { editingDimension = nil }
         else if !clicks.isEmpty || !dimensionPicks.isEmpty { resetToolState() }
         else if patternSetup != nil { cancelPattern() }
+        else if gearBackup != nil { cancelGearEdit() }
+        else if gearActive != nil { gearActive = nil }  // the next click places another gear
         else if offsetSetup != nil { cancelOffset() }
         else if manipulating != nil { stopManipulating() }
         else if tool != .select { setTool(.select) }
@@ -1713,6 +1864,7 @@ final class SketchSession {
     }
 
     func deleteSelection() -> String? {
+        if tool == .gear, gearActive != nil { return deleteActiveGear() }
         // With nothing selected, Delete takes the dimension line under the pointer.
         if selection.isEmpty, let d = hoverDimension { return deleteDimension(d) }
         guard !selection.isEmpty else { return nil }
@@ -1846,6 +1998,7 @@ final class SketchSession {
     /// Rubber-band geometry for the tool in progress, in sketch coordinates.
     func previewPolylines() -> [[SIMD2<Double>]] {
         if tool == .bezier { return curvePreview()?.lines ?? [] }
+        if tool == .gear { return gearPreview() }
         guard !clicks.isEmpty, let c = target()?.position else { return [] }
         let a = clicks[0].position
         switch tool {
@@ -1881,6 +2034,30 @@ final class SketchSession {
             return [[a, clicks[1].position], circle(a, r, a0, a1)]
         default: return []
         }
+    }
+
+    /// The next gear as it would be drawn at the cursor (not while one is active: it is already shown).
+    private func gearPreview() -> [[SIMD2<Double>]] {
+        guard gearActive == nil, let c = target()?.position, let spec = try? gearDefaults.spec(parameters),
+              let pieces = try? GearProfile.outline(spec) else { return [] }
+        var line: [SIMD2<Double>] = []
+        for piece in pieces {
+            switch piece {
+            case .line(let a, let b): line += [a, b]
+            case .bezier(let a, let h1, let h2, let b): line += Bezier.flatten([a, h1, h2, b], steps: 8)
+            case .arc(let a, let b):
+                let r = simdLength(a), a0 = atan2(a.y, a.x)
+                var sweep = atan2(b.y, b.x) - a0
+                if sweep <= 0 { sweep += 2 * .pi }
+                let n = max(Int(sweep * r / 0.5), 2)
+                line += (0...n).map { k in let t = a0 + sweep * Double(k) / Double(n); return SIMD2(r * cos(t), r * sin(t)) }
+            }
+        }
+        var out = [line.map { $0 + c }]
+        if spec.boreDiameter > 0 {
+            out.append((0...48).map { k in let t = 2 * Double.pi * Double(k) / 48; return c + spec.boreDiameter / 2 * SIMD2(cos(t), sin(t)) })
+        }
+        return out
     }
 
     /// The curves the Curve tool would draw next: the new one, and the last one placed (and, when the

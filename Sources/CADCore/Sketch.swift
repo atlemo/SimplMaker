@@ -169,8 +169,10 @@ public struct Sketch: Codable, Hashable, Sendable {
     public var projections: [SketchProjection] = []
     /// Patterns of the sketch's own geometry; their copies are generated (see SketchPattern.swift).
     public var patterns: [SketchPatternDef] = []
+    /// Gears of the sketch; their outlines are generated (see GearProfile.swift).
+    public var gears: [SketchGearDef] = []
 
-    private enum CodingKeys: String, CodingKey { case points, curves, constraints, dimensions, texts, projections, patterns }
+    private enum CodingKeys: String, CodingKey { case points, curves, constraints, dimensions, texts, projections, patterns, gears }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -181,6 +183,7 @@ public struct Sketch: Codable, Hashable, Sendable {
         texts = try c.decodeIfPresent([SketchText].self, forKey: .texts) ?? []  // older files have none
         projections = try c.decodeIfPresent([SketchProjection].self, forKey: .projections) ?? []
         patterns = try c.decodeIfPresent([SketchPatternDef].self, forKey: .patterns) ?? []
+        gears = try c.decodeIfPresent([SketchGearDef].self, forKey: .gears) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -192,6 +195,7 @@ public struct Sketch: Codable, Hashable, Sendable {
         if !texts.isEmpty { try c.encode(texts, forKey: .texts) }
         if !projections.isEmpty { try c.encode(projections, forKey: .projections) }
         if !patterns.isEmpty { try c.encode(patterns, forKey: .patterns) }
+        if !gears.isEmpty { try c.encode(gears, forKey: .gears) }
     }
 
     /// Every sketch starts with a fixed origin point, id "origin".

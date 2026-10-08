@@ -413,8 +413,8 @@ public enum Regenerator {
         guard solve.status == .solved else {
             throw KernelError(message: "sketch cannot satisfy its constraints (residual \(solve.maxResidual))")
         }
-        if let problem = solved.refreshPatterns(r.parameters).values.sorted().first {
-            throw KernelError(message: "pattern: \(problem)")
+        if let problem = solved.refreshGenerated(r.parameters).values.sorted().first {
+            throw KernelError(message: problem)
         }
         return try sketchResult(solved, solve: solve, frame: frame, parameters: r.parameters)
     }

@@ -33,6 +33,8 @@ struct GroupTool: Identifiable {
     let icon: String
     var help: String
     var shortcut: String?
+    /// A small label after the name in the group's list ("Experimental").
+    var badge: String?
     var active = false
     var enabled = true
     /// Ways of doing it (a rectangle from two corners, or from its center). The button does the
@@ -276,6 +278,14 @@ private struct ToolGroupRow: View {
                 HStack(spacing: DS.Spacing.space4) {
                     Icon(tool.icon, size: 16, renderedStroke: Icon.toolStroke).frame(width: 20)
                     Text(tool.title).lineLimit(1)
+                    if let badge = tool.badge {
+                        Text(badge)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.85), in: Capsule())
+                    }
                     Spacer(minLength: DS.Spacing.space4)
                 }
                 .foregroundStyle(tool.active ? accent : .primary)

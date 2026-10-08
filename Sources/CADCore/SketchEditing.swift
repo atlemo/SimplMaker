@@ -87,6 +87,12 @@ extension Sketch {
 
     public func position(_ id: EntityID) -> SIMD2<Double>? { point(id)?.position }
 
+    /// Every point's position by id, for loops over many curves: `position` scans the points, which adds up when
+    /// a gear or a pattern has made hundreds of them.
+    public func positionTable() -> [EntityID: SIMD2<Double>] {
+        Dictionary(points.map { ($0.id, $0.position) }, uniquingKeysWith: { first, _ in first })
+    }
+
     public func lineEnds(_ id: EntityID) -> (SIMD2<Double>, SIMD2<Double>)? {
         guard let c = curve(id), case .line(let a, let b) = c.geometry, let pa = position(a), let pb = position(b) else { return nil }
         return (pa, pb)
@@ -211,7 +217,7 @@ extension Sketch {
     public func shapeCenters() -> [ShapeCenter] {
         let ids = curves.filter { c in
             if case .circle = c.geometry { return false }
-            return !c.construction
+            return !c.construction && !Sketch.isGenerated(c.id)  // copies and gears: the callers never wanted their centres, and chaining hundreds of curves is slow
         }.map(\.id)
         return chains(ids).compactMap { chain -> ShapeCenter? in
             guard chain.closed else { return nil }

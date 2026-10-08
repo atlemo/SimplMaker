@@ -1,7 +1,7 @@
 // Linked copies of sketch geometry, in a grid or around a point (the sketch Pattern tool).
 //
 // A pattern is stored as a definition: which curves it copies, and counts and spacings as
-// expressions. The copies themselves are generated: `refreshPatterns` throws away every generated
+// expressions. The copies themselves are generated: `refreshGenerated` throws away every generated
 // point, curve and text and makes them again from the originals, so they follow whatever changes
 // the originals or the parameters. Generated entities carry "~" in their ids, made from the
 // pattern, the copy and the original ("<pattern>~<copy>~<original>"), so the same copy always has
@@ -171,13 +171,13 @@ extension Sketch {
         points += g.points; curves += g.curves; texts += g.texts
     }
 
-    /// Makes the copies of every pattern again, from the originals as they are now. A pattern whose
-    /// originals are all gone is dropped. Returns what is wrong with the patterns that can't be made
-    /// (a count that isn't a number), by pattern; those make no copies.
+    /// Makes the copies of every pattern and the outline of every gear again, from the originals as they are
+    /// now. A pattern whose originals are all gone is dropped, and so is a gear whose centre is. Returns what is
+    /// wrong with the patterns and gears that can't be made (a count that isn't a number), by id; those make nothing.
     @discardableResult
-    public mutating func refreshPatterns(_ parameters: ParameterValues) -> [EntityID: String] {
+    public mutating func refreshGenerated(_ parameters: ParameterValues) -> [EntityID: String] {
         _ = takeGenerated()
-        guard !patterns.isEmpty else { return [:] }
+        guard !patterns.isEmpty || !gears.isEmpty else { return [:] }
         for i in patterns.indices { patterns[i].sources = patterns[i].sources.filter { point($0) != nil || curve($0) != nil } }
         patterns.removeAll { $0.sources.isEmpty }
         var problems: [EntityID: String] = [:]
@@ -187,9 +187,10 @@ extension Sketch {
                 let parts = patternParts(def.sources)
                 for (k, placement) in layout.placements.enumerated() { copy(parts, placement, prefix: "\(def.id)~\(k + 1)~") }
             } catch {
-                problems[def.id] = "\(error)"
+                problems[def.id] = "pattern: \(error)"
             }
         }
+        for (id, problem) in refreshGears(parameters) { problems[id] = problem }
         return problems
     }
 
