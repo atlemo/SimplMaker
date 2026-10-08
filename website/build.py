@@ -7,7 +7,7 @@
 Pages live in src/pages/**/index.html (a few lines of front matter, then the page body).
 src/layout.html wraps every page; src/partials/*.html are included with {{include:name}}.
 src/static/ is copied as it is. What ends up in public/ is exactly what gets uploaded
-(scripts/publish-site.sh), apart from /updates/ and /download/, which belong to the release scripts.
+(scripts/publish-site.sh), apart from /updates/ and the disk image in /download/, which belong to the release scripts.
 
 Placeholders available in pages and partials:
     {{price}} {{trial_days}} {{min_os}} {{version}} {{buy_url}} {{support_email}} {{year}}
