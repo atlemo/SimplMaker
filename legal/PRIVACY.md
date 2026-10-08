@@ -6,7 +6,7 @@
 Version 0.1, [date]. The controller for the data described here is **[LEGAL NAME, address, organization number]**, contact **[email]**.
 
 ## The short version
-SimplMaker has no accounts, no analytics and no tracking. Your parts and files never leave your Mac. The app talks to the internet in two cases only: to **update itself**, and to **activate or check a license key**.
+SimplMaker has no accounts and no tracking. Your parts and files never leave your Mac. The app talks to the internet in three cases only: to **update itself**, to **activate or check a license key**, and to send **anonymous usage statistics**, which you can turn off in Settings.
 
 ## What is sent, and why
 
@@ -16,17 +16,20 @@ SimplMaker asks `https://simplmaker.com/updates/appcast.xml` whether a newer ver
 ### 2. License activation and checks (Polar)
 When you enter a license key, SimplMaker sends the key, our organization id and **the name of your Mac** (the label you see in Sharing settings) to Polar (polar.sh), our payment and license provider, and about once a week while licensed, it sends the key and activation id to check that the license is still valid. Polar also sees your IP address. We use this to enforce the license and the activation limit. Basis: performance of the contract (art. 6(1)(b)). Polar acts for its own purposes as merchant of record for your purchase, and has its own privacy policy.
 
-### 3. Your purchase (Polar)
+### 3. Anonymous usage statistics (TelemetryDeck)
+SimplMaker sends anonymous events to TelemetryDeck (telemetrydeck.com), a privacy-focused analytics service, so we can see how many people use the app and which features get used. An event carries its name (for example "app started" or "tutorial completed"), the app version, the macOS version and the type of Mac, the language and region settings, and an identifier that TelemetryDeck hashes so it cannot be traced back to you. It never contains your parts, file names, license key, name or email address. TelemetryDeck does not store your IP address. Basis: our legitimate interest in understanding and improving the product (art. 6(1)(f)). It is on by default and can be turned off in Settings ▸ General ▸ "Share anonymous usage statistics".
+
+### 4. Your purchase (Polar)
 When you buy a license, Polar collects your name, email, payment details and billing country to take payment, issue the key and handle tax. We receive from Polar your name, email address and country for the sale, to support you and meet our accounting duties (art. 6(1)(b) and (c)).
 
-### 4. Stored on your Mac
+### 5. Stored on your Mac
 SimplMaker keeps a trial start date, the last date it ran, and your activated license in your macOS keychain, with a copy of the dates in its preferences. This stays on your Mac. Deleting it resets nothing for us; it only removes the information that tells SimplMaker you are licensed, so you would enter your key again.
 
-### 5. Support email
+### 6. Support email
 If you write to us, we keep the correspondence as long as needed to help you and for our records.
 
 ## Sharing and transfers
-We do not sell data. Our processors are our web host and Polar. Some of them may process data outside the EEA; where they do, they rely on a lawful transfer mechanism such as the EU's standard contractual clauses or an adequacy decision.
+We do not sell data. Our processors are our web host, Polar and TelemetryDeck. Some of them may process data outside the EEA; where they do, they rely on a lawful transfer mechanism such as the EU's standard contractual clauses or an adequacy decision.
 
 ## How long we keep it
 Server logs: **[period]**. Sale records: as long as accounting law requires (in Norway, five years). Support email: **[period]**.
@@ -40,6 +43,7 @@ We will post a new version here and date it.
 ---
 
 ### How to keep this true (not part of the published text)
-- If the app ever sends anything else (crash reports, analytics, a system profile with Sparkle's `SUEnableSystemProfiling`...), update section "What is sent".
+- Section 3 lists what the app sends to TelemetryDeck; keep it in step with the signals in `Sources/SimplMaker/Telemetry.swift` and its callers, and check TelemetryDeck's own privacy documentation and data processing agreement.
+- If the app ever sends anything else (crash reports, a system profile with Sparkle's `SUEnableSystemProfiling`...), update section "What is sent".
 - The user agent and IP in the update check come from Sparkle and the web host; check the host's real log retention and fill in the periods.
 - Polar's own role (controller or processor) for the license checks should be confirmed from its terms and data processing agreement.

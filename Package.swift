@@ -22,6 +22,8 @@ let package = Package(
     dependencies: [
         // Auto-updates (appcast + EdDSA-signed archives). A binary framework, embedded by scripts/bundle-app.sh.
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
+        // Anonymous usage statistics (TelemetryDeck); can be turned off in Settings.
+        .package(url: "https://github.com/TelemetryDeck/SwiftSDK", from: "2.14.0"),
     ],
     targets: [
         // C API over OpenCASCADE (C++ inside, plain C header outside).
@@ -44,7 +46,8 @@ let package = Package(
         // The macOS app (SwiftUI + Metal).
         .executableTarget(
             name: "SimplMaker",
-            dependencies: ["CADCore", "CADKernel", .product(name: "Sparkle", package: "Sparkle")],
+            dependencies: ["CADCore", "CADKernel", .product(name: "Sparkle", package: "Sparkle"),
+                           .product(name: "TelemetryDeck", package: "SwiftSDK")],
             path: "Sources/SimplMaker",
             // SwiftPM executables only look for frameworks next to the binary; an .app keeps them in Contents/Frameworks.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]

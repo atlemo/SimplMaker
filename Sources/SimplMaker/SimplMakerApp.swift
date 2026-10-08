@@ -52,6 +52,7 @@ struct SimplMakerApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Updater.shared.start()
+        Telemetry.start()
         LicenseManager.shared.start()
     }
 

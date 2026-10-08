@@ -9,7 +9,7 @@ description: What you need, how to install SimplMaker, how the 14-day trial work
 - **macOS 26** or later
 - A trackpad or a mouse. A trackpad is nicer for orbiting.
 
-SimplMaker works offline. It needs the internet only to activate a licence key, to check that key about once a week, and to look for updates.
+SimplMaker works offline. It needs the internet only to activate a licence key, to check that key about once a week, to look for updates, and to send anonymous usage statistics (which you can turn off in **Settings → General**).
 
 ## Install
 
@@ -45,4 +45,4 @@ A key covers **one major version** (all of 1.x, for example) and never expires. 
 
 ## Updates
 
-SimplMaker looks for updates by itself. To check now, choose **SimplMaker → Check for Updates…**. To turn the automatic check off, open **Settings → General**. What changed in each version is in the [changelog](/changelog/).
+SimplMaker looks for updates by itself. To check now, choose **SimplMaker → Check for Updates…**. To turn the automatic check off, open **Settings → General**, where you can also turn off the anonymous usage statistics that SimplMaker sends to TelemetryDeck. What changed in each version is in the [changelog](/changelog/).

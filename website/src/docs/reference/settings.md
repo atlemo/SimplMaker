@@ -1,6 +1,6 @@
 ---
 title: Settings
-description: Every setting in SimplMaker: welcome window, accent colour, navigation, grid, units, sketch background and antialiasing.
+description: Every setting in SimplMaker: welcome window, accent colour, updates, usage statistics, navigation, grid, units, sketch background and antialiasing.
 ---
 
 Open **SimplMaker → Settings…** ([[⌘,]]). The panes are along the top.
@@ -14,6 +14,7 @@ Open **SimplMaker → Settings…** ([[⌘,]]). The panes are along the top.
 | **Show the welcome window at launch** | On by default. Off, SimplMaker opens an empty part instead. The window is always under **Window → Welcome to SimplMaker**. |
 | **Accent color** | **SimplMaker orange**, or the colour set in System Settings. The highlight colour of tools and selections. While you sketch, the system's colour is always used, because the sketch paper is tinted to match it. |
 | **Check for updates automatically** | Looks for new versions in the background |
+| **Share anonymous usage statistics** | On by default. Sends anonymous events to TelemetryDeck (which version and macOS you use, and which features get used) so SimplMaker can be improved. Never your parts, file names or anything personal. Takes full effect the next time SimplMaker starts. See [Privacy](/privacy/). |
 
 ## Navigation
 

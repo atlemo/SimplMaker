@@ -44,6 +44,7 @@ final class TutorialGuide {
         isActive = false
         spotlight = []
         UserDefaults.standard.set(true, forKey: Preferences.tutorialCompleted)
+        Telemetry.signal("tutorialCompleted")
     }
 
     /// Some progress was made and the tutorial isn't finished: Help ▸ Tutorial resumes it.

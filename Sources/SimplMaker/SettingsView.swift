@@ -17,6 +17,8 @@ enum Preferences {
     static let antialiasing = "antialiasing"
     /// The guided first part (the desk organizer) has been finished.
     static let tutorialCompleted = "tutorialCompleted"
+    /// Anonymous usage statistics are sent (see Telemetry.swift); on by default.
+    static let sendUsageStatistics = "sendUsageStatistics"
 
     /// The tools pinned to a toolbar group (see ToolGroups.swift), by the group's id.
     static func toolbarPins(_ group: String) -> String { "toolbarPins.\(group)" }
@@ -131,6 +133,7 @@ struct SettingsView: View {
     @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
     @AppStorage(Preferences.antialiasing) private var antialiasing = 4
     @AppStorage(Preferences.accentSource) private var accentSource = Preferences.AccentSource.simplMaker
+    @AppStorage(Preferences.sendUsageStatistics) private var sendUsageStatistics = true
     @ObservedObject private var updater = Updater.shared
 
     private enum Pane: String, CaseIterable, Identifiable {
@@ -212,6 +215,12 @@ struct SettingsView: View {
                 Toggle("Check for updates automatically", isOn: Binding(
                     get: { updater.automaticallyChecksForUpdates },
                     set: { updater.automaticallyChecksForUpdates = $0 }))
+            }
+            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                Toggle("Share anonymous usage statistics", isOn: $sendUsageStatistics)
+                Text("Helps improve SimplMaker: which version and macOS you use, and which features get used. Never your parts, file names or anything personal. Takes full effect the next time SimplMaker starts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

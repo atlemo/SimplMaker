@@ -10,6 +10,7 @@
 		4128102F9B727A5EE2B93976 /* CADKernel in Frameworks */ = {isa = PBXBuildFile; productRef = 287A5E78A75C340F28E8DE77 /* CADKernel */; };
 		46339D3E64EFB926D17CB68A /* CADCore in Frameworks */ = {isa = PBXBuildFile; productRef = EE92712BD4279C1BADFBBF6B /* CADCore */; };
 		8C3F2E7A4D9B6A1CAE5F7D32 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 7B2E1D6F3C8A5F0B9D4E6C21 /* Sparkle */; };
+		A4D81C3E7B2F5096CE1D8A47 /* TelemetryDeck in Frameworks */ = {isa = PBXBuildFile; productRef = B93E2F5A6C1D8047AE3B5D92 /* TelemetryDeck */; };
 		96BEDF105C98299B88C3483E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 72F05ED180AF401B033E9524 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
 
@@ -36,6 +37,7 @@
 				46339D3E64EFB926D17CB68A /* CADCore in Frameworks */,
 				4128102F9B727A5EE2B93976 /* CADKernel in Frameworks */,
 				8C3F2E7A4D9B6A1CAE5F7D32 /* Sparkle in Frameworks */,
+				A4D81C3E7B2F5096CE1D8A47 /* TelemetryDeck in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -108,6 +110,7 @@
 				EE92712BD4279C1BADFBBF6B /* CADCore */,
 				287A5E78A75C340F28E8DE77 /* CADKernel */,
 				7B2E1D6F3C8A5F0B9D4E6C21 /* Sparkle */,
+				B93E2F5A6C1D8047AE3B5D92 /* TelemetryDeck */,
 			);
 			productName = SimplMakerApp;
 			productReference = 7440A648B20F9F88CBCD0DDA /* SimplMaker.app */;
@@ -140,6 +143,7 @@
 			packageReferences = (
 				5E0EF18581B0C93CF6E697B2 /* XCLocalSwiftPackageReference "." */,
 				6A1D0C5E2B7F4E9A8C3D5B10 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				D25F7A0B3E9C4816BF2A6C03 /* XCRemoteSwiftPackageReference "SwiftSDK" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0F90098F011981ABBC460C3F /* Products */;
@@ -393,6 +397,14 @@
 				minimumVersion = 2.10.0;
 			};
 		};
+		D25F7A0B3E9C4816BF2A6C03 /* XCRemoteSwiftPackageReference "SwiftSDK" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/TelemetryDeck/SwiftSDK";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.14.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -404,6 +416,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6A1D0C5E2B7F4E9A8C3D5B10 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		B93E2F5A6C1D8047AE3B5D92 /* TelemetryDeck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D25F7A0B3E9C4816BF2A6C03 /* XCRemoteSwiftPackageReference "SwiftSDK" */;
+			productName = TelemetryDeck;
 		};
 		EE92712BD4279C1BADFBBF6B /* CADCore */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -100,8 +100,12 @@ Faces and edges have **persistent names** built from stable IDs and the kernel's
 
 SimplMaker has a 14-day trial and then needs a license key, sold through Polar. The trial and license code is in `Sources/SimplMaker/Licensing/`; set-up and testing steps are in [docs/LICENSING-SETUP.md](docs/LICENSING-SETUP.md), and drafts of the EULA and privacy policy are in `legal/`. Builds without `Packaging/licensing.conf` are not license-enforced.
 
+## Usage statistics
+
+SimplMaker sends anonymous usage statistics (app start, a few feature events) to [TelemetryDeck](https://telemetrydeck.com), on by default and off with **Settings → General → Share anonymous usage statistics**. The code is `Sources/SimplMaker/Telemetry.swift` (the App ID is in it). Nothing from a part, no file names and no personal data are sent. Keep `legal/PRIVACY.md`, `website/src/docs/start/install.md` and `website/src/docs/reference/settings.md` in step when you add a signal.
+
 ## License
 
 SimplMaker is proprietary software. Copyright © 2026 Atle Mo. All rights reserved (see [LICENSE](LICENSE)).
 
-It links [OpenCASCADE Technology](https://dev.opencascade.org), which is LGPL-2.1 with the OCCT exception (see PLAN.md for what that requires of a closed-source app). The parts of OCCT that SimplMaker uses include DelaBella (MIT) and flex's `FlexLexer.h` (BSD). The toolbar icons come from [Lucide](https://lucide.dev) (ISC; parts from Feather, MIT). **SimplMaker → About SimplMaker** credits all of them and shows their licence texts; the texts are in `Sources/SimplMaker/LicenseTexts.swift`.
+It links [OpenCASCADE Technology](https://dev.opencascade.org), which is LGPL-2.1 with the OCCT exception (see PLAN.md for what that requires of a closed-source app). The parts of OCCT that SimplMaker uses include DelaBella (MIT) and flex's `FlexLexer.h` (BSD). It also uses Sparkle (MIT) and the TelemetryDeck SDK (MIT). The toolbar icons come from [Lucide](https://lucide.dev) (ISC; parts from Feather, MIT). **SimplMaker → About SimplMaker** credits all of them and shows their licence texts; the texts are in `Sources/SimplMaker/LicenseTexts.swift`.
