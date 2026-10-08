@@ -346,8 +346,15 @@ final class DocumentModel {
     }
 
     func setParameter(_ name: String, expression: String) {
+        let values = parameterValues
         mutate("Change \(name)") { doc in
-            if let i = doc.parameters.firstIndex(where: { $0.name == name }) { doc.parameters[i].expression = expression }
+            guard let i = doc.parameters.firstIndex(where: { $0.name == name }) else { return }
+            doc.parameters[i].expression = expression
+            // An expression that is plainly an angle ("60 deg") or a length ("5 mm") makes the parameter one.
+            if let q = try? Expressions.evaluate(try Expressions.parse(expression), lookup: values.lookup),
+               let kind: UnitKind = q.angle == 1 && q.length == 0 ? .angle : q.length == 1 && q.angle == 0 ? .length : nil {
+                doc.parameters[i].unit = kind
+            }
         }
     }
 
@@ -357,6 +364,20 @@ final class DocumentModel {
         guard let i = doc.parameters.firstIndex(where: { $0.name == name }) else { return }
         doc.parameters[i].expression = expression
         regenerate(preview: doc)
+        // The sketch being edited follows too: re-solved from what is stored, at the new values.
+        if let session = sketchSession, let f = doc.features.first(where: { $0.id == session.featureID }), case .sketch(let sf) = f.kind {
+            session.reload(sf.sketch, parameters: ParameterEvaluator.evaluate(doc.parameters))
+            overlayRevision += 1
+        }
+    }
+
+    /// Drops a parameter preview (the name was dragged back to where it began): the model and the sketch go back to the document's.
+    func cancelParameterPreview() {
+        regenerate()
+        guard let session = sketchSession, let f = document.features.first(where: { $0.id == session.featureID }),
+              case .sketch(let sf) = f.kind else { return }
+        session.reload(sf.sketch, parameters: ParameterEvaluator.evaluate(document.parameters))
+        overlayRevision += 1
     }
 
     /// Makes a parameter a length, an angle or a plain number. A plain value ("10 mm") moves to

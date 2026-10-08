@@ -85,6 +85,7 @@
 #include <Poly_Triangulation.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
+#include <ShapeBuild_ReShape.hxx>
 #include <ShapeFix_Shape.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_Failure.hxx>
@@ -436,6 +437,15 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
   Body out = makeBody(mk.Shape(), names, feat + "." + kind);
   BRepCheck_Analyzer check(out.shape);
   if (!check.IsValid()) {
+    // OCCT sometimes returns a fillet's result with a shell that is not quite closed or with edge tolerances
+    // gone loose (after several fillets on one body); repairing it is often enough. Face names follow the repair.
+    ShapeFix_Shape fix(mk.Shape());
+    fix.Perform();
+    if (BRepCheck_Analyzer(fix.Shape()).IsValid()) {
+      std::vector<Named> fixedNames;
+      for (const Named &n : names) fixedNames.push_back({fix.Context()->Apply(n.shape), n.name});
+      return store(makeBody(fix.Shape(), fixedNames, feat + "." + kind));
+    }
     std::string why = cornerMessage(*b, picked, kind, size);
     setError(why.empty() ? std::string(kind) + " produced an invalid solid" : why);
     return 0;

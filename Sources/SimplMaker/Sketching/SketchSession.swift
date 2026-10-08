@@ -1713,6 +1713,8 @@ final class SketchSession {
     }
 
     func deleteSelection() -> String? {
+        // With nothing selected, Delete takes the dimension line under the pointer.
+        if selection.isEmpty, let d = hoverDimension { return deleteDimension(d) }
         guard !selection.isEmpty else { return nil }
         sketch.delete(Set(selection))
         selection = []
@@ -1737,6 +1739,15 @@ final class SketchSession {
         guard canToggleConstruction else { return nil }
         sketch.toggleConstruction(selection)
         return finish("Construction")
+    }
+
+    /// Removes a dimension; the sketch keeps the size it has now, free to change again.
+    func deleteDimension(_ id: EntityID) -> String? {
+        guard sketch.dimensions.contains(where: { $0.id == id }) else { return nil }
+        sketch.delete([id])
+        if editingDimension == id { editingDimension = nil }
+        hoverDimension = nil
+        return finish("Delete Dimension")
     }
 
     func deleteConstraint(_ id: EntityID) -> String? {

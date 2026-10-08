@@ -526,10 +526,36 @@ extension SketchSolver {
     /// ring, and only then everything. So typing a rounded corner's radius moves the arc and its
     /// two touch points, not the whole rectangle a little. Nothing changed: a plain solve.
     public static func solveLocally(_ sketch: inout Sketch, dimensionValues: [EntityID: Double]) -> SolveResult {
+        var direct = sketch
+        let result = solveLocallyInOneGo(&direct, dimensionValues: dimensionValues)
+        if result.status == .solved { sketch = direct; return result }
+        // A line that has to swing a long way (to the other side of another line, say 58° to -58°) can
+        // stall halfway: take it in steps, each starting from the last, so it turns the short way round.
+        var stepped = sketch
+        var turning: [(id: EntityID, from: Double, delta: Double)] = []
+        for d in sketch.dimensions {
+            guard case .angle = d.kind, let target = dimensionValues[d.id], let now = sketch.measure(d.kind) else { continue }
+            let delta = atan2(sin(target - now), cos(target - now))
+            if abs(delta) > 1e-9 { turning.append((d.id, now, delta)) }
+        }
+        guard !turning.isEmpty else { return result }
+        let steps = 12
+        var last = result
+        for k in 1...steps {
+            var values = dimensionValues
+            for t in turning { values[t.id] = t.from + t.delta * Double(k) / Double(steps) }
+            last = solveLocallyInOneGo(&stepped, dimensionValues: values)
+            if last.status != .solved { return result }
+        }
+        sketch = stepped
+        return last
+    }
+
+    private static func solveLocallyInOneGo(_ sketch: inout Sketch, dimensionValues: [EntityID: Double]) -> SolveResult {
         if sketch.points.contains(where: { Sketch.isGenerated($0.id) }) {
             let generated = sketch.takeGenerated()
             defer { sketch.restoreGenerated(generated) }
-            return solveLocally(&sketch, dimensionValues: dimensionValues)
+            return solveLocallyInOneGo(&sketch, dimensionValues: dimensionValues)
         }
         var moving = Set<EntityID>(), anchored = Set<EntityID>()
         for d in sketch.dimensions {

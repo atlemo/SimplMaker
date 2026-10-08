@@ -154,12 +154,19 @@ struct SketchInspector: View {
         Section("Dimensions") {
             ForEach(Array(sketch.sketch.dimensions.enumerated()), id: \.element.id) { i, d in
                 LabeledContent(label(d)) {
-                    ExpressionField(text: d.expression) { text in
-                        model.updateFeature(id, "Edit Dimension") { f in
-                            if case .sketch(var s) = f.kind {
-                                s.sketch.dimensions[i].expression = text
-                                f.kind = .sketch(s)
+                    HStack {
+                        ExpressionField(text: d.expression) { text in
+                            model.updateFeature(id, "Edit Dimension") { f in
+                                if case .sketch(var s) = f.kind {
+                                    s.sketch.dimensions[i].expression = text
+                                    f.kind = .sketch(s)
+                                }
                             }
+                        }
+                        if session != nil {
+                            Button { model.sketchCommand { $0.deleteDimension(d.id) } } label: { Image(systemName: "minus.circle") }
+                                .buttonStyle(.borderless)
+                                .help("Delete this dimension")
                         }
                     }
                 }

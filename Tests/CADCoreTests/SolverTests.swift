@@ -60,6 +60,36 @@ import Testing
         #expect(abs(atan2(d.y, d.x) - .pi / 3) < 1e-6)
     }
 
+    @Test func negativeAngleIsTheSameAsTheTurnTheOtherWay() {
+        for target in [-58.003, 58.003, 302.0] {
+            var s = Sketch()
+            let a = s.addPoint(0, 0), b = s.addPoint(50, 0), c = s.addPoint(20, 30)
+            let base = s.addLine(a, b), side = s.addLine(a, c)
+            s.constrain(.coincident(a, "origin")); s.constrain(.horizontal(base))
+            s.dimension(.angle(base, side), "\(target) deg", id: "ang")
+            let v = target * .pi / 180
+            let r = SketchSolver.solveLocally(&s, dimensionValues: ["ang": v])
+            #expect(r.status == .solved, "\(target)")
+            let got = s.measure(.angle(base, side)) ?? -1
+            #expect(abs(atan2(sin(got - v), cos(got - v))) < 1e-6, "\(target) measured as \(got)")
+        }
+    }
+
+    @Test func anAngleOnTheOtherSideOfTheLinesIsDrawnAboveThem() throws {
+        // A base running left from the corner and a side drawn from the top down to it: the bodies make 76°,
+        // the dimension (from the base's direction to the side's) is 104°.
+        var s = Sketch()
+        let corner = s.addPoint(49.5, 0), farEnd = s.addPoint(43, 0), top = s.addPoint(40, 38)
+        let base = s.addLine(corner, farEnd), side = s.addLine(top, corner)
+        let d = SketchDimension(.angle(base, side), "104 deg")
+        let t = try #require(s.measure(d.kind))
+        #expect(abs(t * 180 / .pi - 104) < 1, "the value is the supplement of the 76° the bodies make")
+        let arc = try #require(s.angleArc(of: d, size: 1))
+        #expect(sin(arc.middle) > 0, "above the lines, where the bodies are")
+        // Between the side's body and the base's extension (to the right of the corner).
+        #expect(abs(cos(arc.start) - 1) < 1e-6)
+    }
+
     @Test func lineAngleTurnsTheLineAboutItsStart() {
         var s = Sketch()
         let a = s.addPoint(5, 5), b = s.addPoint(15, 5)

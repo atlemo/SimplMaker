@@ -977,9 +977,16 @@ final class Renderer {
         segments(overlay.curves, overlay.curveCount,
                  DrawParams(color: curveColor, hoverColor: hover, selectColor: select,
                             thickness: 2 * scale, depthBias: 0.0008, pickable: 1, selectedThickness: 4.5 * scale))
+        // Construction lines are dotted. The gaps between dots would be unpickable, so an unseen band
+        // along each line (just behind the real curves) keeps the whole line clickable.
+        segments(overlay.construction, overlay.constructionCount,
+                 DrawParams(color: p.construction, hoverColor: p.construction, selectColor: p.construction,
+                            thickness: 6 * scale, depthBias: 0.0007, pickable: 1), pipeline: pickBandPipeline)
         segments(overlay.construction, overlay.constructionCount,
                  DrawParams(color: p.construction, hoverColor: hover, selectColor: select,
-                            thickness: 1.4 * scale, depthBias: 0.0008, pickable: 1, selectedThickness: 3.4 * scale))
+                            thickness: 3 * scale, depthBias: 0.0008, pickable: 1,
+                            style: DrawStyle.dashedRound, radius: 0.9 * scale, dashPitch: 5 * scale, dashLength: 1.8 * scale),
+                 pipeline: shapePipeline)
         segments(overlay.preview, overlay.previewCount,
                  DrawParams(color: p.preview, hoverColor: hover, selectColor: select,
                             thickness: 1.5 * scale, depthBias: 0.0009, pickable: 0))

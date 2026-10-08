@@ -390,7 +390,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     override func cursorUpdate(with event: NSEvent) { currentCursor.set() }
-    private func updateCursor() { if window?.isKeyWindow == true { currentCursor.set() } }
+    /// Sets the cursor for the pointer being here. A rebuild or a pick coming in while the pointer is elsewhere
+    /// (dragging a parameter's name in the sidebar) must not take its cursor away.
+    private func updateCursor() {
+        guard let window, window.isKeyWindow else { return }
+        let inside = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        if inside || lastDrag != nil { currentCursor.set() }
+    }
 
     // MARK: picking and sketch-plane coordinates
 

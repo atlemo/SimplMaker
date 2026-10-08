@@ -945,7 +945,7 @@ struct ParameterRow: View {
     private func endScrub() {
         guard let s = scrub else { return }
         scrub = nil
-        if s.expression == parameter.expression { model.regenerate() }  // drop the preview
+        if s.expression == parameter.expression { model.cancelParameterPreview() }  // drop the preview
         else { model.setParameter(parameter.name, expression: s.expression) }
     }
 
@@ -965,7 +965,6 @@ struct ParameterRow: View {
                             moved: { dx, flags in moveScrub(by: dx, flags) },
                             ended: endScrub,
                             doubleClicked: { renameError = nil; renaming = true }))
-                        .scrubCursor(active: scrub != nil)
                         .help("Drag left or right to change the value (Shift: coarse, Option: fine); double-click to rename, and every expression that uses it follows")
                 }
                 Spacer()
@@ -984,8 +983,13 @@ struct ParameterRow: View {
                         }
                     }
                 } label: {
-                    Text(parameter.unit == .length ? "mm" : parameter.unit == .angle ? "deg" : "#")
-                        .font(.caption.monospaced())
+                    HStack(spacing: 2) {
+                        Text(parameter.unit == .length ? "mm" : parameter.unit == .angle ? "deg" : "#")
+                            .font(.caption.monospaced())
+                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
+                    }
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(.secondary.opacity(0.5)))
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -1004,31 +1008,6 @@ struct ParameterRow: View {
         }
         .padding(.vertical, DS.Spacing.space2)
         .onChange(of: renaming) { if renaming { renameError = nil } }
-    }
-}
-
-extension View {
-    /// The left-right arrow cursor over a title that can be dragged to change a value, held for as
-    /// long as the drag lasts even if the pointer leaves the title.
-    func scrubCursor(active: Bool) -> some View { modifier(ScrubCursor(active: active)) }
-}
-
-private struct ScrubCursor: ViewModifier {
-    let active: Bool
-    @State private var hovering = false
-    @State private var pushed = false
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { hovering = $0; update() }
-            .onChange(of: active) { update() }
-            .onDisappear { hovering = false; update(forcing: false) }
-    }
-
-    private func update(forcing want: Bool? = nil) {
-        let want = want ?? (hovering || active)
-        if want, !pushed { NSCursor.resizeLeftRight.push(); pushed = true }
-        else if !want, pushed { NSCursor.pop(); pushed = false }
     }
 }
 
@@ -1057,6 +1036,12 @@ private struct ScrubHandle: NSViewRepresentable {
         private var dragging = false
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        // The left-right arrow over the title: a cursor rect, so it holds however the list under it
+        // sets the cursor, and follows the title when the row moves or resizes.
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
+        override func layout() { super.layout(); window?.invalidateCursorRects(for: self) }
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); window?.invalidateCursorRects(for: self) }
 
         override func mouseDown(with event: NSEvent) {
             startX = event.locationInWindow.x
@@ -1432,6 +1417,8 @@ struct DimensionEditor: View {
                     .onExitCommand(perform: onDone)
                 Button("Set") { submit(unlessClicked: true) }
                     .keyboardShortcut(.defaultAction)
+                Button { remove() } label: { Image(systemName: "trash") }
+                    .help("Delete this dimension; the sketch keeps its size but can change again")
             }
             if let direction = session.distanceDirection(of: dimensionID) {
                 Picker("Measured", selection: Binding(get: { direction }, set: { d in
@@ -1462,6 +1449,12 @@ struct DimensionEditor: View {
     /// Return or Set: completes a half-typed name first, otherwise sets the dimension.
     private func submit(unlessClicked: Bool = false) {
         if ParameterCompleter.shared.complete(&draft, unlessClicked: unlessClicked) { focused = true } else { commit() }
+    }
+
+    private func remove() {
+        let id = dimensionID
+        model.sketchCommand { $0.deleteDimension(id) }
+        onDone()
     }
 
     private func commit() {

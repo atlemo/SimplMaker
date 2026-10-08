@@ -113,6 +113,19 @@ extension Sketch {
             }
             var start = atan2(u.y, u.x)  // the lines' own directions, when the value is neither of the angles between the bodies
             if abs(ccw(r1, r2) - t) < 1e-6 { start = r1 } else if abs(ccw(r2, r1) - t) < 1e-6 { start = r2 }
+            else {
+                // The value is the other way of reading the same two lines (105° where the bodies make 75°): draw it
+                // between one line's body and the other's extension, with the most body in it, and above the lines
+                // where either would do.
+                let first = [(r1, true), (r1 + .pi, false)], second = [(r2, true), (r2 + .pi, false)]
+                var best: (start: Double, score: Double)?
+                for (from, to) in first.flatMap({ f in second.map { (f, $0) } }) + second.flatMap({ f in first.map { (f, $0) } })
+                where abs(ccw(from.0, to.0) - t) < 1e-6 {
+                    let score = (from.1 ? 10.0 : 0) + (to.1 ? 10.0 : 0) + (sin(from.0 + t / 2) >= -1e-9 ? 1 : 0)
+                    if best == nil || score > best!.score { best = (from.0, score) }
+                }
+                if let best { start = best.start }
+            }
             return AngleArc(center: vertex, radius: radius(min(vlen(u), vlen(w))), start: start, sweep: t, axis: false)
         default: return nil
         }

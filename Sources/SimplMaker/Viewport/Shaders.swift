@@ -227,7 +227,9 @@ enum Shaders {
                           : nrm * side * (0.5 * p.thickness + g) - d * (0.416 * p.thickness + g));
         }
         c.xy += offset / halfSize * c.w;
-        c.z -= p.depthBias;  // constant in clip space: a fixed fraction of the view depth (see Camera.depthBiasScale)
+        // Constant in clip space: a fixed fraction of the view depth (see Camera.depthBiasScale). A wider line (a selected
+        // edge) reaches farther across the face it lies on, which slopes away in depth, so its bias grows with it.
+        c.z -= p.depthBias * max(thickness / max(p.thickness, 1e-3), 1.0);
         LineOut o;
         o.position = c;
         o.across = side;
