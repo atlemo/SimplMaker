@@ -9,6 +9,9 @@ import TelemetryDeck
 @MainActor
 enum Telemetry {
     private static let appID = "8B60A0C4-139C-49FE-83AD-F72B32D9500D"
+    /// The organization namespace shown next to the app ID in TelemetryDeck; without it the SDK posts to the default
+    /// namespace and the signals never reach this account's dashboard.
+    private static let namespace = "simpl.shot"
     private static var isStarted = false
 
     /// Whether usage statistics are sent (on by default).
@@ -18,7 +21,7 @@ enum Telemetry {
     static func start() {
         guard isEnabled, !isStarted else { return }
         isStarted = true
-        TelemetryDeck.initialize(config: .init(appID: appID))
+        TelemetryDeck.initialize(config: .init(appID: appID, namespace: namespace))
     }
 
     /// Sends a named event. Cheap to call anywhere; ignored when statistics are off or not started.
