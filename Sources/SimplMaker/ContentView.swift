@@ -1244,7 +1244,7 @@ struct SketchToolbar: View {
             ToolDivider()
             // Tools in a family (rectangle, circle, arc) share one button, under the first one's name.
             ToolGroup("Draw", id: "sketch.draw", defaults: ["Line", "Rectangle", "Circle", "Polygon", "Spline", "Text"],
-                      tools: SketchTool.draw.filter { $0.family.first == $0 }.map(tool))
+                      tools: SketchTool.draw.filter { $0.family.first == $0 }.map(tool) + [canvas])
             ToolDivider()
             ToolGroup("Modify", id: "sketch.modify", defaults: ["Round Corner", "Trim", "Extend", "Offset"],
                       tools: SketchTool.modify.map(tool) + [offset])
@@ -1296,8 +1296,15 @@ struct SketchToolbar: View {
         }
     }
 
+    private var canvas: GroupTool {
+        GroupTool(id: "Canvas", title: "Canvas", icon: DesignTool.canvas.symbol,
+                  help: "Canvas: place a reference image on the sketch's plane, to trace over") {
+            model.insertImageInSketch()
+        }
+    }
+
     private var offset: GroupTool {
-        GroupTool(id: "Offset", title: "Offset", icon: "expand",
+        GroupTool(id: "Offset", title: "Offset", icon: "offset",
                   help: "Offset the selected curves: drag the arrow, or type the distance",
                   active: session.isOffsetting, enabled: session.canOffset) {
             model.beginSketchOffset()

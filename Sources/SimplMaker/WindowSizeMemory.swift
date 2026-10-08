@@ -120,6 +120,7 @@ struct TitlebarAppearance: NSViewRepresentable {
     /// does nothing if they aren't there.
     static func applyTabTint(_ tint: NSColor?, in window: NSWindow) {
         guard let frame = window.contentView?.superview else { return }
+        recolorSelectedTabTitle(in: frame, window: window, tinted: tint != nil)
         for view in allSubviews(of: frame) {
             if let glass = view as? NSGlassEffectView, glass.className == "NSGlassEffectView", isInTabBar(glass) {
                 glass.tintColor = tint
@@ -137,6 +138,18 @@ struct TitlebarAppearance: NSViewRepresentable {
                 layerView.layer?.backgroundColor = tint.withAlphaComponent(0.55).cgColor
                 layerView.layer?.cornerRadius = host.bounds.height / 2
             }
+        }
+    }
+
+    /// The selected tab's title is drawn in the system's dark text, which is hard to read on the
+    /// tint, so that tab draws in the dark appearance (white text); the others keep the system's.
+    private static func recolorSelectedTabTitle(in frame: NSView, window: NSWindow, tinted: Bool) {
+        guard let bar = allSubviews(of: frame).first(where: { $0.className == "NSTabBar" }) else { return }
+        let buttons = allSubviews(of: bar).filter { $0.className == "NSTabButton" }.sorted { $0.frame.minX < $1.frame.minX }
+        let tabs = window.tabGroup?.windows ?? []
+        let selected = window.tabGroup?.selectedWindow.flatMap { tabs.firstIndex(of: $0) }
+        for (i, button) in buttons.enumerated() {
+            button.appearance = tinted && i == selected ? NSAppearance(named: .darkAqua) : nil
         }
     }
 

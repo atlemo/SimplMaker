@@ -50,10 +50,20 @@ extension DocumentModel {
         return insertImage(from: url, on: plane, at: centre)
     }
 
+    /// Sketch mode's Canvas: asks for an image and puts it on the sketch's own plane, centred on the sketch's
+    /// origin, to trace over. The sketch stays open, and the Canvas goes just before it in the timeline. False if nothing was added.
     @discardableResult
-    func insertImage(from url: URL, on plane: PlaneRef, at centre: SIMD2<Double>) -> Bool {
+    func insertImageInSketch() -> Bool {
+        guard let session = sketchSession,
+              case .sketch(let sf)? = document.features.first(where: { $0.id == session.featureID })?.kind,
+              let url = Self.chooseImage("Insert") else { return false }
+        return insertImage(from: url, on: sf.plane, at: .zero, keepingSketch: true)
+    }
+
+    @discardableResult
+    func insertImage(from url: URL, on plane: PlaneRef, at centre: SIMD2<Double>, keepingSketch: Bool = false) -> Bool {
         guard let (data, pixels) = loadImage(url) else { return false }
-        if sketchSession != nil { finishSketch() }
+        if sketchSession != nil, !keepingSketch { finishSketch() }
         let id = IDs.make()
         let aspect = Double(pixels.height) / Double(pixels.width)
         // Wide pictures get the default size across, tall ones down.
@@ -61,10 +71,20 @@ extension DocumentModel {
         let feature = Feature(id: id, name: document.nextName("Canvas"), .image(ImageFeature(
             plane: plane, fileName: url.lastPathComponent, data: data, pixelWidth: pixels.width, pixelHeight: pixels.height,
             u: formatDimension(centre.x, kind: .length), v: formatDimension(centre.y, kind: .length), width: width)))
-        mutate("Insert \(url.lastPathComponent)") { $0.insertAtMarker(feature) }
+        // While a sketch is open the model shows as it was at that sketch, so a Canvas to trace over goes just
+        // before it (it only needs the plane, which the sketch itself needs first).
+        let sketchID = keepingSketch ? sketchSession?.featureID : nil
+        mutate("Insert \(url.lastPathComponent)") { doc in
+            guard let sketchID, let i = doc.index(of: sketchID) else { return doc.insertAtMarker(feature) }
+            doc.features.insert(feature, at: i)
+            if let r = doc.rollback, r > i { doc.rollback = r + 1 }
+        }
         pendingTool = nil
-        selection = []
-        selectedFeature = id
+        // The sketch stays the thing being worked on; the new Canvas is in the browser to select.
+        if !keepingSketch {
+            selection = []
+            selectedFeature = id
+        }
         return true
     }
 

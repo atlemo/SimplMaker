@@ -43,6 +43,25 @@ import UniformTypeIdentifiers
         #expect(Array(pixels.bytes[(7 * 4)..<(8 * 4)]) == [0, 0, 0, 0])
     }
 
+    @Test func insertingWhileSketchingKeepsTheSketchOpenAndUsesItsPlane() async throws {
+        let model = DocumentModel()
+        try await settle(model)
+        model.beginSketch(on: .xz)
+        try await settle(model)
+        let sketchID = try #require(model.sketchSession?.featureID)
+        let url = try pngFile("Side view.png", width: 100, height: 100)
+        let plane = try #require(model.sketchSession.flatMap { _ in PlaneRef.xz })
+        #expect(model.insertImage(from: url, on: plane, at: .zero, keepingSketch: true))
+        try await settle(model)
+        #expect(model.sketchSession?.featureID == sketchID, "the sketch stays open")
+        #expect(model.selectedFeature == sketchID)
+        let features = model.document.features
+        #expect(features.last?.id == sketchID, "the canvas goes before the sketch, which is still last")
+        guard case .image(let i)? = features.dropLast().last?.kind else { Issue.record("expected a canvas"); return }
+        #expect(i.plane == .xz)
+        #expect(model.imageDraws().count == 1, "errors: \(String(describing: model.result?.errors))")
+    }
+
     @Test func insertingOnAPlaneAddsACanvasAndDrawsIt() async throws {
         let model = DocumentModel()
         try await settle(model)

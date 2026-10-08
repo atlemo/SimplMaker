@@ -13,6 +13,10 @@ struct Icon: View {
     /// grid is 24 units, so the stroke is drawn thicker on the grid the smaller the icon is shown).
     var renderedStroke: CGFloat?
     @Environment(\.accent) private var accent
+    @Environment(\.toolsOnTint) private var onTint
+
+    /// How much of the glyph's accent parts show on a tinted toolbar, where they are drawn in white.
+    static let onTintAccentOpacity = 0.4
 
     /// The thickness of tool icons in the toolbars and their menus, in points as rendered.
     static let toolStroke: CGFloat = 1.2
@@ -48,7 +52,7 @@ struct Icon: View {
             ForEach(elements.indices, id: \.self) { i in
                 let element = elements[i]
                 if element.filled {
-                    if let color = element.fillIsAccent ? accent : element.fillColor {
+                    if let color = element.fillIsAccent ? (onTint ? .white : accent) : element.fillColor {
                         element.path.fill(color).opacity(element.opacity)
                     } else {
                         element.path.fill().opacity(element.opacity)
@@ -57,7 +61,11 @@ struct Icon: View {
                 if !element.filled || element.alsoStroked {
                     let style = StrokeStyle(lineWidth: gridStrokeWidth * element.strokeWeight, lineCap: element.cap,
                                             lineJoin: element.join)
-                    if let color = element.strokeIsAccent ? accent : element.strokeColor {
+                    if element.strokeIsAccent && onTint {
+                        // The accent would vanish on the accent-coloured toolbar: draw it as faded white.
+                        element.path.stroke(Color.white, style: style)
+                            .opacity(element.strokeOpacity * Self.onTintAccentOpacity)
+                    } else if let color = element.strokeIsAccent ? accent : element.strokeColor {
                         element.path.stroke(color, style: style).opacity(element.strokeOpacity)
                     } else {
                         element.path.stroke(style: style).opacity(element.strokeOpacity)

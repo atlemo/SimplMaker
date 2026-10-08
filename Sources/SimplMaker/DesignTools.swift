@@ -183,6 +183,10 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
 extension DocumentModel {
     /// A toolbar button or menu item: run the tool now if the selection allows, or wait for picks.
     func run(_ tool: DesignTool) {
+        if tool == .canvas, sketchSession != nil {  // a picture to trace over, on the sketch's own plane
+            insertImageInSketch()
+            return
+        }
         if sketchSession != nil { finishSketch(keepingView: true) }
         cancelSketchPlanePick()
         if pendingTool == tool {  // pressing the waiting tool again finishes it, or cancels it
