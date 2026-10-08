@@ -53,5 +53,6 @@ reference/shortcuts
 reference/menus
 reference/settings
 reference/license
+reference/open-cascade
 reference/troubleshooting
 reference/glossary

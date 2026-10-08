@@ -32,7 +32,7 @@ SimplMaker, its source code and its name are owned by us and our licensors. This
 
 ## 6. Third-party software
 
-SimplMaker includes third-party software under its own licences, listed with their notices under *SimplMaker → About SimplMaker*. That includes Open CASCADE Technology, which is licensed under the GNU LGPL 2.1 with an exception, and is included as a separate library (`libSimplOCCT.dylib`) that you may replace as that licence allows. Nothing in this agreement limits your rights under those licences for that software.
+SimplMaker includes third-party software under its own licences, listed with their notices under *SimplMaker → About SimplMaker*. That includes Open CASCADE Technology, which is licensed under the GNU LGPL 2.1 with an exception, and is included as a separate library (`libSimplOCCT.dylib`) that you may replace as that licence allows. [How to get the source and replace the library](https://simplmaker.com/docs/reference/open-cascade/) is on this website. Nothing in this agreement limits your rights under those licences for that software, and section 3 does not prevent you from modifying or replacing that library, or from reverse engineering SimplMaker as far as needed to debug such changes.
 
 ## 7. Purchases and refunds
 

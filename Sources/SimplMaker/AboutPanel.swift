@@ -44,7 +44,9 @@ enum AboutPanel {
         folder inside the SimplMaker application package. It is built, unmodified, from the Open CASCADE \
         Technology \(occtVersion) source (https://github.com/Open-Cascade-SAS/OCCT, tag V\(occtVersion.replacingOccurrences(of: ".", with: "_"))). \
         You may replace it with your own build of a compatible version of that library; macOS then requires \
-        the application to be signed again (codesign --force --deep --sign - SimplMaker.app).
+        the application to be signed again (codesign --force --deep --sign - SimplMaker.app). The build settings \
+        and replacement steps are at https://simplmaker.com/docs/reference/open-cascade/ . You may also \
+        reverse engineer SimplMaker as far as needed to debug your changes to the library.
         """
 
     private static let components = [
