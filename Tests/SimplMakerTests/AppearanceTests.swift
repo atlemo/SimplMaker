@@ -100,7 +100,7 @@ import Testing
 }
 
 /// Every Create and Modify tool has its own letter in the menus, apart from A (Appearance); a tool that came after
-/// the letters ran out (Draft) has ⇧ with one.
+/// the letters ran out (Draft, Split Body) has ⇧ with one.
 @Suite struct MenuLetterTests {
     @Test func toolLettersAreUnique() {
         let chords = DesignTool.allCases.map { KeyChord($0.defaultKey, $0.defaultModifiers) }
@@ -109,7 +109,7 @@ import Testing
         #expect(DesignTool.allCases.allSatisfy { $0.defaultKey.isLowercase && $0.defaultKey.isLetter })
         let plain = DesignTool.allCases.filter { $0.defaultModifiers.isEmpty }.map(\.defaultKey)
         #expect(Set(plain).count == plain.count, "two tools share a plain letter")
-        #expect(DesignTool.allCases.filter { !$0.defaultModifiers.isEmpty } == [.draft])
+        #expect(Set(DesignTool.allCases.filter { !$0.defaultModifiers.isEmpty }) == [.draft, .split])
         for tool in DesignTool.allCases {
             let label = KeyChord(tool.defaultKey, tool.defaultModifiers).label
             #expect(tool.help.hasPrefix("\(tool.rawValue) (\(label)):"), "the tooltip names the key")

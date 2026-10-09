@@ -368,6 +368,26 @@ public final class KBody: @unchecked Sendable {
         try withCStrings(faces) { try KBody.wrap(sk_draft(handle, $0, Int32(faces.count), fixed, angle, featureID), "draft") }
     }
 
+    /// The pieces a plane cuts this body into (the plane runs on without end), in a fixed order: along `normal`, then by
+    /// position. A single piece comes back when the plane misses the body. Names are kept; the cut faces are "<featureID>.split".
+    public func split(planeThrough origin: SIMD3<Double>, normal: SIMD3<Double>, featureID: String) throws -> [KBody] {
+        try splitPieces("split") { out, max in
+            sk_split(handle, 0, nil, origin.x, origin.y, origin.z, normal.x, normal.y, normal.z, featureID, out, max)
+        }
+    }
+
+    /// The pieces the face `face` of `tool` cuts this body into, the face as it is (curved faces don't run on).
+    public func split(byFace face: String, of tool: KBody, featureID: String) throws -> [KBody] {
+        try splitPieces("split") { out, max in sk_split(handle, tool.handle, face, 0, 0, 0, 0, 0, 1, featureID, out, max) }
+    }
+
+    private func splitPieces(_ context: String, _ call: (UnsafeMutablePointer<SKHandle>, Int32) -> Int32) throws -> [KBody] {
+        var handles = [SKHandle](repeating: 0, count: 64)
+        let n = Int(handles.withUnsafeMutableBufferPointer { call($0.baseAddress!, 64) })
+        guard n > 0 else { throw KernelError.last(context) }
+        return handles.prefix(n).map { KBody(handle: $0) }
+    }
+
     /// The relief made by projecting profiles onto this body along `direction` (see sk_project_relief): a solid that
     /// follows the surface, `height` thick, standing out of it when positive and going into it when negative. `faces`
     /// are the faces to project onto (every face when empty). `origin` and `normal` give a point on the surface where

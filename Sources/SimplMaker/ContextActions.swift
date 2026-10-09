@@ -72,6 +72,7 @@ extension DocumentModel {
             .action("Measure", symbol: DesignTool.measure.symbol) { self.selection = [pick]; self.run(.measure) },
             .separator,
             .action("Move or Rotate Body", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.selection = [pick]; self.run(.move) },
+            .action("Split Body…", symbol: DesignTool.split.symbol) { self.selection = [pick]; self.run(.split) },
             .action("Combine with Other Bodies…", symbol: "square.on.square.intersection.dashed") {
                 self.selection = [pick]
                 self.run(.combine)

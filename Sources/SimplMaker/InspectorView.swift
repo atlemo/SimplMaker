@@ -51,6 +51,7 @@ struct InspectorView: View {
                 case .pattern(let f): PatternInspector(model: model, id: id, pattern: f)
                 case .shell(let f): ShellInspector(model: model, id: id, shell: f)
                 case .draft(let f): DraftInspector(model: model, id: id, draft: f)
+                case .split(let f): SplitInspector(model: model, id: id, split: f)
                 case .project(let f): ProjectInspector(model: model, id: id, project: f)
                 case .importBody(let f): ImportInspector(model: model, id: id, imported: f)
                 case .image(let f): ImageInspector(model: model, id: id, image: f)
@@ -970,6 +971,42 @@ struct CombineInspector: View {
                 }
             }
             .disabled(combine.tools.count != 1)
+        }
+    }
+}
+
+struct SplitInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let split: SplitFeature
+
+    var edit: FeatureEdit<SplitFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .split(let s) = $0 { s } else { nil } }, wrap: { .split($0) })
+    }
+
+    /// What the bodies are divided with, in words.
+    var toolDescription: String {
+        switch split.tool {
+        case .plane(let ref): return model.planeName(ref)
+        case .face(let face): return "Face \(face.face)"
+        case .profile(let sketch): return "Profile of \(model.featureName(sketch))"
+        }
+    }
+
+    var body: some View {
+        Section("Split Body") {
+            BodiesRow(model: model, ids: split.bodies, title: split.bodies.count == 1 ? "Body" : "Bodies")
+            LabeledContent("Split with", value: toolDescription)
+            Text("A plane, a flat face or a profile cuts all the way through; a curved face cuts only where it is. A body it doesn't cross stays as it is. "
+                 + "The first piece keeps the body's name, the others become bodies of their own.")
+                .font(.caption).foregroundStyle(.secondary)
+            let fresh = model.pickedBodies.filter { !split.bodies.contains($0) }
+            if !fresh.isEmpty {
+                Button("Split the \(fresh.count) Selected Bod\(fresh.count == 1 ? "y" : "ies") Too") {
+                    edit.update("Add Bodies") { $0.bodies += fresh }
+                    model.clearSelection()
+                }
+            }
         }
     }
 }

@@ -96,10 +96,12 @@ final class DocumentModel {
     /// A tool waiting for the user to pick what it needs (a profile, a path, a face...). See DesignTools.swift.
     var pendingTool: DesignTool? {
         didSet {
-            if pendingTool == nil { reselecting = nil }  // cancelling the tool ends a re-pick too
+            if pendingTool == nil { reselecting = nil; splitBodies = nil }  // cancelling the tool ends a re-pick too
             if pendingTool != oldValue { toolMissed = false }
         }
     }
+    /// The Split tool has its bodies and waits for the face, plane or profile to split them with.
+    var splitBodies: [FeatureID]?
     /// The Measure tool's last readout, for the picks and the scene it was made for.
     @ObservationIgnored var measureCache: (key: MeasureCacheKey, value: MeasureReadout?)?
     /// The waiting tool's last click was on something it can't use: its prompt says why.
@@ -439,7 +441,8 @@ final class DocumentModel {
     /// The colour a body is drawn in: the one being picked for it, else its own; nil = the default.
     func displayColor(of id: FeatureID) -> BodyColor? {
         if let p = colorPreview, p.bodies.contains(id) { return p.color }
-        return document.bodyColors[id]
+        // A piece of a split body looks like the body it came from until it is given a colour of its own.
+        return document.bodyColors[id] ?? document.bodyColors[Regenerator.rootBody(id)]
     }
 
     /// Gives bodies a colour (nil goes back to the default), as one undo step. Needs no rebuild.
@@ -1567,7 +1570,7 @@ final class DocumentModel {
             guard let landed = result.projectionHandles[id] else { return nil }
             return handle(pf.mode == .emboss ? "Height" : "Depth", landed.origin,
                           pf.mode == .emboss ? landed.normal : -landed.normal, pf.height)
-        case .sketch, .sweep, .loft, .combine, .mirror, .pattern, .importBody, .image:
+        case .sketch, .sweep, .loft, .combine, .split, .mirror, .pattern, .importBody, .image:
             return nil
         }
     }
@@ -2053,7 +2056,7 @@ final class DocumentModel {
         case .project(var pf):
             pf.height = text
             doc.features[i].kind = .project(pf)
-        case .sketch, .sweep, .loft, .combine, .mirror, .importBody, .image:
+        case .sketch, .sweep, .loft, .combine, .split, .mirror, .importBody, .image:
             break
         }
     }

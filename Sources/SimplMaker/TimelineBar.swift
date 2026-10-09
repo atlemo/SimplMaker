@@ -28,6 +28,7 @@ extension Feature {
         case .pattern: return DesignTool.pattern.symbol
         case .shell: return DesignTool.shell.symbol
         case .draft: return DesignTool.draft.symbol
+        case .split: return DesignTool.split.symbol
         case .project: return DesignTool.project.symbol
         case .importBody: return "file-box"
         case .image: return DesignTool.canvas.symbol

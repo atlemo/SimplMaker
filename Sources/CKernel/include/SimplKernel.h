@@ -151,6 +151,13 @@ bool sk_body_edge_ends(SKHandle body, const char *edgeName, double out[6]);
 
 /// Boolean between two bodies; names from both operands are carried through.
 SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op);
+/// Splits a body into the pieces a tool cuts it into. The tool is the infinite plane through (ox, oy, oz) with normal
+/// (nx, ny, nz) when `toolBody` is 0, else the face `toolFace` of `toolBody`, as it is. Writes the handles of the
+/// pieces to `out` (at most `max`) and returns how many: 1 when the tool misses the body or only touches it, 0 on
+/// failure. The pieces come in a fixed order (along the normal, then by position). Names of the body's faces are
+/// kept; the faces the cut makes are "<featureId>.split".
+int sk_split(SKHandle body, SKHandle toolBody, const char *toolFace, double ox, double oy, double oz, double nx, double ny,
+             double nz, const char *featureId, SKHandle *out, int max);
 /// Constant-radius fillet on the named edges. New faces: "<featureId>.fillet.<edgeName>".
 SKHandle sk_fillet(SKHandle body, const char *const *edgeNames, int count, double radius, const char *featureId);
 /// Equal-distance chamfer on the named edges. New faces: "<featureId>.chamfer.<edgeName>".

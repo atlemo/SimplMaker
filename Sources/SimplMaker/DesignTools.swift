@@ -12,7 +12,7 @@ import simd
 enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
-    case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", scale = "Scale", combine = "Combine"
+    case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", scale = "Scale", combine = "Combine", split = "Split Body"
     case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell", draft = "Draft", canvas = "Canvas"
     case project = "Project"
     case measure = "Measure"
@@ -23,7 +23,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// change an existing body.
     static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
-    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .draft, .project, .move, .scale, .combine]
+    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .draft, .project, .move, .scale, .combine, .split]
     /// Construction planes, copies of bodies, and reference images.
     static let construct: [DesignTool] = [.plane, .mirror, .pattern, .canvas]
     /// Tools that read the model without changing it.
@@ -50,6 +50,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .move: return "move"
         case .scale: return "scaling"
         case .combine: return "combine"
+        case .split: return "split-body"
         case .plane: return "plane"
         case .mirror: return "flip-horizontal-2"
         case .pattern: return "pattern"
@@ -86,6 +87,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .move: return "m"
         case .scale: return "z"
         case .combine: return "j"
+        case .split: return "s"  // with ⇧ (see defaultModifiers): every plain letter is taken
         case .plane: return "n"
         case .mirror: return "q"
         case .pattern: return "t"
@@ -96,7 +98,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Held with the letter by default. Every plain letter has a tool (or Appearance), so a tool added since has ⇧ with one.
-    var defaultModifiers: KeyChord.Modifiers { self == .draft ? .shift : [] }
+    var defaultModifiers: KeyChord.Modifiers { self == .draft || self == .split ? .shift : [] }
 
     /// The tooltip: the name, its current shortcut, and what the tool does.
     var help: String {
@@ -124,6 +126,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .chamfer: return "bevel the selected edges, or every edge around a selected face"
         case .thread: return "cut a metric or inch screw thread on a shaft or in a hole"
         case .combine: return "join, cut or intersect bodies (e.g. cut text out of a plate)"
+        case .split: return "divide bodies into new bodies along a plane, a face or a sketch profile"
         case .plane: return "a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
         case .mirror: return "copy bodies across a plane"
         case .pattern: return "copy bodies in a row or around an axis"
@@ -153,12 +156,12 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     var acceptsWholeBody: Bool { picksBodies || self == .measure }
 
     /// Shows the origin planes while it waits, to pick one (mirror across a plane).
-    var showsPlanes: Bool { needsPlane || self == .mirror }
+    var showsPlanes: Bool { needsPlane || self == .mirror || self == .split }
 
     /// Works on whole bodies: a click on any face picks the body (and so does a body in the browser).
     var picksBodies: Bool {
         switch self {
-        case .move, .combine, .mirror, .pattern: return true
+        case .move, .combine, .split, .mirror, .pattern: return true
         default: return false
         }
     }
@@ -175,6 +178,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .fillet, .chamfer: return kind == .edge || kind == .face  // a face: every edge around it
         case .move: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve
         case .combine: return kind == .face || kind == .edge
+        case .split: return kind == .face || kind == .plane || kind == .region  // the bodies, then the plane, profile or face
         case .scale: return kind == .region || kind == .sketchCurve
         case .plane, .canvas: return kind == .plane || kind == .face
         case .mirror: return kind == .face || kind == .edge || kind == .plane  // bodies, then the plane
@@ -197,7 +201,8 @@ extension DocumentModel {
         if sketchSession != nil { finishSketch(keepingView: true) }
         cancelSketchPlanePick()
         if pendingTool == tool {  // pressing the waiting tool again finishes it, or cancels it
-            if !perform(tool, confirmed: true) { cancelTool() }
+            let stage = splitBodies  // Split moves on to its tool instead of finishing
+            if !perform(tool, confirmed: true), splitBodies == stage { cancelTool() }
             return
         }
         pendingTool = nil
@@ -242,6 +247,13 @@ extension DocumentModel {
         }
         if tool == .thread {
             threadClick(pick, additive: additive)
+            overlayRevision += 1
+            return
+        }
+        if tool == .split, let bodies = splitBodies {  // the bodies are chosen: this click is what divides them
+            if !pick.isWholeBody, let cut = splitTool(for: pick) {
+                add(Feature(name: document.nextName("Split"), .split(SplitFeature(bodies: bodies, tool: cut))))
+            }
             overlayRevision += 1
             return
         }
@@ -297,6 +309,13 @@ extension DocumentModel {
         case .draft:
             let n = selection.filter(\.isFace).count
             return n == 0 ? "Click the faces to draft" : "Click more faces, or press Return to draft (\(n) picked)"
+        case .split:
+            if let bodies = splitBodies {
+                return "Click the face, plane or profile to split \(bodies.count == 1 ? "the body" : "the \(bodies.count) bodies") with"
+            }
+            let n = pickedBodies.count
+            return n == 0 ? "Click the bodies to split, then the plane or profile to split them with"
+                : "Click more bodies, or the plane or profile to split with · Return to choose a face instead (\(n) picked)"
         case .combine:
             let n = pickedBodies.count
             return n == 0 ? "Click the body to cut from, join to or intersect with"
@@ -442,10 +461,38 @@ extension DocumentModel {
             guard bodies.count >= 2, !waiting else { return false }
             add(Feature(name: document.nextName(tool.rawValue),
                         .combine(CombineFeature(target: bodies[0], tools: Array(bodies.dropFirst())))))
+        case .split:
+            guard splitBodies == nil else { return false }  // the next click is the tool (see toolClick)
+            // With one body in the model there is no need to pick it first.
+            var bodies = pickedBodies
+            if bodies.isEmpty, result?.bodies.count == 1, let only = result?.bodies.first?.id { bodies = [only] }
+            if let pick = selection.last(where: { $0.kind == .plane || $0.kind == .region }) {
+                guard !bodies.isEmpty, let cut = splitTool(for: pick) else {
+                    selection.removeAll { $0.kind == .plane || $0.kind == .region }
+                    return false
+                }
+                add(Feature(name: document.nextName("Split"), .split(SplitFeature(bodies: bodies, tool: cut))))
+                return true
+            }
+            // Return with bodies picked moves on to choosing a face to split with.
+            guard confirmed, !bodies.isEmpty else { return false }
+            splitBodies = bodies
+            selection = bodies.compactMap { id in meshes.firstIndex { $0.id == id }.map { PickID(wholeBody: $0) } }
+            return false
         case .measure:
             return false  // reads the picks without making a feature, and stays until Esc
         }
         return true
+    }
+
+    /// What a click on a plane, a profile or a face splits with.
+    func splitTool(for pick: PickID) -> SplitFeature.Tool? {
+        switch pick.kind {
+        case .plane: return planeRef(of: pick).map { .plane($0) }
+        case .region: return profile(of: pick).map { .profile($0.sketch) }
+        case .face: return faceRef(pick).map { .face($0) }
+        default: return nil
+        }
     }
 
     /// The flat face a draft of these faces pivots about, when none was picked: a flat face of the body that the

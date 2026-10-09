@@ -2170,6 +2170,107 @@ SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op) {
   SK_CATCH(0)
 }
 
+int sk_split(SKHandle body, SKHandle toolBody, const char *toolFace, double ox, double oy, double oz, double nx, double ny,
+             double nz, const char *featureId, SKHandle *out, int max) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  const std::string feat = featureOrDefault(featureId, "split");
+  const gp_Dir dir = (nx * nx + ny * ny + nz * nz) > 1e-12 ? gp_Dir(nx, ny, nz) : gp_Dir(0, 0, 1);
+
+  // The tool: a face of another body as it is, or a plane made big enough to run clean through the body.
+  TopoDS_Face tool;
+  std::shared_ptr<Object> keepTool;
+  if (toolBody) {
+    Body *t;
+    keepTool = lookup(toolBody, t);
+    if (!t) return 0;
+    auto it = t->faceIndex.find(toolFace ? toolFace : "");
+    if (it == t->faceIndex.end()) {
+      setError(std::string("face not found: ") + (toolFace ? toolFace : ""));
+      return 0;
+    }
+    tool = TopoDS::Face(t->faces(it->second + 1));
+  } else {
+    Bnd_Box box;
+    BRepBndLib::Add(b->shape, box);
+    if (box.IsVoid()) {
+      setError("the body is empty");
+      return 0;
+    }
+    double x0, y0, z0, x1, y1, z1;
+    box.Get(x0, y0, z0, x1, y1, z1);
+    const gp_Pnt middle((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    const double reach = gp_Pnt(x0, y0, z0).Distance(gp_Pnt(x1, y1, z1)) + 1.0;
+    // The plane's own point nearest the body's middle, so the square sits over the body however far the origin is.
+    const gp_Pln plane(gp_Pnt(ox, oy, oz), dir);
+    const gp_Vec toMiddle(plane.Location(), middle);
+    const gp_Pnt centre = middle.Translated(-gp_Vec(dir) * toMiddle.Dot(gp_Vec(dir)));
+    tool = BRepBuilderAPI_MakeFace(gp_Pln(centre, dir), -reach, reach, -reach, reach).Face();
+  }
+
+  BRepAlgoAPI_Splitter sp;
+  ShapeList args, tools;
+  args.Append(b->shape);
+  tools.Append(tool);
+  sp.SetArguments(args);
+  sp.SetTools(tools);
+  sp.SetRunParallel(true);
+  sp.Build();
+  if (!sp.IsDone() || sp.HasErrors()) {
+    setError("could not split the body");
+    return 0;
+  }
+
+  // The faces the tool leaves inside the body are the new ones, one on each side of the cut.
+  std::vector<Named> names;
+  carry(sp, namedFaces(*b), names);
+  std::vector<Named> cuts;
+  const ShapeList &inside = sp.Modified(tool);
+  for (const TopoDS_Shape &c : inside) cuts.push_back({c, feat + ".split"});
+
+  struct Piece {
+    TopoDS_Shape solid;
+    std::tuple<long long, long long, long long> key;
+    long long along;
+  };
+  std::vector<Piece> pieces;
+  for (TopExp_Explorer ex(sp.Shape(), TopAbs_SOLID); ex.More(); ex.Next()) {
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(ex.Current(), props);
+    if (props.Mass() <= 1e-9) continue;
+    const gp_Pnt c = props.CentreOfMass();
+    auto q = [](double v) { return std::llround(v * 1e4); };
+    pieces.push_back({ex.Current(), {q(c.X()), q(c.Y()), q(c.Z())}, q(gp_Vec(gp_Pnt(0, 0, 0), c).Dot(gp_Vec(dir)))});
+  }
+  if (pieces.empty()) {
+    setError("the split left nothing");
+    return 0;
+  }
+  // Pieces come in a fixed order (along the tool's normal, then by position) so a rebuild names them the same.
+  std::sort(pieces.begin(), pieces.end(), [&](const Piece &x, const Piece &y) {
+    return toolBody ? x.key < y.key : std::tie(x.along, x.key) < std::tie(y.along, y.key);
+  });
+
+  int written = 0;
+  for (const Piece &p : pieces) {
+    if (written >= max) break;
+    // Each piece is a copy of its own, so two bodies never share a face (they are meshed on different threads).
+    BRepBuilderAPI_Copy copy(p.solid, true, false);
+    std::vector<Named> mine;
+    ShapeIndexedMap inPiece;
+    TopExp::MapShapes(p.solid, TopAbs_FACE, inPiece);
+    for (const Named &n : names)
+      if (inPiece.Contains(n.shape)) mine.push_back({copy.ModifiedShape(n.shape), n.name});
+    for (const Named &n : cuts)
+      if (inPiece.Contains(n.shape)) mine.push_back({copy.ModifiedShape(n.shape), n.name});
+    out[written++] = store(makeBody(copy.Shape(), mine, feat));
+  }
+  return written;
+  SK_CATCH(0)
+}
+
 SKHandle sk_fillet(SKHandle body, const char *const *edgeNames, int count, double radius, const char *featureId) {
   SK_TRY
   if (radius <= Precision::Confusion()) {

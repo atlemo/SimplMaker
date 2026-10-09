@@ -197,6 +197,7 @@ public enum Regenerator {
                 case .pattern(let f): try pattern(f, feature, &r)
                 case .shell(let f): try shell(f, feature, &r)
                 case .draft(let f): try draft(f, feature, &r)
+                case .split(let f): try split(f, feature, &r)
                 case .project(let f): try project(f, feature, &r)
                 case .importBody(let f): try importBody(f, feature, &r)
                 case .image(let f): r.images[feature.id] = try image(f, &r)
@@ -351,6 +352,72 @@ public enum Regenerator {
         } catch {
             throw KernelError(message: "Draft couldn't lean these faces by \(UnitKind.angle.format(angle)): \("\(error)".replacingOccurrences(of: "draft: ", with: "")). "
                               + "Try a smaller angle, other faces, or a different face to stay put.")
+        }
+    }
+
+    /// What a split cuts with: a plane that runs on without end, or a curved face of a body as it is.
+    enum SplitTool {
+        case plane(origin: SIMD3<Double>, normal: SIMD3<Double>)
+        case curved(body: FeatureID, face: String)
+    }
+
+    /// The id of piece number `k` (1, 2…) that a split of `body` leaves besides the one that keeps the body's own id.
+    /// The body it came from is the part before the first "~" (see `rootBody`).
+    public static func splitPieceID(of body: FeatureID, by feature: FeatureID, _ k: Int) -> FeatureID { "\(body)~\(feature)~\(k)" }
+
+    /// The body a piece of a split came from, however many times it has been split; the body's own id for the rest.
+    public static func rootBody(_ id: FeatureID) -> FeatureID { String(id.prefix { $0 != "~" }) }
+
+    static func split(_ f: SplitFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let tool: SplitTool, what: String
+        switch f.tool {
+        case .plane(let ref):
+            let frame = try resolvePlane(ref, r)
+            tool = .plane(origin: frame.origin, normal: frame.normal); what = "plane"
+        case .profile(let id):
+            let frame = try sketchResult(id, r).frame
+            tool = .plane(origin: frame.origin, normal: frame.normal); what = "profile's plane"
+        case .face(let ref):
+            guard let body = r.body(ref.body) else { throw KernelError(message: "The body with the face to split by is missing. Pick the face again.") }
+            if let frame = try? body.faceFrame(ref.face) {
+                tool = .plane(origin: frame.origin, normal: frame.normal); what = "face's plane"
+            } else {
+                tool = .curved(body: ref.body, face: ref.face); what = "face"
+            }
+        }
+        guard !f.bodies.isEmpty else { throw KernelError(message: "There are no bodies to split. Pick the bodies again.") }
+        var cutAny = false
+        for id in f.bodies {
+            guard let i = r.bodies.firstIndex(where: { $0.id == id }) else {
+                throw KernelError(message: "A body to split is missing. Pick the bodies again.")
+            }
+            let whole = r.bodies[i].body
+            r.featureInputs[feature.id, default: [:]][id] = whole
+            let pieces: [KBody]
+            do {
+                switch tool {
+                case .plane(let origin, let normal):
+                    pieces = try whole.split(planeThrough: origin, normal: normal, featureID: feature.id)
+                case .curved(let toolBody, let face):
+                    guard toolBody != id, let toolShape = r.body(toolBody) else { continue }  // a body can't cut itself
+                    pieces = try whole.split(byFace: face, of: toolShape, featureID: feature.id)
+                }
+            } catch {
+                throw KernelError(message: "Split couldn't divide \(r.bodies[i].name): \("\(error)".replacingOccurrences(of: "split: ", with: "")).")
+            }
+            guard pieces.count > 1 else { continue }  // the tool misses this one: it stays as it is
+            cutAny = true
+            let parent = r.bodies[i]
+            r.bodies[i].body = pieces[0]
+            for (k, piece) in pieces.enumerated().dropFirst() {
+                let pieceID = splitPieceID(of: id, by: feature.id, k)
+                let name = r.bodyNames[pieceID] ?? (r.bodyNames[id] != nil ? "\(parent.name) \(k + 1)" : "Body\(r.bodies.count + 1)")
+                r.bodies.insert(BodyResult(id: pieceID, name: name, body: piece), at: i + k)
+            }
+        }
+        if !cutAny {
+            throw KernelError(message: "The \(what) doesn't cut through \(f.bodies.count == 1 ? "the body" : "any of the bodies"). "
+                              + "Pick another \(what == "face" ? "face" : "plane or face"), or move the bodies.")
         }
     }
 

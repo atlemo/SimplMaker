@@ -491,6 +491,24 @@ public struct DraftFeature: Codable, Hashable, Sendable {
     }
 }
 
+/// Divides bodies into new bodies along a plane, a face or a sketch profile. A plane or a flat face cuts all the way
+/// through (it runs on without end); a curved face cuts only where it is. A body the tool doesn't cross stays as it
+/// is. The pieces of a body come in a fixed order: the first keeps the body's identity, the rest are bodies of
+/// their own.
+public struct SplitFeature: Codable, Hashable, Sendable {
+    public enum Tool: Codable, Hashable, Sendable {
+        /// An origin plane or a construction plane.
+        case plane(PlaneRef)
+        /// A face of a body: its plane when it is flat, the face itself when it is curved.
+        case face(FaceRef)
+        /// A profile of a sketch, by the id of the sketch: the plane the sketch lies on.
+        case profile(FeatureID)
+    }
+    public var bodies: [FeatureID]
+    public var tool: Tool
+    public init(bodies: [FeatureID], tool: Tool) { self.bodies = bodies; self.tool = tool }
+}
+
 /// Combines bodies: joins the tool bodies to the target, cuts them out of it, or keeps only where
 /// they overlap. The tool bodies are used up unless `keepTools` is set.
 public struct CombineFeature: Codable, Hashable, Sendable {
@@ -673,6 +691,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case rotate(RotateFeature)
         case scale(ScaleFeature)
         case combine(CombineFeature)
+        case split(SplitFeature)
         case plane(PlaneFeature)
         case mirror(MirrorFeature)
         case pattern(PatternFeature)
@@ -709,6 +728,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .rotate: return "Rotate"
         case .scale: return "Scale"
         case .combine: return "Combine"
+        case .split: return "Split"
         case .plane: return "Plane"
         case .mirror: return "Mirror"
         case .pattern(let p): return p.kind == .linear ? "Pattern" : "Circular Pattern"
@@ -725,6 +745,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         switch kind {
         case .sketch, .fillet, .chamfer, .hole, .thread, .primitive, .move, .rotate, .scale, .combine, .plane, .mirror, .pattern,
              .shell, .draft, .importBody, .image: return []
+        case .split(let f): if case .profile(let sketch) = f.tool { return [sketch] } else { return [] }
         case .project(let p): return [p.sketch]
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
@@ -747,7 +768,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .mirror(let m): return m.operation == .newBody
         case .pattern(let p): return p.operation == .newBody
         case .importBody: return true
-        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .plane, .shell, .draft, .project, .image: return false
+        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .split, .plane, .shell, .draft, .project, .image: return false
         }
     }
 }
