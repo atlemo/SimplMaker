@@ -606,15 +606,24 @@ final class DocumentModel {
         }
         isRegenerating = true
         let cache = regenCache, meshCache = self.meshCache, snapshot = doc
+        // While an arrow or manipulator is being dragged, the threads after the feature are left out of each preview
+        // (see Regenerator.regenerate): built once, on the drop. If leaving them out makes a feature fail that
+        // built before (one that works on a thread's faces), the preview is built in full.
+        let draftAfter = preview != nil && (handleDragStart != nil || manipulatorStart != nil) ? previewFeature : nil
+        let known = Set(result?.errors.keys.map { $0 } ?? [])
         let job: @MainActor () -> Void = {
             self.regenRunning = true
             let started = Date()
             Task.detached(priority: .userInitiated) {
-                let r = Regenerator.regenerate(snapshot, cache: cache) { done, total, feature in
+                let progress: @Sendable (Int, Int, Feature) -> Void = { done, total, feature in
                     // Quick rebuilds (a drag) never show it; a slow one starts to after a moment.
                     guard Date().timeIntervalSince(started) > 0.3 else { return }
                     let step = RegenProgress(done: done, total: total, feature: feature.name)
                     Task { @MainActor in self.noteProgress(step) }
+                }
+                var r = Regenerator.regenerate(snapshot, cache: cache, draftAfter: draftAfter, progress: progress)
+                if draftAfter != nil, r.errors.keys.contains(where: { !known.contains($0) && $0 != draftAfter }) {
+                    r = Regenerator.regenerate(snapshot, cache: cache, progress: progress)
                 }
                 let meshes = meshCache.meshes(for: r.bodies)
                 await self.finishRegen(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature)

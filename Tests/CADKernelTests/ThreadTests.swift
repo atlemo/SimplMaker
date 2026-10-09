@@ -231,6 +231,33 @@ import Testing
         #expect(Date().timeIntervalSince(start) < 0.2, "300 lookups took \(Date().timeIntervalSince(start)) s")
     }
 
+    @Test func aDraftLeavesOutTheThreadsAfterTheEditedFeatureAndKeepsItsResultsApart() throws {
+        let (features, wall) = try Self.drilledBlock("6.8")
+        let all = features + [Self.thread(wall, "M8x1.25")]
+        var doc = CADDocument()
+        doc.features = all
+        let cache = RegenCache()
+        func threaded(_ r: RegenResult) -> Bool { r.body("b")?.faceNames.contains { $0.hasPrefix("th.thread") } == true }
+
+        let full = Regenerator.regenerate(doc, cache: cache)
+        #expect(threaded(full) && full.errors.isEmpty)
+        // Edited feature = the block (first): the thread after it is left out, and nothing breaks.
+        let start = Date()
+        let draft = Regenerator.regenerate(doc, cache: cache, draftAfter: "b")
+        let took = Date().timeIntervalSince(start)
+        #expect(!threaded(draft) && draft.errors.isEmpty && draft.body("b")?.isValid == true)
+        let plainVolume = try #require(draft.body("b")).volume, threadedVolume = try #require(full.body("b")).volume
+        #expect(plainVolume > threadedVolume, "the hole is still the plain drilled one")
+        #expect(took < 0.05, "a draft rebuild took \(took) s")
+        // The rebuild that follows is the whole thing again, not the draft out of the cache.
+        let after = Regenerator.regenerate(doc, cache: cache)
+        #expect(threaded(after) && after.errors.isEmpty)
+        // A thread at or before the edited feature is built: the thread itself being dragged.
+        #expect(threaded(Regenerator.regenerate(doc, cache: cache, draftAfter: "th")))
+        // Edited at the hole, which is also before the thread: left out again.
+        #expect(!threaded(Regenerator.regenerate(doc, cache: RegenCache(), draftAfter: "h")))
+    }
+
     /// A block with two holes of one size side by side, and their walls.
     static func twoHoles() throws -> (features: [Feature], walls: [FaceRef]) {
         let block = NewFeatureTests.box("b", "30", "30", "15")

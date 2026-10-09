@@ -130,7 +130,12 @@ final class ImportCache: @unchecked Sendable {
 public enum Regenerator {
     /// `progress` is told before each feature that has to be built (not those the cache still holds):
     /// how many are done, how many there are to build, and the one about to be.
-    public static func regenerate(_ doc: CADDocument, cache: RegenCache? = nil,
+    ///
+    /// `draftAfter`: for a preview that is rebuilt over and over while a handle is dragged. The threads that come after
+    /// that feature are left out (a thread is the slowest thing to build, a third of a second or more, and a drag
+    /// only needs the shape); the rebuild that follows the drop puts them back. Their results are kept apart in the
+    /// cache, so a full rebuild never picks up one without its thread.
+    public static func regenerate(_ doc: CADDocument, cache: RegenCache? = nil, draftAfter: FeatureID? = nil,
                                   progress: (@Sendable (_ done: Int, _ total: Int, _ feature: Feature) -> Void)? = nil) -> RegenResult {
         let start = Date()
         var r = RegenResult()
@@ -144,10 +149,16 @@ public enum Regenerator {
         hasher.combine(doc.parameters)
         hasher.combine(doc.bodyNames)
         var previous = hasher.finalize()
-        for f in features {
+        let draftFrom = draftAfter.flatMap { id in features.firstIndex { $0.id == id } }
+        func leftOut(_ index: Int, _ f: Feature) -> Bool {
+            guard let draftFrom, index > draftFrom, case .thread = f.kind else { return false }
+            return true
+        }
+        for (index, f) in features.enumerated() {
             var h = Hasher()
             h.combine(previous)
             h.combine(f)
+            if leftOut(index, f) { h.combine("draft") }
             previous = h.finalize()
             keys.append(previous)
         }
@@ -158,7 +169,7 @@ public enum Regenerator {
 
         for (index, feature) in features.enumerated() where index >= first {
             defer { if cache != nil { snapshots.append((keys[index], r)) } }
-            guard !feature.suppressed else { continue }
+            guard !feature.suppressed, !leftOut(index, feature) else { continue }
             progress?(index - first, features.count - first, feature)
             do {
                 switch feature.kind {
