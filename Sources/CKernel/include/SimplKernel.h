@@ -127,6 +127,11 @@ SKHandle sk_mirror_copy(SKHandle body, double ox, double oy, double oz, double n
 // Hollows a body: removes the named faces and keeps walls `thickness` thick (inside the body when
 // `inside`, else outside it). New wall faces are named "<featureId>.shell…".
 SKHandle sk_shell(SKHandle body, const char *const *faceNames, int count, double thickness, bool inside, const char *featureId);
+// Leans the named faces by a draft angle (radians) about the plane of `fixedFace`, a flat face of the same body: the
+// faces keep the line where they meet that plane and tilt so that, for a positive angle, the body gets narrower
+// going away from it; a negative angle widens it. New faces: "<featureId>.draft…".
+SKHandle sk_draft(SKHandle body, const char *const *faceNames, int count, const char *fixedFace, double angle,
+                  const char *featureId);
 // Projects sketch profiles onto a body along (dx, dy, dz), the way a slide projector throws them on a wall, and
 // returns the relief: a solid that follows the surface, `height` thick along its normals. A positive height
 // stands out of the surface (emboss, to join to the body), a negative one goes into it (deboss, to cut out of

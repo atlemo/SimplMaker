@@ -13,7 +13,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
     case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", scale = "Scale", combine = "Combine"
-    case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell", canvas = "Canvas"
+    case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell", draft = "Draft", canvas = "Canvas"
     case project = "Project"
     case measure = "Measure"
 
@@ -23,7 +23,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// change an existing body.
     static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
-    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .project, .move, .scale, .combine]
+    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .draft, .project, .move, .scale, .combine]
     /// Construction planes, copies of bodies, and reference images.
     static let construct: [DesignTool] = [.plane, .mirror, .pattern, .canvas]
     /// Tools that read the model without changing it.
@@ -54,6 +54,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .mirror: return "flip-horizontal-2"
         case .pattern: return "pattern"
         case .shell: return "shell"
+        case .draft: return "draft"
         case .canvas: return "image"
         case .project: return "square-dashed"
         case .measure: return "ruler"
@@ -81,6 +82,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .thread: return "d"
         case .hole: return "h"
         case .shell: return "s"
+        case .draft: return "d"  // with ⇧ (see defaultModifiers): every plain letter is taken
         case .move: return "m"
         case .scale: return "z"
         case .combine: return "j"
@@ -92,6 +94,9 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .measure: return "i"
         }
     }
+
+    /// Held with the letter by default. Every plain letter has a tool (or Appearance), so a tool added since has ⇧ with one.
+    var defaultModifiers: KeyChord.Modifiers { self == .draft ? .shift : [] }
 
     /// The tooltip: the name, its current shortcut, and what the tool does.
     var help: String {
@@ -123,6 +128,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .mirror: return "copy bodies across a plane"
         case .pattern: return "copy bodies in a row or around an axis"
         case .shell: return "hollow a body, leaving the picked faces open"
+        case .draft: return "lean the picked faces over by a draft angle, so a mould can let go of the part"
         case .canvas: return "place a reference image on a plane or flat face, to trace over; its opacity is adjustable"
         case .project: return "throw sketch profiles, like text, onto a body so they follow its surface, raised out of it or cut into it"
         case .measure: return "click a face, an edge or a body for its size, or two for the distance and angle between them"
@@ -174,6 +180,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .mirror: return kind == .face || kind == .edge || kind == .plane  // bodies, then the plane
         case .pattern: return kind == .face || kind == .edge  // bodies (faces), and a straight edge for the direction
         case .shell: return kind == .face  // the faces to leave open
+        case .draft: return kind == .face  // the faces to lean
         case .project: return kind == .region || kind == .face  // the profiles, and the faces they land on
         case .measure: return kind == .face || kind == .edge  // and bodies, from the browser
         }
@@ -287,6 +294,9 @@ extension DocumentModel {
         case .shell:
             let n = selection.filter(\.isFace).count
             return n == 0 ? "Click the faces to leave open" : "Click more faces, or press Return to shell (\(n) open)"
+        case .draft:
+            let n = selection.filter(\.isFace).count
+            return n == 0 ? "Click the faces to draft" : "Click more faces, or press Return to draft (\(n) picked)"
         case .combine:
             let n = pickedBodies.count
             return n == 0 ? "Click the body to cut from, join to or intersect with"
@@ -401,6 +411,17 @@ extension DocumentModel {
             let faces = selection.compactMap { faceRef($0) }
             guard let body = faces.first?.body, !waiting else { return false }
             add(Feature(name: document.nextName("Shell"), .shell(ShellFeature(body: body, faces: faces.filter { $0.body == body }))))
+        case .draft:
+            let faces = selection.compactMap { faceRef($0) }
+            guard let body = faces.first?.body, !waiting else { return false }
+            let drafted = faces.filter { $0.body == body }
+            guard let fixed = draftFixedFace(for: drafted) else {
+                alert = AlertInfo(title: "Draft needs a flat face that stays put",
+                                  message: "The faces lean away from a flat face of the body, like the bottom of a mould. "
+                                      + "Pick faces that stand square to one: the sides of a box, or the wall of a hole.")
+                return false
+            }
+            add(Feature(name: document.nextName("Draft"), .draft(DraftFeature(body: body, faces: drafted, fixed: fixed))))
         case .project:
             guard let first = profiles.first else { return false }
             let faces = selection.compactMap { faceRef($0) }
@@ -425,6 +446,44 @@ extension DocumentModel {
             return false  // reads the picks without making a feature, and stays until Esc
         }
         return true
+    }
+
+    /// The flat face a draft of these faces pivots about, when none was picked: a flat face of the body that the
+    /// faces stand square to (a box's top or bottom for its sides; for a round wall, a face square to its axis),
+    /// preferring one next to the first face, then the lowest. Nil if the body has none.
+    func draftFixedFace(for faces: [FaceRef]) -> FaceRef? {
+        guard let first = faces.first, let body = result?.body(first.body) else { return nil }
+        let picked = Set(faces.map(\.face))
+        // What each face stands square to: a flat face's normal (the fixed face's normal lies in it), or a round
+        // face's axis (the fixed face's normal runs along it).
+        enum Lean { case flat(SIMD3<Double>), round(SIMD3<Double>) }
+        var leans: [Lean] = []
+        for f in faces where f.body == first.body {
+            if let frame = try? body.faceFrame(f.face) { leans.append(.flat(frame.normal)) }
+            else if let cyl = try? body.faceCylinder(f.face) { leans.append(.round(cyl.direction)) }
+            else { return nil }  // a face that is neither can't be drafted
+        }
+        func fits(_ name: String) -> (frame: Frame, height: Double)? {
+            guard !picked.contains(name), let frame = try? body.faceFrame(name) else { return nil }
+            for lean in leans {
+                switch lean {
+                case .flat(let n): if abs(simd_dot(n, frame.normal)) > 1e-3 { return nil }
+                case .round(let axis): if abs(simd_dot(axis, frame.normal)) < 1 - 1e-6 { return nil }
+                }
+            }
+            return (frame, ((try? body.faceOutlineCenter(name)) ?? frame.origin).z)
+        }
+        var neighbours: [String] = []
+        for edge in (try? body.faceEdges(first.face)) ?? [] {
+            for face in (try? body.edgeFaces(edge)) ?? [] where face != first.face && !neighbours.contains(face) { neighbours.append(face) }
+        }
+        for pool in [neighbours, body.faceNames] {
+            let candidates = pool.compactMap { name in fits(name).map { (name: name, height: $0.height) } }
+            if let best = candidates.min(by: { ($0.height, $0.name) < ($1.height, $1.name) }) {
+                return FaceRef(body: first.body, face: best.name)
+            }
+        }
+        return nil
     }
 
     /// Whether a projection of this sketch should run against its normal to reach the body: when the body is on the
@@ -664,6 +723,9 @@ extension DocumentModel {
         switch f.kind {
         case .sketch, .plane, .move, .rotate, .scale, .combine: return []
         default: break
+        }
+        if case .draft(let d) = f.kind {  // a draft makes no faces of its own: it shows the ones it leans
+            return facePicks { m, name in m.id == d.body && d.faces.contains { $0.face == name } }
         }
         let prefix = "\(id)."
         return facePicks { _, name in name.hasPrefix(prefix) }

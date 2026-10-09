@@ -193,6 +193,7 @@ public enum Regenerator {
                 case .mirror(let f): try mirror(f, feature, &r)
                 case .pattern(let f): try pattern(f, feature, &r)
                 case .shell(let f): try shell(f, feature, &r)
+                case .draft(let f): try draft(f, feature, &r)
                 case .project(let f): try project(f, feature, &r)
                 case .importBody(let f): try importBody(f, feature, &r)
                 case .image(let f): r.images[feature.id] = try image(f, &r)
@@ -325,6 +326,29 @@ public enum Regenerator {
             }
         }
         throw KernelError(message: shellFailure(body, thickness: thickness, inside: f.inside, rounds: r.rounds, kernel: kernelReason))
+    }
+
+    static func draft(_ f: DraftFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        guard let i = r.bodies.firstIndex(where: { $0.id == f.body }) else {
+            throw KernelError(message: "The body to draft is missing. Pick the faces to draft again.")
+        }
+        // Recorded first, so the angle handle still shows when the draft can't be built.
+        r.featureInputs[feature.id, default: [:]][f.body] = r.bodies[i].body
+        let angle = try r.parameters.value(of: f.angle, kind: .angle)
+        guard abs(angle) > 1e-9 else { return }  // a draft of nothing leaves the body as it is
+        guard abs(angle) < 89.9 * .pi / 180 else { throw KernelError(message: "A draft angle has to be less than 90 degrees.") }
+        let faces = f.faces.filter { $0.body == f.body }.map(\.face)
+        guard !faces.isEmpty else { throw KernelError(message: "There are no faces to draft. Pick the faces again.") }
+        guard let fixed = f.fixed, fixed.body == f.body else {
+            throw KernelError(message: "Pick the flat face that stays put: the drafted faces lean away from it.")
+        }
+        do {
+            r.bodies[i].body = try r.bodies[i].body.draft(faces: faces, fixed: fixed.face, angle: angle,
+                                                          featureID: feature.id)
+        } catch {
+            throw KernelError(message: "Draft couldn't lean these faces by \(UnitKind.angle.format(angle)): \("\(error)".replacingOccurrences(of: "draft: ", with: "")). "
+                              + "Try a smaller angle, other faces, or a different face to stay put.")
+        }
     }
 
     /// Why walls of this thickness couldn't be built, as plainly as can be told.

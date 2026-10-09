@@ -150,7 +150,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
 
     var defaultChord: KeyChord? {
         switch self {
-        case .tool(let t): return KeyChord(t.defaultKey)
+        case .tool(let t): return KeyChord(t.defaultKey, t.defaultModifiers)
         case .sketch(let t): return KeyChord(t.defaultKey)
         case .view(let v):
             switch v {

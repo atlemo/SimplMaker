@@ -1830,6 +1830,62 @@ SKHandle sk_shell(SKHandle body, const char *const *faceNames, int count, double
   SK_CATCH(0)
 }
 
+SKHandle sk_draft(SKHandle body, const char *const *faceNames, int count, const char *fixedFace, double angle,
+                  const char *featureId) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  if (count <= 0) {
+    setError("no faces to draft");
+    return 0;
+  }
+  auto fixedIt = b->faceIndex.find(fixedFace);
+  if (fixedIt == b->faceIndex.end()) {
+    setError(std::string("face not found: ") + fixedFace);
+    return 0;
+  }
+  const TopoDS_Face &fixed = TopoDS::Face(b->faces(fixedIt->second + 1));
+  BRepAdaptor_Surface fixedSurface(fixed);
+  if (fixedSurface.GetType() != GeomAbs_Plane) {
+    setError("the face that stays put must be flat");
+    return 0;
+  }
+  // The pull direction points from the fixed face into the body; a draft angle that is positive takes matter away on
+  // the side it points to, so the faces lean towards each other as they go away from the fixed face.
+  const gp_Dir pull = planeNormal(fixed, fixedSurface.Plane()).Reversed();
+  const gp_Pln neutral(fixedSurface.Plane().Location(), pull);
+
+  BRepOffsetAPI_DraftAngle draft(b->shape);
+  for (int k = 0; k < count; ++k) {
+    auto it = b->faceIndex.find(faceNames[k]);
+    if (it == b->faceIndex.end()) {
+      setError(std::string("face not found: ") + faceNames[k]);
+      return 0;
+    }
+    draft.Add(TopoDS::Face(b->faces(it->second + 1)), pull, angle, neutral);
+    if (!draft.AddDone()) {
+      setError("a face can't be drafted that far, or at all (it must be flat or round, and not square to the pull)");
+      return 0;
+    }
+  }
+  draft.Build();
+  if (!draft.IsDone()) {
+    setError("this draft can't be built (the faces would run into each other or into their neighbours)");
+    return 0;
+  }
+  // A draft reports what became of a face through ModifiedShape (the same face when it was left alone), not Modified.
+  std::vector<Named> names;
+  for (const Named &n : namedFaces(*b)) names.push_back({draft.ModifiedShape(n.shape), n.name});
+  Body out = makeBody(draft.Shape(), names, featureOrDefault(featureId, "draft") + ".draft");
+  if (!BRepCheck_Analyzer(out.shape).IsValid()) {
+    setError("this draft can't be built (the faces would run into each other or into their neighbours)");
+    return 0;
+  }
+  return store(std::move(out));
+  SK_CATCH(0)
+}
+
 // ------------------------------------------------- projection onto a body ---
 namespace {
 

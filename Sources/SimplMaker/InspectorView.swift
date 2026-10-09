@@ -50,6 +50,7 @@ struct InspectorView: View {
                 case .mirror(let f): MirrorInspector(model: model, id: id, mirror: f)
                 case .pattern(let f): PatternInspector(model: model, id: id, pattern: f)
                 case .shell(let f): ShellInspector(model: model, id: id, shell: f)
+                case .draft(let f): DraftInspector(model: model, id: id, draft: f)
                 case .project(let f): ProjectInspector(model: model, id: id, project: f)
                 case .importBody(let f): ImportInspector(model: model, id: id, imported: f)
                 case .image(let f): ImageInspector(model: model, id: id, image: f)
@@ -1151,6 +1152,41 @@ struct ShellInspector: View {
                 }
             }
             BodiesRow(model: model, ids: [shell.body])
+        }
+    }
+}
+
+struct DraftInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let draft: DraftFeature
+
+    var edit: FeatureEdit<DraftFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .draft(let d) = $0 { d } else { nil } }, wrap: { .draft($0) })
+    }
+
+    var body: some View {
+        Section("Draft") {
+            edit.row("Angle", draft.angle, "Edit Angle") { $0.angle = $1 }
+            Text("A positive angle leans the faces in, so the body gets narrower away from the face that stays put; a negative angle widens it.")
+                .font(.caption).foregroundStyle(.secondary)
+            LabeledContent("Drafted faces", value: "\(draft.faces.count)")
+            let picked = model.selection.compactMap { model.faceRef($0) }.filter { $0.body == draft.body }
+            let fresh = picked.filter { !draft.faces.contains($0) && $0 != draft.fixed }
+            if !fresh.isEmpty {
+                Button("Draft the \(fresh.count) Selected Face\(fresh.count == 1 ? "" : "s") Too") {
+                    edit.update("Add Faces") { d in d.faces += fresh }
+                    model.clearSelection()
+                }
+            }
+            LabeledContent("Stays put", value: draft.fixed?.face ?? "Pick a flat face")
+            if picked.count == 1, let face = picked.first, face != draft.fixed, !draft.faces.contains(face) {
+                Button("Use the Selected Face as the One That Stays Put") {
+                    edit.update("Change Fixed Face") { $0.fixed = face }
+                    model.clearSelection()
+                }
+            }
+            BodiesRow(model: model, ids: [draft.body])
         }
     }
 }

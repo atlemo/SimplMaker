@@ -35,6 +35,7 @@ create/canvas
 ## Modify
 modify/fillet-chamfer
 modify/shell
+modify/draft
 modify/hole
 modify/thread
 modify/project

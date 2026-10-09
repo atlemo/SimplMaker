@@ -472,6 +472,22 @@ public struct ShellFeature: Codable, Hashable, Sendable {
     }
 }
 
+/// Leans faces over by a draft angle, as a mould needs: each picked face keeps the line where it meets the
+/// `fixed` face (a flat face of the same body) and tilts away from it, so the body gets narrower the further
+/// it goes from that face. A negative angle leans them the other way and widens it.
+public struct DraftFeature: Codable, Hashable, Sendable {
+    public var body: FeatureID
+    /// The faces to lean.
+    public var faces: [FaceRef]
+    /// The flat face that stays put: its plane is the one the faces pivot about, and its inward normal is the pull
+    /// direction. Nil when the model offered none (the feature then says what is missing).
+    public var fixed: FaceRef?
+    public var angle: String
+    public init(body: FeatureID, faces: [FaceRef], fixed: FaceRef?, angle: String = "5 deg") {
+        self.body = body; self.faces = faces; self.fixed = fixed; self.angle = angle
+    }
+}
+
 /// Combines bodies: joins the tool bodies to the target, cuts them out of it, or keeps only where
 /// they overlap. The tool bodies are used up unless `keepTools` is set.
 public struct CombineFeature: Codable, Hashable, Sendable {
@@ -658,6 +674,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case mirror(MirrorFeature)
         case pattern(PatternFeature)
         case shell(ShellFeature)
+        case draft(DraftFeature)
         case project(ProjectFeature)
         case importBody(ImportFeature)
         case image(ImageFeature)
@@ -693,6 +710,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .mirror: return "Mirror"
         case .pattern(let p): return p.kind == .linear ? "Pattern" : "Circular Pattern"
         case .shell: return "Shell"
+        case .draft: return "Draft"
         case .project: return "Project"
         case .importBody: return "Import"
         case .image: return "Canvas"
@@ -703,7 +721,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
     public var sketchesUsed: [FeatureID] {
         switch kind {
         case .sketch, .fillet, .chamfer, .hole, .thread, .primitive, .move, .rotate, .scale, .combine, .plane, .mirror, .pattern,
-             .shell, .importBody, .image: return []
+             .shell, .draft, .importBody, .image: return []
         case .project(let p): return [p.sketch]
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
@@ -726,7 +744,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .mirror(let m): return m.operation == .newBody
         case .pattern(let p): return p.operation == .newBody
         case .importBody: return true
-        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .plane, .shell, .project, .image: return false
+        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .plane, .shell, .draft, .project, .image: return false
         }
     }
 }

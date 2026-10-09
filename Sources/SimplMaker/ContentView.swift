@@ -526,6 +526,8 @@ struct StatusBar: View {
                                         ? "Drag the orange dot to move the hole, or an arrow to change its depth or diameter · Tab moves between the fields"
                                         : model.manipulatedFeature != nil
                                         ? "Drag an arrow, square or ring dot · or type the \(h.label.lowercased()) in the field"
+                                        : h.dial != nil && model.selectedIsDraft
+                                        ? "Drag the dot round the arc to lean the drafted faces, or click it and type the angle · positive narrows the body away from the face that stays put, negative widens it"
                                         : h.dial != nil
                                         ? "Drag the dot round the arc to taper the sides, or click it and type the angle · negative narrows, positive widens"
                                         : model.showsDial

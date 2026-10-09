@@ -187,6 +187,9 @@ enum IconGlyphs {
 "bezier": "<path d=\"M3 19C6 6 18 6 21 19\" /><path d=\"M3 19 6.5 7\" /><path d=\"M21 19 17.5 7\" /><circle cx=\"6.5\" cy=\"6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"17.5\" cy=\"6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",
     "plane": "<path d=\"M3 17 8 7h13l-5 10Z\" />",
     "pattern": "<rect width=\"5\" height=\"5\" x=\"2\" y=\"9.5\" rx=\"1\" /><rect width=\"5\" height=\"5\" x=\"9.5\" y=\"9.5\" rx=\"1\" /><rect width=\"5\" height=\"5\" x=\"17\" y=\"9.5\" rx=\"1\" />",
+    // A box face leaning over (the outline of its front, cut at the corner), with the tilted face in the accent colour.
+    // Drawn from a 17 x 15 pt artwork at 1.25 times its size, centred in the 24-unit box (see SVGGlyph for the attributes).
+    "draft": "<path d=\"M12.75 4.124L7.435 4.124L3.934 7.625L9.625 7.625L8.375 9.124L2.874 9.124L2.874 19.5L13.812 19.5L14.625 20.999L1.375 20.999L1.375 8.064L6.814 2.625L14.625 2.625L12.75 4.124Z\" fill=\"currentColor\" /><path d=\"M10.875 9L15.875 4L20.875 14.625L15.875 19.625Z\" fill=\"accent\" fill-opacity=\"0.2\" stroke=\"accent\" stroke-weight=\"0.833\" />",
     "shell": "<path d=\"M3 7v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7\" /><path d=\"M7 7v9h10V7\" stroke=\"accent\" />",
     "square-center": "<rect width=\"18\" height=\"14\" x=\"3\" y=\"5\" rx=\"1\" /><circle cx=\"12\" cy=\"12\" r=\"1.4\" fill=\"currentColor\" stroke=\"none\" />",
     "arc-3-point": "<path d=\"M4 18A9 9 0 0 1 20 18\" /><circle cx=\"4\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"12\" cy=\"9.6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"20\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",

@@ -362,6 +362,11 @@ public final class KBody: @unchecked Sendable {
         try withCStrings(faces) { try KBody.wrap(sk_shell(handle, $0, Int32(faces.count), thickness, inside, featureID), "shell") }
     }
 
+    /// Leans faces by a draft angle (radians) about the plane of the flat face `fixed`, which stays put (see sk_draft).
+    public func draft(faces: [String], fixed: String, angle: Double, featureID: String) throws -> KBody {
+        try withCStrings(faces) { try KBody.wrap(sk_draft(handle, $0, Int32(faces.count), fixed, angle, featureID), "draft") }
+    }
+
     /// The relief made by projecting profiles onto this body along `direction` (see sk_project_relief): a solid that
     /// follows the surface, `height` thick, standing out of it when positive and going into it when negative. `faces`
     /// are the faces to project onto (every face when empty). `origin` and `normal` give a point on the surface where

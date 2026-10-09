@@ -68,6 +68,7 @@ extension DocumentModel {
             .separator,
             .action("Fillet Face Edges", symbol: DesignTool.fillet.symbol) { self.selection = [pick]; self.run(.fillet) },
             .action("Chamfer Face Edges", symbol: DesignTool.chamfer.symbol) { self.selection = [pick]; self.run(.chamfer) },
+            .action("Draft Face", symbol: DesignTool.draft.symbol) { self.selection = [pick]; self.run(.draft) },
             .action("Measure", symbol: DesignTool.measure.symbol) { self.selection = [pick]; self.run(.measure) },
             .separator,
             .action("Move or Rotate Body", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.selection = [pick]; self.run(.move) },

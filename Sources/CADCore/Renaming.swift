@@ -84,6 +84,7 @@ extension Feature.Kind {
         case .mirror: break
         case .pattern(var f): f.count = change(f.count); f.spacing = change(f.spacing); self = .pattern(f)
         case .shell(var f): f.thickness = change(f.thickness); self = .shell(f)
+        case .draft(var f): f.angle = change(f.angle); self = .draft(f)
         case .project(var f): f.height = change(f.height); self = .project(f)
         case .importBody: break
         case .image(var f): f.u = change(f.u); f.v = change(f.v); f.width = change(f.width); f.angle = change(f.angle); self = .image(f)
@@ -169,6 +170,7 @@ extension Feature {
             f.bodies.forEach { add($0) }
             if case .edge(let e) = f.axis { add(e.body) }
         case .shell(let f): add(f.body); f.faces.forEach { add($0.body) }
+        case .draft(let f): add(f.body); f.faces.forEach { add($0.body) }; add(f.fixed?.body)
         case .project(let f): add(f.sketch); add(f.target); f.faces.forEach { add($0.body) }
         case .importBody: break
         case .image(let f): add(f.plane.feature)
@@ -198,6 +200,7 @@ extension Feature {
         case .mirror(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
         case .pattern(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
         case .shell(let f): out.insert(f.body)
+        case .draft(let f): out.insert(f.body)
         case .project(let f): out.insert(f.target)
         case .sketch, .plane, .importBody, .scale, .image: break
         }

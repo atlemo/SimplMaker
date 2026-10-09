@@ -35,7 +35,7 @@ import Testing
         let model = try await loaded(.demo())
         #expect(titles(model.contextItems(for: nil)).starts(with: ["New Sketch…", "Add Shape", "Fit All"]))
         let top = try face(model, "plate.end")
-        #expect(titles(model.contextItems(for: top)) == ["Sketch on Face", "Extrude Face", "Insert Image…", "Hole Here", "Thread…", "Fillet Face Edges", "Chamfer Face Edges", "Measure", "Move or Rotate Body", "Combine with Other Bodies…", "Edit Plate", "Appearance…", "Hide Body1", "Export Body1"])
+        #expect(titles(model.contextItems(for: top)) == ["Sketch on Face", "Extrude Face", "Insert Image…", "Hole Here", "Thread…", "Fillet Face Edges", "Chamfer Face Edges", "Draft Face", "Measure", "Move or Rotate Body", "Combine with Other Bodies…", "Edit Plate", "Appearance…", "Hide Body1", "Export Body1"])
         #expect(titles(model.contextItems(for: PickID(body: 0, edge: 0))).starts(with: ["Fillet", "Chamfer", "Measure"]))
         model.selectedFeature = "base"
         let s = try #require(model.sketchSlots.firstIndex(of: "base")) + 1

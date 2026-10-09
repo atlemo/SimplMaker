@@ -1311,10 +1311,18 @@ final class DocumentModel {
         return true
     }
 
-    /// An extrude is selected and shows its dial.
+    /// An extrude or a draft is selected and shows its dial.
     var showsDial: Bool {
-        guard sketchSession == nil, pendingTool == nil, holeMoveStart == nil, let id = selectedFeature,
-              case .extrude? = document.features.first(where: { $0.id == id })?.kind else { return false }
+        guard sketchSession == nil, pendingTool == nil, holeMoveStart == nil, let id = selectedFeature else { return false }
+        switch document.features.first(where: { $0.id == id })?.kind {
+        case .extrude?, .draft?: return true
+        default: return false
+        }
+    }
+
+    /// A draft is selected: its dial leans the faces rather than tapering an extrusion.
+    var selectedIsDraft: Bool {
+        guard let id = selectedFeature, case .draft? = document.features.first(where: { $0.id == id })?.kind else { return false }
         return true
     }
 
@@ -1356,6 +1364,7 @@ final class DocumentModel {
         case .extrude(let e):
             if case .twoSides = e.extent { slots = [0, 1] } else { slots = [0] }  // one arrow each way
             slots.append(Self.taperSlot)  // and the dial for the taper
+        case .draft: slots = [Self.taperSlot]  // the angle is all there is, on a dial
         default: slots = [0]
         }
         return slots.compactMap { handle(for: id, slot: $0) }
@@ -1370,6 +1379,8 @@ final class DocumentModel {
     func handle(for id: FeatureID, slot: Int = 0) -> DragHandle? {
         guard let f = document.features.first(where: { $0.id == id }), !f.suppressed, let result else { return nil }
         let params = parameterValues
+        // A draft has the one handle, the dial, whichever slot asks.
+        let slot = { if case .draft = f.kind { return Self.taperSlot } else { return slot } }()
         func handle(_ label: String, _ base: SIMD3<Double>, _ direction: SIMD3<Double>, _ expression: String,
                     unit: UnitKind = .length, per: Double = 1, max: Double? = nil, maxReason: String? = nil,
                     negative: Bool = false) -> DragHandle {
@@ -1514,6 +1525,40 @@ final class DocumentModel {
             for face in sf.faces where face.body == sf.body {
                 guard let frame = try? body.faceFrame(face.face), let center = try? body.faceCenter(face.face) else { continue }
                 return handle("Thickness", center, frame.normal * (sf.inside ? -1 : 1), sf.thickness)
+            }
+            return nil
+        case .draft(let df):
+            // A dial where the first drafted face meets the plane it pivots about, swinging from the pull direction
+            // (up the face) towards the inside of the body: a positive angle narrows the body, as it does in the field.
+            guard let body = result.featureInputs[id]?[df.body], let fixed = df.fixed, fixed.body == df.body,
+                  let plane = try? body.faceFrame(fixed.face) else { return nil }
+            let pull = -plane.normal
+            for face in df.faces where face.body == df.body {
+                // Where the face is and which way it faces (square to the pull): a flat face at its centre, or a round
+                // face at the point on its wall nearest the camera (nearest the far side, for a hole, whose wall is
+                // seen through the opening), as a round face has no middle on its surface.
+                var at: SIMD3<Double>, out: SIMD3<Double>
+                if let frame = try? body.faceFrame(face.face), let center = try? body.faceCenter(face.face) {
+                    at = center; out = frame.normal
+                } else if let cyl = try? body.faceCylinder(face.face) {
+                    var u = SIMD3<Double>(0, 0, 0)
+                    if let view = dialView { u = (cyl.isHole ? 1 : -1) * view.forward }
+                    u -= simd_dot(u, cyl.direction) * cyl.direction
+                    if simd_length(u) < 1e-3 {
+                        u = abs(cyl.direction.x) < 0.9 ? simd_cross(cyl.direction, SIMD3(1, 0, 0)) : simd_cross(cyl.direction, SIMD3(0, 1, 0))
+                    }
+                    u = simd_normalize(u)
+                    at = cyl.start + u * cyl.radius
+                    out = cyl.isHole ? -u : u
+                } else { continue }
+                out -= simd_dot(out, pull) * pull
+                guard simd_length(out) > 1e-9 else { continue }
+                out = simd_normalize(out)
+                let pivot = at - simd_dot(at - plane.origin, pull) * pull
+                var h = handle("Angle", pivot, pull, df.angle, unit: .angle, max: DragHandle.Dial.limit, negative: true)
+                h.dial = DragHandle.Dial(side: -out, radius: 80 * (dialView?.mmPerPoint ?? 0.25))
+                h.allowsZero = true
+                return h
             }
             return nil
         case .project(let pf):
@@ -2001,6 +2046,9 @@ final class DocumentModel {
         case .shell(var sf):
             sf.thickness = text
             doc.features[i].kind = .shell(sf)
+        case .draft(var df):
+            df.angle = text
+            doc.features[i].kind = .draft(df)
         case .project(var pf):
             pf.height = text
             doc.features[i].kind = .project(pf)
