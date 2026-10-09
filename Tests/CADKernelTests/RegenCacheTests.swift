@@ -32,6 +32,93 @@ import Testing
         #expect(try volume(changed, cache) > (try volume(doc())) + 100)
     }
 
+    private final class Built: @unchecked Sendable {
+        private let lock = NSLock()
+        private var names: [String] = []
+        func add(_ n: String) { lock.lock(); names.append(n); lock.unlock() }
+        var all: [String] { lock.lock(); defer { lock.unlock() }; return names }
+    }
+
+    /// Rebuilds with the cache and reports which features had to be built.
+    private func rebuilt(_ d: CADDocument, _ cache: RegenCache) -> (RegenResult, [String]) {
+        let built = Built()
+        let r = Regenerator.regenerate(d, cache: cache) { _, _, f in built.add(f.id) }
+        return (r, built.all)
+    }
+
+    private func paramDoc() -> CADDocument {
+        var d = CADDocument(parameters: [
+            Parameter("w", "20 mm"), Parameter("h", "10 mm"), Parameter("r", "1 mm"),
+            Parameter("d", "r * 2", comment: "built from r"), Parameter("unused", "5 mm"),
+        ])
+        d.features = [
+            Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "w", length: "w", height: "h"))),
+            Feature(id: "f", name: "Fillet1", .fillet(EdgeFeature(edges: [], faces: [FaceRef(body: "b", face: "b.top")], size: "d"))),
+        ]
+        return d
+    }
+
+    @Test func aParameterNothingReadsRebuildsNothing() throws {
+        let cache = RegenCache()
+        var d = paramDoc()
+        _ = rebuilt(d, cache)
+        d.parameters[4].expression = "7 mm"
+        let (r, built) = rebuilt(d, cache)
+        #expect(built.isEmpty, "\(built)")
+        // The values on the result are the new ones, not those the cache held.
+        #expect(abs(try #require(r.parameters.values["unused"]).value - 7) < 1e-9)
+    }
+
+    @Test func aParameterRebuildsFromTheFirstFeatureThatReadsIt() throws {
+        let cache = RegenCache()
+        var d = paramDoc()
+        _ = rebuilt(d, cache)
+        // Only the fillet reads d, which is built from r.
+        d.parameters[2].expression = "1.5 mm"
+        var (r, built) = rebuilt(d, cache)
+        #expect(built == ["f"], "\(built)")
+        #expect(abs(try #require(r.body("b")).volume - (try volume(d))) < 1e-9)
+        // The box reads h, and the fillet follows it.
+        d.parameters[1].expression = "12 mm"
+        (r, built) = rebuilt(d, cache)
+        #expect(built == ["b", "f"], "\(built)")
+        #expect(abs(try #require(r.body("b")).volume - (try volume(d))) < 1e-9)
+        // And back again: the same document is the same result.
+        d.parameters[1].expression = "10 mm"
+        d.parameters[2].expression = "1 mm"
+        let (back, _) = rebuilt(d, cache)
+        #expect(abs(try #require(back.body("b")).volume - (try volume(paramDoc()))) < 1e-9)
+    }
+
+    @Test func aNewParameterThatAFeatureNamesRebuildsIt() throws {
+        let cache = RegenCache()
+        var d = paramDoc()
+        d.features[1] = Feature(id: "f", name: "Fillet1", .fillet(EdgeFeature(edges: [], faces: [FaceRef(body: "b", face: "b.top")], size: "late")))
+        var (r, _) = rebuilt(d, cache)
+        #expect(r.errors["f"] != nil)  // no parameter "late" yet
+        d.parameters.append(Parameter("late", "1 mm"))
+        var built: [String]
+        (r, built) = rebuilt(d, cache)
+        #expect(built == ["f"], "\(built)")
+        #expect(r.errors.isEmpty, "\(r.errors)")
+    }
+
+    @Test func aSketchDimensionReadsParameters() throws {
+        var s = Sketch()
+        let rect = s.addRectangle(0, 0, 10, 10)
+        s.dimension(.horizontalDistance(rect.corners[0], rect.corners[2]), "side")
+        var d = CADDocument(parameters: [Parameter("side", "10 mm"), Parameter("unused", "1 mm")])
+        d.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s)))]
+        let cache = RegenCache()
+        _ = rebuilt(d, cache)
+        d.parameters[1].expression = "2 mm"
+        #expect(rebuilt(d, cache).1.isEmpty)
+        d.parameters[0].expression = "14 mm"
+        let (r, built) = rebuilt(d, cache)
+        #expect(built == ["sk"])
+        #expect(abs((try #require(r.sketches["sk"]).regions.first?.area ?? 0) - 14 * 10) < 1e-6)
+    }
+
     @Test func separateLettersNeedNoMerge() throws {
         var s = Sketch()
         let p = s.addPoint(0, 0)

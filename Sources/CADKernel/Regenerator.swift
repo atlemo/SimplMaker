@@ -80,6 +80,8 @@ public struct RegenResult: Sendable {
     /// there, for the height handle.
     public var projectionHandles: [FeatureID: (origin: SIMD3<Double>, normal: SIMD3<Double>)] = [:]
     public var duration: TimeInterval = 0
+    /// How many threads a progressive rebuild left out (see `Regenerator.regenerate(progressiveThreads:)`); 0 for a full one.
+    public var threadsLeftOut = 0
     /// The fillets built so far (feature name and radius), so a shell that fails can say which rounded
     /// edge its walls can't follow.
     public var rounds: [(feature: String, radius: Double)] = []
@@ -95,7 +97,19 @@ public struct RegenResult: Sendable {
 public final class RegenCache: @unchecked Sendable {
     private let lock = NSLock()
     private var snapshots: [(key: Int, result: RegenResult)] = []
+    /// How long each thread feature took the last time it was built, in seconds.
+    private var threadSeconds: [FeatureID: TimeInterval] = [:]
     public init() {}
+
+    fileprivate func noteThread(_ id: FeatureID, seconds: TimeInterval) {
+        lock.lock(); defer { lock.unlock() }
+        threadSeconds[id] = seconds
+    }
+
+    fileprivate func threadSeconds(of id: FeatureID) -> TimeInterval? {
+        lock.lock(); defer { lock.unlock() }
+        return threadSeconds[id]
+    }
 
     /// The snapshots that still hold: those whose keys match, from the start of the timeline.
     fileprivate func valid(for keys: [Int]) -> [(key: Int, result: RegenResult)] {
@@ -138,42 +152,89 @@ public enum Regenerator {
     /// that feature are left out (a thread is the slowest thing to build, a third of a second or more, and a drag
     /// only needs the shape); the rebuild that follows the drop puts them back. Their results are kept apart in the
     /// cache, so a full rebuild never picks up one without its thread.
+    ///
+    /// `progressiveThreads`: for a rebuild that will be followed by a full one. When the threads that have to be built
+    /// (those from the first changed feature on) are expected to take at least this many seconds (the time they took
+    /// last, or a second if they never have), they are left out, so the model can be shown at once and the threads put
+    /// in by the full rebuild. `threadsLeftOut` on the result tells whether any were.
     public static func regenerate(_ doc: CADDocument, cache: RegenCache? = nil, draftAfter: FeatureID? = nil,
+                                  progressiveThreads: TimeInterval? = nil,
                                   progress: (@Sendable (_ done: Int, _ total: Int, _ feature: Feature) -> Void)? = nil) -> RegenResult {
         let start = Date()
         var r = RegenResult()
-        r.parameters = ParameterEvaluator.evaluate(doc.parameters)
+        let parameters = ParameterEvaluator.evaluate(doc.parameters)
+        r.parameters = parameters
         r.bodyNames = doc.bodyNames
 
-        // Each feature's key covers the parameters, body names and every feature up to it.
+        // Each feature's key covers the body names, every feature up to it, and the values of the parameters it
+        // reads (so editing a parameter only rebuilds from the first feature that uses it).
         let features = Array(doc.activeFeatures)
-        var keys: [Int] = []
         var hasher = Hasher()
-        hasher.combine(doc.parameters)
         hasher.combine(doc.bodyNames)
-        var previous = hasher.finalize()
+        let base = hasher.finalize()
+        var parameterWords: [String: Set<String>] = [:]
+        for p in doc.parameters { parameterWords[p.name] = ParameterDependencies.words(in: p.expression) }
         let draftFrom = draftAfter.flatMap { id in features.firstIndex { $0.id == id } }
+        var omitFrom: Int?
         func leftOut(_ index: Int, _ f: Feature) -> Bool {
-            guard let draftFrom, index > draftFrom, case .thread = f.kind else { return false }
-            return true
+            guard case .thread = f.kind else { return false }
+            if let draftFrom, index > draftFrom { return true }
+            if let omitFrom, index >= omitFrom { return true }
+            return false
         }
-        for (index, f) in features.enumerated() {
-            var h = Hasher()
-            h.combine(previous)
-            h.combine(f)
-            if leftOut(index, f) { h.combine("draft") }
-            previous = h.finalize()
-            keys.append(previous)
+        func makeKeys() -> [Int] {
+            var keys: [Int] = []
+            var previous = base
+            for (index, f) in features.enumerated() {
+                var own = Hasher()
+                own.combine(f)
+                let featureHash = own.finalize()
+                var h = Hasher()
+                h.combine(previous)
+                h.combine(featureHash)
+                if leftOut(index, f) { h.combine("draft") }
+                if !parameterWords.isEmpty {
+                    let words = ParameterDependencies.shared.words(of: f, hash: featureHash)
+                    for name in ParameterDependencies.closure(of: words, inputs: parameterWords) {
+                        h.combine(name)
+                        if let q = r.parameters.values[name] {
+                            h.combine(q.value.bitPattern); h.combine(q.length); h.combine(q.angle)
+                        } else {
+                            h.combine(r.parameters.errors[name] ?? "")
+                        }
+                    }
+                }
+                previous = h.finalize()
+                keys.append(previous)
+            }
+            return keys
+        }
+        var keys = makeKeys()
+        if let threshold = progressiveThreads, let cache {
+            let changed = cache.valid(for: keys).count
+            let expected = features.indices.filter { $0 >= changed && !features[$0].suppressed }.reduce(0.0) { sum, i in
+                guard case .thread = features[i].kind else { return sum }
+                return sum + (cache.threadSeconds(of: features[i].id) ?? 1)
+            }
+            if expected > 0, expected >= threshold {
+                omitFrom = changed
+                keys = makeKeys()
+            }
         }
         // Pick up after the last feature that hasn't changed since the previous rebuild.
         var snapshots = cache?.valid(for: keys) ?? []
-        if let last = snapshots.last { r = last.result }
+        if let last = snapshots.last {
+            r = last.result
+            r.parameters = parameters  // the snapshot's values may be from before an edit that nothing there reads
+        }
         let first = snapshots.count
 
         for (index, feature) in features.enumerated() where index >= first {
             defer { if cache != nil { snapshots.append((keys[index], r)) } }
-            guard !feature.suppressed, !leftOut(index, feature) else { continue }
+            guard !feature.suppressed else { continue }
+            if leftOut(index, feature) { r.threadsLeftOut += 1; continue }
             progress?(index - first, features.count - first, feature)
+            let began = Date()
             do {
                 switch feature.kind {
                 case .sketch(let f): r.sketches[feature.id] = try sketch(f, r)
@@ -206,6 +267,7 @@ public enum Regenerator {
             } catch {
                 r.errors[feature.id] = "\(error)"
             }
+            if case .thread = feature.kind { cache?.noteThread(feature.id, seconds: Date().timeIntervalSince(began)) }
         }
         cache?.store(snapshots)
         r.duration = Date().timeIntervalSince(start)

@@ -167,6 +167,9 @@ final class DocumentModel {
     @ObservationIgnored private var queuedRegen: (@MainActor () -> Void)?
     /// The newest rebuild whose result is on screen: older results arriving later are dropped.
     @ObservationIgnored private var appliedGeneration = 0
+    /// A rebuild whose threads are expected to take this many seconds shows the model without them first
+    /// (see `Regenerator.regenerate(progressiveThreads:)`). Quick threads aren't worth a flicker.
+    @ObservationIgnored var progressiveThreads: TimeInterval = 0.4
     /// What earlier rebuilds left after each feature, so the next one starts at the first change.
     @ObservationIgnored private let regenCache = RegenCache()
     @ObservationIgnored private let meshCache = MeshCache()
@@ -632,6 +635,7 @@ final class DocumentModel {
         // built before (one that works on a thread's faces), the preview is built in full.
         let draftAfter = preview != nil && (handleDragStart != nil || manipulatorStart != nil) ? previewFeature : nil
         let known = Set(result?.errors.keys.map { $0 } ?? [])
+        let threadDraftSeconds = progressiveThreads
         let job: @MainActor () -> Void = {
             self.regenRunning = true
             let started = Date()
@@ -642,9 +646,28 @@ final class DocumentModel {
                     let step = RegenProgress(done: done, total: total, feature: feature.name)
                     Task { @MainActor in self.noteProgress(step) }
                 }
-                var r = Regenerator.regenerate(snapshot, cache: cache, draftAfter: draftAfter, progress: progress)
-                if draftAfter != nil, r.errors.keys.contains(where: { !known.contains($0) && $0 != draftAfter }) {
+                var r = Regenerator.regenerate(snapshot, cache: cache, draftAfter: draftAfter,
+                                               progressiveThreads: draftAfter == nil ? threadDraftSeconds : nil, progress: progress)
+                let broken = { (r: RegenResult) in r.errors.keys.contains(where: { !known.contains($0) && $0 != draftAfter }) }
+                if draftAfter != nil, broken(r) {
                     r = Regenerator.regenerate(snapshot, cache: cache, progress: progress)
+                }
+                var fit = fit
+                if r.threadsLeftOut > 0, draftAfter == nil {
+                    if broken(r) {
+                        // A feature that works on a thread's faces can't be built without it: show nothing until it is.
+                        r = Regenerator.regenerate(snapshot, cache: cache, progress: progress)
+                    } else {
+                        // The model without the threads that have to be built goes on screen now, the threads follow.
+                        let draftMeshes = meshCache.meshes(for: r.bodies)
+                        let newerWaits = await self.showDraft(r, draftMeshes, generation: gen, fit: fit, previewFeature: previewFeature)
+                        fit = false
+                        if newerWaits {
+                            await self.finishRegen(nil, [], generation: gen, fit: false, previewFeature: previewFeature)
+                            return
+                        }
+                        r = Regenerator.regenerate(snapshot, cache: cache, progress: progress)
+                    }
                 }
                 let meshes = meshCache.meshes(for: r.bodies)
                 await self.finishRegen(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature)
@@ -658,11 +681,19 @@ final class DocumentModel {
         regenProgress = step
     }
 
-    private func finishRegen(_ r: RegenResult, _ meshes: [BodyMesh], generation gen: Int, fit: Bool, previewFeature: FeatureID?) {
+    /// Shows a rebuild that left out its slow threads, and says whether a newer rebuild is already waiting (which makes
+    /// the threads of this one not worth building).
+    private func showDraft(_ r: RegenResult, _ meshes: [BodyMesh], generation gen: Int, fit: Bool, previewFeature: FeatureID?) -> Bool {
+        apply(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature, final: false)
+        return queuedRegen != nil
+    }
+
+    /// `r` is nil when a draft already shown is all this rebuild comes to.
+    private func finishRegen(_ r: RegenResult?, _ meshes: [BodyMesh], generation gen: Int, fit: Bool, previewFeature: FeatureID?) {
         regenRunning = false
         let next = queuedRegen
         queuedRegen = nil
-        apply(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature, final: next == nil)
+        if let r { apply(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature, final: next == nil) }
         next?()
     }
 
@@ -676,7 +707,7 @@ final class DocumentModel {
             sketchesHiddenPendingRebuild = []
             highlightPendingRebuild = []
         }
-        guard gen > appliedGeneration else { return }  // something newer is already on screen
+        guard gen >= appliedGeneration else { return }  // something newer is already on screen (the same rebuild may follow its own draft)
         appliedGeneration = gen
         if let previewFeature, let error = r.errors[previewFeature] {
             // Keep showing the last good model; the handle turns red instead, and says why.

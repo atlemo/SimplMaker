@@ -340,4 +340,26 @@ import Testing
         #expect(try #require(r.body("block")).faceNames.contains { $0.hasPrefix("portthread") })
         #expect(try #require(r.body("bolt")).faceNames.contains { $0.hasPrefix("boltthread") })
     }
+
+    /// Editing a parameter only rebuilds from the first feature that reads it, and gives what a full rebuild gives.
+    @Test func editingAParameterOfTheExampleMatchesAFullRebuild() throws {
+        var doc = CADDocument.manifoldDemo()
+        let cache = RegenCache()
+        _ = Regenerator.regenerate(doc, cache: cache)
+        // pipe_d is read by the pipe alone; bolt_x by the holes and bolts; oring_d reaches the flange through gap.
+        for (name, value) in [("pipe_d", "36 mm"), ("bolt_x", "25 mm"), ("oring_d", "2.5 mm")] {
+            let i = try #require(doc.parameters.firstIndex { $0.name == name })
+            doc.parameters[i].expression = value
+            let started = Date()
+            let cached = Regenerator.regenerate(doc, cache: cache)
+            let took = Date().timeIntervalSince(started)
+            let full = Regenerator.regenerate(doc)
+            #expect(cached.errors == full.errors, "\(name)")
+            #expect(cached.bodies.map(\.id) == full.bodies.map(\.id), "\(name)")
+            for (a, b) in zip(cached.bodies, full.bodies) {
+                #expect(abs(a.body.volume - b.body.volume) < 1e-6 * max(1, b.body.volume), "\(name): \(a.id)")
+            }
+            if name == "pipe_d" { #expect(took < full.duration * 0.5, "the pipe edit took \(took) s of a full \(full.duration) s") }
+        }
+    }
 }

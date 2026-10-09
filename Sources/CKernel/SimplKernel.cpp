@@ -4,6 +4,8 @@
 #include "SimplKernel.h"
 
 #include <algorithm>
+#include <array>
+#include <map>
 #include <typeinfo>
 #include <cctype>
 #include <cmath>
@@ -799,6 +801,147 @@ bool helicalSweep(const gp_Ax3 &f, double pitch, double z0, double z1, bool left
   pipe.Build();
   if (!pipe.IsDone() || !pipe.MakeSolid()) return false;
   out = pipe.Shape();
+  return true;
+}
+
+/// The parts of a thread that depend only on its own sizes: the helical groove, and (where the thread is rebuilt
+/// as a ring) the ring of the thread zone with the groove taken out of it. They take over a tenth of a second
+/// each and are the same for every hole of one size and every rebuild of a part, so they are built once, with the
+/// axis at the origin, and moved into place.
+struct ThreadSpec {
+  bool internal = false, leftHanded = false;
+  double R = 0, rMajor = 0, pitch = 0, length = 0, z0 = 0, z1 = 0;
+  std::array<double, 8> key() const {
+    return {internal ? 1.0 : 0.0, leftHanded ? 1.0 : 0.0, R, rMajor, pitch, length, z0, z1};
+  }
+};
+
+struct ThreadParts {
+  TopoDS_Shape sweep;           // the groove, cut to the thread zone
+  TopoDS_Shape fill;            // the threaded ring; null when the thread has none
+  std::vector<Named> fillNames; // its faces: "C" for the crest, "T" for the groove
+  double fillVolume = 0;
+};
+
+enum class ThreadFailure { None, Helix, Cut };
+
+std::shared_ptr<const ThreadParts> buildThreadParts(const ThreadSpec &t, const gp_Ax3 &f, ThreadFailure &failure) {
+  const double P = t.pitch, rMajor = t.rMajor, R = t.R, L = t.length;
+  const double rMinor = rMajor - 0.541265877365 * P;  // basic profile: 5/8 of the 60° triangle deep
+  const double tol = 1e-4;
+  // The groove between the teeth (ISO 68 basic profile: flats of P/8 at the major diameter and P/4 at
+  // the minor, 30° flanks), reaching past the crests so the cut is clean. The flanks run on a little
+  // past the crest diameter before the groove turns square: a groove edge lying exactly on the
+  // crest cylinder (where the rings below have their faces) makes OCCT's booleans quietly fail.
+  const double t30 = std::tan(M_PI / 6);
+  std::vector<std::pair<double, double>> groove;
+  if (t.internal) {
+    // A blind hole drilled at exactly the major diameter has the edge where its wall meets the drill
+    // point on the groove's outer edge, and the fuse below fails on the shared edge: take the groove
+    // 2 µm wider in that one case.
+    const double rOut = std::abs(R - rMajor) < 1e-4 ? rMajor + 2e-3 : rMajor;
+    auto z = [&](double r) { return P / 16 + (rMajor - r) * t30; };  // half-width at radius r
+    const double r1 = rMinor - P / 20, r2 = rMinor - P / 4;
+    groove = {{r2, -z(r1)}, {r1, -z(r1)}, {rOut, -z(rMajor)}, {rOut, z(rMajor)}, {r1, z(r1)}, {r2, z(r1)}};
+  } else {
+    auto z = [&](double r) { return P / 8 + (r - rMinor) * t30; };
+    const double r1 = rMajor + P / 20, r2 = rMajor + P / 4;
+    groove = {{rMinor, -z(rMinor)}, {r1, -z(r1)}, {r2, -z(r1)}, {r2, z(r1)}, {r1, z(r1)}, {rMinor, z(rMinor)}};
+  }
+  auto parts = std::make_shared<ThreadParts>();
+  std::vector<Named> none;
+  parts->sweep = TopoDS_Shape();
+  if (!helicalSweep(f, P, t.z0 - P, t.z1 + P, t.leftHanded, groove, parts->sweep) ||
+      !namedBoolean(parts->sweep, none, ring(f, 0, rMajor + P, t.z0, t.z1), "", SK_COMMON)) {
+    failure = ThreadFailure::Helix;
+    return nullptr;
+  }
+  // No face of the groove may lie on a face of the body (the original round face is often exactly at
+  // a crest or root diameter): OCCT's booleans can then quietly return the body unchanged, or empty.
+  // A hole is bored out past the major diameter and the whole thread zone put back as a ring from the minor
+  // diameter out into the wall, with the groove taken out of it. A shaft thinner than the thread is filled
+  // out to the major diameter the same way.
+  if (t.internal) {
+    const double rBore = std::max(R, rMajor) + P / 4;
+    parts->fill = ring(f, rMinor, rBore + P / 4, 0, L);
+  } else if (R < rMajor - tol) {
+    parts->fill = ring(f, R * 0.5, rMajor, 0, L);
+  }
+  if (!parts->fill.IsNull()) {
+    for (TopExp_Explorer ex(parts->fill, TopAbs_FACE); ex.More(); ex.Next()) parts->fillNames.push_back({ex.Current(), "C"});
+    if (!namedBoolean(parts->fill, parts->fillNames, parts->sweep, "T", SK_CUT)) {
+      failure = ThreadFailure::Cut;
+      return nullptr;
+    }
+    GProp_GProps g;
+    BRepGProp::VolumeProperties(parts->fill, g);
+    parts->fillVolume = g.Mass();
+    if (parts->fillVolume < 1e-9) {
+      failure = ThreadFailure::Cut;
+      return nullptr;
+    }
+  }
+  return parts;
+}
+
+/// The move from the origin frame (axis along z, x along x) onto `f`; false if it can't be worked out.
+bool placement(const gp_Ax3 &f, gp_Trsf &out) {
+  const gp_Pnt o = f.Location();
+  const gp_Pnt z = o.Translated(gp_Vec(f.Direction())), x = o.Translated(gp_Vec(f.XDirection()));
+  auto moves = [&](const gp_Trsf &t) {
+    return gp_Pnt(0, 0, 0).Transformed(t).Distance(o) < 1e-9 && gp_Pnt(0, 0, 1).Transformed(t).Distance(z) < 1e-9 &&
+           gp_Pnt(1, 0, 0).Transformed(t).Distance(x) < 1e-9;
+  };
+  gp_Trsf t;
+  t.SetTransformation(f);  // this one, or its inverse, depending on the direction OCCT means
+  if (moves(t)) { out = t; return true; }
+  if (moves(t.Inverted())) { out = t.Inverted(); return true; }
+  return false;
+}
+
+/// The thread's parts on frame `f`, from the cache when this size has been built before. `sweep` is only moved
+/// when `needSweep` (a hole's thread uses the groove only inside its ring).
+struct PlacedThread {
+  TopoDS_Shape sweep, fill;
+  std::vector<Named> fillNames;  // the ring's faces: "C" and "T" as in ThreadParts
+  double fillVolume = 0;
+};
+
+bool threadOn(const ThreadSpec &t, const gp_Ax3 &f, bool needSweep, PlacedThread &out, ThreadFailure &failure) {
+  static std::mutex mutex;
+  static std::map<std::array<double, 8>, std::shared_ptr<const ThreadParts>> cache;
+  gp_Trsf move;
+  if (!placement(f, move)) {  // not expected: build it in place
+    auto parts = buildThreadParts(t, f, failure);
+    if (!parts) return false;
+    out = {parts->sweep, parts->fill, parts->fillNames, parts->fillVolume};
+    return true;
+  }
+  std::shared_ptr<const ThreadParts> parts;
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = cache.find(t.key());
+    if (it != cache.end()) parts = it->second;
+  }
+  if (!parts) {
+    parts = buildThreadParts(t, gp_Ax3(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1), gp_Dir(1, 0, 0)), failure);
+    if (!parts) return false;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (cache.size() >= 32) cache.clear();  // many sizes in one session: start over
+    cache[t.key()] = parts;
+  }
+  if (needSweep) {
+    BRepBuilderAPI_Transform tr(parts->sweep, move, true);
+    if (!tr.IsDone()) { failure = ThreadFailure::Helix; return false; }
+    out.sweep = tr.Shape();
+  }
+  if (!parts->fill.IsNull()) {
+    BRepBuilderAPI_Transform tr(parts->fill, move, true);
+    if (!tr.IsDone()) { failure = ThreadFailure::Cut; return false; }
+    out.fill = tr.Shape();
+    for (const Named &n : parts->fillNames) out.fillNames.push_back({tr.ModifiedShape(n.shape), n.name});
+    out.fillVolume = parts->fillVolume;
+  }
   return true;
 }
 
@@ -1685,30 +1828,20 @@ SKHandle sk_thread(SKHandle body, const char *faceName, double majorDiameter, do
   std::vector<Named> names = namedFaces(*b);
   const std::string crest = feat + ".thread.crest";
   bool ok = true;
-  // The groove between the teeth (ISO 68 basic profile: flats of P/8 at the major diameter and P/4 at
-  // the minor, 30° flanks), reaching past the crests so the cut is clean. The flanks run on a little
-  // past the crest diameter before the groove turns square: a groove edge lying exactly on the
-  // crest cylinder (where the rings below have their faces) makes OCCT's booleans quietly fail.
-  const double t30 = std::tan(M_PI / 6);
-  std::vector<std::pair<double, double>> groove;
-  if (c.internal) {
-    // A blind hole drilled at exactly the major diameter has the edge where its wall meets the drill
-    // point on the groove's outer edge, and the fuse below fails on the shared edge: take the groove
-    // 2 µm wider in that one case.
-    const double rOut = std::abs(R - rMajor) < 1e-4 ? rMajor + 2e-3 : rMajor;
-    auto z = [&](double r) { return P / 16 + (rMajor - r) * t30; };  // half-width at radius r
-    const double r1 = rMinor - P / 20, r2 = rMinor - P / 4;
-    groove = {{r2, -z(r1)}, {r1, -z(r1)}, {rOut, -z(rMajor)}, {rOut, z(rMajor)}, {r1, z(r1)}, {r2, z(r1)}};
-  } else {
-    auto z = [&](double r) { return P / 8 + (r - rMinor) * t30; };
-    const double r1 = rMajor + P / 20, r2 = rMajor + P / 4;
-    groove = {{rMinor, -z(rMinor)}, {r1, -z(r1)}, {r2, -z(r1)}, {r2, z(r1)}, {r1, z(r1)}, {rMinor, z(rMinor)}};
-  }
-  TopoDS_Shape sweep;
-  std::vector<Named> none;
-  if (!helicalSweep(f, P, z0 - P, z1 + P, leftHanded, groove, sweep) ||
-      !namedBoolean(sweep, none, ring(f, 0, rMajor + P, z0, z1), "", SK_COMMON)) {
-    setError("could not build the thread's helix");
+  ThreadSpec spec;
+  spec.internal = c.internal;
+  spec.leftHanded = leftHanded;
+  spec.R = R;
+  spec.rMajor = rMajor;
+  spec.pitch = P;
+  spec.length = L;
+  spec.z0 = z0;
+  spec.z1 = z1;
+  PlacedThread placed;
+  ThreadFailure failure = ThreadFailure::None;
+  // A hole's groove is only used inside its ring; a shaft's is cut from the shaft itself.
+  if (!threadOn(spec, f, !c.internal, placed, failure)) {
+    setError(failure == ThreadFailure::Helix ? "could not build the thread's helix" : "could not cut the thread");
     return 0;
   }
   auto volume = [](const TopoDS_Shape &sh) {
@@ -1716,22 +1849,16 @@ SKHandle sk_thread(SKHandle body, const char *faceName, double majorDiameter, do
     BRepGProp::VolumeProperties(sh, g);
     return g.Mass();
   };
-  // No face of the groove may lie on a face of the body (the original round face is often exactly at
-  // a crest or root diameter): OCCT's booleans can then quietly return the body unchanged, or empty.
-  TopoDS_Shape fill;
+  TopoDS_Shape &fill = placed.fill;
   if (c.internal) {
-    // Bore the hole out past the major diameter, then put the whole thread zone back as a ring from
-    // the minor diameter out into the wall, with the groove taken out of it. The groove only ever
-    // meets that ring, whose faces are well clear of it.
+    // Bore the hole out past the major diameter; the ring then goes back in (below).
     const double rBore = std::max(R, rMajor) + P / 4;
     ok = namedBoolean(shape, names, ring(f, 0, rBore, z0, z1), crest, SK_CUT);
-    fill = ring(f, rMinor, rBore + P / 4, 0, L);
   } else {
-    // Turn a thicker shaft down to the major diameter and cut the groove; fill a thinner one out to it.
+    // Turn a thicker shaft down to the major diameter and cut the groove; a thinner one is filled out below.
     if (R > rMajor + tol) ok = namedBoolean(shape, names, ring(f, rMajor, R + P, z0, z1), crest, SK_CUT);
     const double before = volume(shape);
-    ok = ok && namedBoolean(shape, names, sweep, feat + ".thread", SK_CUT) && volume(shape) < before - 1e-9;
-    if (R < rMajor - tol) fill = ring(f, R * 0.5, rMajor, 0, L);
+    ok = ok && namedBoolean(shape, names, placed.sweep, feat + ".thread", SK_CUT) && volume(shape) < before - 1e-9;
   }
   if (!ok) {
     setError("could not cut the thread");
@@ -1739,11 +1866,7 @@ SKHandle sk_thread(SKHandle body, const char *faceName, double majorDiameter, do
   }
   if (!fill.IsNull()) {
     std::vector<Named> fillNames;
-    for (TopExp_Explorer ex(fill, TopAbs_FACE); ex.More(); ex.Next()) fillNames.push_back({ex.Current(), crest});
-    if (!namedBoolean(fill, fillNames, sweep, feat + ".thread", SK_CUT) || volume(fill) < 1e-9) {
-      setError("could not cut the thread");
-      return 0;
-    }
+    for (const Named &n : placed.fillNames) fillNames.push_back({n.shape, n.name == "T" ? feat + ".thread" : crest});
     std::vector<Named> merged;
     BRepAlgoAPI_Fuse fuse(shape, fill);
     fuse.SetRunParallel(true);
