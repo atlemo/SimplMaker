@@ -114,6 +114,16 @@ func intersect(_ g: CurveGeometry, _ h: CurveGeometry) -> [SIMD2<Double>] {
 extension Sketch {
     public func geometry(of id: EntityID) -> CurveGeometry? {
         guard let c = curve(id) else { return nil }
+        return geometry(of: c) { position($0) }
+    }
+
+    /// The same for a curve in hand, with the point positions from a `positionTable()`: loops over many curves
+    /// look neither the curve nor its points up by scanning.
+    public func geometry(of c: SketchCurve, _ positions: [EntityID: SIMD2<Double>]) -> CurveGeometry? {
+        geometry(of: c) { positions[$0] }
+    }
+
+    private func geometry(of c: SketchCurve, _ position: (EntityID) -> SIMD2<Double>?) -> CurveGeometry? {
         switch c.geometry {
         case .line(let a, let b):
             guard let pa = position(a), let pb = position(b) else { return nil }
@@ -360,33 +370,60 @@ extension Sketch {
     }
 
     /// Orders curves into connected chains; each entry is (curve id, reversed?) in travel order.
+    /// Linear in the number of curves: the ends are looked up in tables made once (a sketch can hold hundreds of
+    /// curves, and this runs on every cursor move of the drawing tools).
     func chains(_ ids: [EntityID]) -> [(items: [(id: EntityID, reversed: Bool)], closed: Bool)] {
-        func ends(_ id: EntityID) -> (EntityID, EntityID)? {
-            guard let c = curve(id) else { return nil }
+        let byID = Dictionary(curves.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // The curves that have two ends, in the order given.
+        var order: [EntityID] = []
+        var ends: [(EntityID, EntityID)] = []
+        for id in ids {
+            guard let c = byID[id] else { continue }
             switch c.geometry {
-            case .line(let a, let b): return (a, b)
-            case .arc(_, let a, let b): return (a, b)
-            case .bezier(let a, _, _, let b): return (a, b)
-            case .circle: return nil
+            case .line(let a, let b), .arc(_, let a, let b), .bezier(let a, _, _, let b): order.append(id); ends.append((a, b))
+            case .circle: continue
             }
         }
-        var remaining = ids.filter { ends($0) != nil }
+        // The curves at each point, in order (a curve once, even when both its ends are the point), and how many
+        // are still free there.
+        var at: [EntityID: [Int]] = [:]
+        for (i, e) in ends.enumerated() {
+            at[e.0, default: []].append(i)
+            if e.1 != e.0 { at[e.1, default: []].append(i) }
+        }
+        var degree = at.mapValues(\.count)
+        var alive = [Bool](repeating: true, count: order.count)
+        /// Takes a curve out of play, and notes the curves that now have an open end.
+        var openEnds = IndexHeap()
+        for i in order.indices where degree[ends[i].0] == 1 || degree[ends[i].1] == 1 { openEnds.push(i) }
+        func take(_ i: Int) {
+            alive[i] = false
+            for p in ends[i].0 == ends[i].1 ? [ends[i].0] : [ends[i].0, ends[i].1] {
+                degree[p, default: 0] -= 1
+                if degree[p] == 1, let left = at[p]?.first(where: { alive[$0] }) { openEnds.push(left) }
+            }
+        }
         var result: [(items: [(id: EntityID, reversed: Bool)], closed: Bool)] = []
-        func degree(_ p: EntityID) -> Int { remaining.filter { let e = ends($0)!; return e.0 == p || e.1 == p }.count }
-        while !remaining.isEmpty {
-            // Start at an open end if there is one.
-            let startID = remaining.first { let e = ends($0)!; return degree(e.0) == 1 || degree(e.1) == 1 } ?? remaining[0]
-            let e0 = ends(startID)!
-            var chain: [(id: EntityID, reversed: Bool)] = [(startID, degree(e0.0) != 1 && degree(e0.1) == 1)]
-            remaining.removeAll { $0 == startID }
+        var scan = 0  // everything before this is taken
+        while true {
+            while scan < order.count, !alive[scan] { scan += 1 }
+            guard scan < order.count else { break }
+            // Start at an open end if there is one (the first such curve in the order given), else at the first curve.
+            var start = scan
+            while let i = openEnds.pop() {
+                if alive[i] { start = i; break }
+            }
+            let e0 = ends[start]
+            var chain: [(id: EntityID, reversed: Bool)] = [(order[start], degree[e0.0] != 1 && degree[e0.1] == 1)]
+            take(start)
             var tip = chain[0].reversed ? e0.0 : e0.1
             let first = chain[0].reversed ? e0.1 : e0.0
-            while let next = remaining.first(where: { let e = ends($0)!; return e.0 == tip || e.1 == tip }) {
-                let e = ends(next)!
+            while let n = at[tip]?.first(where: { alive[$0] }) {
+                let e = ends[n]
                 let rev = e.1 == tip
-                chain.append((next, rev))
+                chain.append((order[n], rev))
                 tip = rev ? e.0 : e.1
-                remaining.removeAll { $0 == next }
+                take(n)
             }
             result.append((chain, tip == first && chain.count > 1))
         }
@@ -652,5 +689,38 @@ extension Sketch {
             }
         }
         return s
+    }
+}
+
+/// A set of curve indices that gives the smallest back first (a binary heap); an index pushed twice comes out twice.
+struct IndexHeap {
+    private var items: [Int] = []
+
+    mutating func push(_ x: Int) {
+        items.append(x)
+        var i = items.count - 1
+        while i > 0, items[(i - 1) / 2] > items[i] {
+            items.swapAt(i, (i - 1) / 2)
+            i = (i - 1) / 2
+        }
+    }
+
+    mutating func pop() -> Int? {
+        guard let top = items.first else { return nil }
+        let last = items.removeLast()
+        if !items.isEmpty {
+            items[0] = last
+            var i = 0
+            while true {
+                let l = 2 * i + 1, r = l + 1
+                var m = i
+                if l < items.count, items[l] < items[m] { m = l }
+                if r < items.count, items[r] < items[m] { m = r }
+                if m == i { break }
+                items.swapAt(i, m)
+                i = m
+            }
+        }
+        return top
     }
 }

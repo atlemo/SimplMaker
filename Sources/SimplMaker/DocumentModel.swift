@@ -682,6 +682,17 @@ final class DocumentModel {
     }
 
     var sceneBounds: (min: SIMD3<Float>, max: SIMD3<Float>)? {
+        // Looped over every vertex, and asked for on every viewport update: kept until the scene or what is shown changes.
+        let hidden = document.hidden
+        if let cached = sceneBoundsCache, cached.revision == sceneRevision, cached.hidden == hidden { return cached.value }
+        let value = computeSceneBounds()
+        sceneBoundsCache = (sceneRevision, hidden, value)
+        return value
+    }
+
+    @ObservationIgnored private var sceneBoundsCache: (revision: Int, hidden: Set<FeatureID>, value: (min: SIMD3<Float>, max: SIMD3<Float>)?)?
+
+    private func computeSceneBounds() -> (min: SIMD3<Float>, max: SIMD3<Float>)? {
         var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
         var any = false
         for m in visibleMeshes {

@@ -900,13 +900,17 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 addSubview(view)
                 labels[l.id] = view
             }
-            view.stringValue = l.text
+            // Only what changed: this runs for every label on every frame.
+            let tip = l.reference ? "Measured size · click to make it a dimension you can set"
+                : l.isDimension ? "Dimension · click to change its value" : nil
+            if view.stringValue != l.text {
+                view.stringValue = l.text
+                view.sizeToFit()
+            }
             view.isReference = l.reference
             view.isDimension = l.isDimension
             view.isEditingHighlight = l.editing
-            view.toolTip = l.reference ? "Measured size · click to make it a dimension you can set"
-                : l.isDimension ? "Dimension · click to change its value" : nil
-            view.sizeToFit()
+            if view.toolTip != tip { view.toolTip = tip }
             guard let p = renderer.camera.project(l.world, viewSize: bounds.size) else {
                 view.isHidden = true
                 continue
@@ -1402,11 +1406,15 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 created = true
                 glyphViews[g.id] = view
             }
-            view.stringValue = g.symbol
-            view.toolTip = "\(g.help) constraint · click to select, ⌫ to delete"
+            // Only what changed: this runs for every glyph on every frame.
+            let tip = "\(g.help) constraint · click to select, ⌫ to delete"
+            if view.stringValue != g.symbol {
+                view.stringValue = g.symbol
+                view.sizeToFit()
+                view.setFrameSize(NSSize(width: max(view.frame.width, 14), height: view.frame.height))
+            }
+            if view.toolTip != tip { view.toolTip = tip }
             view.isSelectedGlyph = g.selected
-            view.sizeToFit()
-            view.setFrameSize(NSSize(width: max(view.frame.width, 14), height: view.frame.height))
             if let p = renderer.camera.project(g.world, viewSize: bounds.size) {
                 view.isHidden = false
                 // Beside its curve, but not on a value label (or another glyph): moved along until it is clear.
@@ -1428,8 +1436,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 /// A small clickable constraint symbol.
 final class ConstraintGlyphView: NSTextField {
     var onClick: ((_ additive: Bool) -> Void)?
-    var isSelectedGlyph = false { didSet { updateAppearance() } }
-    var dark = false { didSet { updateAppearance() } }
+    var isSelectedGlyph = false { didSet { if isSelectedGlyph != oldValue { updateAppearance() } } }
+    var dark = false { didSet { if dark != oldValue { updateAppearance() } } }
 
     /// Fixed colours (not the system's dynamic ones), so the symbol keeps its contrast over any sketch paper.
     private func updateAppearance() {
@@ -1469,12 +1477,13 @@ final class DimensionLabelView: NSTextField {
     var onClick: (() -> Void)?
     /// The pointer went over the label (true) or left it.
     var onHover: ((Bool) -> Void)?
-    var isReference = false { didSet { updateAppearance() } }
+    // The viewport sets all of these on every frame, and a label's colours and outline are only redone when one changes.
+    var isReference = false { didSet { if isReference != oldValue { updateAppearance() } } }
     /// A sketch dimension, the only kind of label whose value can be edited.
-    var isDimension = false { didSet { updateAppearance() } }
-    var isEditingHighlight = false { didSet { updateAppearance() } }
+    var isDimension = false { didSet { if isDimension != oldValue { updateAppearance() } } }
+    var isEditingHighlight = false { didSet { if isEditingHighlight != oldValue { updateAppearance() } } }
     /// See ConstraintGlyphView.dark: the colours are fixed, chosen for the viewport's light or dark look.
-    var dark = false { didSet { updateAppearance() } }
+    var dark = false { didSet { if dark != oldValue { updateAppearance() } } }
     /// The pointer is over the label (or the margin around it that answers a click): it lights up as a button.
     private var isHovered = false { didSet { updateAppearance() } }
     private var tracking: NSTrackingArea?

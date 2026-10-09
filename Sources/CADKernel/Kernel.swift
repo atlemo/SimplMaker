@@ -486,10 +486,13 @@ public final class KBody: @unchecked Sendable {
 
     /// A round face: its axis from the end a thread starts at, radius, length, and whether it's a hole.
     public func faceCylinder(_ name: String, flipped: Bool = false) throws -> KCylinder {
-        var o = [Double](repeating: 0, count: 9)
-        guard sk_body_face_cylinder(handle, name, flipped, &o) else { throw KernelError.last("round face") }
-        return KCylinder(start: SIMD3(o[0], o[1], o[2]), direction: SIMD3(o[3], o[4], o[5]), radius: o[6], length: o[7],
-                         isHole: o[8] > 0.5)
+        // Remembered: it asks the body what lies beyond each end of the face, which takes long on a threaded one.
+        try memoized("faceCylinder \(name)|\(flipped)") {
+            var o = [Double](repeating: 0, count: 9)
+            guard sk_body_face_cylinder(handle, name, flipped, &o) else { throw KernelError.last("round face") }
+            return KCylinder(start: SIMD3(o[0], o[1], o[2]), direction: SIMD3(o[3], o[4], o[5]), radius: o[6], length: o[7],
+                             isHole: o[8] > 0.5)
+        }
     }
 
     /// Names of the edges around a face (seams left out).
@@ -559,12 +562,16 @@ public final class KBody: @unchecked Sendable {
         return KDistance(distance: o[0], a: SIMD3(o[1], o[2], o[3]), b: SIMD3(o[4], o[5], o[6]))
     }
 
-    public var volume: Double { sk_body_volume(handle) }
-    public var isValid: Bool { sk_body_is_valid(handle) }
+    // Remembered like the handles above: the inspector asks again on every redraw, and the volume of a threaded body
+    // is an integral over its helical faces.
+    public var volume: Double { (try? memoized("volume") { sk_body_volume(handle) }) ?? 0 }
+    public var isValid: Bool { (try? memoized("isValid") { sk_body_is_valid(handle) }) ?? false }
     public var bounds: (min: SIMD3<Double>, max: SIMD3<Double>)? {
-        var b = [Double](repeating: 0, count: 6)
-        guard sk_body_bounds(handle, &b) else { return nil }
-        return (SIMD3(b[0], b[1], b[2]), SIMD3(b[3], b[4], b[5]))
+        try? memoized("bounds") { () throws -> (min: SIMD3<Double>, max: SIMD3<Double>) in
+            var b = [Double](repeating: 0, count: 6)
+            guard sk_body_bounds(handle, &b) else { throw KernelError(message: "no bounds") }
+            return (SIMD3(b[0], b[1], b[2]), SIMD3(b[3], b[4], b[5]))
+        }
     }
 
     public func tessellate(linearDeflection: Double = 0.05, angularDeflection: Double = 0.35) throws -> Mesh {

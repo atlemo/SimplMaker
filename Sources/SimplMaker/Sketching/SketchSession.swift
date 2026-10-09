@@ -571,19 +571,21 @@ final class SketchSession {
             } ? .center : .point)
         }
         // The middle of a closed shape (not one being dragged): a point placed there stays centred.
-        let centers = sketch.shapeCenters().filter { own.isDisjoint(with: $0.points) && !$0.points.contains(where: Sketch.isGenerated) }
+        let centers = shapeCenters().filter { own.isDisjoint(with: $0.points) && !$0.points.contains(where: Sketch.isGenerated) }
         if let c = nearest(centers, { $0.position }) { return (SketchSnap(c.position, centerOf: c.corners), .center) }
+        let positions = sketch.positionTable()  // looked up by id, not by scanning, for every line and curve below
         let lines = sketch.curves.compactMap { c -> SIMD2<Double>? in
-            guard !own.contains(c.id), !Sketch.isGenerated(c.id), case .line(let a, let b) = c.geometry, let pa = sketch.position(a),
-                  let pb = sketch.position(b) else { return nil }
+            guard !own.contains(c.id), !Sketch.isGenerated(c.id), case .line(let a, let b) = c.geometry, let pa = positions[a],
+                  let pb = positions[b] else { return nil }
             return (pa + pb) / 2
         }
         if let m = nearest(lines, { $0 }) { return (SketchSnap(m), .midpoint) }
         if let i = nearest(Array(references.points.indices), { references.points[$0] }) {
             return (SketchSnap(references.points[i], model: references.pointModel(i)), .vertex)
         }
-        let curves = sketch.curves.filter { !own.contains($0.id) && !Sketch.isGenerated($0.id) }.map(\.id)
-        let onCurves = curves.compactMap { id in sketch.geometry(of: id).map { (id, Self.closest(uv, on: $0)) } }
+        let onCurves = sketch.curves.filter { !own.contains($0.id) && !Sketch.isGenerated($0.id) }.compactMap { c in
+            sketch.geometry(of: c, positions).map { (c.id, Self.closest(uv, on: $0)) }
+        }
         if let hovered = hover, hovered != excluding, !drawn.contains(hovered), let g = sketch.geometry(of: hovered) {
             return (SketchSnap(Self.closest(uv, on: g), curve: hovered), .curve)
         }
@@ -1775,9 +1777,32 @@ final class SketchSession {
     /// Lines, circles and arcs without a size dimension, with their current size: shown as light
     /// labels so every size is visible, and a click turns one into a dimension.
     var referenceMeasurements: [(curve: EntityID, kind: SketchDimension.Kind, value: Double)] {
+        // Asked for on every frame: only worked out again when the sketch has changed.
+        if let cached = referenceCache, cached.sketch == sketch { return cached.value }
+        let value = computeReferenceMeasurements()
+        referenceCache = (sketch, value)
+        return value
+    }
+
+    /// The centres of the sketch's closed shapes, where the cursor snaps: asked for on every cursor move, and
+    /// only worked out again when the sketch has changed.
+    func shapeCenters() -> [ShapeCenter] {
+        if let cached = shapeCenterCache, cached.sketch == sketch { return cached.value }
+        let value = sketch.shapeCenters()
+        shapeCenterCache = (sketch, value)
+        return value
+    }
+
+    @ObservationIgnored private var shapeCenterCache: (sketch: Sketch, value: [ShapeCenter])?
+    @ObservationIgnored private var referenceCache: (sketch: Sketch, value: [(curve: EntityID, kind: SketchDimension.Kind, value: Double)])?
+
+    private func computeReferenceMeasurements() -> [(curve: EntityID, kind: SketchDimension.Kind, value: Double)] {
+        let suggestions = sketch.sizeSuggestions()
         var sized = Set<EntityID>()
         var spans: [Set<EntityID>: EntityID] = [:]  // a rounded side's corner-to-corner span -> the line
-        for c in sketch.curves { if let s = sketch.lineSpan(c.id) { spans[[s.0, s.1]] = c.id } }
+        for c in sketch.curves {
+            if case .distance(let a, let b)? = suggestions[c.id]?.kind { spans[[a, b]] = c.id }
+        }
         for d in sketch.dimensions {
             switch d.kind {
             case .length(let c), .radius(let c), .diameter(let c): sized.insert(c)
@@ -1786,7 +1811,7 @@ final class SketchSession {
             }
         }
         return sketch.curves.compactMap { c in
-            guard !c.construction, !Sketch.isGenerated(c.id), !sized.contains(c.id), let s = sketch.suggestDimension(for: [c.id]) else { return nil }
+            guard !c.construction, !Sketch.isGenerated(c.id), !sized.contains(c.id), let s = suggestions[c.id] else { return nil }
             return (c.id, s.kind, s.value)
         }
     }

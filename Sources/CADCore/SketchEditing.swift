@@ -219,13 +219,15 @@ extension Sketch {
             if case .circle = c.geometry { return false }
             return !c.construction && !Sketch.isGenerated(c.id)  // copies and gears: the callers never wanted their centres, and chaining hundreds of curves is slow
         }.map(\.id)
+        let byID = Dictionary(curves.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let positions = positionTable()
         return chains(ids).compactMap { chain -> ShapeCenter? in
             guard chain.closed else { return nil }
             var lo = SIMD2(Double.infinity, .infinity), hi = -lo
             var corners: [EntityID] = [], points = Set<EntityID>()
             var allLines = true
             for item in chain.items {
-                guard let c = curve(item.id), let g = geometry(of: item.id) else { return nil }
+                guard let c = byID[item.id], let g = geometry(of: c, positions) else { return nil }
                 for t in stride(from: 0.0, through: 1, by: 1.0 / 16) {
                     let p = g.point(t)
                     lo = pointwiseMin(lo, p); hi = pointwiseMax(hi, p)
@@ -484,17 +486,51 @@ extension Sketch {
     /// A line's full extent when corners were rounded off it: the outermost of its ends and the
     /// points kept on it (a rounded corner's "virtual sharp"). Nil when that's just its own ends.
     public func lineSpan(_ id: EntityID) -> (EntityID, EntityID)? {
-        guard case .line(let a, let b)? = curve(id)?.geometry, let pa = position(a), let pb = position(b) else { return nil }
+        var onLine: [EntityID] = []
+        for c in constraints {
+            if case .pointOnCurve(let p, let line) = c.kind, line == id { onLine.append(p) }
+        }
+        return lineSpan(id, onLine: onLine, positionTable())
+    }
+
+    /// The span of a line, given the points constrained onto it (in constraint order) and every point's position.
+    private func lineSpan(_ id: EntityID, onLine: [EntityID], _ positions: [EntityID: SIMD2<Double>]) -> (EntityID, EntityID)? {
+        guard case .line(let a, let b)? = curve(id)?.geometry, let pa = positions[a], let pb = positions[b] else { return nil }
         let d = pb - pa, len2 = vdot(d, d)
         guard len2 > 1e-18 else { return nil }
         var candidates = [a, b]
-        for c in constraints {
-            if case .pointOnCurve(let p, let line) = c.kind, line == id, !candidates.contains(p) { candidates.append(p) }
-        }
-        let along = candidates.compactMap { p in position(p).map { (p, vdot($0 - pa, d) / len2) } }
+        for p in onLine where !candidates.contains(p) { candidates.append(p) }
+        let along = candidates.compactMap { p in positions[p].map { (p, vdot($0 - pa, d) / len2) } }
         guard let lo = along.min(by: { $0.1 < $1.1 }), let hi = along.max(by: { $0.1 < $1.1 }),
               lo.0 != a || hi.0 != b else { return nil }
         return (lo.0, hi.0)
+    }
+
+    /// `suggestDimension(for: [id])` for every line, circle and arc at once: what the sketch shows as the light
+    /// measured size of each. The same answers, from tables made once, for a sketch of hundreds of curves.
+    public func sizeSuggestions() -> [EntityID: (kind: SketchDimension.Kind, value: Double)] {
+        let positions = positionTable()
+        var byLine: [EntityID: [EntityID]] = [:]
+        for c in constraints {
+            if case .pointOnCurve(let p, let line) = c.kind { byLine[line, default: []].append(p) }
+        }
+        var out: [EntityID: (kind: SketchDimension.Kind, value: Double)] = [:]
+        for c in curves {
+            switch c.geometry {
+            case .line(let a, let b):
+                if let span = lineSpan(c.id, onLine: byLine[c.id] ?? [], positions) {
+                    guard let pa = positions[span.0], let pb = positions[span.1] else { continue }
+                    out[c.id] = (.distance(span.0, span.1), vlen(pb - pa))
+                } else if let pa = positions[a], let pb = positions[b] {
+                    out[c.id] = (.length(c.id), vlen(pb - pa))
+                }
+            case .circle(_, let r): out[c.id] = (.diameter(c.id), r * 2)
+            case .arc(let center, let s, _):
+                if let pc = positions[center], let ps = positions[s] { out[c.id] = (.radius(c.id), vlen(ps - pc)) }
+            case .bezier: continue
+            }
+        }
+        return out
     }
 
     /// A circle or arc's rim and what it is measured to, as they are now.

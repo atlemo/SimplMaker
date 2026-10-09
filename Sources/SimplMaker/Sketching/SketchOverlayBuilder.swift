@@ -58,9 +58,11 @@ enum SketchOverlayBuilder {
         let s = session.sketch
         var perEntity: [EntityID: Int] = [:]
         var out: [ConstraintGlyph] = []
+        let lookup = Lookup(s)  // one lookup by id per constraint, not a scan of the sketch
+        let selected = Set(session.selection)
         func anchor(_ id: EntityID) -> SIMD2<Double>? {
-            if let p = s.position(id) { return p }
-            guard let g = s.geometry(of: id) else { return nil }
+            if let p = lookup.positions[id] { return p }
+            guard let curve = lookup.curves[id], let g = s.geometry(of: curve, lookup.positions) else { return nil }
             switch g {
             case .line: return g.point(0.25)  // a quarter along: the middle is where the line's size shows
             case .circle(let c, let r): return c + SIMD2(0, r)
@@ -79,7 +81,7 @@ enum SketchOverlayBuilder {
                 let n = perEntity[e, default: 0]
                 perEntity[e] = n + 1
                 out.append(ConstraintGlyph(id: "\(c.id)#\(e)", constraint: c.id, world: world(session.frame, a), stack: n,
-                                           symbol: info.symbol, help: info.help, selected: session.selection.contains(c.id)))
+                                           symbol: info.symbol, help: info.help, selected: selected.contains(c.id)))
             }
         }
         return out
@@ -158,7 +160,7 @@ enum SketchOverlayBuilder {
         // While drawing, a small + marks the middle of each closed shape, where the cursor snaps.
         if session.tool.placesPoints {
             let r = session.snapTolerance
-            for c in s.shapeCenters() where !c.points.contains(where: Sketch.isGenerated) {
+            for c in session.shapeCenters() where !c.points.contains(where: Sketch.isGenerated) {
                 let p = c.position
                 o.construction += segments([p - SIMD2(r, 0), p + SIMD2(r, 0)], frame: f, id: 0)
                 o.construction += segments([p - SIMD2(0, r), p + SIMD2(0, r)], frame: f, id: 0)
@@ -267,8 +269,9 @@ enum SketchOverlayBuilder {
         }
         // Every other line, circle and arc shows its measured size, lighter.
         let pending = session.pendingLineLength != nil ? session.dimensionPicks.first : nil
+        let lookup = Lookup(s)
         for m in session.referenceMeasurements where m.curve != pending {
-            guard let anchor = anchor(m.kind, s) else { continue }
+            guard let anchor = anchor(m.kind, s, lookup: lookup) else { continue }
             out.append(DimensionLabel(id: DimensionLabel.referenceID(m.curve), world: world(session.frame, anchor),
                                       text: prefix(m.kind) + measured(m.value), editing: false, reference: true,
                                       outward: outward(m.kind, session.frame)))
@@ -315,21 +318,42 @@ enum SketchOverlayBuilder {
         }
     }
 
-    static func anchor(_ k: SketchDimension.Kind, _ s: Sketch, size: Double = 1) -> SIMD2<Double>? {
+    /// Every point's position and every curve by id, made once for a loop over many labels (a sketch can have hundreds,
+    /// and each lookup by scanning adds up).
+    struct Lookup {
+        let positions: [EntityID: SIMD2<Double>]
+        let curves: [EntityID: SketchCurve]
+        init(_ s: Sketch) {
+            positions = s.positionTable()
+            curves = Dictionary(s.curves.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+    }
+
+    static func anchor(_ k: SketchDimension.Kind, _ s: Sketch, size: Double = 1, lookup: Lookup? = nil) -> SIMD2<Double>? {
         func mid(_ a: SIMD2<Double>?, _ b: SIMD2<Double>?) -> SIMD2<Double>? {
             guard let a, let b else { return nil }
             return (a + b) / 2
         }
-        func lineMid(_ l: EntityID) -> SIMD2<Double>? { s.lineEnds(l).map { ($0.0 + $0.1) / 2 } }
+        func position(_ id: EntityID) -> SIMD2<Double>? { lookup.map { $0.positions[id] } ?? s.position(id) }
+        func curve(_ id: EntityID) -> SketchCurve? { lookup.map { $0.curves[id] } ?? s.curve(id) }
+        func lineMid(_ l: EntityID) -> SIMD2<Double>? {
+            guard case .line(let a, let b)? = curve(l)?.geometry, let pa = position(a), let pb = position(b) else { return nil }
+            return (pa + pb) / 2
+        }
         switch k {
         case .distance(let a, let b), .horizontalDistance(let a, let b), .verticalDistance(let a, let b):
-            return mid(s.position(a), s.position(b))
-        case .pointLineDistance(let p, let l): return mid(s.position(p), lineMid(l))
+            return mid(position(a), position(b))
+        case .pointLineDistance(let p, let l): return mid(position(p), lineMid(l))
         case .gap(let c, let o): return s.gapEnds(c, o).map { ($0.0 + $0.1) / 2 }
         case .length(let l): return lineMid(l)
         case .radius(let c), .diameter(let c):
-            guard let curve = s.curve(c), let center = s.center(of: c).flatMap({ s.position($0) }),
-                  let r = s.radius(of: curve) else { return nil }
+            guard let curve = curve(c) else { return nil }
+            let center: SIMD2<Double>?
+            switch curve.geometry {
+            case .circle(let id, _), .arc(let id, _, _): center = position(id)
+            case .line, .bezier: center = nil
+            }
+            guard let center, let r = s.radius(of: curve) else { return nil }
             return center + r * SIMD2(0.7071, 0.7071)
         case .angle(let a, let b):
             guard let arc = s.angleArc(of: SketchDimension(k, ""), size: size) else { return mid(lineMid(a), lineMid(b)) }
