@@ -39,6 +39,7 @@ Standard **Undo** ([[⌘Z]]), **Redo** ([[⇧⌘Z]]), **Cut**, **Copy**, **Paste
 | **Standard Views** | Top, Front, Right and Home |
 | **Orthographic Projection** | Switches between perspective and orthographic |
 | **Visual Style** | Shaded, wireframe and hidden-edge styles |
+| **Section Analysis** | Turn the cut through the bodies on or off (see [Section Analysis](doc:modify/section-analysis)) |
 | **Show Grid**, **Show Axes** | Toggle the reference lines |
 | **Show Constraints** | Show or hide sketch constraint symbols |
 | **Snap to Grid** | Toggle grid snapping in sketches |
@@ -65,7 +66,7 @@ While you are editing a sketch, the menu also lists the sketch tools, **Offset S
 
 ## Inspect
 
-**Measure**.
+**Measure**, **Section Analysis**.
 
 ## Window
 

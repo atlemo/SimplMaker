@@ -83,6 +83,8 @@ final class DocumentModel {
             activeHandleSlot = 0
             dialFieldOpen = nil
             if newValue != newFeature { newFeature = nil }  // moved on: Cancel no longer removes it
+            // The Section Analysis tool waits for a plane: a sketch, plane or canvas picked in the browser is one.
+            if pendingTool == .sectionAnalysis, let id = newValue { beginSection(feature: id) }
             overlayRevision += 1
         }
     }
@@ -148,6 +150,12 @@ final class DocumentModel {
     var showPrintOptions = false
     static let printLayerHeights = [0.12, 0.16, 0.2, 0.24]
     static let printNozzles = [0.2, 0.4, 0.6, 0.8]
+
+    /// Section analysis (Inspect ▸ Section Analysis): the plane the bodies are cut by, and whether the cut shows. Not saved.
+    var section: SectionCut?
+    var sectionOn = true
+    /// The cutting plane's arrow being dragged: the offset it started from, and where along the arrow the grab was.
+    @ObservationIgnored var sectionDrag: (offset: Double, base: SIMD3<Double>, direction: SIMD3<Double>, grab: Double)?
 
     /// Turns the print preview on or off; on, it opens its options.
     func setPrintPreview(_ on: Bool) {
@@ -1150,6 +1158,7 @@ final class DocumentModel {
                                                    id: PickID(plane: OriginPlane.allCases.count + slot).raw, edgeIDs: edges, into: &o)
         }
         addMeasureOverlay(to: &o)
+        addSectionOverlay(to: &o)
         if manipulatedFeature == nil {
             // Each arrow is its shaft and then its head (the same segment again, drawn as a triangle).
             for h in dragHandles {
@@ -1185,6 +1194,7 @@ final class DocumentModel {
         if let session = sketchSession { return SketchOverlayBuilder.labels(session) }
         if showsOriginPlanes { return SketchOverlayBuilder.originPlaneLabels(size: sketchPlaneSize) }
         if pendingTool == .measure { return measureLabels() }
+        if sectionActive { return sectionLabels() }
         return []  // the drag handle's size is an editable field; see the viewport
     }
 

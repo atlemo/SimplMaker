@@ -70,6 +70,10 @@ extension DocumentModel {
             .action("Chamfer Face Edges", symbol: DesignTool.chamfer.symbol) { self.selection = [pick]; self.run(.chamfer) },
             .action("Draft Face", symbol: DesignTool.draft.symbol) { self.selection = [pick]; self.run(.draft) },
             .action("Measure", symbol: DesignTool.measure.symbol) { self.selection = [pick]; self.run(.measure) },
+            .action("Section Analysis at Face", symbol: DesignTool.sectionAnalysis.symbol, enabled: flat) {
+                self.selection = [pick]
+                self.run(.sectionAnalysis)
+            },
             .separator,
             .action("Move or Rotate Body", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.selection = [pick]; self.run(.move) },
             .action("Scale Body", symbol: DesignTool.scale.symbol) { self.selection = [pick]; self.run(.scale) },

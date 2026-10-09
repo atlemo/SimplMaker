@@ -15,7 +15,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", scale = "Scale", combine = "Combine", split = "Split Body", layOnFloor = "Lay on Floor"
     case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell", draft = "Draft", canvas = "Canvas"
     case project = "Project"
-    case measure = "Measure"
+    case measure = "Measure", sectionAnalysis = "Section Analysis"
 
     var id: String { rawValue }
 
@@ -27,7 +27,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// Construction planes, copies of bodies, and reference images.
     static let construct: [DesignTool] = [.plane, .mirror, .pattern, .canvas]
     /// Tools that read the model without changing it.
-    static let inspect: [DesignTool] = [.measure]
+    static let inspect: [DesignTool] = [.measure, .sectionAnalysis]
 
     /// A glyph name from the macOS Design System's icon set (see IconGlyphs.swift), not an SF Symbol.
     var symbol: String {
@@ -60,6 +60,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .canvas: return "image"
         case .project: return "square-dashed"
         case .measure: return "ruler"
+        case .sectionAnalysis: return "section-analysis"
         }
     }
 
@@ -96,11 +97,12 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .canvas: return "v"
         case .project: return "o"
         case .measure: return "i"
+        case .sectionAnalysis: return "a"  // with ⇧ (see defaultModifiers): every plain letter is taken
         }
     }
 
     /// Held with the letter by default. Every plain letter has a tool (or Appearance), so a tool added since has ⇧ with one.
-    var defaultModifiers: KeyChord.Modifiers { self == .draft || self == .split || self == .layOnFloor ? .shift : [] }
+    var defaultModifiers: KeyChord.Modifiers { self == .draft || self == .split || self == .layOnFloor || self == .sectionAnalysis ? .shift : [] }
 
     /// The tooltip: the name, its current shortcut, and what the tool does.
     var help: String {
@@ -138,6 +140,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .canvas: return "place a reference image on a plane or flat face, to trace over; its opacity is adjustable"
         case .project: return "throw sketch profiles, like text, onto a body so they follow its surface, raised out of it or cut into it"
         case .measure: return "click a face, an edge or a body for its size, or two for the distance and angle between them"
+        case .sectionAnalysis: return "cut the bodies by a plane, a face, a sketch or a canvas to look inside them, and drag the cut in or out"
         }
     }
 
@@ -159,7 +162,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     var acceptsWholeBody: Bool { picksBodies || self == .measure }
 
     /// Shows the origin planes while it waits, to pick one (mirror across a plane).
-    var showsPlanes: Bool { needsPlane || self == .mirror || self == .split }
+    var showsPlanes: Bool { needsPlane || self == .mirror || self == .split || self == .sectionAnalysis }
 
     /// Works on whole bodies: a click on any face picks the body (and so does a body in the browser).
     var picksBodies: Bool {
@@ -191,6 +194,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .draft: return kind == .face  // the faces to lean
         case .project: return kind == .region || kind == .face  // the profiles, and the faces they land on
         case .measure: return kind == .face || kind == .edge  // and bodies, from the browser
+        case .sectionAnalysis: return kind == .plane || kind == .face || kind == .region || kind == .sketchCurve  // and sketches and canvases, from the browser
         }
     }
 }
@@ -240,6 +244,10 @@ extension DocumentModel {
             return
         }
         guard let pick, tool.accepts(pick.kind), !pick.isWholeBody || tool.picksBodies else { return }
+        if tool == .sectionAnalysis {  // one click is enough: the cut starts at once
+            beginSection(from: pick)
+            return
+        }
         // Re-picking: only the feature's own sketch counts.
         if let id = reselecting, let source = profileSource(id) {
             let sketch = profile(of: pick)?.sketch ?? curve(of: pick)?.sketch
@@ -303,6 +311,7 @@ extension DocumentModel {
             let n = faceBodies.count
             return n == 0 ? "Click the bodies to copy" : "Click more bodies, or a straight edge for the direction · Return makes the pattern (\(n) picked)"
         case .measure: return measurePrompt()
+        case .sectionAnalysis: return sectionPrompt
         case .project:
             if profiles == 0 { return "Select the profiles to project, like the letters of a text" }
             return result?.bodies.count == 1 ? "Click the face to project onto · Return projects onto the whole body"
@@ -495,6 +504,11 @@ extension DocumentModel {
             return false
         case .measure:
             return false  // reads the picks without making a feature, and stays until Esc
+        case .sectionAnalysis:
+            // Reads the model without making a feature: with a plane, face or sketch already picked it cuts there at once.
+            guard startSectionFromSelection() else { return false }
+            selection = []
+            return true
         }
         return true
     }

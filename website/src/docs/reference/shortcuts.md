@@ -37,6 +37,7 @@ Tools use a single letter, like most CAD apps. They work when the viewport has f
 | [[Q]] | Mirror |
 | [[T]] | Pattern |
 | [[I]] | Measure |
+| [[⇧A]] | Section Analysis (every plain letter was taken) |
 | [[A]] | Appearance |
 
 ## While sketching

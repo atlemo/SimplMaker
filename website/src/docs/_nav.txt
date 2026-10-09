@@ -45,6 +45,7 @@ modify/lay-on-floor
 modify/move-scale
 modify/mirror-pattern
 modify/measure
+modify/section-analysis
 modify/appearance
 
 ## For 3D printing

@@ -34,7 +34,7 @@ You start in design mode. The tools sit in groups, with the group's name underne
 | **Shapes** | [Box, Cylinder, Sphere, Torus, Coil](doc:create/primitives) |
 | **Modify** | [Fillet and Chamfer](doc:modify/fillet-chamfer), [Hole](doc:modify/hole), [Thread](doc:modify/thread), [Shell](doc:modify/shell), [Draft](doc:modify/draft), [Project](doc:modify/project), [Move and Scale](doc:modify/move-scale), [Combine](doc:modify/combine) |
 | **Construct** | [Plane](doc:create/plane), [Mirror and Pattern](doc:modify/mirror-pattern), [Canvas](doc:create/canvas) |
-| **Inspect** | [Measure](doc:modify/measure) |
+| **Inspect** | [Measure](doc:modify/measure), [Section Analysis](doc:modify/section-analysis) |
 
 **Choose what's on the toolbar.** Click a group's name to see all its tools. Pin the ones you use to the toolbar, or unpin the ones you don't. Right-click a button for the same choices.
 

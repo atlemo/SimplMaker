@@ -26,6 +26,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var handleDrag = false
     /// A hole's move dot is being dragged.
     private var holeMoveDrag = false
+    private var sectionDrag = false
     private var planeResizeDrag = false
     /// The Move/Rotate manipulator: what it draws, the part under the pointer, and the drag in progress.
     private var manipulatorView: ManipulatorView?
@@ -408,7 +409,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             return .pointingHand
         }
         if planeResizeDrag { return .closedHand }
-        if model.hovered?.kind == .handle || model.hovered?.kind == .planeEdge { return handleDrag || holeMoveDrag ? .closedHand : .openHand }
+        if model.hovered?.kind == .handle || model.hovered?.kind == .planeEdge { return handleDrag || holeMoveDrag || sectionDrag ? .closedHand : .openHand }
         return .arrow
     }
 
@@ -588,6 +589,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             planeResizeDrag = true
             model?.beginPlaneResize(PickID(raw: renderer.hovered))
             updateCursor()
+        } else if let renderer, renderer.hovered == PickID.sectionHandle.raw {
+            let ray = renderer.camera.ray(at: p, viewSize: bounds.size)
+            sectionDrag = true
+            model?.beginSectionDrag(rayOrigin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                                    direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)))
+            updateCursor()
         } else if let renderer, PickID(raw: renderer.hovered).kind == .handle {
             handleDrag = true
             model?.beginHandleDrag(slot: PickID(raw: renderer.hovered).handleSlot)
@@ -624,6 +631,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             model.moveHole(rayOrigin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
                            direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)),
                            pointsPerMM: pointsPerMM)
+            refreshOverlay()
+            return
+        }
+        if sectionDrag, let renderer, let model {
+            let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
+            model.dragSection(rayOrigin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                              direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)),
+                              snapping: !event.modifierFlags.contains(.option))  // ⌥ turns the snapping off, as in sketches
             refreshOverlay()
             return
         }
@@ -666,9 +681,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     override func mouseUp(with event: NSEvent) {
         if windowDrag { windowDrag = false; return }
-        defer { lastDrag = nil; rollDragRaw = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; planeResizeDrag = false; manipulatorDrag = nil; updateCursor() }
+        defer { lastDrag = nil; rollDragRaw = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; sectionDrag = false; planeResizeDrag = false; manipulatorDrag = nil; updateCursor() }
         if manipulatorDrag != nil {
             model?.endManipulatorDrag()
+            refreshOverlay()
+            return
+        }
+        if sectionDrag {
+            model?.endSectionDrag()
             refreshOverlay()
             return
         }
@@ -729,6 +749,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         model.clickRayNext = (SIMD3(Double(next.origin.x), Double(next.origin.y), Double(next.origin.z)),
                               SIMD3(Double(next.direction.x), Double(next.direction.y), Double(next.direction.z)))
         var items = model.contextItems(for: pick, ray: ray)
+        if model.sketchSession == nil, model.pendingTool == nil {
+            items += [.separator, .action(model.sectionActive ? "Turn Off Section Analysis" : "Section Analysis",
+                                          symbol: DesignTool.sectionAnalysis.symbol) {
+                model.setSectionAnalysis(!model.sectionActive)
+            }]
+        }
         if model.sketchSession == nil, model.pendingTool == nil, model.visualStyle.isShaded {
             items += [.separator, .action(model.printPreview ? "Leave 3D Print Preview" : "FDM 3D Print Preview",
                                           symbol: "square.stack.3d.up") { model.setPrintPreview(!model.printPreview) }]
@@ -983,6 +1009,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             view.isReference = l.reference
             view.isDimension = l.isDimension
             view.isEditingHighlight = l.editing
+            view.passesClicks = l.passesClicks
             if view.toolTip != tip { view.toolTip = tip }
             guard let p = renderer.camera.project(l.world, viewSize: bounds.size) else {
                 view.isHidden = true
@@ -1580,6 +1607,8 @@ final class DimensionLabelView: NSTextField {
     /// The pointer is over the label (or the margin around it that answers a click): it lights up as a button.
     private var isHovered = false { didSet { updateAppearance() } }
     private var tracking: NSTrackingArea?
+    /// Clicks go through to the viewport (a readout beside something that is dragged).
+    var passesClicks = false
 
     private func updateAppearance() {
         if isEditingHighlight {
@@ -1645,7 +1674,7 @@ final class DimensionLabelView: NSTextField {
 
     /// A little more than the label itself answers a click: a value is small, and often next to a curve.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        isHidden ? nil : frame.insetBy(dx: -6, dy: -6).contains(point) ? self : nil
+        isHidden || passesClicks ? nil : frame.insetBy(dx: -6, dy: -6).contains(point) ? self : nil
     }
 }
 
@@ -1741,6 +1770,8 @@ struct ViewportView: NSViewRepresentable {
     var printPreview = false
     var printLayer = 0.2
     var printNozzle = 0.4
+    /// Section analysis: the cutting plane (see Renderer.sectionPlane).
+    var sectionPlane: SIMD4<Float>?
     let showGrid: Bool
     /// Grid square and unit setting, so a change in Settings redraws the sketch grid.
     var gridSetting = ""
@@ -1803,6 +1834,7 @@ struct ViewportView: NSViewRepresentable {
         renderer.printPreview = printPreview
         renderer.printLayer = Float(printLayer)
         renderer.printNozzle = Float(printNozzle)
+        renderer.sectionPlane = sectionPlane
         renderer.showGrid = showGrid
         renderer.showAxes = showAxes
         if view.gridSetting != gridSetting {

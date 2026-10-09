@@ -17,6 +17,8 @@ struct DimensionLabel: Identifiable, Equatable {
     var reference = false
     /// For a radius or diameter: which way is away from the curve, so the label can stand clear of it.
     var outward: SIMD3<Float>?
+    /// A readout only: clicks go through it to what lies beneath (the section analysis's offset, beside its arrow).
+    var passesClicks = false
 
     /// Id of the light label showing a curve's measured size.
     static func referenceID(_ curve: EntityID) -> EntityID { "ref:" + curve }

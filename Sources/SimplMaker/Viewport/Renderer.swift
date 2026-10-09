@@ -12,7 +12,8 @@ import simd
 ///   sketch     0x4000_0000 point, 0x5000_0000 curve, 0x6000_0000 profile region | slot << 16 | index
 ///              (slot 0 = the sketch being edited, n = the n-th sketch in the document)
 ///   handle     0x7000_0000 (the extrude drag handle), 0x7000_0001 (the dot that moves a hole),
-///              0x7000_0002 (a hole's diameter arrow), 0x7000_0003 (the dot of an extrude's taper dial)
+///              0x7000_0002 (a hole's diameter arrow), 0x7000_0003 (the dot of an extrude's taper dial),
+///              0x7000_0004 (the arrow that slides the section analysis's cutting plane)
 ///   plane      0x7100_0000 | index (an origin plane offered when choosing where to sketch)
 ///   plane edge 0x7200_0000 | plane << 8 | edge (a construction plane's border: 0 bottom, 1 right, 2 top, 3 left)
 struct PickID: Hashable, Sendable {
@@ -42,6 +43,8 @@ struct PickID: Hashable, Sendable {
     static let diameterHandle = PickID(raw: 0x7000_0002)
     /// The dot on an extrude's taper dial (the third handle of the feature).
     static let dialHandle = PickID(raw: 0x7000_0003)
+    /// The arrow that slides the section analysis's cutting plane in and out.
+    static let sectionHandle = PickID(raw: 0x7000_0004)
     /// Which side of a construction plane a plane-edge pick is: 0 bottom, 1 right, 2 top, 3 left.
     var planeEdge: Int { Int(raw & 0xF) }
     /// Which of a feature's arrows this picks (0 for any other pick).
@@ -132,6 +135,7 @@ struct SketchOverlay {
     var snap: [SegmentInstance] = []       // where the cursor snapped: a zero-length marker
     var measure: [SegmentInstance] = []    // the Measure tool's line between two pieces, drawn over the bodies
     var measurePoints: [SegmentInstance] = []  // and its ends (zero-length)
+    var section: [SegmentInstance] = []    // the border of the section analysis's cutting plane
     var handleInvalid = false               // the previewed size can't be built
     var fullyConstrained = false
 }
@@ -151,6 +155,14 @@ struct Uniforms {
     /// The print preview's layer height and nozzle width, in mm (see printLook in the shader).
     var printLayer: Float = 0.2
     var printNozzle: Float = 0.4
+    /// Section analysis: the unit normal and distance of the cutting plane (the side where dot(p, n) > d is cut
+    /// away), the camera's direction (w = 1: parallel rays), and whether the cut is on.
+    var clipPlane: SIMD4<Float> = .zero
+    var viewDir: SIMD4<Float> = .zero
+    var clipOn: UInt32 = 0
+    var padClip2: Float = 0
+    var padClip0: UInt32 = 0
+    var padClip1: UInt32 = 0
 }
 
 /// The grid drawn in the plane of the sketch being edited: minor and major lines over the visible
@@ -312,6 +324,10 @@ enum DrawStyle {
     static let dashedRound: UInt32 = 32
     /// A zero-length segment drawn as a round dot, as wide as `thickness`.
     static let roundDot: UInt32 = 64
+    /// A body edge, cut by the section analysis's plane (see Renderer.sectionPlane).
+    static let clipped: UInt32 = 128
+    /// A face drawn only where the section analysis shows the cut face (see sectionFace in the shader), not elsewhere.
+    static let capsOnly: UInt32 = 256
 }
 
 /// How bodies are drawn (View ▸ Visual Style), as in Fusion.
@@ -344,6 +360,9 @@ final class Renderer {
     private let queue: MTLCommandQueue
     private let facePipeline: MTLRenderPipelineState
     private let printFacePipeline: MTLRenderPipelineState
+    /// The faces again with the section analysis's cut face (and its own depth), plain and as a print preview.
+    private let sectionFacePipeline: MTLRenderPipelineState
+    private let sectionPrintPipeline: MTLRenderPipelineState
     /// Faces in the ID buffer and depth only (the Wireframe style: faces can be picked but don't show).
     private let faceIDPipeline: MTLRenderPipelineState
     private let segmentPipeline: MTLRenderPipelineState
@@ -366,6 +385,12 @@ final class Renderer {
     private let planePipeline: MTLRenderPipelineState
     private let imagePipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
+    /// Body edges while the section analysis cuts: not where its cut face shows (stencil 1, set by `capState`).
+    private let depthCutState: MTLDepthStencilState
+    private let noWriteCutState: MTLDepthStencilState
+    private let hiddenCutState: MTLDepthStencilState
+    /// The cut face's own draw: like `depthState`, and marks the pixels it wins with stencil 1.
+    private let capState: MTLDepthStencilState
     private let onTopDepthState: MTLDepthStencilState
     /// Depth-tested but not depth-writing: translucent planes hide nothing drawn after them.
     private let noWriteDepthState: MTLDepthStencilState
@@ -424,6 +449,7 @@ final class Renderer {
         var snap: MTLBuffer?, snapCount = 0
         var measure: MTLBuffer?, measureCount = 0
         var measurePoints: MTLBuffer?, measurePointCount = 0
+        var section: MTLBuffer?, sectionCount = 0
         var handleInvalid = false
         var fullyConstrained = false
     }
@@ -445,6 +471,9 @@ final class Renderer {
     /// The print preview's layer height and nozzle width, in mm.
     var printLayer: Float = 0.2
     var printNozzle: Float = 0.4
+    /// Section analysis: the plane the bodies are cut by, as its unit normal and its distance from the origin along
+    /// it; what lies on the side the normal points to is cut away. Nil: not cutting.
+    var sectionPlane: SIMD4<Float>?
     var hovered: UInt32 = 0
     /// A tool is picking bodies: hovering and selecting a face lights up its whole body.
     var wholeBodies = false
@@ -461,7 +490,8 @@ final class Renderer {
     static let bodyEdgePickWidth: Float = 12
     /// A selected body edge, in the body's highlight colour (blue unless the body has a colour of its own).
     static let selectedEdgeWidth: Float = 4
-    static let depthFormat = MTLPixelFormat.depth32Float
+    /// Depth, and a stencil that marks where the section analysis's cut face shows, so the edges behind it stay hidden.
+    static let depthFormat = MTLPixelFormat.depth32Float_stencil8
 
     /// The antialiasing setting as it was at launch (changing it takes effect on the next launch), cut down to
     /// what the GPU supports.
@@ -500,10 +530,13 @@ final class Renderer {
                 d.colorAttachments[1].pixelFormat = .r32Uint
                 if !writesID { d.colorAttachments[1].writeMask = [] }
                 d.depthAttachmentPixelFormat = Renderer.depthFormat
+                d.stencilAttachmentPixelFormat = Renderer.depthFormat
                 return try device.makeRenderPipelineState(descriptor: d)
             }
             facePipeline = try pipeline("faceVertex", "faceFragment")
             printFacePipeline = try pipeline("printFaceVertex", "printFaceFragment")
+            sectionFacePipeline = try pipeline("faceVertex", "sectionFaceFragment")
+            sectionPrintPipeline = try pipeline("printFaceVertex", "sectionPrintFragment")
             faceIDPipeline = try pipeline("faceVertex", "faceFragment", writesColor: false)
             segmentPipeline = try pipeline("segmentVertex", "segmentFragment")
             decorationPipeline = try pipeline("segmentVertex", "segmentFragment", writesID: false)
@@ -536,12 +569,34 @@ final class Renderer {
         let over = MTLDepthStencilDescriptor()
         over.depthCompareFunction = .always
         over.isDepthWriteEnabled = false
+        // Section analysis: mark where the cut face shows, and keep edges off those pixels.
+        func stencil(_ d: MTLDepthStencilDescriptor, compare: MTLCompareFunction, replace: Bool) -> MTLDepthStencilDescriptor {
+            let copy = MTLDepthStencilDescriptor()
+            copy.depthCompareFunction = d.depthCompareFunction
+            copy.isDepthWriteEnabled = d.isDepthWriteEnabled
+            let s = MTLStencilDescriptor()
+            s.stencilCompareFunction = compare
+            s.depthStencilPassOperation = replace ? .replace : .keep
+            s.readMask = 1
+            s.writeMask = replace ? 1 : 0
+            copy.frontFaceStencil = s
+            copy.backFaceStencil = s
+            return copy
+        }
         guard let depthState = device.makeDepthStencilState(descriptor: ds),
+              let depthCut = device.makeDepthStencilState(descriptor: stencil(ds, compare: .notEqual, replace: false)),
+              let noWriteCut = device.makeDepthStencilState(descriptor: stencil(noWrite, compare: .notEqual, replace: false)),
+              let hiddenCut = device.makeDepthStencilState(descriptor: stencil(behind, compare: .notEqual, replace: false)),
+              let cap = device.makeDepthStencilState(descriptor: stencil(ds, compare: .always, replace: true)),
               let onTop = device.makeDepthStencilState(descriptor: top),
               let noWriteState = device.makeDepthStencilState(descriptor: noWrite),
               let behindState = device.makeDepthStencilState(descriptor: behind),
               let overState = device.makeDepthStencilState(descriptor: over) else { return nil }
         self.depthState = depthState
+        self.depthCutState = depthCut
+        self.noWriteCutState = noWriteCut
+        self.hiddenCutState = hiddenCut
+        self.capState = cap
         self.onTopDepthState = onTop
         self.noWriteDepthState = noWriteState
         self.hiddenDepthState = behindState
@@ -583,6 +638,7 @@ final class Renderer {
         g.moveHandle = makeBuffer(o.moveHandle); g.moveHandleCount = o.moveHandle.count
         g.dialDot = makeBuffer(o.dialDot); g.dialDotCount = o.dialDot.count
         g.snap = makeBuffer(o.snap); g.snapCount = o.snap.count
+        g.section = makeBuffer(o.section); g.sectionCount = o.section.count
         g.measure = makeBuffer(o.measure); g.measureCount = o.measure.count
         g.measurePoints = makeBuffer(o.measurePoints); g.measurePointCount = o.measurePoints.count
         g.handleInvalid = o.handleInvalid
@@ -858,6 +914,15 @@ final class Renderer {
                                 faceSelectedColor: palette.faceSelected, regionColor: palette.region,
                                 wholeBodies: wholeBodies ? 1 : 0,
                                 printLayer: printLayer, printNozzle: printNozzle)
+        let sectioning = sectionPlane != nil
+        let cuttingShaded = sectioning && (printing || visualStyle.isShaded)
+        if let plane = sectionPlane {
+            uniforms.clipPlane = plane
+            uniforms.clipOn = 1
+            let f = camera.forward
+            uniforms.viewDir = SIMD4(f.x, f.y, f.z, camera.orthographic ? 1 : 0)
+        }
+        let clipStyle: UInt32 = sectioning ? DrawStyle.clipped : 0
         var sel = Array(selected.prefix(256))
         if sel.isEmpty { sel = [0] }
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
@@ -870,11 +935,12 @@ final class Renderer {
         enc.setFragmentBytes(&sel, length: MemoryLayout<UInt32>.stride * sel.count, index: 2)
 
         enc.setCullMode(.none)
+        enc.setStencilReferenceValue(1)
         let style = printing ? VisualStyle.shaded : visualStyle
         let tints = bodies.indices.map { Self.tint(bodyColors[safe: $0].flatMap { $0 }, palette: palette) }
         /// Faces: shaded, or in the wireframe styles flat in the background colour (hiding what's
         /// behind them) with hover and selection as a light wash. Wireframe draws them later, unseen.
-        func drawFaces(_ pipeline: MTLRenderPipelineState, wireframe: Bool) {
+        func drawFaces(_ pipeline: MTLRenderPipelineState, wireframe: Bool, capsOnly: Bool = false) {
             enc.setRenderPipelineState(pipeline)
             let bg = palette.background
             for (i, b) in bodies.enumerated() {
@@ -883,7 +949,7 @@ final class Renderer {
                     if b.printFaces == nil, b.printVertexCount == 0 { makePrintFaces(of: i) }
                     guard let printFaces = bodies[i].printFaces else { continue }
                     var params = DrawParams(color: tints[i].face, hoverColor: tints[i].faceHover, selectColor: tints[i].faceSelected,
-                                            thickness: 0, depthBias: 0, pickable: 1)
+                                            thickness: 0, depthBias: 0, pickable: 1, style: capsOnly ? DrawStyle.capsOnly : 0)
                     enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
                     enc.setVertexBuffer(printFaces, offset: 0, index: 0)
                     enc.setFragmentBuffer(bodies[i].printCorners, offset: 0, index: 4)
@@ -896,14 +962,24 @@ final class Renderer {
                                  selectColor: simd_mix(bg, t.faceSelected, SIMD4(repeating: 0.45)),
                                  thickness: 0, depthBias: 0, pickable: 1, style: DrawStyle.flat)
                     : DrawParams(color: t.face, hoverColor: t.faceHover, selectColor: t.faceSelected,
-                                 thickness: 0, depthBias: 0, pickable: 1)
+                                 thickness: 0, depthBias: 0, pickable: 1, style: capsOnly ? DrawStyle.capsOnly : 0)
                 enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
                 enc.setVertexBuffer(faces, offset: 0, index: 0)
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
                                           indexBuffer: indices, indexBufferOffset: 0)
             }
         }
-        if style != .wireframe { drawFaces(printing ? printFacePipeline : facePipeline, wireframe: !style.isShaded) }
+        if style != .wireframe {
+            let cutting = sectioning && style.isShaded
+            let pipeline = printing ? (cutting ? sectionPrintPipeline : printFacePipeline) : (cutting ? sectionFacePipeline : facePipeline)
+            drawFaces(pipeline, wireframe: !style.isShaded)
+            if cutting {
+                // The cut faces, after every body's other faces, so only those nothing nearer hides are marked.
+                enc.setDepthStencilState(capState)
+                drawFaces(pipeline, wireframe: false, capsOnly: true)
+                enc.setDepthStencilState(depthState)
+            }
+        }
 
         // Depth bias per layer, as a fraction of the view depth (0.001 ≈ 0.2 mm at the default zoom).
         let biasScale = camera.depthBiasScale * 2.5
@@ -1018,30 +1094,30 @@ final class Renderer {
         if style == .wireframe { drawFaces(faceIDPipeline, wireframe: true) }
         // First an unseen, wider band around each edge, in the ID buffer only (no depth either, so
         // it hides nothing): a click or hover a few pixels off an edge still finds it.
-        enc.setDepthStencilState(noWriteDepthState)
+        enc.setDepthStencilState(cuttingShaded ? noWriteCutState : noWriteDepthState)
         for b in bodies {
             segments(b.segments, b.segmentCount,
                      DrawParams(color: p.edge, hoverColor: p.hover, selectColor: p.selection, thickness: Self.bodyEdgePickWidth * scale,
-                                depthBias: 0.0004, pickable: 1), pipeline: pickBandPipeline)
+                                depthBias: 0.0004, pickable: 1, style: clipStyle), pipeline: pickBandPipeline)
         }
         let edgeColor = style.isShaded ? p.edge : p.wireEdge
         // Edges behind faces, dashed and softened toward what they're seen through.
         if style.showsHiddenEdges {
-            enc.setDepthStencilState(hiddenDepthState)
+            enc.setDepthStencilState(cuttingShaded ? hiddenCutState : hiddenDepthState)
             let hidden = simd_mix(edgeColor, style.isShaded ? p.face : p.background, SIMD4(repeating: 0.4))
             for b in bodies {
                 segments(b.segments, b.segmentCount,
                          DrawParams(color: hidden, hoverColor: hidden, selectColor: hidden, thickness: 1.2 * scale,
-                                    depthBias: 0.0004, pickable: 0, style: DrawStyle.dashed))
+                                    depthBias: 0.0004, pickable: 0, style: DrawStyle.dashed | clipStyle))
             }
         }
-        enc.setDepthStencilState(style == .wireframe ? overEverythingDepthState : depthState)
+        enc.setDepthStencilState(style == .wireframe ? overEverythingDepthState : cuttingShaded ? depthCutState : depthState)
         for (i, b) in bodies.enumerated() {
             segments(b.segments, b.segmentCount,
                      DrawParams(color: edgeColor, hoverColor: tints[i].edgeHover, selectColor: tints[i].edgeSelected,
                                 thickness: 0.8 * scale, depthBias: 0.0004, pickable: 1,
                                 selectedThickness: Self.selectedEdgeWidth * scale,
-                                style: style == .shaded ? DrawStyle.highlightedOnly : 0))
+                                style: (style == .shaded ? DrawStyle.highlightedOnly : 0) | clipStyle))
         }
         enc.setDepthStencilState(depthState)
         // Sketch overlay, drawn last with increasing depth bias so it sits on top of faces it lies on.
@@ -1050,6 +1126,9 @@ final class Renderer {
         segments(overlay.planeOutline, overlay.planeOutlineCount,
                  DrawParams(color: planeLine, hoverColor: planeLine, selectColor: planeLine,
                             thickness: 1.2 * scale, depthBias: 0.0005, pickable: 1))
+        segments(overlay.section, overlay.sectionCount,
+                 DrawParams(color: planeLine, hoverColor: planeLine, selectColor: planeLine,
+                            thickness: 1.4 * scale, depthBias: 0.0005, pickable: 0))
         // A construction plane's sides, to grab and drag: a band wide enough to hit, and the side itself
         // lighting up under the pointer.
         enc.setDepthStencilState(noWriteDepthState)

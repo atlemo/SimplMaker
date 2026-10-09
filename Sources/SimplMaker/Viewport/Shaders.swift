@@ -20,6 +20,12 @@ enum Shaders {
         uint pad0;
         float printLayer;       // print preview: layer height in mm
         float printNozzle;      // print preview: nozzle width in mm
+        float4 clipPlane;       // section analysis: xyz = unit normal, w = distance; the side where dot(p, n) > w is cut away
+        float4 viewDir;         // xyz = the way the camera looks; w = 1 when rays run parallel (orthographic)
+        uint clipOn;
+        float padClip2;
+        uint padClip0;
+        uint padClip1;
     };
 
     struct FaceVertex { packed_float3 position; packed_float3 normal; uint id; };
@@ -177,6 +183,7 @@ enum Shaders {
                                   constant Uniforms& u [[buffer(1)]],
                                   constant uint* sel [[buffer(2)]],
                                   constant DrawParams& p [[buffer(3)]]) {
+        if (u.clipOn != 0 && dot(in.world, u.clipPlane.xyz) - u.clipPlane.w > 1e-4) discard_fragment();
         return shadeFace(in.normal, in.world, in.id, false, 1e9, u, sel, p);
     }
 
@@ -221,13 +228,9 @@ enum Shaders {
         return length(p - (a + ab * t));
     }
 
-    fragment FragOut printFaceFragment(PrintOut in [[stage_in]],
-                                       constant Uniforms& u [[buffer(1)]],
-                                       constant uint* sel [[buffer(2)]],
-                                       constant DrawParams& p [[buffer(3)]],
-                                       device const PrintCorner* corners [[buffer(4)]]) {
-        // How far this point is from the face's boundary: the distance to the boundary segments that start at
-        // the triangle's corners on it. (Only flat faces get a ring, so the others skip the lookups.)
+    // How far this point is from the face's boundary: the distance to the boundary segments that start at
+    // the triangle's corners on it. (Only flat faces get a ring, so the others skip the lookups.)
+    static float printRing(PrintOut in, device const PrintCorner* corners) {
         float ring = 1e9;
         if (abs(in.normal.z) > 0.8) {
             for (uint j = 0; j < 3; j++) {
@@ -238,7 +241,80 @@ enum Shaders {
                 if (c.b.w > 0.0) ring = min(ring, segmentDistance(in.world, c.p.xyz, c.b.xyz));
             }
         }
-        return shadeFace(in.normal, in.world, in.id, true, ring, u, sel, p);
+        return ring;
+    }
+
+    fragment FragOut printFaceFragment(PrintOut in [[stage_in]],
+                                       constant Uniforms& u [[buffer(1)]],
+                                       constant uint* sel [[buffer(2)]],
+                                       constant DrawParams& p [[buffer(3)]],
+                                       device const PrintCorner* corners [[buffer(4)]]) {
+        if (u.clipOn != 0 && dot(in.world, u.clipPlane.xyz) - u.clipPlane.w > 1e-4) discard_fragment();
+        return shadeFace(in.normal, in.world, in.id, true, printRing(in, corners), u, sel, p);
+    }
+
+    // Section analysis: the bodies are cut by a plane. Faces on the cut-away side are discarded. Where the camera
+    // then looks into a closed body (it sees the inside of a face, one that turns away from it), the body is solid
+    // there, and the plane's cut face is drawn in its place: filled and hatched. That is a second draw of the faces
+    // (p.style & 256: only these cut faces); the first leaves them out. The cut face lies at the depth of the
+    // face it is seen on, so what is nearer along the same line of sight (a face the line meets on the way
+    // to it) still hides it. Surfaces right at the plane get a dark outline, which gives the cut its edge.
+    static FragOut sectionFace(float3 normal, float3 world, uint id, bool print, float ring,
+                               constant Uniforms& u, constant uint* sel, constant DrawParams& p) {
+        float3 n = u.clipPlane.xyz;
+        float3 dir = u.viewDir.w > 0.5 ? u.viewDir.xyz : normalize(world - u.eye.xyz);
+        float nd = dot(n, dir);
+        float height = dot(world, n) - u.clipPlane.w;        // above 0: on the side that is cut away
+        // Where this pixel's ray crosses the plane. Every point along the ray gives the same one, so it varies
+        // smoothly across the screen however the surfaces behind it jump about (its derivatives are used below).
+        float3 hit = world - dir * (height / (abs(nd) > 1e-5 ? nd : -1e-5));
+        float pixel = max(length(dfdx(hit)), length(dfdy(hit)));
+        float heightStep = fwidth(height);
+        // Hatching: lines at 45 degrees in the plane, about 7 pixels apart.
+        float3 up = abs(n.z) < 0.9 ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
+        float3 ux = normalize(cross(up, n));
+        float3 vx = cross(n, ux);
+        float k = (dot(hit, ux) + dot(hit, vx)) / (max(pixel, 1e-6) * 7.0 * 1.41421356);
+        float hatch = 1.0 - smoothstep(0.35, 1.2, abs(k - round(k)) / max(fwidth(k), 1e-5));
+
+        bool cut = dot(normal, dir) > 0.0 && nd < -1e-4;
+        bool capsOnly = (p.style & 256u) != 0;
+        FragOut o;
+        o.color = float4(0.0);
+        o.id = 0;
+        if (height > 1e-4 || cut != capsOnly) {
+            discard_fragment();
+            return o;
+        }
+        if (cut) {
+            float3 fill = mix(p.color.rgb, float3(1.0, 0.78, 0.92), 0.7);
+            o.color = float4(mix(fill, float3(0.2, 0.06, 0.18), hatch * 0.75), 1.0);
+            return o;
+        }
+        FragOut f = shadeFace(normal, world, id, print, ring, u, sel, p);
+        float3 color = f.color.rgb;
+        if ((p.style & 4u) == 0 && heightStep > 1e-7) {
+            float band = 1.0 - smoothstep(0.5, 1.6, -height / heightStep);
+            color = mix(color, float3(0.06, 0.06, 0.08), band * 0.9);
+        }
+        o.color = float4(color, 1.0);
+        o.id = f.id;
+        return o;
+    }
+
+    fragment FragOut sectionFaceFragment(FaceOut in [[stage_in]],
+                                            constant Uniforms& u [[buffer(1)]],
+                                            constant uint* sel [[buffer(2)]],
+                                            constant DrawParams& p [[buffer(3)]]) {
+        return sectionFace(in.normal, in.world, in.id, false, 1e9, u, sel, p);
+    }
+
+    fragment FragOut sectionPrintFragment(PrintOut in [[stage_in]],
+                                             constant Uniforms& u [[buffer(1)]],
+                                             constant uint* sel [[buffer(2)]],
+                                             constant DrawParams& p [[buffer(3)]],
+                                             device const PrintCorner* corners [[buffer(4)]]) {
+        return sectionFace(in.normal, in.world, in.id, true, printRing(in, corners), u, sel, p);
     }
 
     // Sketch profiles: translucent fills on the sketch plane, pulled slightly toward the camera
@@ -324,14 +400,31 @@ enum Shaders {
                                  constant uint* sel [[buffer(2)]],
                                  constant DrawParams& p [[buffer(3)]]) {
         Segment s = segs[iid];
+        float3 segA = float3(s.a), segB = float3(s.b);
+        // Section analysis: body edges (style 128) stop at the cutting plane, and vanish on the cut-away side.
+        if ((p.style & 128u) != 0 && u.clipOn != 0) {
+            float da = dot(segA, u.clipPlane.xyz) - u.clipPlane.w, db = dot(segB, u.clipPlane.xyz) - u.clipPlane.w;
+            if (da > 1e-4 && db > 1e-4) {
+                LineOut gone;
+                gone.position = float4(2.0, 2.0, 2.0, 1.0);
+                gone.across = 0.0;
+                gone.dir = float2(0.0);
+                gone.tip = float2(0.0);
+                gone.id = 0;
+                return gone;
+            }
+            float t = da / (da - db);
+            float3 cut = segA + (segB - segA) * t;
+            if (da > 1e-4) segA = cut; else if (db > 1e-4) segB = cut;
+        }
         // A selected body edge (top bit set) draws wider, and so does every edge of a selected body's
         // border. A selected sketch curve or point is wider too.
         float thickness = p.thickness;
         if (p.pickable != 0 && p.selectedThickness > 0.0
             && (edgeSelected(s.id, sel, u.selectedCount) || isSelected(s.id, sel, u.selectedCount)))
             thickness = p.selectedThickness;
-        float4 ca = u.viewProj * float4(float3(s.a), 1.0);
-        float4 cb = u.viewProj * float4(float3(s.b), 1.0);
+        float4 ca = u.viewProj * float4(segA, 1.0);
+        float4 cb = u.viewProj * float4(segB, 1.0);
         float2 halfSize = u.viewport * 0.5;
         float2 sa = ca.xy / max(ca.w, 1e-6) * halfSize;
         float2 sb = cb.xy / max(cb.w, 1e-6) * halfSize;
