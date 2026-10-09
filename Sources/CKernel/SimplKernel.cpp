@@ -1113,6 +1113,11 @@ SKHandle sk_extrude(const SKHandle *profiles, int count, double dx, double dy, d
 
 SKHandle sk_extrude_tapered(const SKHandle *profiles, int count, double dx, double dy, double dz, double distance,
                             double distanceBack, double taper, const char *featureId) {
+  return sk_extrude_from(profiles, count, dx, dy, dz, 0, distance, distanceBack, taper, featureId);
+}
+
+SKHandle sk_extrude_from(const SKHandle *profiles, int count, double dx, double dy, double dz, double startOffset,
+                         double distance, double distanceBack, double taper, const char *featureId) {
   SK_TRY
   const std::string feat = featureOrDefault(featureId, "extrude");
   const double length = distance + distanceBack;
@@ -1130,8 +1135,11 @@ SKHandle sk_extrude_tapered(const SKHandle *profiles, int count, double dx, doub
   }
   gp_Dir dir(dx, dy, dz);
   gp_Trsf shift;
-  shift.SetTranslation(gp_Vec(dir) * -distanceBack);
+  shift.SetTranslation(gp_Vec(dir) * (startOffset - distanceBack));
   TopLoc_Location loc(shift);
+  gp_Trsf carry0;
+  carry0.SetTranslation(gp_Vec(dir) * startOffset);
+  const TopLoc_Location start(carry0);  // where the profile's plane is carried to
   // A taper reaches out from the sketch plane each way: two cones that meet there, not one that leans.
   const bool twoCones = std::fabs(taper) > 1e-9 && distance > Precision::Confusion() && distanceBack > Precision::Confusion();
 
@@ -1143,11 +1151,11 @@ SKHandle sk_extrude_tapered(const SKHandle *profiles, int count, double dx, doub
     if (!p) return 0;
     if (twoCones) {
       std::vector<Named> pieceNames;
-      const TopoDS_Face base = TopoDS::Face(p->face);
-      TopoDS_Shape fwd = prismPiece(base, *p, TopLoc_Location(), dir, distance, taper, feat + ".mid", feat + ".end", feat + ".side.",
+      const TopoDS_Face base = TopoDS::Face(p->face.Moved(start));
+      TopoDS_Shape fwd = prismPiece(base, *p, start, dir, distance, taper, feat + ".mid", feat + ".end", feat + ".side.",
                                     pieceNames);
       if (fwd.IsNull()) return 0;
-      TopoDS_Shape back = prismPiece(base, *p, TopLoc_Location(), dir.Reversed(), distanceBack, taper, feat + ".mid",
+      TopoDS_Shape back = prismPiece(base, *p, start, dir.Reversed(), distanceBack, taper, feat + ".mid",
                                      feat + ".start", feat + ".side.back.", pieceNames);
       if (back.IsNull()) return 0;
       BRepAlgoAPI_Fuse fuse(fwd, back);

@@ -148,6 +148,9 @@ public struct ExtrudeFeature: Codable, Hashable, Sendable {
     /// How far the sides lean as they leave the sketch plane, an angle expression: positive leans out (the
     /// shape grows as it goes), negative leans in. Nil (and zero) is a straight extrude.
     public var taper: String?
+    /// Start from this flat face (parallel to the sketch) instead of the sketch plane: the profile is carried to
+    /// the face's plane and extruded from there. Nil = start on the sketch plane.
+    public var start: FaceRef?
 
     public init(sketch: FeatureID, profiles: [ProfileRef], extent: ExtrudeExtent, flipped: Bool = false,
                 operation: BodyOperation = .newBody, target: FeatureID? = nil) {

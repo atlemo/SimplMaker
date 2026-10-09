@@ -328,6 +328,15 @@ struct ExtrudeInspector: View {
                 }
             }
             .help("Leans the sides: positive grows the shape as it goes, negative narrows it")
+            if extrude.face == nil {
+                LabeledContent("Start", value: extrude.start?.face ?? "Profile plane")
+                if let face = selectedFace, face != extrude.start {
+                    Button("Start from the Selected Face") { model.setStartFace(face, of: id) }
+                }
+                if extrude.start != nil {
+                    Button("Start on the Profile Plane") { model.setStartFace(nil, of: id) }
+                }
+            }
             if selectedFace == nil, extentKind != .toFace {
                 Text("To extrude up to a face, select a flat face parallel to the sketch, then choose To face.")
                     .font(.caption).foregroundStyle(.secondary)

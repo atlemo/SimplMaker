@@ -121,4 +121,57 @@ import simd
         let side = Regenerator.regenerate(doc(.toFace(FaceRef(body: "b", face: "b.front")), flipped: true))
         #expect(side.errors["e"]?.contains("parallel") == true)
     }
+
+    /// A 40 × 40 × 10 block, with a 10 × 10 square sketched on the XY plane (the block's bottom), extruded from `start`.
+    private func fromFace(_ start: FaceRef?, extent: ExtrudeExtent, flipped: Bool = false, operation: BodyOperation = .join,
+                          taper: String? = nil) -> CADDocument {
+        var d = CADDocument()
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "0 mm", v: "0 mm",
+                                                                                width: "40", length: "40", height: "10")))]
+        var s = Sketch()
+        s.addRectangle(-5, -5, 5, 5)  // the box is centred on the origin
+        d.features.append(Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s))))
+        var e = ExtrudeFeature(sketch: "sk", profiles: [ProfileRef(curves: [], hintU: 0, hintV: 0)], extent: extent,
+                               flipped: flipped, operation: operation)
+        e.start = start
+        e.taper = taper
+        d.features.append(Feature(id: "e", name: "Extrude1", .extrude(e)))
+        return d
+    }
+
+    @Test func startingFromAFaceAbove() throws {
+        // The square sits on the bottom, but the extrude starts on the top face and rises 5 mm from there.
+        let r = Regenerator.regenerate(fromFace(FaceRef(body: "b", face: "b.top"), extent: .distance("5 mm")))
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let body = try #require(r.body("b"))
+        #expect(abs(body.volume - (16000 + 500)) < 1e-6, "\(body.volume)")
+        #expect(abs(Double(try #require(body.bounds).max.z) - 15) < 1e-6)
+        #expect(abs((r.extrudeStarts["e"] ?? 0) - 10) < 1e-9)
+        // Without a start face the same extrude is inside the block and adds nothing.
+        let plain = Regenerator.regenerate(fromFace(nil, extent: .distance("5 mm")))
+        #expect(plain.errors.isEmpty, "\(plain.errors) \(plain.bodies.map(\.id))")
+        let plainVolume = try #require(plain.body("b")).volume
+        #expect(abs(plainVolume - 16000) < 1e-6, "\(plainVolume)")
+    }
+
+    @Test func startingFromAFaceBelowCutsFromThere() throws {
+        // Sketch on the bottom plane, start on the top face, go back down 3 mm: a pocket in the top.
+        let r = Regenerator.regenerate(fromFace(FaceRef(body: "b", face: "b.top"), extent: .distance("3 mm"), flipped: true, operation: .cut))
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        #expect(r.bodies.map(\.id) == ["b"], "\(r.bodies.map(\.id))")
+        let volume = try #require(r.body("b")).volume
+        #expect(abs(volume - (16000 - 300)) < 1e-6, "\(volume)")
+    }
+
+    @Test func startingFromAFaceKeepsTheTaperOnIt() throws {
+        let r = Regenerator.regenerate(fromFace(FaceRef(body: "b", face: "b.top"), extent: .distance("5 mm"), taper: "-10 deg"))
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let v = try #require(r.body("b")).volume
+        #expect(v > 16000 + 300 && v < 16000 + 500, "narrowing as it rises: \(v)")
+    }
+
+    @Test func aStartFaceMustBeParallel() throws {
+        let r = Regenerator.regenerate(fromFace(FaceRef(body: "b", face: "b.front"), extent: .distance("5 mm")))
+        #expect(r.errors["e"]?.contains("parallel") == true, "\(r.errors)")
+    }
 }

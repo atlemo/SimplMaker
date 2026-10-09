@@ -151,6 +151,7 @@ extension Feature {
         case .extrude(let f):
             add(f.face == nil ? f.sketch : nil); add(f.face?.body); add(f.target)
             if case .toFace(let face) = f.extent { add(face.body) }
+            add(f.start?.body)
         case .revolve(let f): add(f.sketch); add(f.target)
         case .sweep(let f): add(f.sketch); add(f.path.sketch); add(f.target)
         case .loft(let f): f.sections.forEach { add($0.sketch) }; add(f.target)

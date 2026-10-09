@@ -343,6 +343,35 @@ extension DocumentModel {
         }
     }
 
+    /// Whether the feature is an extrude of sketch profiles, which can start on another face than the sketch's plane.
+    func canStartOnFace(_ id: FeatureID) -> Bool {
+        if case .extrude(let e)? = document.features.first(where: { $0.id == id })?.kind { return e.face == nil }
+        return false
+    }
+
+    /// The face an extrude has been told to start from, if any.
+    func startFace(of id: FeatureID) -> FaceRef? {
+        if case .extrude(let e)? = document.features.first(where: { $0.id == id })?.kind { return e.start }
+        return nil
+    }
+
+    /// The one flat face picked in the viewport, which an extrude could start from.
+    var selectedFlatFace: FaceRef? {
+        guard selection.count == 1, let pick = selection.first, let ref = faceRef(pick),
+              let body = result?.body(ref.body), (try? body.faceFrame(ref.face)) != nil else { return nil }
+        return ref
+    }
+
+    /// Makes an extrude start on `face` (carrying its profile there), or back on the sketch plane when nil.
+    func setStartFace(_ face: FaceRef?, of id: FeatureID) {
+        guard startFace(of: id) != face else { return }
+        storeTypedSize()
+        updateFeature(id, face == nil ? "Start on the Profile Plane" : "Start from Face") { f in
+            if case .extrude(var e) = f.kind { e.start = face; f.kind = .extrude(e) }
+        }
+        selection = []
+    }
+
     /// Why a feature failed to build, without the repeated "name:" the kernel puts in front.
     func errorText(of id: FeatureID) -> String? {
         guard let error = result?.errors[id] else { return nil }
@@ -446,6 +475,22 @@ struct FeatureHUD: View {
                 }
                 .toggleStyle(.button)
                 .help("Flip the direction")
+            }
+            if model.canStartOnFace(id) {
+                let start = model.startFace(of: id)
+                Menu {
+                    Button("Start from the Selected Face") {
+                        if let face = model.selectedFlatFace { model.setStartFace(face, of: id) }
+                    }
+                    .disabled(model.selectedFlatFace == nil)
+                    Button("Start on the Profile's Plane") { model.setStartFace(nil, of: id) }
+                        .disabled(start == nil)
+                } label: {
+                    Label(start == nil ? "Start" : "From Face", systemImage: "arrow.up.to.line")
+                }
+                .menuStyle(.button)
+                .fixedSize()
+                .help("Extrude from a face of a body instead of from the profile's own plane: select a flat face parallel to the sketch, then choose it here")
             }
             if model.newFeature == id {
                 Button("Cancel") { model.cancelNewFeature() }

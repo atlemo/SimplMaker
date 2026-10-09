@@ -73,6 +73,9 @@ public struct RegenResult: Sendable {
     public var planes: [FeatureID: Frame] = [:]
     /// Reference images, by the id of their Canvas feature.
     public var images: [FeatureID: ImagePlacement] = [:]
+    /// For extrudes that start on a face: how far that plane lies from the sketch plane along the sketch's normal,
+    /// so the handle can sit on it (the face itself may be gone once the extrude has joined it).
+    public var extrudeStarts: [FeatureID: Double] = [:]
     /// For projections: a point on the surface where the first profile landed and the way the surface faces
     /// there, for the height handle.
     public var projectionHandles: [FeatureID: (origin: SIMD3<Double>, normal: SIMD3<Double>)] = [:]
@@ -605,6 +608,19 @@ public enum Regenerator {
 
         let p = r.parameters
         let dir = f.flipped ? -normal : normal
+        var origin = planeOrigin  // where the extrude starts: the sketch plane, or the face it starts from
+        var startOffset = 0.0  // along `dir`, from the sketch plane to the face the extrude starts on
+        if let ref = f.start, f.face == nil {
+            guard let body = r.body(ref.body) else { throw KernelError(message: "the body with the face to start from is missing") }
+            let face: Frame
+            do { face = try body.faceFrame(ref.face) } catch { throw KernelError(message: "the face to start from is gone or isn't flat") }
+            guard abs(simd_dot(face.normal, normal)) > 0.9999 else {
+                throw KernelError(message: "the face to start from isn't parallel to the sketch")
+            }
+            startOffset = simd_dot(face.origin - planeOrigin, dir)
+            origin += dir * startOffset
+            r.extrudeStarts[feature.id] = simd_dot(face.origin - planeOrigin, normal)
+        }
         var distance: Double, back: Double
         switch f.extent {
         case .distance(let d): distance = try p.value(of: d, kind: .length); back = 0
@@ -618,7 +634,7 @@ public enum Regenerator {
             for b in boxes {
                 for c in 0..<8 {
                     let corner = SIMD3(c & 1 == 0 ? b.min.x : b.max.x, c & 2 == 0 ? b.min.y : b.max.y, c & 4 == 0 ? b.min.z : b.max.z)
-                    far = max(far, simd_dot(corner - planeOrigin, dir))
+                    far = max(far, simd_dot(corner - origin, dir))
                 }
             }
             guard far > 1e-4 else { throw KernelError(message: "every body is behind the sketch · flip the direction") }  // boxes carry a hair of tolerance
@@ -630,12 +646,12 @@ public enum Regenerator {
             guard abs(simd_dot(face.normal, normal)) > 0.9999 else {
                 throw KernelError(message: "the face to extrude to isn't parallel to the sketch")
             }
-            distance = simd_dot(face.origin - planeOrigin, dir); back = 0
+            distance = simd_dot(face.origin - origin, dir); back = 0
             guard distance > 1e-9 else { throw KernelError(message: "the face is behind the sketch · flip the direction") }
         }
         let taper = try f.taper.map { try p.value(of: $0, kind: .angle) } ?? 0
         guard abs(taper) < 89.0 * .pi / 180 else { throw KernelError(message: "the taper angle must be under 90°") }
-        let tool = try KBody.extrude(profiles, direction: dir, distance: distance, back: back, taper: taper, featureID: feature.id)
+        let tool = try KBody.extrude(profiles, direction: dir, distance: distance, back: back, taper: taper, startOffset: startOffset, featureID: feature.id)
         try combine(tool, f.operation, target: f.target, feature, &r)
     }
 

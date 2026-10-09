@@ -39,6 +39,10 @@ In the inspector, **Extent** also offers:
 - **Through all**: goes through every body in its direction. Good for cutting holes.
 - **To face**: stops at a flat face you picked that is parallel to the sketch. Select the face, then choose **To face**.
 
+## Start from a face
+
+An extrude normally starts on the plane of its sketch. To start somewhere else, click a **flat face** that is parallel to the sketch (the top of a wall, say), then choose **Start → Start from the Selected Face** in the panel next to the arrow. The profile is carried to that face and extruded from there, and the arrow moves with it. **Start on the Profile's Plane** puts it back.
+
 ## Taper the sides
 
 A curved line with a **dot** hangs above the arrow. Drag the dot round the line to lean the sides, in whole degrees, or click it and type an angle (or an expression) in the field that opens beside it. A **negative** angle narrows the shape as it goes, a **positive** one widens it, and 0 makes the sides straight again. It reaches 85° either way.
@@ -56,6 +60,7 @@ Select a **flat face** of a body and press [[E]] to pull it out. A negative dist
 | Field | What it does |
 |---|---|
 | **Extent** | One direction, Two directions, Mirrored, Through all, To face |
+| **Start** | Where the extrude begins: the profile's plane, or a face you picked. |
 | **Distance** | How far. It takes expressions. |
 | **Taper** | The angle the sides lean, in degrees. Negative narrows, positive widens. It takes expressions. |
 | **Operation** | New Body, Join, Cut or Intersect |

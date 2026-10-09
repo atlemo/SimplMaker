@@ -1403,7 +1403,8 @@ final class DocumentModel {
                 guard let sr = result.sketches[e.sketch], let ref = e.profiles.first,
                       let region = Regenerator.region(ref, in: sr) else { return nil }
                 n = sr.frame.normal * (e.flipped ? -1 : 1)
-                base = sr.frame.point(region.sample.x, region.sample.y)
+                // An extrude that starts on a face has its arrow there, not on the sketch plane.
+                base = sr.frame.point(region.sample.x, region.sample.y) + sr.frame.normal * (result.extrudeStarts[id] ?? 0)
                 dialFrame = sr.frame
             }
             if slot == Self.taperSlot {
