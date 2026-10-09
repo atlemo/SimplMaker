@@ -1612,9 +1612,13 @@ SKHandle sk_thread(SKHandle body, const char *faceName, double majorDiameter, do
   const double t30 = std::tan(M_PI / 6);
   std::vector<std::pair<double, double>> groove;
   if (c.internal) {
+    // A blind hole drilled at exactly the major diameter has the edge where its wall meets the drill
+    // point on the groove's outer edge, and the fuse below fails on the shared edge: take the groove
+    // 2 µm wider in that one case.
+    const double rOut = std::abs(R - rMajor) < 1e-4 ? rMajor + 2e-3 : rMajor;
     auto z = [&](double r) { return P / 16 + (rMajor - r) * t30; };  // half-width at radius r
     const double r1 = rMinor - P / 20, r2 = rMinor - P / 4;
-    groove = {{r2, -z(r1)}, {r1, -z(r1)}, {rMajor, -z(rMajor)}, {rMajor, z(rMajor)}, {r1, z(r1)}, {r2, z(r1)}};
+    groove = {{r2, -z(r1)}, {r1, -z(r1)}, {rOut, -z(rMajor)}, {rOut, z(rMajor)}, {r1, z(r1)}, {r2, z(r1)}};
   } else {
     auto z = [&](double r) { return P / 8 + (r - rMinor) * t30; };
     const double r1 = rMajor + P / 20, r2 = rMajor + P / 4;

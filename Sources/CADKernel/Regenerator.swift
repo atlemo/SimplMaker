@@ -709,10 +709,46 @@ public enum Regenerator {
                 r.featureInputs[feature.id, default: [:]][face.body] = r.bodies[i].body
             }
             // The first face names its new faces after the feature, the rest "<id>.2", "<id>.3"...
-            r.bodies[i].body = try r.bodies[i].body.thread(face: face.face, majorDiameter: diameter, pitch: size.pitch,
-                                                           length: length, flipped: f.flipped, leftHanded: f.leftHanded,
-                                                           featureID: n == 0 ? feature.id : "\(feature.id).\(n + 1)")
+            let body = r.bodies[i].body
+            do {
+                r.bodies[i].body = try body.thread(face: face.face, majorDiameter: diameter, pitch: size.pitch,
+                                                   length: length, flipped: f.flipped, leftHanded: f.leftHanded,
+                                                   featureID: n == 0 ? feature.id : "\(feature.id).\(n + 1)")
+            } catch let error as KernelError {
+                throw KernelError(message: error.message + threadSizeHint(f, size, body: body, face: face.face, length: length, r))
+            }
         }
+    }
+
+    /// For a thread that couldn't be built: other sizes that do build on the same face (a thread can fail at one
+    /// size and not at the next), found by trying the nearest ones. Empty when none is found.
+    private static func threadSizeHint(_ f: ThreadFeature, _ size: ThreadSize, body: KBody, face: String, length: Double?,
+                                       _ r: RegenResult) -> String {
+        guard let cylinder = try? body.faceCylinder(face, flipped: f.flipped) else { return "" }
+        let radius = cylinder.radius
+        // The sizes the kernel accepts for this face (see sk_thread), nearest first, the same standard before others.
+        let candidates = ThreadStandard.allCases.flatMap { standard in standard.sizes.map { (standard, $0) } }
+            .filter { standard, s in
+                let rMajor = s.diameter / 2, rMinor = s.minorDiameter / 2
+                let fits = cylinder.isHole ? (radius > rMinor * 0.8 && radius < rMajor * 1.1)
+                                           : (radius > rMajor * 0.8 && radius < rMajor * 1.25)
+                return fits && !(standard == f.standard && s.name == size.name)
+            }
+            .sorted { a, b in
+                if (a.0 == f.standard) != (b.0 == f.standard) { return a.0 == f.standard }
+                return abs(a.1.diameter - size.diameter) < abs(b.1.diameter - size.diameter)
+            }
+        var working: [String] = []
+        for (standard, candidate) in candidates.prefix(4) where working.count < 3 {
+            guard let diameter = try? f.modeledDiameter(of: candidate, r.parameters),
+                  diameter > candidate.pitch * 1.2,
+                  (try? body.thread(face: face, majorDiameter: diameter, pitch: candidate.pitch, length: length,
+                                    flipped: f.flipped, leftHanded: f.leftHanded, featureID: "hint")) != nil else { continue }
+            let label = candidate.label(standard)
+            working.append(standard == f.standard || standard.isInch ? label : "\(label) (\(standard.rawValue))")
+        }
+        guard !working.isEmpty else { return "" }
+        return ". Sizes that work on this face: " + working.joined(separator: ", ") + "."
     }
 
     /// The frame a primitive stands on: its plane, moved to (u, v).

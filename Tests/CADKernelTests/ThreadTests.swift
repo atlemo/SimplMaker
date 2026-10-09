@@ -142,6 +142,30 @@ import Testing
         #expect(abs(removed - expected) / expected < 0.02, "removed \(removed), expected about \(expected)")
     }
 
+    /// A blind hole drilled at exactly the thread's major diameter puts the edge where its wall meets the
+    /// drill point on the groove's outer edge: the thread used to come out an invalid solid.
+    @Test(arguments: [("M18x2.5", ThreadStandard.metric), ("M18x1.5", .metricFine)])
+    func aBlindHoleAtTheMajorDiameterGetsItsThread(size: String, standard: ThreadStandard) throws {
+        var s = Sketch()
+        let c = s.addPoint(0, 0)
+        s.constrain(.fix(c, x: 0, y: 0))
+        _ = s.addCircle(center: c, radius: 31.6)
+        var doc = CADDocument()
+        doc.features = [Feature(id: "sk", name: "sk", .sketch(SketchFeature(plane: .xy, sketch: s)))]
+        let region = try #require(Regenerator.regenerate(doc).sketches["sk"]?.regions.first)
+        var extrude = ExtrudeFeature(
+            sketch: "sk", profiles: [ProfileRef(curves: region.tags.split(separator: ",").map(String.init), hintU: region.sample.x, hintV: region.sample.y)],
+            extent: .distance("30 mm"))
+        extrude.taper = "-14 deg"
+        doc.features.append(Feature(id: "b", name: "b", .extrude(extrude)))
+        doc.features.append(Feature(id: "h", name: "h", .hole(HoleFeature(face: FaceRef(body: "b", face: "b.end"), u: "0 mm", v: "0 mm",
+                                                                        diameter: "18 mm", depth: "18 mm"))))
+        doc.features.append(Self.thread(FaceRef(body: "b", face: "h.hole.wall"), size, standard))
+        let r = Regenerator.regenerate(doc)
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        #expect(try #require(r.body("b")).isValid)
+    }
+
     /// A small blind hole with a drill point, drilled a little wider than the tap drill (the fill
     /// ring and the groove must both make it into the body).
     @Test func aShortBlindHoleGetsItsThread() throws {
@@ -174,6 +198,37 @@ import Testing
         #expect(r.errors["th"]?.contains("doesn't fit") == true, "\(r.errors)")
         doc.features = [NewFeatureTests.box("b", "10", "10", "10"), Self.thread(FaceRef(body: "b", face: "b.top"), "M8x1.25")]
         #expect(Regenerator.regenerate(doc).errors["th"]?.contains("round face") == true)
+    }
+
+    @Test func aThreadThatFailsSuggestsSizesThatWork() throws {
+        var doc = CADDocument()
+        doc.features = [Self.cylinder("c", d: "8", h: "20"), Self.thread(FaceRef(body: "c", face: "c.side"), "M20x2.5")]
+        let message = try #require(Regenerator.regenerate(doc).errors["th"])
+        #expect(message.contains("doesn't fit") && message.contains("Sizes that work on this face: M8"), "\(message)")
+        // Each one it names does build.
+        let listed = try #require(message.components(separatedBy: "work on this face: ").last)
+        let first = try #require(listed.split(separator: ",").first.map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: " .")) })
+        let size = try #require(ThreadStandard.metric.sizes.first { $0.label(.metric) == first })
+        doc.features[1] = Self.thread(FaceRef(body: "c", face: "c.side"), size.name)
+        #expect(Regenerator.regenerate(doc).errors.isEmpty)
+        // A face that isn't round has nothing to suggest.
+        doc.features = [NewFeatureTests.box("b", "10", "10", "10"), Self.thread(FaceRef(body: "b", face: "b.top"), "M8x1.25")]
+        #expect(Regenerator.regenerate(doc).errors["th"]?.contains("Sizes that work") == false)
+    }
+
+    /// The viewport asks for a fillet's drag handle on every frame; on a threaded body each answer is a point-in-solid test
+    /// against the helical faces, so a body remembers it.
+    @Test func aThreadedBodyAnswersAnEdgeHandleOnceNotEveryFrame() throws {
+        let (features, wall) = try Self.drilledBlock("6.8")
+        let body = try #require(NewFeatureTests.regen(features + [Self.thread(wall, "M8x1.25")]).body("b"))
+        let edge = "b.left|b.top"
+        let first = try body.edgeHandle(edge)
+        let start = Date()
+        for _ in 0..<300 {
+            let again = try body.edgeHandle(edge)
+            #expect(again.origin == first.origin && again.direction == first.direction)
+        }
+        #expect(Date().timeIntervalSince(start) < 0.2, "300 lookups took \(Date().timeIntervalSince(start)) s")
     }
 
     /// A block with two holes of one size side by side, and their walls.

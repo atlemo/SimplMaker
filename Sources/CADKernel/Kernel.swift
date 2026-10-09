@@ -251,6 +251,27 @@ public final class KBody: @unchecked Sendable {
     init(handle: SKHandle) { self.handle = handle }
     deinit { sk_release(handle) }
 
+    /// Answers about this body that cost a boolean-sized amount of work but never change (a body is never
+    /// edited once built): where a drag handle goes, which the viewport asks for on every frame.
+    private let memoLock = NSLock()
+    private var memo: [String: Result<Any, KernelError>] = [:]
+
+    private func memoized<T>(_ key: String, _ compute: () throws -> T) throws -> T {
+        memoLock.lock()
+        let hit = memo[key]
+        memoLock.unlock()
+        let result: Result<Any, KernelError>
+        if let hit {
+            result = hit
+        } else {
+            result = Result { try compute() as Any }.mapError { $0 as? KernelError ?? KernelError(message: "\($0)") }
+            memoLock.lock()
+            memo[key] = result
+            memoLock.unlock()
+        }
+        return try result.get() as! T
+    }
+
     static func wrap(_ h: SKHandle, _ context: String) throws -> KBody {
         guard h != 0 else { throw KernelError.last(context) }
         return KBody(handle: h)
@@ -407,18 +428,24 @@ public final class KBody: @unchecked Sendable {
     /// can't be built. Nil when no corner limits it.
     public func chamferLimit(edges: [String]) -> Double? {
         guard !edges.isEmpty else { return nil }
-        var limit = 0.0
-        let found = withCStrings(edges) { sk_edge_round_limit(handle, $0, Int32(edges.count), &limit) }
-        return found ? limit : nil
+        return try? memoized("chamferLimit \(edges.joined(separator: "|"))") { () throws -> Double in
+            var limit = 0.0
+            guard withCStrings(edges, { sk_edge_round_limit(handle, $0, Int32(edges.count), &limit) }) else {
+                throw KernelError(message: "no limit")
+            }
+            return limit
+        }
     }
 
     /// Where a chamfer's drag handles go on an edge: its midpoint, the directions across the two faces away from
     /// the edge (the first is the one the first distance is measured on) and that face's outward normal.
     public func chamferHandle(_ edge: String, face: String = "", flipped: Bool = false)
         throws -> (origin: SIMD3<Double>, first: SIMD3<Double>, second: SIMD3<Double>, normal: SIMD3<Double>) {
-        var o = [Double](repeating: 0, count: 12)
-        guard sk_body_chamfer_handle(handle, edge, face, flipped, &o) else { throw KernelError.last("chamfer handle") }
-        return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]), SIMD3(o[6], o[7], o[8]), SIMD3(o[9], o[10], o[11]))
+        try memoized("chamferHandle \(edge)|\(face)|\(flipped)") {
+            var o = [Double](repeating: 0, count: 12)
+            guard sk_body_chamfer_handle(handle, edge, face, flipped, &o) else { throw KernelError.last("chamfer handle") }
+            return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]), SIMD3(o[6], o[7], o[8]), SIMD3(o[9], o[10], o[11]))
+        }
     }
 
     public var faceNames: [String] {
@@ -497,9 +524,11 @@ public final class KBody: @unchecked Sendable {
 
     /// Where a fillet/chamfer drag handle goes on an edge: its midpoint and the growth direction.
     public func edgeHandle(_ edge: String) throws -> (origin: SIMD3<Double>, direction: SIMD3<Double>) {
-        var o = [Double](repeating: 0, count: 6)
-        guard sk_body_edge_handle(handle, edge, &o) else { throw KernelError.last("edge handle") }
-        return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]))
+        try memoized("edgeHandle \(edge)") {
+            var o = [Double](repeating: 0, count: 6)
+            guard sk_body_edge_handle(handle, edge, &o) else { throw KernelError.last("edge handle") }
+            return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]))
+        }
     }
 
     /// Measures the whole body, a face or an edge.
