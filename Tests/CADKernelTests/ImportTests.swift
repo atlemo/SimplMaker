@@ -64,4 +64,90 @@ import Testing
         #expect(back == d)
         #expect(back.features[0].createsBody && back.features[0].typeName == "Import")
     }
+
+    // MARK: STL
+
+    private func stlData(_ body: KBody) throws -> Data {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("simplmaker-import-\(UUID().uuidString).stl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try KBody.exportSTL([body], to: url)
+        return try Data(contentsOf: url)
+    }
+
+    @Test func anSTLBoxComesBackWithItsSixFaces() throws {
+        let data = try stlData(try KBody.primitive(.box(width: 20, length: 10, height: 5), on: .xy, featureID: "b"))
+        #expect(KBody.looksLikeSTL(data))
+        let r = Regenerator.regenerate(importing(data, id: "stlbox"))
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let body = try #require(r.body("stlbox"))
+        #expect(abs(body.volume - 1000) < 1e-3, "\(body.volume)")
+        #expect(body.faceNames.count == 6, "\(body.faceNames.count) faces")
+        #expect(body.faceNames.allSatisfy { $0.hasPrefix("stlbox.face") })
+    }
+
+    @Test func anSTLSphereBecomesASolidOfAboutTheSameVolume() throws {
+        let data = try stlData(try KBody.primitive(.sphere(diameter: 20), on: .xy, featureID: "s"))
+        let body = try KBody.importSTL(data, featureID: "stlsphere")
+        let exact = 4.0 / 3.0 * Double.pi * 1000
+        #expect(body.volume > exact * 0.97 && body.volume < exact * 1.01, "\(body.volume) vs \(exact)")
+    }
+
+    @Test func anASCIISTLIsReadToo() throws {
+        let ascii = """
+        solid tet
+        facet normal 0 0 -1
+        outer loop
+        vertex 0 0 0
+        vertex 0 10 0
+        vertex 10 0 0
+        endloop
+        endfacet
+        facet normal 0 -1 0
+        outer loop
+        vertex 0 0 0
+        vertex 10 0 0
+        vertex 0 0 10
+        endloop
+        endfacet
+        facet normal -1 0 0
+        outer loop
+        vertex 0 0 0
+        vertex 0 0 10
+        vertex 0 10 0
+        endloop
+        endfacet
+        facet normal 1 1 1
+        outer loop
+        vertex 10 0 0
+        vertex 0 10 0
+        vertex 0 0 10
+        endloop
+        endfacet
+        endsolid tet
+        """
+        let data = Data(ascii.utf8)
+        #expect(KBody.looksLikeSTL(data))
+        let body = try KBody.importModel(data, featureID: "tet")
+        #expect(abs(body.volume - 1000.0 / 6) < 1e-3, "\(body.volume)")
+    }
+
+    @Test func anSTLWithAHoleInItSaysSo() throws {
+        let open = """
+        solid open
+        facet normal 0 0 1
+        outer loop
+        vertex 0 0 0
+        vertex 10 0 0
+        vertex 0 10 0
+        endloop
+        endfacet
+        endsolid open
+        """
+        #expect(throws: KernelError.self) { try KBody.importSTL(Data(open.utf8), featureID: "open") }
+    }
+
+    @Test func aStepFileIsNotTakenForAnSTL() throws {
+        #expect(!KBody.looksLikeSTL(try boxSTEP()))
+        #expect(!KBody.looksLikeSTL(Data("hello".utf8)))
+    }
 }

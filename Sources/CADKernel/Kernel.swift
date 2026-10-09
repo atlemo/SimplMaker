@@ -616,6 +616,30 @@ public final class KBody: @unchecked Sendable {
         }
     }
 
+    /// Reads an STL file's contents into one body in mm. The mesh must be watertight; its coplanar
+    /// triangles are merged into single faces, which are named like a STEP import's.
+    public static func importSTL(_ data: Data, featureID: String) throws -> KBody {
+        try data.withUnsafeBytes { buf in
+            try wrap(sk_import_stl(buf.baseAddress?.assumingMemoryBound(to: CChar.self), buf.count, featureID), "STL import")
+        }
+    }
+
+    /// Whether these bytes are an STL file rather than a STEP file: binary STL has its triangle count at byte 80 and
+    /// a length to match, ASCII STL starts with "solid".
+    public static func looksLikeSTL(_ data: Data) -> Bool {
+        if data.count >= 84 {
+            let n = (0..<4).reduce(0) { $0 | Int(data[data.startIndex + 80 + $1]) << (8 * $1) }
+            if data.count == 84 + 50 * n { return true }
+        }
+        let head = String(decoding: data.prefix(256), as: UTF8.self)
+        return !head.contains("ISO-10303") && head.drop(while: \.isWhitespace).lowercased().hasPrefix("solid")
+    }
+
+    /// Reads a STEP or STL file's contents into a body, whichever it is.
+    public static func importModel(_ data: Data, featureID: String) throws -> KBody {
+        looksLikeSTL(data) ? try importSTL(data, featureID: featureID) : try importSTEP(data, featureID: featureID)
+    }
+
     public static func exportSTEP(_ bodies: [KBody], to url: URL) throws {
         let hs = bodies.map(\.handle)
         guard sk_export_step(hs, Int32(hs.count), url.path) else { throw KernelError.last("STEP export") }

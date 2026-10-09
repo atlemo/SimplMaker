@@ -134,11 +134,13 @@ struct SimplMakerCommands: Commands {
                 .shortcut(.welcome)
         }
         CommandGroup(after: .importExport) {
-            Button("Import STEP…") { model?.importSTEP() }
-                .shortcut(.importSTEP)
-                .disabled(model == nil)
-            Button("Import SVG as Sketch…") { model?.importSVG() }
-                .disabled(model == nil)
+            Menu("Import") {
+                Button("STEP…") { model?.importSTEP() }
+                    .shortcut(.importSTEP)
+                Button("STL…") { model?.importSTL() }
+                Button("SVG as Sketch…") { model?.importSVG() }
+            }
+            .disabled(model == nil)
             Divider()
             Button("Export STEP…") { model?.export(stl: false) }.disabled(model == nil)
             Button("Export STL…") { model?.export(stl: true) }.disabled(model == nil)

@@ -84,6 +84,7 @@
 #include <Message_Messenger.hxx>
 #include <Message_PrinterOStream.hxx>
 #include <Poly_Triangulation.hxx>
+#include <RWStl.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
 #include <ShapeBuild_ReShape.hxx>
@@ -2990,6 +2991,29 @@ static void quietDataExchange() {
   (void)quiet;
 }
 
+/// Makes a body of the solids read from a file: one solid as it is, several as a compound. A file has no feature
+/// history, so faces are named by their place in it, which a rebuild repeats.
+static SKHandle storeImported(const std::vector<TopoDS_Shape> &solids, const std::string &feat) {
+  TopoDS_Shape shape = solids[0];
+  if (solids.size() > 1) {
+    TopoDS_Compound comp;
+    BRep_Builder bb;
+    bb.MakeCompound(comp);
+    for (const TopoDS_Shape &s : solids) bb.Add(comp, s);
+    shape = comp;
+  }
+  if (!BRepCheck_Analyzer(shape).IsValid()) {  // try to repair it; if that fails, keep it as it is
+    ShapeFix_Shape fix(shape);
+    fix.Perform();
+    if (BRepCheck_Analyzer(fix.Shape()).IsValid()) shape = fix.Shape();
+  }
+  std::vector<Named> names;
+  ShapeIndexedMap faces;
+  TopExp::MapShapes(shape, TopAbs_FACE, faces);
+  for (int i = 1; i <= faces.Extent(); ++i) names.push_back({faces(i), feat + ".face" + std::to_string(i)});
+  return store(makeBody(shape, names, feat));
+}
+
 SKHandle sk_import_step(const char *data, size_t size, const char *featureId) {
   SK_TRY
   const std::string feat = featureOrDefault(featureId, "import");
@@ -3033,26 +3057,75 @@ SKHandle sk_import_step(const char *data, size_t size, const char *featureId) {
     return 0;
   }
 
-  TopoDS_Shape shape = solids[0];
-  if (solids.size() > 1) {
-    TopoDS_Compound comp;
-    BRep_Builder bb;
-    bb.MakeCompound(comp);
-    for (const TopoDS_Shape &s : solids) bb.Add(comp, s);
-    shape = comp;
+  return storeImported(solids, feat);
+  SK_CATCH(0)
+}
+
+/// Reads an STL file (binary or ASCII) into a body. A mesh is only triangles, so each becomes a flat
+/// face, the faces are sewn into a closed shell, and the ones that lie in one plane are merged back into a
+/// single face (a box comes out with six faces, not twelve triangles). Units are taken as millimetres.
+SKHandle sk_import_stl(const char *data, size_t size, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "import");
+  if (!data || size == 0) {
+    setError("the STL file is empty");
+    return 0;
   }
-  if (!BRepCheck_Analyzer(shape).IsValid()) {  // try to repair it; if that fails, keep it as it is
-    ShapeFix_Shape fix(shape);
-    fix.Perform();
-    if (BRepCheck_Analyzer(fix.Shape()).IsValid()) shape = fix.Shape();
+  std::istringstream in(std::string(data, size));
+  const occ::handle<Poly_Triangulation> mesh = RWStl::ReadStream(in);
+  if (mesh.IsNull() || mesh->NbTriangles() == 0) {
+    setError("this isn't an STL file SimplMaker can read");
+    return 0;
+  }
+  constexpr int maxTriangles = 60000;  // sewing every triangle gets slow beyond this
+  if (mesh->NbTriangles() > maxTriangles) {
+    setError("the mesh is too detailed (" + std::to_string(mesh->NbTriangles()) + " triangles, the limit is " +
+             std::to_string(maxTriangles) + "); simplify it first");
+    return 0;
   }
 
-  // A file has no feature history: faces are named by their place in it, which a rebuild repeats.
-  std::vector<Named> names;
-  ShapeIndexedMap faces;
-  TopExp::MapShapes(shape, TopAbs_FACE, faces);
-  for (int i = 1; i <= faces.Extent(); ++i) names.push_back({faces(i), feat + ".face" + std::to_string(i)});
-  return store(makeBody(shape, names, feat));
+  Bnd_Box box;
+  for (int i = 1; i <= mesh->NbNodes(); ++i) box.Add(mesh->Node(i));
+  const double diagonal = std::sqrt(box.SquareExtent());
+  const double tol = std::max(diagonal * 1e-6, 1e-6);
+
+  BRepBuilderAPI_Sewing sew(tol);
+  int added = 0;
+  for (int t = 1; t <= mesh->NbTriangles(); ++t) {
+    int a, b, c;
+    mesh->Triangle(t).Get(a, b, c);
+    const gp_Pnt p1 = mesh->Node(a), p2 = mesh->Node(b), p3 = mesh->Node(c);
+    if (p1.Distance(p2) < tol || p2.Distance(p3) < tol || p3.Distance(p1) < tol) continue;  // a sliver
+    BRepBuilderAPI_MakePolygon poly(p1, p2, p3, true);
+    if (!poly.IsDone()) continue;
+    BRepBuilderAPI_MakeFace face(poly.Wire(), true);
+    if (!face.IsDone()) continue;
+    sew.Add(face.Face());
+    ++added;
+  }
+  sew.Perform();
+
+  std::vector<TopoDS_Shape> solids;
+  for (TopExp_Explorer ex(sew.SewedShape(), TopAbs_SHELL); ex.More(); ex.Next()) {
+    const TopoDS_Shell &shell = TopoDS::Shell(ex.Current());
+    if (!BRep_Tool::IsClosed(shell)) continue;
+    BRepBuilderAPI_MakeSolid mk(shell);
+    if (!mk.IsDone()) continue;
+    TopoDS_Solid solid = mk.Solid();
+    BRepLib::OrientClosedSolid(solid);
+    // Merge the coplanar triangles. Float coordinates leave their planes a hair apart, so be generous.
+    ShapeUpgrade_UnifySameDomain unify(solid, true, true, false);
+    unify.SetLinearTolerance(std::max(diagonal * 1e-5, 1e-5));
+    unify.SetAngularTolerance(1e-4);
+    unify.Build();
+    solids.push_back(unify.Shape());
+  }
+  if (solids.empty()) {
+    setError(added == 0 ? "the STL file has no usable triangles"
+                         : "the mesh has holes or gaps, so it doesn't enclose a solid (it must be watertight)");
+    return 0;
+  }
+  return storeImported(solids, feat);
   SK_CATCH(0)
 }
 

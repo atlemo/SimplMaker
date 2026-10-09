@@ -67,7 +67,7 @@ final class DocumentModel {
     /// The highlight of what a new feature was made from, kept on screen (the selection itself is already
     /// cleared) until the rebuild lands, so it doesn't fade out ahead of the solid.
     private var highlightPendingRebuild: [UInt32] = []
-    /// A STEP file is being read (see importSTEP).
+    /// A STEP or STL file is being read (see importSTEP).
     private(set) var isImporting = false
 
     var selection: [PickID] = []
@@ -2073,11 +2073,17 @@ final class DocumentModel {
 
     /// Asks for a STEP file and adds it to the timeline as a body of its own.
     func importSTEP() {
-        guard let url = Self.chooseSTEP("Import") else { return }
+        guard let url = Self.chooseModel("Import", extensions: ["step", "stp"], message: "Choose a STEP file (.step or .stp).") else { return }
         Task { await importSTEP(from: url) }
     }
 
-    /// Reads a STEP file and adds it as an Import feature, at the timeline marker, with the body
+    /// Asks for an STL file and adds it to the timeline as a body of its own.
+    func importSTL() {
+        guard let url = Self.chooseModel("Import", extensions: ["stl"], message: "Choose an STL file. It must be watertight, and is read in millimetres.") else { return }
+        Task { await importSTEP(from: url) }
+    }
+
+    /// Reads a STEP or STL file and adds it as an Import feature, at the timeline marker, with the body
     /// named after the file. False if it can't be read (an alert says why).
     @discardableResult
     func importSTEP(from url: URL) async -> Bool {
@@ -2100,7 +2106,8 @@ final class DocumentModel {
     /// Asks for a new version of an imported file. Its faces keep their names as long as the
     /// file lists them in the same order, so features after the import usually hold on.
     func replaceImport(_ id: FeatureID) {
-        guard let url = Self.chooseSTEP("Replace") else { return }
+        guard let url = Self.chooseModel("Replace", extensions: ["step", "stp", "stl"],
+                                         message: "Choose a STEP (.step, .stp) or STL (.stl) file.") else { return }
         Task { await replaceImport(id, from: url) }
     }
 
@@ -2116,15 +2123,15 @@ final class DocumentModel {
         return true
     }
 
-    private static func chooseSTEP(_ prompt: String) -> URL? {
+    private static func chooseModel(_ prompt: String, extensions: [String], message: String) -> URL? {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = ["step", "stp"].compactMap { UTType(filenameExtension: $0) }
+        panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) }
         panel.prompt = prompt
-        panel.message = "Choose a STEP file (.step or .stp)."
+        panel.message = message
         return panel.runModal() == .OK ? panel.url : nil
     }
 
-    /// Reads a STEP file and checks that the kernel can make a body of it, off the main thread.
+    /// Reads a STEP or STL file and checks that the kernel can make a body of it, off the main thread.
     /// The body is kept for the rebuild that follows, so the file is read only once.
     private func loadSTEP(_ url: URL, featureID: FeatureID) async -> Data? {
         isImporting = true
@@ -2144,6 +2151,7 @@ final class DocumentModel {
             var reason = error.localizedDescription
             if let e = error as? KernelError {
                 let text = e.message.replacingOccurrences(of: "STEP import: ", with: "")
+                    .replacingOccurrences(of: "STL import: ", with: "")
                 reason = text.prefix(1).uppercased() + String(text.dropFirst()) + "."
             }
             alert = AlertInfo(title: "\(url.lastPathComponent) couldn't be imported", message: reason)

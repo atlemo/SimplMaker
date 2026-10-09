@@ -278,6 +278,11 @@ SKMesh *sk_sketch_region_tessellate(SKHandle sketch, int i, double linearDeflect
 /// "<featureId>.face<n>" (n from 1, in the file's order), so a rebuild names them the same.
 SKHandle sk_import_step(const char *data, size_t size, const char *featureId);
 
+/// Reads an STL file's contents (`size` bytes, binary or ASCII) into one body, in mm. The triangles are sewn into
+/// a closed shell and the coplanar ones merged into single faces; the mesh must be watertight. Faces are named
+/// "<featureId>.face<n>" like a STEP import's.
+SKHandle sk_import_stl(const char *data, size_t size, const char *featureId);
+
 // ------------------------------------------------------------------ export ---
 bool sk_export_step(const SKHandle *bodies, int count, const char *path);
 bool sk_export_stl(const SKHandle *bodies, int count, const char *path, double linearDeflection);

@@ -8,7 +8,7 @@ Bring a logo, outline or drawing into SimplMaker as a sketch.
 ## Import
 
 1. Select a flat face or a plane, or nothing to use the XY plane. Or open the sketch you want to add the drawing to.
-2. Choose **File → Import SVG as Sketch…** and pick a file.
+2. Choose **File → Import → SVG as Sketch…** and pick a file.
 
 The drawing's middle goes on the sketch origin. The result is plain, unconstrained geometry that you can dimension and edit like anything you drew yourself.
 

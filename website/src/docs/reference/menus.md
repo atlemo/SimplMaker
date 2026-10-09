@@ -22,8 +22,9 @@ description: What is in each menu, and where to find every command.
 | **Duplicate**, **Rename…**, **Move To…** | Standard document commands |
 | **Revert To** | Go back to the last saved version, or browse all versions |
 | **Share** | The system's share sheet |
-| **Import STEP…** ([[⇧⌘I]]) | Add a STEP file as a body |
-| **Import SVG as Sketch…** | Turn an SVG into a sketch |
+| **Import ▸ STEP…** ([[⇧⌘I]]) | Add a STEP file as a body |
+| **Import ▸ STL…** | Add a watertight STL mesh as a body |
+| **Import ▸ SVG as Sketch…** | Turn an SVG into a sketch |
 | **Export STEP…**, **Export STL…** | Write all bodies to a file |
 
 ## Edit

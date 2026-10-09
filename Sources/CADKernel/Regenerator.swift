@@ -111,7 +111,7 @@ public final class RegenCache: @unchecked Sendable {
     }
 }
 
-/// Bodies read from STEP files, so a rebuild (after any parameter change, say) doesn't read the
+/// Bodies read from STEP and STL files, so a rebuild (after any parameter change, say) doesn't read the
 /// same file again. Kernel bodies never change once built, so sharing them is safe.
 final class ImportCache: @unchecked Sendable {
     static let shared = ImportCache()
@@ -122,7 +122,7 @@ final class ImportCache: @unchecked Sendable {
         lock.lock()
         if let hit = bodies[featureID], hit.data == data { lock.unlock(); return hit.body }
         lock.unlock()
-        let body = try KBody.importSTEP(data, featureID: featureID)
+        let body = try KBody.importModel(data, featureID: featureID)
         lock.lock(); defer { lock.unlock() }
         if bodies.count >= 16 { bodies.removeAll() }  // many imports (several open parts): start over
         bodies[featureID] = (data, body)
@@ -473,7 +473,7 @@ public enum Regenerator {
         try combine(relief.body, f.mode == .emboss ? .join : .cut, target: f.target, feature, &r)
     }
 
-    /// Reads a STEP file's contents into a body, the way an Import feature does, and keeps it
+    /// Reads a STEP or STL file's contents into a body, the way an Import feature does, and keeps it
     /// for the rebuild that follows (so a file can be checked before it's added).
     public static func importedBody(_ data: Data, featureID: FeatureID) throws -> KBody {
         try ImportCache.shared.body(data, featureID: featureID)

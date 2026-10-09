@@ -5,7 +5,7 @@ import Foundation
 import Testing
 @testable import SimplMaker
 
-/// File → Import STEP… and the inspector's Replace File….
+/// File → Import → STEP… and STL…, and the inspector's Replace File….
 @Suite @MainActor struct ImportSTEPTests {
     private func settle(_ model: DocumentModel) async throws {
         try await Task.sleep(for: .milliseconds(5))
@@ -55,5 +55,28 @@ import Testing
         #expect(!imported)
         #expect(model.document.features.isEmpty)
         #expect(model.alert?.title.contains("couldn't be imported") == true)
+    }
+
+    @Test func anSTLFileImportsAsABodyToo() async throws {
+        let model = DocumentModel()
+        try await settle(model)
+        let box = try KBody.primitive(.box(width: 20, length: 10, height: 5), on: .xy, featureID: "b")
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("Block.stl")
+        try KBody.exportSTL([box], to: url)
+        #expect(await model.importSTEP(from: url))
+        try await settle(model)
+        let f = try #require(model.document.features.last)
+        #expect(model.document.bodyNames[f.id] == "Block")
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        #expect(abs((model.result?.body(f.id)?.volume ?? 0) - 1000) < 1e-3)
+
+        // A mesh with a hole in it is refused with a reason.
+        let open = dir.appendingPathComponent("Open.stl")
+        try Data("solid o\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid o".utf8).write(to: open)
+        #expect(!(await model.importSTEP(from: open)))
+        #expect(model.alert?.message.contains("watertight") == true, "\(model.alert?.message ?? "")")
+        #expect(model.document.features.count == 1)
     }
 }

@@ -13,7 +13,7 @@ Parts are saved as `.simplmaker` files.
 
 A `.simplmaker` file stores your **parameters and features**, and nothing else: the list of steps, not the geometry they produce. The geometry is rebuilt every time you open the file. That keeps files small and always consistent.
 
-Reference images and imported STEP files are stored inside the part, so the part opens correctly without the original files.
+Reference images and imported STEP and STL files are stored inside the part, so the part opens correctly without the original files.
 
 ## Autosave and versions
 
@@ -27,11 +27,12 @@ SimplMaker saves your work automatically and keeps earlier versions. Choose **Fi
 
 | Command | What it does |
 |---|---|
-| **File → Import STEP…** ([[⇧⌘I]]) | Adds a `.step` or `.stp` file as an **Import** feature: one body with every solid in the file, named after the file, in millimetres whatever unit the file uses. You can then fillet, cut, shell, move or rotate it like any other body. |
-| **File → Import SVG as Sketch…** | Turns an SVG drawing into a sketch. See [Importing SVG](doc:sketch/import-svg). |
+| **File → Import → STEP…** ([[⇧⌘I]]) | Adds a `.step` or `.stp` file as an **Import** feature: one body with every solid in the file, named after the file, in millimetres whatever unit the file uses. You can then fillet, cut, shell, move or rotate it like any other body. |
+| **File → Import → STL…** | Adds a `.stl` mesh (binary or ASCII) the same way, read in millimetres. The mesh must be watertight. Its triangles are sewn into a solid and the ones in the same plane are merged into single faces, so a box has six faces. Curved shapes stay faceted. Meshes of more than 60,000 triangles are refused; simplify them first. |
+| **File → Import → SVG as Sketch…** | Turns an SVG drawing into a sketch. See [Importing SVG](doc:sketch/import-svg). |
 | **Create → Canvas (Reference Image)…** | Places a picture to trace over. See [Canvas](doc:create/canvas). |
 
-In the **Import** feature's inspector, **Replace File…** swaps in a new version of the file. Features after it keep their edges and faces as long as the new file lists its faces in the same order.
+In the **Import** feature's inspector, **Replace File…** swaps in a new STEP or STL version of the file. Features after it keep their edges and faces as long as the new file lists its faces in the same order.
 
 ## Export
 

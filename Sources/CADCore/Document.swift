@@ -634,12 +634,12 @@ public struct EdgeFeature: Codable, Hashable, Sendable {
     }
 }
 
-/// A body read from a STEP file. The file's contents are kept in the document, so the part
+/// A body read from a STEP or STL file. The file's contents are kept in the document, so the part
 /// rebuilds without the original file. Its faces are named by their place in the file.
 public struct ImportFeature: Codable, Hashable, Sendable {
     /// The name of the file it came from, for showing only.
     public var fileName: String
-    /// The STEP file's contents.
+    /// The STEP or STL file's contents.
     public var data: Data
     public init(fileName: String, data: Data) { self.fileName = fileName; self.data = data }
 }
