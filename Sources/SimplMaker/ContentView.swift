@@ -641,7 +641,7 @@ struct SidebarPanel<Accessory: View, Content: View>: View {
                 Button { open.toggle() } label: {
                     HStack(spacing: DS.Spacing.space1) {
                         Text(title)
-                            .font(.headline)
+                            .font(.headline.weight(.semibold))  // as the group titles in Settings ▸ Shortcuts
                         Spacer(minLength: 0)
                     }
                     .contentShape(Rectangle())

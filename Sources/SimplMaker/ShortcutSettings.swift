@@ -7,15 +7,21 @@ struct ShortcutsPane: View {
     @StateObject private var store = ShortcutStore.shared
     /// What the last change did to another command ("Fillet lost F"), until the next change.
     @State private var notice: String?
+    /// The titles of the categories that are folded up.
+    @State private var collapsed: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
             Form {
                 ForEach(ShortcutCommand.sections) { section in
-                    Section(section.title) {
-                        ForEach(section.commands) { command in
-                            ShortcutRow(command: command, store: store, notice: $notice)
+                    Section {
+                        if !collapsed.contains(section.title) {
+                            ForEach(section.commands) { command in
+                                ShortcutRow(command: command, store: store, notice: $notice)
+                            }
                         }
+                    } header: {
+                        sectionHeader(section.title)
                     }
                 }
             }
@@ -32,6 +38,31 @@ struct ShortcutsPane: View {
             }
             .padding(DS.Spacing.space3)
         }
+    }
+
+    /// A category's title with its chevron on the right; the whole row folds the category up or opens it.
+    private func sectionHeader(_ title: String) -> some View {
+        let open = !collapsed.contains(title)
+        return Button {
+            withAnimation(.easeInOut(duration: DS.Duration.base)) {
+                if open { collapsed.insert(title) } else { collapsed.remove(title) }
+            }
+        } label: {
+            HStack {
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(open ? 0 : -90))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.bottom, open ? 0 : DS.Spacing.space4)  // a folded category has no rows to keep the next title apart
+        .accessibilityValue(open ? "expanded" : "collapsed")
     }
 }
 
