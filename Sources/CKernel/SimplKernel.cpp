@@ -67,6 +67,7 @@
 #include <BRepLib_ToolTriangulatedShape.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepOffsetAPI_DraftAngle.hxx>
 #include <BRepTools.hxx>
 #include <BRepTools_History.hxx>
 #include <BRep_Builder.hxx>
@@ -1052,8 +1053,66 @@ SKHandle sk_sketch_region_profile(SKHandle sketch, int i) {
 
 // ---------------------------------------------------------------- features ---
 
+/// A prism of `base` pushed along `dir` by `length` (negative: against it), its flat caps named `baseName` and
+/// `topName` and its side faces named after the edges they grew from. A `taper` (radians, positive: the sides
+/// lean out as they go, negative: in) leans every side face about the base's plane. Returns the solid, or a null
+/// shape with the error set.
+static TopoDS_Shape prismPiece(const TopoDS_Face &base, const Profile &p, const TopLoc_Location &placed, const gp_Dir &dir,
+                               double length, double taper, const std::string &baseName, const std::string &topName,
+                               const std::string &sidePrefix, std::vector<Named> &names) {
+  BRepPrimAPI_MakePrism prism(base, gp_Vec(dir) * length);
+  prism.Build();
+  if (!prism.IsDone()) {
+    setError("extrude failed");
+    return TopoDS_Shape();
+  }
+  std::unique_ptr<BRepOffsetAPI_DraftAngle> draft;
+  if (std::fabs(taper) > 1e-9) {
+    BRepAdaptor_Surface plane(base);
+    if (plane.GetType() != GeomAbs_Plane) {
+      setError("only a flat profile can be tapered");
+      return TopoDS_Shape();
+    }
+    const gp_Dir pull = length > 0 ? dir : dir.Reversed();
+    const gp_Pln neutral(plane.Plane().Location(), pull);
+    draft = std::make_unique<BRepOffsetAPI_DraftAngle>(prism.Shape());
+    // A positive draft angle takes matter away on the side the direction points to; a taper that leans out adds it.
+    for (TopExp_Explorer ex(base, TopAbs_EDGE); ex.More(); ex.Next())
+      for (const TopoDS_Shape &side : prism.Generated(ex.Current())) {
+        draft->Add(TopoDS::Face(side), pull, -taper, neutral);
+        if (!draft->AddDone()) {
+          setError("this shape can't be tapered that far");
+          return TopoDS_Shape();
+        }
+      }
+    draft->Build();
+    if (!draft->IsDone()) {
+      setError("this shape can't be tapered that far");
+      return TopoDS_Shape();
+    }
+  }
+  auto after = [&](const TopoDS_Shape &s) { return draft ? draft->ModifiedShape(s) : s; };
+  names.push_back({after(prism.FirstShape()), baseName});
+  names.push_back({after(prism.LastShape()), topName});
+  for (TopExp_Explorer ex(base, TopAbs_EDGE); ex.More(); ex.Next()) {
+    std::string tag = "?";
+    for (const Named &t : p.edgeTags)
+      if (t.shape.Moved(placed).IsSame(ex.Current())) {
+        tag = t.name;
+        break;
+      }
+    for (const TopoDS_Shape &side : prism.Generated(ex.Current())) names.push_back({after(side), sidePrefix + tag});
+  }
+  return draft ? draft->Shape() : prism.Shape();
+}
+
 SKHandle sk_extrude(const SKHandle *profiles, int count, double dx, double dy, double dz, double distance,
                     double distanceBack, const char *featureId) {
+  return sk_extrude_tapered(profiles, count, dx, dy, dz, distance, distanceBack, 0, featureId);
+}
+
+SKHandle sk_extrude_tapered(const SKHandle *profiles, int count, double dx, double dy, double dz, double distance,
+                            double distanceBack, double taper, const char *featureId) {
   SK_TRY
   const std::string feat = featureOrDefault(featureId, "extrude");
   const double length = distance + distanceBack;
@@ -1065,10 +1124,16 @@ SKHandle sk_extrude(const SKHandle *profiles, int count, double dx, double dy, d
     setError("extrude length is zero");
     return 0;
   }
+  if (std::fabs(taper) >= M_PI / 2 - 1e-3) {
+    setError("the taper angle must be under 90 degrees");
+    return 0;
+  }
   gp_Dir dir(dx, dy, dz);
   gp_Trsf shift;
   shift.SetTranslation(gp_Vec(dir) * -distanceBack);
   TopLoc_Location loc(shift);
+  // A taper reaches out from the sketch plane each way: two cones that meet there, not one that leans.
+  const bool twoCones = std::fabs(taper) > 1e-9 && distance > Precision::Confusion() && distanceBack > Precision::Confusion();
 
   std::vector<TopoDS_Shape> solids;
   std::vector<Named> names;
@@ -1076,26 +1141,32 @@ SKHandle sk_extrude(const SKHandle *profiles, int count, double dx, double dy, d
     Profile *p;
     auto keep = lookup(profiles[k], p);
     if (!p) return 0;
+    if (twoCones) {
+      std::vector<Named> pieceNames;
+      const TopoDS_Face base = TopoDS::Face(p->face);
+      TopoDS_Shape fwd = prismPiece(base, *p, TopLoc_Location(), dir, distance, taper, feat + ".mid", feat + ".end", feat + ".side.",
+                                    pieceNames);
+      if (fwd.IsNull()) return 0;
+      TopoDS_Shape back = prismPiece(base, *p, TopLoc_Location(), dir.Reversed(), distanceBack, taper, feat + ".mid",
+                                     feat + ".start", feat + ".side.back.", pieceNames);
+      if (back.IsNull()) return 0;
+      BRepAlgoAPI_Fuse fuse(fwd, back);
+      if (!fuse.IsDone() || fuse.HasErrors()) {
+        setError("could not join the two halves of the extrude");
+        return 0;
+      }
+      std::vector<Named> carried;
+      carry(fuse, pieceNames, carried);
+      solids.push_back(unify(fuse.Shape(), carried));
+      for (Named &n : carried) names.push_back(std::move(n));
+      continue;
+    }
     TopoDS_Face f = TopoDS::Face(p->face.Moved(loc));
-    BRepPrimAPI_MakePrism prism(f, gp_Vec(dir) * length);
-    prism.Build();
-    if (!prism.IsDone()) {
-      setError("extrude failed");
-      return 0;
-    }
     // Negative length flips which cap is which; keep "start" at the -distanceBack end.
-    names.push_back({prism.FirstShape(), feat + (length > 0 ? ".start" : ".end")});
-    names.push_back({prism.LastShape(), feat + (length > 0 ? ".end" : ".start")});
-    for (TopExp_Explorer ex(f, TopAbs_EDGE); ex.More(); ex.Next()) {
-      std::string tag = "?";
-      for (const Named &t : p->edgeTags)
-        if (t.shape.Moved(loc).IsSame(ex.Current())) {
-          tag = t.name;
-          break;
-        }
-      for (const TopoDS_Shape &side : prism.Generated(ex.Current())) names.push_back({side, feat + ".side." + tag});
-    }
-    solids.push_back(prism.Shape());
+    TopoDS_Shape piece = prismPiece(f, *p, loc, dir, length, taper, feat + (length > 0 ? ".start" : ".end"),
+                                    feat + (length > 0 ? ".end" : ".start"), feat + ".side.", names);
+    if (piece.IsNull()) return 0;
+    solids.push_back(piece);
   }
 
   TopoDS_Shape result = solids[0];

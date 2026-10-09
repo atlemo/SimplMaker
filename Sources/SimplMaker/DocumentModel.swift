@@ -81,6 +81,7 @@ final class DocumentModel {
             guard newValue != selectedFeatureStorage else { return }
             selectedFeatureStorage = newValue
             activeHandleSlot = 0
+            dialFieldOpen = nil
             if newValue != newFeature { newFeature = nil }  // moved on: Cancel no longer removes it
             overlayRevision += 1
         }
@@ -1101,6 +1102,11 @@ final class DocumentModel {
         if manipulatedFeature == nil {
             // Each arrow is its shaft and then its head (the same segment again, drawn as a triangle).
             for h in dragHandles {
+                if let dial = h.dial {
+                    SketchOverlayBuilder.dial(center: h.base, axis: h.direction, dial: dial, angle: h.value, into: &o)
+                    o.handleInvalid = previewInvalid
+                    continue
+                }
                 // A tiny length at least, so the arrow still points along its direction before it is dragged out.
                 let length = abs(h.value) < 0.01 ? (h.value < 0 ? -0.01 : 0.01) : h.value
                 let a = h.base, b = h.base + h.direction * length
@@ -1177,6 +1183,26 @@ final class DocumentModel {
         var allowsNegative = false
         /// Which of the feature's arrows this is: a hole has one for its depth (0) and one for its diameter (1).
         var slot = 0
+        /// A dial instead of an arrow: a dot dragged round an arc sets an angle (the taper of an extrude). It is
+        /// centred on `base`; `direction` is where it points at 0°, and `value` is the angle in radians.
+        var dial: Dial?
+        /// The value may be zero (a taper of nothing is no taper).
+        var allowsZero = false
+
+        struct Dial {
+            /// The way the dot swings towards as the angle grows, at right angles to `direction`.
+            var side: SIMD3<Double>
+            /// Arc radius, in mm.
+            var radius: Double
+            /// The arc reaches this far either way, in radians.
+            static let limit = 85.0 * Double.pi / 180
+        }
+
+        /// Where the handle is grabbed, and where its field sits: the arrow's tip, or the dial's dot.
+        var anchor: SIMD3<Double> {
+            guard let dial else { return base + direction * value }
+            return base + dial.radius * (cos(value) * direction + sin(value) * dial.side)
+        }
 
         /// The value written to the feature for an arrow length.
         func featureValue(_ length: Double) -> Double {
@@ -1241,6 +1267,53 @@ final class DocumentModel {
     var unlinkPrompt: UnlinkPrompt?
     /// Bumped when a new feature wants its size typed right away: the viewport focuses the handle's field.
     var handleFocusRequest = 0
+    /// The slot the focus request is for (the first field's, when nil).
+    var handleFocusSlot: Int?
+
+    /// The slot of an extrude's taper dial (0 and 1 are its arrows).
+    static let taperSlot = 2
+
+    /// How the camera sees the taper dial, kept coarse so the dial is only redrawn when it would look different.
+    struct DialView: Equatable {
+        /// The direction the camera looks and its screen-right, to a tenth.
+        var forward: SIMD3<Double>
+        var right: SIMD3<Double>
+        /// How many mm a point on screen spans, to about 10%.
+        var mmPerPoint: Double
+    }
+    @ObservationIgnored var dialView: DialView?
+    /// The feature whose angle field was opened by clicking its dial (a taper of nothing has no field until then).
+    var dialFieldOpen: FeatureID?
+
+    /// Whether a handle's field is on screen: arrows always, a dial once it's been used or has an angle.
+    func showsField(_ h: DragHandle) -> Bool { h.dial == nil || dialFieldOpen == h.featureID || abs(h.value) > 1e-9 }
+
+    /// Which way the dial's arc is spread, and how big: in the plane of the extrusion's axis and the sketch axis
+    /// that faces the camera best, leaning towards the right of the screen, about 80 points across.
+    func dialPlacement(axis: SIMD3<Double>, frame: Frame) -> (side: SIMD3<Double>, radius: Double) {
+        guard let v = dialView else { return (frame.xAxis, 20) }
+        var best = frame.xAxis, bestFacing = -1.0
+        for u in [frame.xAxis, frame.yAxis] {
+            let facing = abs(simd_dot(simd_cross(axis, u), v.forward))
+            if facing > bestFacing * 1.1 { best = u; bestFacing = facing }
+        }
+        if simd_dot(best, v.right) < 0 { best = -best }
+        return (best, 80 * v.mmPerPoint)
+    }
+
+    /// Whether a camera change makes the dial look different.
+    func updateDialView(_ view: DialView) -> Bool {
+        guard dialView != view else { return false }
+        dialView = view
+        return true
+    }
+
+    /// An extrude is selected and shows its dial.
+    var showsDial: Bool {
+        guard sketchSession == nil, pendingTool == nil, holeMoveStart == nil, let id = selectedFeature,
+              case .extrude? = document.features.first(where: { $0.id == id })?.kind else { return false }
+        return true
+    }
 
     /// What an arrow's field shows: the stored expression, or the size being dragged.
     func handleFieldText(for slot: Int) -> String? {
@@ -1273,14 +1346,16 @@ final class DocumentModel {
     var dragHandles: [DragHandle] {
         guard let id = selectedFeature, sketchSession == nil, pendingTool == nil, holeMoveStart == nil,
               let f = document.features.first(where: { $0.id == id }) else { return [] }
-        let count: Int
+        var slots: [Int]
         switch f.kind {
-        case .hole(let h): count = h.depth == nil ? 1 : 2
-        case .chamfer(let e): count = e.mode == .equalDistance ? 1 : 2  // two distances, or a distance and an angle
-        case .extrude(let e): if case .twoSides = e.extent { count = 2 } else { count = 1 }  // one arrow each way
-        default: count = 1
+        case .hole(let h): slots = h.depth == nil ? [0] : [0, 1]
+        case .chamfer(let e): slots = e.mode == .equalDistance ? [0] : [0, 1]  // two distances, or a distance and an angle
+        case .extrude(let e):
+            if case .twoSides = e.extent { slots = [0, 1] } else { slots = [0] }  // one arrow each way
+            slots.append(Self.taperSlot)  // and the dial for the taper
+        default: slots = [0]
         }
-        return (0..<count).compactMap { handle(for: id, slot: $0) }
+        return slots.compactMap { handle(for: id, slot: $0) }
     }
 
     private func selectedHandle(_ slot: Int) -> DragHandle? {
@@ -1303,17 +1378,30 @@ final class DocumentModel {
         }
         switch f.kind {
         case .extrude(let e):
-            let base: SIMD3<Double>, n: SIMD3<Double>
+            let base: SIMD3<Double>, n: SIMD3<Double>, dialFrame: Frame
             if let face = e.face {
                 guard let body = result.featureInputs[id]?[face.body], let frame = try? body.faceFrame(face.face),
                       let center = try? body.faceCenter(face.face) else { return nil }
                 base = center
                 n = frame.normal * (e.flipped ? -1 : 1)
+                dialFrame = frame
             } else {
                 guard let sr = result.sketches[e.sketch], let ref = e.profiles.first,
                       let region = Regenerator.region(ref, in: sr) else { return nil }
                 n = sr.frame.normal * (e.flipped ? -1 : 1)
                 base = sr.frame.point(region.sample.x, region.sample.y)
+                dialFrame = sr.frame
+            }
+            if slot == Self.taperSlot {
+                // The dial hangs on the arrow's tip and opens the way the extrusion goes.
+                let arrow = self.handle(for: id, slot: 0)
+                let tip = arrow.map { $0.base + $0.direction * $0.value } ?? base
+                let axis = (arrow.map { $0.value < 0 } ?? false) ? -n : n
+                let (side, radius) = dialPlacement(axis: axis, frame: dialFrame)
+                var h = handle("Taper", tip, axis, e.taper ?? "0 deg", unit: .angle, max: DragHandle.Dial.limit, negative: true)
+                h.dial = DragHandle.Dial(side: side, radius: radius)
+                h.allowsZero = true
+                return h
             }
             switch e.extent {
             case .distance(let d): return handle("Distance", base, n, d, negative: true)
@@ -1564,6 +1652,7 @@ final class DocumentModel {
     func beginHandleDrag(slot: Int = 0) {
         activeHandleSlot = slot
         guard let h = dragHandle else { return }
+        if h.dial != nil { dialFieldOpen = h.featureID }  // the angle's field shows beside the dot from now on
         handleDragStart = document
         handleStartValue = h.featureValue(h.value)
     }
@@ -1576,6 +1665,22 @@ final class DocumentModel {
     /// steps (1, 2 or 5 × 10ⁿ mm or degrees) of about 6 points, not in whatever fraction the pointer lands on.
     func dragHandle(rayOrigin o: SIMD3<Double>, direction d: SIMD3<Double>, pointsPerMM: Double? = nil) {
         guard let start = handleDragStart, let h = dragHandle else { return }
+        if let dial = h.dial {
+            // The dot follows the mouse round the arc: the ray meets the arc's plane, and the angle is read off there.
+            let pn = simd_cross(h.direction, dial.side)
+            let facing = simd_dot(d, pn)
+            guard abs(facing) > 0.05 else { return }  // the arc is edge-on
+            let hit = o + d * (simd_dot(h.base - o, pn) / facing)
+            let v = hit - h.base
+            var angle = atan2(simd_dot(v, dial.side), simd_dot(v, h.direction))
+            angle = min(max((angle * 180 / .pi).rounded() * .pi / 180, -DragHandle.Dial.limit), DragHandle.Dial.limit)
+            handlePreviewValue = angle
+            var preview = start
+            Self.set(expression: formatDimension(angle, kind: .angle), of: h.featureID, slot: h.slot, in: &preview)
+            regenerate(preview: preview, previewFeature: h.featureID)
+            overlayRevision += 1
+            return
+        }
         let a = h.direction, w = h.base - o
         let b = simd_dot(a, d)
         guard 1 - b * b > 1e-6 else { return }  // looking straight down the handle
@@ -1602,7 +1707,11 @@ final class DocumentModel {
     func endHandleDrag() {
         guard handleDragStart != nil else { return }
         defer { handleDragStart = nil; handlePreviewValue = nil }
-        guard let h = dragHandle, let length = handlePreviewValue else { return }
+        guard let h = dragHandle, let length = handlePreviewValue else {
+            // A click on the dial's dot without a drag: open its field for typing the angle.
+            if dragHandle?.dial != nil { handleFocusSlot = activeHandleSlot; handleFocusRequest += 1 }
+            return
+        }
         if previewInvalid {
             // Dropped where the feature can't be built: go back to what was there.
             previewInvalid = false
@@ -1730,10 +1839,15 @@ final class DocumentModel {
     /// Evaluates a typed size: positive, and a bare number read as millimetres (or degrees).
     private func handleSize(_ text: String, _ h: DragHandle) -> (expression: String, value: Double)? {
         let t = text.trimmingCharacters(in: .whitespaces)
-        guard let v = try? parameterValues.value(of: t, kind: h.unit), h.allowsNegative ? abs(v) > 1e-9 : v > 1e-9 else { return nil }
-        if let m = h.maxValue, v > m + 1e-9 { return nil }
+        guard let v = try? parameterValues.value(of: t, kind: h.unit), h.allowsZero || (h.allowsNegative ? abs(v) > 1e-9 : v > 1e-9) else { return nil }
+        if let m = h.maxValue, exceeds(v, m, h) { return nil }
         let bare = Double(t).map { h.unit == .angle ? $0 * .pi / 180 : $0 }
         return (bare.map { formatDimension($0, kind: h.unit) } ?? t, v)
+    }
+
+    /// Whether a value is past a handle's limit (a dial's reaches either way).
+    private func exceeds(_ v: Double, _ limit: Double, _ h: DragHandle) -> Bool {
+        (h.dial != nil ? abs(v) : v) > limit + 1e-9
     }
 
     /// Why a typed size can't be used: an unknown name, the wrong kind of value, or out of range.
@@ -1743,9 +1857,10 @@ final class DocumentModel {
         let needed = h.unit == .angle ? "an angle" : h.unit == .none ? "a plain number" : "a length"
         do {
             let v = try parameterValues.value(of: t, kind: h.unit)
-            if h.allowsNegative ? abs(v) <= 1e-9 : v <= 1e-9 { return h.allowsNegative ? "It can't be zero" : "It must be more than zero" }
-            if let m = h.maxValue, v > m + 1e-9 {
-                return "It can be at most \(h.unit.format(m))" + (h.maxReason.map { ": \($0)" } ?? "")
+            if !h.allowsZero, h.allowsNegative ? abs(v) <= 1e-9 : v <= 1e-9 { return h.allowsNegative ? "It can't be zero" : "It must be more than zero" }
+            if let m = h.maxValue, exceeds(v, m, h) {
+                return (h.dial != nil ? "It can be at most \(h.unit.format(m)) either way" : "It can be at most \(h.unit.format(m))")
+                    + (h.maxReason.map { ": \($0)" } ?? "")
             }
             return nil
         } catch {
@@ -1818,6 +1933,11 @@ final class DocumentModel {
         guard let i = doc.index(of: id) else { return }
         switch doc.features[i].kind {
         case .extrude(var e):
+            if slot == Self.taperSlot {
+                e.taper = text
+                doc.features[i].kind = .extrude(e)
+                return
+            }
             switch e.extent {
             case .distance: e.extent = .distance(text)
             case .symmetric: e.extent = .symmetric(text)

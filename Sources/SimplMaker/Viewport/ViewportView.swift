@@ -940,6 +940,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         updatePrompt()
         syncPopover()
         syncManipulator()
+        syncDialView()
         syncHandleField()
         syncSketchFields()
         syncPatternHUD()
@@ -1018,8 +1019,25 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     // MARK: typed values
 
     /// Keeps each arrow's size field just right of its tip, showing the stored size (or the size being dragged).
+    /// Tells the taper dial how the camera sees it (which way to spread its arc, and how big to draw it), and redraws
+    /// it when that changes.
+    private func syncDialView() {
+        guard let renderer, let model, model.showsDial else { return }
+        let cam = renderer.camera
+        func tenth(_ v: SIMD3<Float>) -> SIMD3<Double> { SIMD3(Double((v.x * 10).rounded() / 10), Double((v.y * 10).rounded() / 10), Double((v.z * 10).rounded() / 10)) }
+        // How long 1 mm looks, where the dial is.
+        let at = cam.target, size = bounds.size
+        guard let a = cam.project(at, viewSize: size), let b = cam.project(at + cam.right, viewSize: size) else { return }
+        let pointsPerMM = Double(hypot(b.x - a.x, b.y - a.y))
+        guard pointsPerMM > 1e-6 else { return }
+        let mmPerPoint = exp((log(1 / pointsPerMM) * 10).rounded() / 10)  // to about 10%
+        if model.updateDialView(DocumentModel.DialView(forward: tenth(cam.forward), right: tenth(cam.right), mmPerPoint: mmPerPoint)) {
+            refreshOverlay()
+        }
+    }
+
     private func syncHandleField() {
-        guard let renderer, let model, case let handles = model.dragHandles, !handles.isEmpty else {
+        guard let renderer, let model, case let handles = model.dragHandles.filter({ model.showsField($0) }), !handles.isEmpty else {
             if !handleFields.isEmpty {
                 if handleFields.values.contains(where: { $0.currentEditor() != nil }) { window?.makeFirstResponder(self) }
                 handleFields.values.forEach { $0.removeFromSuperview() }
@@ -1076,7 +1094,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             if field.currentEditor() == nil { field.stringValue = text }
             if field.currentEditor() == nil { handleFieldFeatures[h.slot] = (h.featureID, text) }
             field.textColor = model.previewInvalid && h.slot == model.activeHandleSlot ? .systemRed : .labelColor
-            let tip = h.base + h.direction * h.value
+            let tip = h.anchor
             var anchor = renderer.camera.project(SIMD3(Float(tip.x), Float(tip.y), Float(tip.z)), viewSize: bounds.size)
             if h.slot == 0, let layout = manipulatorLayout, let part = model.manipulatorActivePart {
                 // On the manipulator's arrow or ring; up beside the middle when that one points at the viewer.
@@ -1105,8 +1123,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if model.handleFocusRequest != seenHandleFocusRequest {
             // A new feature: select its size so typing replaces it (outside drawing, to be safe).
             seenHandleFocusRequest = model.handleFocusRequest
+            let slot = model.handleFocusSlot ?? handles[0].slot
+            model.handleFocusSlot = nil
             DispatchQueue.main.async { [weak self] in
-                guard let field = self?.handleFields[handles[0].slot], field.superview != nil else { return }
+                guard let field = self?.handleFields[slot], field.superview != nil else { return }
                 self?.window?.makeFirstResponder(field)
                 field.selectText(nil)
             }

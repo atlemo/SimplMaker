@@ -368,3 +368,20 @@ enum SketchOverlayBuilder {
         }
     }
 }
+
+extension SketchOverlayBuilder {
+    /// An extrude's taper dial: an arc round `center`, reaching either way from `axis` towards the dial's side, and
+    /// the dot on it at `angle` (the part that is grabbed).
+    static func dial(center: SIMD3<Double>, axis: SIMD3<Double>, dial: DocumentModel.DragHandle.Dial, angle: Double,
+                     into o: inout SketchOverlay) {
+        func f(_ p: SIMD3<Double>) -> SIMD3<Float> { SIMD3(Float(p.x), Float(p.y), Float(p.z)) }
+        func at(_ a: Double) -> SIMD3<Double> { center + dial.radius * (cos(a) * axis + sin(a) * dial.side) }
+        let limit = DocumentModel.DragHandle.Dial.limit, steps = 40
+        for i in 0..<steps {
+            let a = f(at(-limit + 2 * limit * Double(i) / Double(steps))), b = f(at(-limit + 2 * limit * Double(i + 1) / Double(steps)))
+            o.measure.append(SegmentInstance(ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z, id: 0))
+        }
+        let dot = f(at(angle))
+        o.dialDot.append(SegmentInstance(ax: dot.x, ay: dot.y, az: dot.z, bx: dot.x, by: dot.y, bz: dot.z, id: PickID.dialHandle.raw))
+    }
+}

@@ -321,6 +321,12 @@ struct ExtrudeInspector: View {
                     Button("Use the Selected Face") { update("Change Face") { $0.extent = .toFace(face) }; model.clearSelection() }
                 }
             }
+            LabeledContent("Taper") {
+                ExpressionField(text: extrude.taper ?? "0 deg", preview: { v in preview { $0.taper = v } }) { v in
+                    update("Edit Taper") { $0.taper = v }
+                }
+            }
+            .help("Leans the sides: positive grows the shape as it goes, negative narrows it")
             if selectedFace == nil, extentKind != .toFace {
                 Text("To extrude up to a face, select a flat face parallel to the sketch, then choose To face.")
                     .font(.caption).foregroundStyle(.secondary)

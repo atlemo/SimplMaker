@@ -39,6 +39,12 @@ In the inspector, **Extent** also offers:
 - **Through all**: goes through every body in its direction. Good for cutting holes.
 - **To face**: stops at a flat face you picked that is parallel to the sketch. Select the face, then choose **To face**.
 
+## Taper the sides
+
+A curved line with a **dot** hangs above the arrow. Drag the dot round the line to lean the sides, in whole degrees, or click it and type an angle (or an expression) in the field that opens beside it. A **negative** angle narrows the shape as it goes, a **positive** one widens it, and 0 makes the sides straight again. It reaches 85° either way.
+
+With Two Directions or Mirrored, the sides lean away from the sketch plane on both sides, so the shape has a ridge there. A taper that would close the shape up before it reaches the end fails with a message, and the last good shape stays on screen.
+
 ## Extrude a face
 
 Select a **flat face** of a body and press [[E]] to pull it out. A negative distance pushes it in. Only flat faces can be extruded.
@@ -51,6 +57,7 @@ Select a **flat face** of a body and press [[E]] to pull it out. A negative dist
 |---|---|
 | **Extent** | One direction, Two directions, Mirrored, Through all, To face |
 | **Distance** | How far. It takes expressions. |
+| **Taper** | The angle the sides lean, in degrees. Negative narrows, positive widens. It takes expressions. |
 | **Operation** | New Body, Join, Cut or Intersect |
 | **Flip direction** | Extrudes the other way |
 | **Profiles** | How many profiles are used. **Reselect…** lets you pick them again. |

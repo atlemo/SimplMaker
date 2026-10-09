@@ -275,6 +275,12 @@ enum Shaders {
             coverage = 1.0 - smoothstep(-0.5, 0.5, dist - mix(p.grow, p.growSide, sides));
             if (coverage <= 0.01) discard_fragment();
         }
+        if ((p.style & 64u) != 0) {
+            // A round dot at the segment's start (a zero-length segment), as wide as `thickness`.
+            float dist = length(in.position.xy - in.tip) - p.thickness * 0.5;
+            coverage = 1.0 - smoothstep(-0.5, 0.5, dist);
+            if (coverage <= 0.01) discard_fragment();
+        }
         if ((p.style & 32u) != 0) {
             // A dashed line: rounded dashes along it from its start, each with its outline (grow) around it.
             float2 rel = in.position.xy - in.tip;

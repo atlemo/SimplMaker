@@ -278,9 +278,9 @@ public final class KBody: @unchecked Sendable {
     }
 
     public static func extrude(_ profiles: [KProfile], direction d: SIMD3<Double>, distance: Double,
-                               back: Double = 0, featureID: String) throws -> KBody {
+                               back: Double = 0, taper: Double = 0, featureID: String) throws -> KBody {
         let hs = profiles.map(\.handle)
-        return try wrap(sk_extrude(hs, Int32(hs.count), d.x, d.y, d.z, distance, back, featureID), "extrude")
+        return try wrap(sk_extrude_tapered(hs, Int32(hs.count), d.x, d.y, d.z, distance, back, taper, featureID), "extrude")
     }
 
     public static func revolve(_ profiles: [KProfile], axisOrigin o: SIMD3<Double>, axisDirection d: SIMD3<Double>,

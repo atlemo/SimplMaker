@@ -67,6 +67,11 @@ SKHandle sk_sketch_region_profile(SKHandle sketch, int i);
 /// "<featureId>.start|end|side.<tag>". Returns a body.
 SKHandle sk_extrude(const SKHandle *profiles, int count, double dx, double dy, double dz,
                     double distance, double distanceBack, const char *featureId);
+/// The same, with the side faces leaned by `taper` radians (positive: out as they go, negative: in). Each side of
+/// the profile plane tapers away from it, so a two-sided extrude has a ridge along the plane. Fails when the taper
+/// would close the shape up, or on a profile whose sides can't lean (anything but straight and round edges).
+SKHandle sk_extrude_tapered(const SKHandle *profiles, int count, double dx, double dy, double dz, double distance,
+                            double distanceBack, double taper, const char *featureId);
 /// Revolves profiles about the axis through (ox, oy, oz) along (dx, dy, dz) by `angle` radians
 /// (2π or more = a full turn). Faces: "<featureId>.start|end|side.<tag>".
 SKHandle sk_revolve(const SKHandle *profiles, int count, double ox, double oy, double oz, double dx, double dy,

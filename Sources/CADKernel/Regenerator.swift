@@ -609,7 +609,9 @@ public enum Regenerator {
             distance = simd_dot(face.origin - planeOrigin, dir); back = 0
             guard distance > 1e-9 else { throw KernelError(message: "the face is behind the sketch · flip the direction") }
         }
-        let tool = try KBody.extrude(profiles, direction: dir, distance: distance, back: back, featureID: feature.id)
+        let taper = try f.taper.map { try p.value(of: $0, kind: .angle) } ?? 0
+        guard abs(taper) < 89.0 * .pi / 180 else { throw KernelError(message: "the taper angle must be under 90°") }
+        let tool = try KBody.extrude(profiles, direction: dir, distance: distance, back: back, taper: taper, featureID: feature.id)
         try combine(tool, f.operation, target: f.target, feature, &r)
     }
 

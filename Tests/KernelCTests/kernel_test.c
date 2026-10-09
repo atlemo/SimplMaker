@@ -207,6 +207,65 @@ int main(void) {
     for (int i = 0; i < 4; i++) sk_release(tmp[i]);
   }
 
+  printf("== tapered extrude\n");
+  {
+    SKHandle ts = sk_sketch_new(XY);
+    sk_sketch_add_line(ts, "T0", 0, 0, 20, 0);
+    sk_sketch_add_line(ts, "T1", 20, 0, 20, 10);
+    sk_sketch_add_line(ts, "T2", 20, 10, 0, 10);
+    sk_sketch_add_line(ts, "T3", 0, 10, 0, 0);
+    CHECK(sk_sketch_build_regions(ts) == 1, "taper region\n");
+    SKHandle tp = sk_sketch_region_profile(ts, 0);
+    double a = 10 * M_PI / 180, t = tan(a);
+    // In by 10 degrees: a frustum 5 high whose top is 20 - 2*5*t by 10 - 2*5*t.
+    SKHandle in = sk_extrude_tapered(&tp, 1, 0, 0, 1, 5, 0, -a, "TI");
+    double top_w = 20 - 10 * t, top_d = 10 - 10 * t;
+    double v = 5 * (20 * 10 + top_w * top_d + sqrt(20 * 10 * top_w * top_d)) / 3;  // not exact for a rectangle; use the integral
+    v = 0;
+    for (int i = 0; i < 1000; i++) {
+      double z = (i + 0.5) * 5 / 1000;
+      v += (20 - 2 * z * t) * (10 - 2 * z * t) * 5 / 1000;
+    }
+    CHECK(in && NEAR(sk_body_volume(in), v, 1e-4), "tapered-in volume %g, want %g\n", in ? sk_body_volume(in) : 0, v);
+    CHECK(in && sk_body_face_count(in) == 6, "tapered box faces %d\n", in ? sk_body_face_count(in) : 0);
+    double ib[6];
+    CHECK(in && sk_body_bounds(in, ib) && NEAR(ib[3], 20, 1e-6) && NEAR(ib[5], 5, 1e-6), "tapered-in stays inside the profile\n");
+    SKHandle out = sk_extrude_tapered(&tp, 1, 0, 0, 1, 5, 0, a, "TO");
+    CHECK(out && sk_body_volume(out) > 1000, "tapered-out grows: %g\n", out ? sk_body_volume(out) : 0);
+    CHECK(out && sk_body_bounds(out, ib) && NEAR(ib[3], 20 + 5 * t, 1e-6), "tapered-out bounds %g\n", ib[3]);
+    // Against the other way (negative distance): leans the same way as it goes.
+    SKHandle down = sk_extrude_tapered(&tp, 1, 0, 0, 1, -5, 0, -a, "TD");
+    CHECK(down && NEAR(sk_body_volume(down), v, 1e-4), "tapered the other way, volume %g\n", down ? sk_body_volume(down) : 0);
+    // Two sides: a ridge on the plane.
+    SKHandle two = sk_extrude_tapered(&tp, 1, 0, 0, 1, 5, 5, a, "T2");
+    CHECK(two && sk_body_bounds(two, ib) && NEAR(ib[0], -5 * t, 1e-6) && NEAR(ib[2], -5, 1e-6) && NEAR(ib[5], 5, 1e-6),
+          "two-sided taper bounds\n");
+    // Too steep: it would close up.
+    CHECK(sk_extrude_tapered(&tp, 1, 0, 0, 1, 40, 0, -a, "TX") == 0, "a taper that closes the shape fails\n");
+    // A round profile gets a cone.
+    SKHandle cs = sk_sketch_new(XY);
+    sk_sketch_add_circle(cs, "C", 0, 0, 5);
+    CHECK(sk_sketch_build_regions(cs) == 1, "circle region\n");
+    SKHandle cp = sk_sketch_region_profile(cs, 0);
+    SKHandle cone = sk_extrude_tapered(&cp, 1, 0, 0, 1, 4, 0, -a, "TC");
+    double r2 = 5 - 4 * t;
+    CHECK(cone && NEAR(sk_body_volume(cone), M_PI * 4 * (25 + 5 * r2 + r2 * r2) / 3, 1e-4), "cone volume %g\n", cone ? sk_body_volume(cone) : 0);
+    // A plate with a hole: the hole tapers too.
+    SKHandle hs = sk_sketch_new(XY);
+    sk_sketch_add_line(hs, "H0", 0, 0, 20, 0);
+    sk_sketch_add_line(hs, "H1", 20, 0, 20, 20);
+    sk_sketch_add_line(hs, "H2", 20, 20, 0, 20);
+    sk_sketch_add_line(hs, "H3", 0, 20, 0, 0);
+    sk_sketch_add_circle(hs, "HC", 10, 10, 3);
+    int hn = sk_sketch_build_regions(hs);
+    int hr = find_region(hs, hn, "H0,H1,H2,H3,HC");
+    CHECK(hr >= 0, "plate-with-hole region\n");
+    SKHandle hp = sk_sketch_region_profile(hs, hr);
+    SKHandle plate = sk_extrude_tapered(&hp, 1, 0, 0, 1, 4, 0, -a, "TH");
+    CHECK(plate != 0, "plate with a hole tapers\n");
+    print_names(in);
+  }
+
   printf("== symmetric extrude + errors\n");
   SKHandle sym = sk_extrude(profs, 1, 0, 0, 1, 3, 3, "S1");
   double bb[6];

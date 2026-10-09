@@ -528,6 +528,10 @@ struct StatusBar: View {
                                         ? "Drag the orange dot to move the hole, or an arrow to change its depth or diameter · Tab moves between the fields"
                                         : model.manipulatedFeature != nil
                                         ? "Drag an arrow, square or ring dot · or type the \(h.label.lowercased()) in the field"
+                                        : h.dial != nil
+                                        ? "Drag the dot round the arc to taper the sides, or click it and type the angle · negative narrows, positive widens"
+                                        : model.showsDial
+                                        ? "Drag the orange arrow to change the \(h.label.lowercased()), or type it in the field next to it · the dot on the arc tapers the sides"
                                         : "Drag the orange arrow to change the \(h.label.lowercased()), or type it in the field next to it")
                 .foregroundStyle(model.previewInvalid ? Color.red : Color.secondary)
         } else if !model.selectedProfiles.isEmpty, model.hovered == nil {

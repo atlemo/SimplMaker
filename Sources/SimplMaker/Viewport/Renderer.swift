@@ -12,7 +12,7 @@ import simd
 ///   sketch     0x4000_0000 point, 0x5000_0000 curve, 0x6000_0000 profile region | slot << 16 | index
 ///              (slot 0 = the sketch being edited, n = the n-th sketch in the document)
 ///   handle     0x7000_0000 (the extrude drag handle), 0x7000_0001 (the dot that moves a hole),
-///              0x7000_0002 (a hole's diameter arrow)
+///              0x7000_0002 (a hole's diameter arrow), 0x7000_0003 (the dot of an extrude's taper dial)
 ///   plane      0x7100_0000 | index (an origin plane offered when choosing where to sketch)
 ///   plane edge 0x7200_0000 | plane << 8 | edge (a construction plane's border: 0 bottom, 1 right, 2 top, 3 left)
 struct PickID: Hashable, Sendable {
@@ -40,10 +40,12 @@ struct PickID: Hashable, Sendable {
     static let moveHandle = PickID(raw: 0x7000_0001)
     /// A hole's second arrow, for its diameter (the first, `handle`, is its depth).
     static let diameterHandle = PickID(raw: 0x7000_0002)
+    /// The dot on an extrude's taper dial (the third handle of the feature).
+    static let dialHandle = PickID(raw: 0x7000_0003)
     /// Which side of a construction plane a plane-edge pick is: 0 bottom, 1 right, 2 top, 3 left.
     var planeEdge: Int { Int(raw & 0xF) }
     /// Which of a feature's arrows this picks (0 for any other pick).
-    var handleSlot: Int { self == PickID.diameterHandle ? 1 : 0 }
+    var handleSlot: Int { self == PickID.dialHandle ? 2 : self == PickID.diameterHandle ? 1 : 0 }
 
     var kind: Kind {
         if raw == 0 { return .none }
@@ -126,6 +128,7 @@ struct SketchOverlay {
     var points: [SegmentInstance] = []     // zero-length segments drawn as squares
     var handle: [SegmentInstance] = []     // drag handle: shaft + tip (zero-length)
     var moveHandle: [SegmentInstance] = [] // a hole's move dot (zero-length)
+    var dialDot: [SegmentInstance] = []    // the dot on an extrude's taper dial (zero-length)
     var snap: [SegmentInstance] = []       // where the cursor snapped: a zero-length marker
     var measure: [SegmentInstance] = []    // the Measure tool's line between two pieces, drawn over the bodies
     var measurePoints: [SegmentInstance] = []  // and its ends (zero-length)
@@ -285,6 +288,8 @@ enum DrawStyle {
     static let arrowHead: UInt32 = 8
     /// A line drawn as rounded dashes, from its start (see DrawParams.dashPitch).
     static let dashedRound: UInt32 = 32
+    /// A zero-length segment drawn as a round dot, as wide as `thickness`.
+    static let roundDot: UInt32 = 64
 }
 
 /// How bodies are drawn (View ▸ Visual Style), as in Fusion.
@@ -388,6 +393,7 @@ final class Renderer {
         var points: MTLBuffer?, pointCount = 0
         var handle: MTLBuffer?, handleCount = 0
         var moveHandle: MTLBuffer?, moveHandleCount = 0
+        var dialDot: MTLBuffer?, dialDotCount = 0
         var snap: MTLBuffer?, snapCount = 0
         var measure: MTLBuffer?, measureCount = 0
         var measurePoints: MTLBuffer?, measurePointCount = 0
@@ -539,6 +545,7 @@ final class Renderer {
         g.points = makeBuffer(o.points); g.pointCount = o.points.count
         g.handle = makeBuffer(o.handle); g.handleCount = o.handle.count
         g.moveHandle = makeBuffer(o.moveHandle); g.moveHandleCount = o.moveHandle.count
+        g.dialDot = makeBuffer(o.dialDot); g.dialDotCount = o.dialDot.count
         g.snap = makeBuffer(o.snap); g.snapCount = o.snap.count
         g.measure = makeBuffer(o.measure); g.measureCount = o.measure.count
         g.measurePoints = makeBuffer(o.measurePoints); g.measurePointCount = o.measurePoints.count
@@ -1035,6 +1042,15 @@ final class Renderer {
                     enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: 1)
                 }
             }
+        }
+        // The taper dial's dot: round, outlined the same way as the arrows (dark, white, then the colour).
+        for (layer, color) in [(2, outlineDark), (1, outlineWhite), (0, handleColor)] {
+            let grow = Float(layer) * ring, solid = layer == 0
+            segments(overlay.dialDot, overlay.dialDotCount,
+                     DrawParams(color: color, hoverColor: solid ? (overlay.handleInvalid ? p.invalid : hover) : color,
+                                selectColor: solid ? p.selection : color, thickness: 12 * scale + 2 * grow, depthBias: 0,
+                                pickable: solid ? 1 : 0, style: DrawStyle.roundDot),
+                     pipeline: solid ? shapePipeline : shapeDecorationPipeline)
         }
         segments(overlay.moveHandle, overlay.moveHandleCount,
                  DrawParams(color: handleColor, hoverColor: overlay.handleInvalid ? p.invalid : hover, selectColor: p.selection,

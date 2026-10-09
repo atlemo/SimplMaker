@@ -145,6 +145,9 @@ public struct ExtrudeFeature: Codable, Hashable, Sendable {
     public var target: FeatureID?
     /// Extrude a flat face of a body instead of sketch profiles (press-pull); `sketch` is then empty.
     public var face: FaceRef?
+    /// How far the sides lean as they leave the sketch plane, an angle expression: positive leans out (the
+    /// shape grows as it goes), negative leans in. Nil (and zero) is a straight extrude.
+    public var taper: String?
 
     public init(sketch: FeatureID, profiles: [ProfileRef], extent: ExtrudeExtent, flipped: Bool = false,
                 operation: BodyOperation = .newBody, target: FeatureID? = nil) {

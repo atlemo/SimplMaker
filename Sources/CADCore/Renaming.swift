@@ -52,6 +52,7 @@ extension Feature.Kind {
             case .twoSides(let d, let b): f.extent = .twoSides(change(d), back: change(b))
             case .throughAll, .toFace: break
             }
+            if let t = f.taper { f.taper = change(t) }
             self = .extrude(f)
         case .fillet(var f): f.size = change(f.size); self = .fillet(f)
         case .chamfer(var f):
