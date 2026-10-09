@@ -1,6 +1,7 @@
 // Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import Foundation
+import simd
 import Testing
 @testable import SimplMaker
 
@@ -39,6 +40,46 @@ import Testing
         // Another sketch starts from where the camera is then.
         #expect(memory.update(sketching: true, camera: flat) == nil)
         #expect(memory.update(sketching: false, camera: iso) == flat)
+    }
+
+    @Test func rollTurnsTheViewAboutTheLineOfSight() {
+        var camera = Camera()
+        camera.look(along: SIMD3(0, 0, 1), at: .zero)
+        let (right, up, forward) = (camera.right, camera.up, camera.forward)
+        camera.roll(by: .pi / 2)
+        #expect(simd_length(camera.forward - forward) < 1e-6, "the line of sight stays")
+        // A quarter turn counter-clockwise: what was on the right is now up, and what was up is now to the left.
+        #expect(simd_length(camera.up - right) < 1e-4 && simd_length(camera.right + up) < 1e-4)
+        #expect(abs(simd_dot(camera.right, camera.up)) < 1e-5 && abs(simd_length(camera.up) - 1) < 1e-5)
+    }
+
+    @Test func rollGoesWithThePoseAndBlendsTheShortWayRound() {
+        var camera = Camera()
+        camera.roll(by: 1)
+        #expect(camera.pose.roll == camera.roll && camera.roll == 1)
+        let a = CameraPose(target: .zero, distance: 100, yaw: 0, pitch: 1, roll: 3)
+        let b = CameraPose(target: .zero, distance: 100, yaw: 0, pitch: 1, roll: -3)
+        #expect(abs(remainder(a.blended(to: b, 0.5).roll - .pi, 2 * .pi)) < 1e-5)
+        #expect(!a.isClose(to: CameraPose(target: .zero, distance: 100, yaw: 0, pitch: 1, roll: 0)))
+    }
+
+    @Test func aQuarterTurnLandsOnTheNextRightAngle() {
+        var camera = Camera()
+        #expect(abs(camera.quarterTurnedRoll(1) - .pi / 2) < 1e-6 && abs(camera.quarterTurnedRoll(-1) + .pi / 2) < 1e-6)
+        camera.roll = 0.3
+        #expect(abs(camera.quarterTurnedRoll(1) - .pi / 2) < 1e-6 && abs(camera.quarterTurnedRoll(-1)) < 1e-6)
+        camera.roll = .pi / 2
+        #expect(abs(camera.quarterTurnedRoll(1) - .pi) < 1e-5 && abs(camera.quarterTurnedRoll(-1)) < 1e-5)
+    }
+
+    @Test func lookingAtAPlaneOrAStandardViewUndoesTheRoll() {
+        var camera = Camera()
+        camera.roll(by: 1)
+        camera.look(along: SIMD3(0, 0, 1), at: .zero)
+        #expect(camera.roll == 0)
+        camera.roll(by: 1)
+        camera.setStandard(.home)
+        #expect(camera.roll == 0)
     }
 
     @Test func aCameraPoseRoundTripsThroughTheCamera() {

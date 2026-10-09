@@ -21,6 +21,17 @@ import Testing
         #expect(c.matchingPreset == .simplMaker)
     }
 
+    @Test func optionDragRollsAndOnlyTheRotateGestureRollsInASketch() {
+        let c = NavigationConfig.simplMaker()
+        #expect(c.left.option == .roll && c.left.plain == .orbit)
+        var camera = Camera()
+        c.rotate(&camera, degrees: 30)
+        #expect(camera.roll == 0 && camera.yaw != Camera().yaw, "outside a sketch it spins the view")
+        camera = Camera()
+        c.rotate(&camera, degrees: 30, sketching: true)
+        #expect(abs(camera.roll - .pi / 6) < 1e-6 && camera.yaw == Camera().yaw, "in one it turns the picture, counter-clockwise")
+    }
+
     @Test func theOldSettingsCarryOver() {
         let c = NavigationConfig.simplMaker(trackpadOrbits: true, invertZoom: true)
         #expect(c.trackpad.plain == .orbit && c.trackpad.shift == .pan && c.invertZoom)

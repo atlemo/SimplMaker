@@ -10,6 +10,14 @@ final class ViewCubeView: NSView {
     var lookAlong: (SIMD3<Float>) -> Void = { _ in }
     var orbit: (_ dx: Float, _ dy: Float) -> Void = { _, _ in }
     var home: () -> Void = {}
+    /// A quarter turn of the picture, +1 counter-clockwise and −1 clockwise (offered while sketching).
+    var turn: (_ quarterTurns: Int) -> Void = { _ in }
+    var offersTurning = false {
+        didSet {
+            guard offersTurning != oldValue else { return }
+            turnButtons.forEach { $0.isHidden = !offersTurning }
+        }
+    }
     /// The colour of the hovered part (the accent, which while sketching is the system's).
     var accent: () -> NSColor = { .controlAccentColor }
 
@@ -23,6 +31,7 @@ final class ViewCubeView: NSView {
     private var dragFrom: NSPoint?
     private var dragged = false
     private var homeButton: NSButton!
+    private(set) var turnButtons: [NSButton] = []
 
     /// A face: its outward normal and the directions that are right and up when you look at it.
     private struct Face {
@@ -50,12 +59,27 @@ final class ViewCubeView: NSView {
         button.frame = NSRect(x: 2, y: Self.size.height - 24, width: 22, height: 22)
         addSubview(button)
         homeButton = button
+        // Curved arrows by the cube's top edge: the sketch turns a quarter on its paper, the way they point.
+        for (i, spec) in [(symbol: "arrow.counterclockwise", tip: "Turn the sketch a quarter counter-clockwise", action: #selector(turnCounterClockwise)),
+                          (symbol: "arrow.clockwise", tip: "Turn the sketch a quarter clockwise", action: #selector(turnClockwise))].enumerated() {
+            let b = NSButton(image: NSImage(systemSymbolName: spec.symbol, accessibilityDescription: spec.tip)!,
+                             target: self, action: spec.action)
+            b.isBordered = false
+            b.contentTintColor = .secondaryLabelColor
+            b.toolTip = spec.tip
+            b.isHidden = true
+            b.frame = NSRect(x: Self.size.width - 50 + CGFloat(i) * 24, y: Self.size.height - 24, width: 22, height: 22)
+            addSubview(b)
+            turnButtons.append(b)
+        }
         setAccessibilityLabel("View cube")
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     @objc private func goHome() { home() }
+    @objc private func turnCounterClockwise() { turn(1) }
+    @objc private func turnClockwise() { turn(-1) }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -209,6 +233,7 @@ final class ViewCubeView: NSView {
         // Only the cube and the house take clicks; the rest of the square is the viewport's.
         let local = convert(point, from: superview)
         if homeButton.frame.contains(local) { return homeButton }
+        if offersTurning, let b = turnButtons.first(where: { $0.frame.contains(local) }) { return b }
         return region(at: local) != nil ? self : nil
     }
 }

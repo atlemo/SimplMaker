@@ -39,6 +39,9 @@ struct CameraPose: Equatable {
     var distance: Float
     var yaw: Float
     var pitch: Float
+    /// Turn about the line of sight, in radians: positive turns the picture counter-clockwise (a sketch's axes
+    /// don't have to run along the screen's).
+    var roll: Float = 0
 
     /// The pose a fraction `t` (0...1) of the way from this one to `goal`: turning the short way round, and
     /// zooming by the same factor each step, so a big change in distance doesn't rush at the end.
@@ -46,13 +49,15 @@ struct CameraPose: Equatable {
         CameraPose(target: target + (goal.target - target) * t,
                    distance: distance * pow(goal.distance / distance, t),
                    yaw: yaw + remainder(goal.yaw - yaw, 2 * .pi) * t,
-                   pitch: pitch + (goal.pitch - pitch) * t)
+                   pitch: pitch + (goal.pitch - pitch) * t,
+                   roll: roll + remainder(goal.roll - roll, 2 * .pi) * t)
     }
 
     /// Whether the two are the same view, give or take rounding.
     func isClose(to other: CameraPose) -> Bool {
         simd_length(target - other.target) < 1e-3 * max(distance, 1) && abs(distance / other.distance - 1) < 1e-3
             && abs(remainder(yaw - other.yaw, 2 * .pi)) < 1e-4 && abs(pitch - other.pitch) < 1e-4
+            && abs(remainder(roll - other.roll, 2 * .pi)) < 1e-4
     }
 
     /// Slow at both ends: 0...1 in, 0...1 out.
@@ -83,6 +88,7 @@ struct Camera {
     var distance: Float = 220
     var yaw: Float = -.pi / 3        // around Z
     var pitch: Float = 0.55          // above the XY plane
+    var roll: Float = 0              // about the line of sight; counter-clockwise on screen when positive
     var fovY: Float = 35 * .pi / 180
     var orthographic = true
     /// Where the middle of the uncovered part of the view is, in normalized device coordinates
@@ -92,8 +98,11 @@ struct Camera {
     var visibleFraction = SIMD2<Float>(1, 1)
 
     var pose: CameraPose {
-        get { CameraPose(target: target, distance: distance, yaw: yaw, pitch: pitch) }
-        set { target = newValue.target; distance = newValue.distance; yaw = newValue.yaw; pitch = newValue.pitch }
+        get { CameraPose(target: target, distance: distance, yaw: yaw, pitch: pitch, roll: roll) }
+        set {
+            target = newValue.target; distance = newValue.distance
+            yaw = newValue.yaw; pitch = newValue.pitch; roll = newValue.roll
+        }
     }
 
     /// Half the visible height at the target, in mm (used for orthographic size and panning).
@@ -106,8 +115,11 @@ struct Camera {
         target + distance * SIMD3(cos(pitch) * cos(yaw), cos(pitch) * sin(yaw), sin(pitch))
     }
     var forward: SIMD3<Float> { simd_normalize(target - eye) }
-    var right: SIMD3<Float> { simd_normalize(simd_cross(forward, SIMD3(0, 0, 1))) }
-    var up: SIMD3<Float> { simd_cross(right, forward) }
+    /// Right and up before the roll: up is as near the world's Z as the view allows.
+    private var levelRight: SIMD3<Float> { simd_normalize(simd_cross(forward, SIMD3(0, 0, 1))) }
+    private var levelUp: SIMD3<Float> { simd_cross(levelRight, forward) }
+    var right: SIMD3<Float> { roll == 0 ? levelRight : cos(roll) * levelRight - sin(roll) * levelUp }
+    var up: SIMD3<Float> { roll == 0 ? levelUp : sin(roll) * levelRight + cos(roll) * levelUp }
 
     func viewMatrix() -> simd_float4x4 {
         let f = forward, s = right, u = up, e = viewEye
@@ -157,6 +169,18 @@ struct Camera {
         pitch = min(max(pitch + dy * 0.008, -1.55), 1.55)
     }
 
+    /// Turns the picture about the line of sight by `radians`, counter-clockwise on screen when positive.
+    mutating func roll(by radians: Float) {
+        roll = remainder(roll + radians, 2 * .pi)
+    }
+
+    /// The roll a quarter turn from this one in a direction (+1 counter-clockwise, −1 clockwise): the next
+    /// multiple of 90° that way, so a picture turned a little first lands square.
+    func quarterTurnedRoll(_ direction: Int) -> Float {
+        let quarter = Float.pi / 2, r = roll / quarter
+        return (direction > 0 ? floor(r + 1e-3) + 1 : ceil(r - 1e-3) - 1) * quarter
+    }
+
     /// Pans by a screen-space delta in points, so the model follows the cursor.
     mutating func pan(dx: Float, dy: Float, viewHeight: Float) {
         let scale = 2 * halfHeight / max(viewHeight, 1)
@@ -187,15 +211,17 @@ struct Camera {
                        y: CGFloat((1 - c.y / c.w) / 2) * viewSize.height)
     }
 
-    /// Looks straight down `normal` onto `target` (e.g. a sketch plane), keeping the distance.
+    /// Looks straight down `normal` onto `target` (e.g. a sketch plane), keeping the distance, with the roll undone.
     mutating func look(along normal: SIMD3<Float>, at target: SIMD3<Float>) {
         self.target = target
+        roll = 0
         let n = simd_normalize(normal)
         pitch = min(max(asin(n.z), -1.55), 1.55)
         if abs(n.x) + abs(n.y) > 1e-4 { yaw = atan2(n.y, n.x) } else { yaw = -.pi / 2 }
     }
 
     mutating func setStandard(_ view: StandardView) {
+        roll = 0
         switch view {
         case .top: pitch = 1.55; yaw = -.pi / 2
         case .front: pitch = 0; yaw = -.pi / 2

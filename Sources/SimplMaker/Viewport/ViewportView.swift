@@ -200,6 +200,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 self?.needsDisplay = true
             }
             c.home = { [weak self] in self?.model?.show(.home) }
+            c.turn = { [weak self] direction in
+                guard let self, let renderer = self.renderer, self.model?.sketchSession != nil else { return }
+                var goal = renderer.camera.pose
+                goal.roll = renderer.camera.quarterTurnedRoll(direction)
+                self.animateCamera(to: goal, duration: 0.25)
+            }
             c.accent = { [weak self] in Preferences.nsAccent(sketching: self?.model?.sketchSession != nil) }
             addSubview(c)
             viewCube = c
@@ -208,6 +214,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let right = min(panelInsets.right, bounds.width * 0.45)
         cube.frame.origin = NSPoint(x: bounds.width - right - ViewCubeView.size.width - DS.Spacing.space4,
                                     y: topInset + DS.Spacing.space4)
+        cube.offersTurning = model?.sketchSession != nil
         cube.needsDisplay = true
     }
 
@@ -305,12 +312,26 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             originMarker = nil
             return
         }
-        func screen(_ u: Double, _ v: Double) -> CGPoint? {
+        func anywhere(_ u: Double, _ v: Double) -> CGPoint? {
             let w = grid.frame.point(u, v)
-            guard let p = renderer.camera.project(SIMD3(Float(w.x), Float(w.y), Float(w.z)), viewSize: bounds.size),
-                  bounds.insetBy(dx: -40, dy: -40).contains(p) else { return nil }
+            return renderer.camera.project(SIMD3(Float(w.x), Float(w.y), Float(w.z)), viewSize: bounds.size)
+        }
+        func screen(_ u: Double, _ v: Double) -> CGPoint? {
+            guard let p = anywhere(u, v), bounds.insetBy(dx: -40, dy: -40).contains(p) else { return nil }
             return p
         }
+        // Which way the numbers sit off their axis on screen: below the horizontal one, right of the vertical one,
+        // or the nearest to that once the view is rolled.
+        func offset(alongU: Bool) -> CGVector {
+            guard let a = anywhere(0, 0), let b = alongU ? anywhere(1, 0) : anywhere(0, 1) else { return alongU ? CGVector(dx: 0, dy: 1) : CGVector(dx: 1, dy: 0) }
+            let len = max(hypot(b.x - a.x, b.y - a.y), 1e-9)
+            var n = CGVector(dx: -(b.y - a.y) / len, dy: (b.x - a.x) / len)  // across the axis
+            if alongU ? (n.dy < -1e-6 || (abs(n.dy) <= 1e-6 && n.dx < 0)) : (n.dx < -1e-6 || (abs(n.dx) <= 1e-6 && n.dy < 0)) {
+                n = CGVector(dx: -n.dx, dy: -n.dy)
+            }
+            return n
+        }
+        let acrossU = offset(alongU: true), acrossV = offset(alongU: false)
         var wanted: [String: (text: String, point: CGPoint, alongU: Bool)] = [:]
         for (alongU, range) in [(true, grid.u), (false, grid.v)] {
             var k = (range.lowerBound / grid.major).rounded()
@@ -334,9 +355,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 return v
             }()
             let size = view.frame.size
-            // Below the horizontal axis, centred on its line; right of the vertical axis.
-            view.setFrameOrigin(w.alongU ? NSPoint(x: w.point.x - size.width / 2, y: w.point.y + 6)
-                                         : NSPoint(x: w.point.x + 6, y: w.point.y - size.height / 2))
+            // Off the axis by 6 points, whichever way it runs: the label's own size decides how far its middle goes.
+            let n = w.alongU ? acrossU : acrossV
+            let reach = 6 + abs(n.dx) * size.width / 2 + abs(n.dy) * size.height / 2
+            view.setFrameOrigin(NSPoint(x: w.point.x + n.dx * reach - size.width / 2, y: w.point.y + n.dy * reach - size.height / 2))
         }
         if let p = screen(0, 0) {
             let marker = originMarker ?? {
@@ -644,7 +666,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     override func mouseUp(with event: NSEvent) {
         if windowDrag { windowDrag = false; return }
-        defer { lastDrag = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; planeResizeDrag = false; manipulatorDrag = nil; updateCursor() }
+        defer { lastDrag = nil; rollDragRaw = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; planeResizeDrag = false; manipulatorDrag = nil; updateCursor() }
         if manipulatorDrag != nil {
             model?.endManipulatorDrag()
             refreshOverlay()
@@ -688,7 +710,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         refreshOverlay()
     }
 
-    override func rightMouseDown(with event: NSEvent) { lastDrag = location(event); dragged = false }
+    override func rightMouseDown(with event: NSEvent) { lastDrag = location(event); dragged = false; rollDragRaw = nil }
     /// A right-click without dragging (dragging pans) opens the menu for what's under the cursor.
     override func rightMouseUp(with event: NSEvent) {
         defer { lastDrag = nil }
@@ -715,7 +737,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     override func rightMouseDragged(with event: NSEvent) { navigateByDragging(event, bindings: navigation.right) }
-    override func otherMouseDown(with event: NSEvent) { lastDrag = location(event); dragged = false }
+    override func otherMouseDown(with event: NSEvent) { lastDrag = location(event); dragged = false; rollDragRaw = nil }
     override func otherMouseDragged(with event: NSEvent) { navigateByDragging(event, bindings: navigation.middle) }
 
     /// The navigation settings, read again only when they change (this is asked for on every mouse move).
@@ -732,12 +754,44 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     /// Orbits, pans or zooms by a drag, as the settings bind the button and the modifier keys held.
     private func navigateByDragging(_ event: NSEvent, bindings: NavBindings) {
-        let action = bindings[NavModifier(event.modifierFlags)]
+        var action = navAction(bindings[NavModifier(event.modifierFlags)])
+        // ⇧ with the key that rolls snaps the roll; ⇧ alone is its own binding.
+        let snapping = event.modifierFlags.contains(.shift)
+        if snapping, event.modifierFlags.contains(.option), navAction(bindings.option) == .roll { action = .roll }
         let config = navigation
+        let before = lastDrag
         drag(event) { dx, dyUp in  // `drag` gives dy upward-positive
             guard let renderer else { return }
+            if action == .roll {
+                // The picture follows the pointer round the middle of the free part of the view; with ⇧ it
+                // lands on every 15°, however the pointer wandered between.
+                guard let before, let angle = turnAroundCenter(from: before, to: location(event)) else { return }
+                let raw = (rollDragRaw ?? renderer.camera.roll) + angle
+                rollDragRaw = raw
+                renderer.camera.roll = snapping ? (raw / Self.rollSnap).rounded() * Self.rollSnap : remainder(raw, 2 * .pi)
+                return
+            }
             config.navigate(&renderer.camera, action, input: .drag, dx: dx, dy: -dyUp, viewHeight: Float(bounds.height))
         }
+    }
+
+    /// Where a roll drag would have the picture without snapping, so the snapping doesn't eat small movements.
+    private var rollDragRaw: Float?
+    static let rollSnap = Float.pi / 12
+
+    /// Rolling turns a sketch's picture; with nothing to roll, the input does nothing.
+    private func navAction(_ action: NavAction) -> NavAction {
+        action == .roll && model?.sketchSession == nil ? .none : action
+    }
+
+    /// How far, counter-clockwise on screen, the pointer went round the middle of the view between two points.
+    private func turnAroundCenter(from a: NSPoint, to b: NSPoint) -> Float? {
+        guard let shift = renderer?.camera.centerShift else { return nil }
+        let c = NSPoint(x: bounds.midX + CGFloat(shift.x) * bounds.width / 2, y: bounds.midY - CGFloat(shift.y) * bounds.height / 2)
+        let va = CGVector(dx: a.x - c.x, dy: c.y - a.y), vb = CGVector(dx: b.x - c.x, dy: c.y - b.y)  // y up
+        guard hypot(va.dx, va.dy) > 8, hypot(vb.dx, vb.dy) > 8 else { return nil }  // too near the middle to have a direction
+        let turn = atan2(va.dx * vb.dy - va.dy * vb.dx, va.dx * vb.dx + va.dy * vb.dy)
+        return Float(turn)
     }
 
     private func drag(_ event: NSEvent, _ apply: (Float, Float) -> Void) {
@@ -757,14 +811,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         var dx = Float(event.scrollingDeltaX), dy = Float(event.scrollingDeltaY)
         // Held with ⇧, many mice turn the wheel sideways.
         if !precise, dy == 0 { (dx, dy) = (0, dx) }
-        let action = (precise ? config.trackpad : config.wheel)[NavModifier(event.modifierFlags)]
+        let action = navAction((precise ? config.trackpad : config.wheel)[NavModifier(event.modifierFlags)])
         config.navigate(&renderer.camera, action, input: precise ? .trackpad : .wheel, dx: dx, dy: dy, viewHeight: Float(bounds.height))
         needsDisplay = true
     }
 
     override func rotate(with event: NSEvent) {
         guard let renderer else { return }
-        navigation.rotate(&renderer.camera, degrees: event.rotation)
+        navigation.rotate(&renderer.camera, degrees: event.rotation, sketching: model?.sketchSession != nil)
         needsDisplay = true
     }
 

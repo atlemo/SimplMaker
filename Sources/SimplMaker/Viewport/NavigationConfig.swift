@@ -5,13 +5,17 @@ import Foundation
 
 /// What a navigation input does to the camera.
 enum NavAction: String, Codable, CaseIterable, Identifiable {
-    case orbit, pan, zoom, none
+    case orbit, pan, zoom
+    /// Turns the picture about the line of sight, as when one turns a sheet of paper. Only a sketch's view does it.
+    case roll
+    case none
     var id: String { rawValue }
     var title: String {
         switch self {
         case .orbit: return "Orbit"
         case .pan: return "Pan"
         case .zoom: return "Zoom"
+        case .roll: return "Roll (sketch)"
         case .none: return "Off"
         }
     }
@@ -127,7 +131,8 @@ struct NavigationConfig: Codable, Equatable {
     // MARK: presets
 
     /// ⌃-click is a right-click on a Mac, so a left button held with ⌃ has nothing to bind.
-    private static let leftDrag = NavBindings(plain: .orbit, control: NavAction.none)
+    /// ⌥ turns the sketch's picture on the paper.
+    private static let leftDrag = NavBindings(plain: .orbit, control: NavAction.none, option: .roll)
 
     /// What SimplMaker has always done. `trackpadOrbits` and `invertZoom` carry over the two choices
     /// the Settings had before the bindings could be edited.
@@ -211,6 +216,10 @@ struct NavigationConfig: Codable, Equatable {
             let sign: Float = input == .drag ? 1 : -1
             let exponent = sign * dy * perUnit * Float(zoomSpeed) * (invertZoom ? -1 : 1)
             camera.zoom(exp(exponent))
+        case .roll:
+            // A drag follows the pointer round the middle of the view (see ViewportMTKView); a scroll, which has
+            // no pointer to follow, turns by how far it went sideways.
+            camera.roll(by: -dx * 0.008 * Float(orbitSpeed))
         }
     }
 
@@ -221,9 +230,14 @@ struct NavigationConfig: Codable, Equatable {
         camera.zoom(pow(base, -Float(zoomSpeed)))
     }
 
-    /// The trackpad's rotate gesture, in degrees.
-    func rotate(_ camera: inout Camera, degrees: Float) {
+    /// The trackpad's rotate gesture, in degrees (positive counter-clockwise). In a sketch the picture turns
+    /// with the fingers; elsewhere the view spins round the vertical.
+    func rotate(_ camera: inout Camera, degrees: Float, sketching: Bool = false) {
         guard rotateSpins else { return }
-        camera.orbit(dx: degrees * 4, dy: 0)
+        if sketching {
+            camera.roll(by: degrees * .pi / 180)
+        } else {
+            camera.orbit(dx: degrees * 4, dy: 0)
+        }
     }
 }

@@ -1,13 +1,15 @@
 // Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import CADCore
+import simd
 import Testing
 @testable import SimplMaker
 
 /// The mouse moves the view in sketch mode as in Design mode: left-drag on empty space orbits, right-drag pans.
 @Suite @MainActor struct SketchNavigationTests {
-    private func event(_ type: NSEvent.EventType, _ x: CGFloat, _ y: CGFloat, _ window: NSWindow) -> NSEvent {
-        NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: y), modifierFlags: [], timestamp: 0,
+    private func event(_ type: NSEvent.EventType, _ x: CGFloat, _ y: CGFloat, _ window: NSWindow,
+                       flags: NSEvent.ModifierFlags = []) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: y), modifierFlags: flags, timestamp: 0,
                            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
     }
 
@@ -64,5 +66,82 @@ import Testing
         view.mouseDown(with: event(.leftMouseDown, 400, 300, window))
         view.mouseDragged(with: event(.leftMouseDragged, 300, 300, window))
         #expect(renderer.camera.yaw != yaw)
+    }
+
+    @Test func optionDragTurnsTheSketchOnItsPaperWithoutTippingIt() async throws {
+        let (view, renderer, window) = try await sketchView()
+        let yaw = renderer.camera.yaw, pitch = renderer.camera.pitch, target = renderer.camera.target
+        // The pointer goes a quarter turn counter-clockwise round the middle (400, 300): from the right of it to above it.
+        view.mouseDown(with: event(.leftMouseDown, 600, 300, window, flags: .option))
+        view.mouseDragged(with: event(.leftMouseDragged, 400, 500, window, flags: .option))
+        #expect(abs(renderer.camera.roll - .pi / 2) < 1e-4, "\(renderer.camera.roll)")
+        #expect(renderer.camera.yaw == yaw && renderer.camera.pitch == pitch && renderer.camera.target == target)
+        // What was along the sketch's x axis now runs up the screen.
+        let size = view.bounds.size
+        let o = try #require(renderer.camera.project(SIMD3(200, 200, 0), viewSize: size))
+        let x = try #require(renderer.camera.project(SIMD3(300, 200, 0), viewSize: size))
+        #expect(abs(x.x - o.x) < 0.01 && x.y < o.y - 1)
+    }
+
+    @Test func shiftOptionDragLandsOnRoundAngles() async throws {
+        let (view, renderer, window) = try await sketchView()
+        let step = ViewportMTKView.rollSnap
+        view.mouseDown(with: event(.leftMouseDown, 600, 300, window, flags: [.option, .shift]))
+        // About 20° counter-clockwise round (400, 300): 200 points out, 73 up.
+        view.mouseDragged(with: event(.leftMouseDragged, 400 + 200 * cos(0.35), 300 + 200 * sin(0.35), window, flags: [.option, .shift]))
+        #expect(abs(renderer.camera.roll - step) < 1e-4, "\(renderer.camera.roll) is the nearest 15°, step \(step)")
+        // Two more degrees: still short of halfway to the next, so it stays; the movement isn't lost.
+        view.mouseDragged(with: event(.leftMouseDragged, 400 + 200 * cos(0.38), 300 + 200 * sin(0.38), window, flags: [.option, .shift]))
+        #expect(abs(renderer.camera.roll - step) < 1e-4)
+        view.mouseDragged(with: event(.leftMouseDragged, 400 + 200 * cos(0.5), 300 + 200 * sin(0.5), window, flags: [.option, .shift]))
+        #expect(abs(renderer.camera.roll - 2 * step) < 1e-4)
+        view.mouseUp(with: event(.leftMouseUp, 400, 300, window))
+    }
+
+    @Test func rollingAlsoLeavesTheSketchPointedAtTheRightPlace() async throws {
+        let (view, renderer, window) = try await sketchView()
+        renderer.camera.roll(by: 0.7)
+        // A point in the sketch plane still projects, and the ray back through it hits that point.
+        let size = view.bounds.size
+        let world = SIMD3<Float>(230, 170, 0)
+        let p = try #require(renderer.camera.project(world, viewSize: size))
+        let ray = renderer.camera.ray(at: p, viewSize: size)
+        let t = -ray.origin.z / ray.direction.z
+        let hit = ray.origin + t * ray.direction
+        #expect(simd_length(hit - world) < 0.01)
+        _ = window
+    }
+
+    @Test func optionDragOutsideASketchDoesNothing() async throws {
+        let model = DocumentModel(document: CADDocument())
+        for _ in 0..<400 where model.result == nil || model.isRegenerating { try await Task.sleep(for: .milliseconds(5)) }
+        let view = ViewportMTKView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), device: nil)
+        let renderer = try #require(Renderer())
+        view.device = renderer.device
+        view.renderer = renderer
+        view.model = model
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = view
+        let pose = renderer.camera.pose
+        view.mouseDown(with: event(.leftMouseDown, 600, 300, window, flags: .option))
+        view.mouseDragged(with: event(.leftMouseDragged, 400, 500, window, flags: .option))
+        #expect(renderer.camera.pose == pose, "Z stays up in a 3D view")
+    }
+}
+
+/// The view cube offers two curved arrows while sketching, each turning the sketch a quarter.
+@Suite @MainActor struct SketchTurnButtonTests {
+    @Test func theArrowsShowOnlyWhileSketchingAndTurnTheWayTheyPoint() {
+        let cube = ViewCubeView(frame: NSRect(origin: .zero, size: ViewCubeView.size))
+        var turns: [Int] = []
+        cube.turn = { turns.append($0) }
+        let arrows = cube.turnButtons
+        #expect(arrows.count == 2 && arrows.allSatisfy { $0.isHidden })
+        cube.offersTurning = true
+        #expect(arrows.allSatisfy { !$0.isHidden })
+        for b in arrows { b.performClick(nil) }
+        #expect(turns == [1, -1], "counter-clockwise first")
+        cube.offersTurning = false
+        #expect(arrows.allSatisfy { $0.isHidden })
     }
 }
