@@ -67,13 +67,17 @@ struct TimelineBar: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: Self.spacing) {
                         ForEach(Array(model.document.features.enumerated()), id: \.element.id) { i, f in
-                            if i == marker { markerView }
                             item(f, index: i, marks: marks)
                         }
-                        if marker >= model.document.features.count { markerView }
                     }
                     .padding(.horizontal, DS.Spacing.space2)
                     .frame(height: Self.height)
+                    // One marker view that is moved, not rebuilt at each position: a drag that
+                    // swapped it between list slots would be cancelled after a single step.
+                    .overlay(alignment: .leading) {
+                        markerView
+                            .offset(x: DS.Spacing.space2 + CGFloat(min(marker, model.document.features.count)) * Self.step - 6)
+                    }
                 }
                 .onChange(of: model.document.features.count) {
                     if let last = model.document.features.last?.id { withAnimation { proxy.scrollTo(last) } }
