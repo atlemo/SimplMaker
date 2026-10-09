@@ -20,6 +20,9 @@ struct InspectorView: View {
                         }
                     }
                     LabeledContent("Type", value: feature.typeName)
+                    if feature.createsBody, let made = model.bodies.first(where: { $0.id == id }) {
+                        BodySizeRows(shape: made.body)
+                    }
                     if let error = model.result?.errors[feature.id] {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
@@ -68,7 +71,7 @@ struct InspectorView: View {
                     LabeledContent("Name") {
                         ExpressionField(text: b.name, monospaced: false, completes: false) { model.renameBody(body, to: $0) }
                     }
-                    LabeledContent("Volume", value: String(format: "%.2f mm³", b.body.volume))
+                    BodySizeRows(shape: b.body, volume: true)
                     LabeledContent("Made by") {
                         HStack {
                             Text(model.featureName(body))
@@ -83,6 +86,24 @@ struct InspectorView: View {
             ContentUnavailableView("No Feature Selected", systemImage: "cursorarrow.click",
                                    description: Text("Select a feature in the timeline to edit it, or pick a tool in the toolbar to create one."))
         }
+    }
+}
+
+/// How big a body is: its size along each world axis (its bounding box), and optionally its volume, in the
+/// unit system chosen in Settings.
+struct BodySizeRows: View {
+    let shape: KBody
+    var volume = false
+
+    var body: some View {
+        let units = MeasureUnits(us: Preferences.unitSystemSetting.isUS)
+        if let box = shape.bounds {
+            let e = box.max - box.min
+            LabeledContent("Size X", value: units.length(e.x))
+            LabeledContent("Size Y", value: units.length(e.y))
+            LabeledContent("Size Z", value: units.length(e.z))
+        }
+        if volume { LabeledContent("Volume", value: units.volume(shape.volume)) }
     }
 }
 
