@@ -100,7 +100,7 @@ struct DocumentWindow: View {
             ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
                          highlighted: model.highlighted, fitRevision: model.fitRevision,
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
-                         visualStyle: model.visualStyle,
+                         visualStyle: model.visualStyle, printPreview: model.printPreview,
                          showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,

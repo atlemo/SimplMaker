@@ -17,7 +17,9 @@ enum Shaders {
         float4 faceSelectedColor;
         float4 regionColor;     // rgb + base alpha
         uint wholeBodies;       // a tool is picking bodies: hover and selection cover the whole body
-        uint pad0, pad1, pad2;
+        uint printPreview;      // View ▸ FDM 3D Print Preview: faces get the look of printed layers
+        float printLayer;       // layer height in mm
+        uint pad2;
     };
 
     struct FaceVertex { packed_float3 position; packed_float3 normal; uint id; };
@@ -83,6 +85,36 @@ enum Shaders {
         return transformFace(verts[vid], u);
     }
 
+    // A rounded bead's tilt across one printed line: t runs -1 to 1 over its width; the tilt is steep
+    // at the edges and flat in the middle. The sudden change where one line meets the next is the groove.
+    static float beadTilt(float t) { return 0.3 * t * rsqrt(1.02 - 0.9 * t * t); }
+
+    // What an FDM print looks like at this point: horizontal layer lines on walls and slopes, and the
+    // diagonal lines of the top skin on flat faces. Changes the normal and returns how much light the
+    // groove between lines lets in. Approximate: nothing is sliced. Lines too fine for the screen fade out.
+    static float printLook(thread float3& n, float3 world, float layer) {
+        float zl = world.z / layer;
+        float t = 2.0 * fract(zl) - 1.0;
+        float layerFade = 1.0 - smoothstep(0.2, 0.5, fwidth(zl));
+        float flat = smoothstep(0.9, 0.98, abs(n.z));      // 0 on walls and slopes, 1 on tops and bottoms
+
+        // Top skin: lines about as wide as a nozzle's, crossing at 45 degrees on every other layer.
+        float spacing = 0.4;
+        float side = (int(floor(zl - 0.002)) & 1) != 0 ? 1.0 : -1.0;
+        float2 along = float2(1.0, side) * 0.70710678;
+        float2 across = float2(-side, 1.0) * 0.70710678;
+        float d = dot(world.xy, across) / spacing;
+        float skinFade = 1.0 - smoothstep(0.12, 0.3, fwidth(d));
+        float st = 2.0 * fract(d) - 1.0;
+
+        float wallTilt = beadTilt(t) * layerFade * (1.0 - flat);
+        float2 skinTilt = across * (0.3 * beadTilt(st) * skinFade * flat);
+        n = normalize(n + float3(skinTilt, wallTilt));
+        float groove = 1.0 - 0.1 * smoothstep(0.7, 1.0, abs(t)) * layerFade * (1.0 - flat)
+                           - 0.04 * smoothstep(0.7, 1.0, abs(st)) * skinFade * flat;
+        return groove;
+    }
+
     fragment FragOut faceFragment(FaceOut in [[stage_in]],
                                   constant Uniforms& u [[buffer(1)]],
                                   constant uint* sel [[buffer(2)]],
@@ -90,9 +122,15 @@ enum Shaders {
         float3 n = normalize(in.normal);
         float3 v = normalize(u.eye.xyz - in.world);
         if (dot(n, v) < 0.0) n = -n;
+        // fwidth needs every pixel of a quad to run it, so it sits out here rather than in a branch.
+        float groove = 1.0;
+        float3 printN = n;
+        float printGroove = printLook(printN, in.world, max(u.printLayer, 0.01));
+        if (u.printPreview != 0 && (p.style & 4u) == 0) { n = printN; groove = printGroove; }
         float3 key = normalize(v + float3(0.25, 0.15, 0.6));
         float diffuse = max(dot(n, key), 0.0);
-        float spec = pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
+        float spec = u.printPreview != 0 ? pow(max(dot(reflect(-key, n), v), 0.0), 14.0) * 0.07
+                                         : pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
         // The body's colour (its own from the Appearance panel, or the palette's), with hover and
         // selection colours made from it (see Renderer.tint).
         float3 base = p.color.rgb;
@@ -104,7 +142,7 @@ enum Shaders {
         if (isSelected(in.id, sel, u.selectedCount) || isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount))
             base = p.selectColor.rgb;
         FragOut o;
-        o.color = (p.style & 4u) != 0 ? float4(base, 1.0) : float4(base * (0.32 + 0.68 * diffuse) + spec, 1.0);
+        o.color = (p.style & 4u) != 0 ? float4(base, 1.0) : float4(base * (0.32 + 0.68 * diffuse) * groove + spec, 1.0);
         o.id = in.id;
         return o;
     }

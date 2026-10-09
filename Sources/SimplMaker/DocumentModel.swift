@@ -140,6 +140,8 @@ final class DocumentModel {
     var orthographic = true
     /// How bodies are drawn: shaded or wireframe, with or without edges (View ▸ Visual Style).
     var visualStyle = VisualStyle.standard
+    /// Shaded bodies drawn like an FDM print, with layer lines (View ▸ FDM 3D Print Preview). Not saved.
+    var printPreview = false
     var fileURL: URL?
     var alert: AlertInfo?
 

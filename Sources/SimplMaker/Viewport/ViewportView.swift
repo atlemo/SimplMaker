@@ -706,7 +706,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let next = renderer.camera.ray(at: CGPoint(x: p.x + 1, y: p.y), viewSize: bounds.size)
         model.clickRayNext = (SIMD3(Double(next.origin.x), Double(next.origin.y), Double(next.origin.z)),
                               SIMD3(Double(next.direction.x), Double(next.direction.y), Double(next.direction.z)))
-        let menu = ContextMenuBuilder.menu(model.contextItems(for: pick, ray: ray)) { [weak self] in self?.refreshOverlay() }
+        var items = model.contextItems(for: pick, ray: ray)
+        if model.sketchSession == nil, model.pendingTool == nil, model.visualStyle.isShaded {
+            items += [.separator, .action(model.printPreview ? "Leave 3D Print Preview" : "FDM 3D Print Preview",
+                                          symbol: "square.stack.3d.up") { model.printPreview.toggle() }]
+        }
+        let menu = ContextMenuBuilder.menu(items) { [weak self] in self?.refreshOverlay() }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     override func rightMouseDragged(with event: NSEvent) { navigateByDragging(event, bindings: navigation.right) }
@@ -1596,7 +1601,8 @@ enum ContextMenuBuilder {
     final class Target: NSObject {
         let run: () -> Void
         init(_ run: @escaping () -> Void) { self.run = run }
-        @objc func perform(_ sender: Any?) { run() }
+        // Not named perform(_:), which NSObject already has and which the menu then sends to a garbage selector.
+        @objc func runAction(_ sender: Any?) { run() }
     }
 
     static func menu(_ items: [ContextItem], after: @escaping () -> Void) -> NSMenu {
@@ -1608,7 +1614,7 @@ enum ContextMenuBuilder {
                 if !(menu.items.last?.isSeparatorItem ?? true) { menu.addItem(.separator()) }
             case .action(let title, let symbol, let enabled, let action):
                 let target = Target { action(); after() }
-                let mi = NSMenuItem(title: title, action: #selector(Target.perform(_:)), keyEquivalent: "")
+                let mi = NSMenuItem(title: title, action: #selector(Target.runAction(_:)), keyEquivalent: "")
                 mi.target = target
                 mi.representedObject = target  // NSMenuItem holds its target weakly
                 mi.isEnabled = enabled
@@ -1678,6 +1684,7 @@ struct ViewportView: NSViewRepresentable {
     let cameraRevision: Int
     let orthographic: Bool
     var visualStyle = VisualStyle.standard
+    var printPreview = false
     let showGrid: Bool
     /// Grid square and unit setting, so a change in Settings redraws the sketch grid.
     var gridSetting = ""
@@ -1737,6 +1744,7 @@ struct ViewportView: NSViewRepresentable {
         }
         renderer.camera.orthographic = orthographic
         renderer.visualStyle = visualStyle
+        renderer.printPreview = printPreview
         renderer.showGrid = showGrid
         renderer.showAxes = showAxes
         if view.gridSetting != gridSetting {

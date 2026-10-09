@@ -147,7 +147,11 @@ struct Uniforms {
     var faceSelectedColor: SIMD4<Float>
     var regionColor: SIMD4<Float>
     var wholeBodies: UInt32 = 0
-    var pad0: UInt32 = 0, pad1: UInt32 = 0, pad2: UInt32 = 0
+    /// View ▸ FDM 3D Print Preview: the faces shaded as printed layers (see printLook in the shader).
+    var printPreview: UInt32 = 0
+    /// The layer height of the print preview, in mm.
+    var printLayer: Float = 0.2
+    var pad2: UInt32 = 0
 }
 
 /// The grid drawn in the plane of the sketch being edited: minor and major lines over the visible
@@ -413,6 +417,8 @@ final class Renderer {
     /// The red, green and blue X, Y and Z axes through the origin.
     var showAxes = true
     var visualStyle = VisualStyle.standard
+    /// Bodies drawn as if FDM printed. Only for the shaded styles, and without edges, which would spoil it.
+    var printPreview = false
     var hovered: UInt32 = 0
     /// A tool is picking bodies: hovering and selecting a face lights up its whole body.
     var wholeBodies = false
@@ -770,12 +776,14 @@ final class Renderer {
 
         let aspect = Float(size.width / size.height)
         if (showGrid || showAxes) && sketchGrid == nil { updateWorldGrid(viewSize: view.bounds.size) }
+        let printing = printPreview && visualStyle.isShaded
         var uniforms = Uniforms(viewProj: camera.projectionMatrix(aspect: aspect) * camera.viewMatrix(),
                                 eye: SIMD4(camera.eye, 1), viewport: SIMD2(Float(size.width), Float(size.height)),
                                 hovered: hovered, selectedCount: UInt32(min(selected.count, 256)),
                                 faceColor: palette.face, faceHoverColor: palette.faceHover,
                                 faceSelectedColor: palette.faceSelected, regionColor: palette.region,
-                                wholeBodies: wholeBodies ? 1 : 0)
+                                wholeBodies: wholeBodies ? 1 : 0,
+                                printPreview: printing ? 1 : 0)
         var sel = Array(selected.prefix(256))
         if sel.isEmpty { sel = [0] }
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
@@ -788,7 +796,7 @@ final class Renderer {
         enc.setFragmentBytes(&sel, length: MemoryLayout<UInt32>.stride * sel.count, index: 2)
 
         enc.setCullMode(.none)
-        let style = visualStyle
+        let style = printing ? VisualStyle.shaded : visualStyle
         let tints = bodies.indices.map { Self.tint(bodyColors[safe: $0].flatMap { $0 }, palette: palette) }
         /// Faces: shaded, or in the wireframe styles flat in the background colour (hiding what's
         /// behind them) with hover and selection as a light wash. Wireframe draws them later, unseen.
