@@ -1509,6 +1509,15 @@ final class DocumentModel {
             h.allowsNegative = true
             return h
         case .scale(let sf):
+            if !sf.bodies.isEmpty {
+                // From the middle of the bodies along X: the arrow is half their size, times the factor.
+                let bodies = Array((result.featureInputs[id] ?? [:]).values)
+                let boxes = bodies.compactMap(\.bounds)
+                guard let center = Regenerator.center(of: bodies), let first = boxes.first else { return nil }
+                let lo = boxes.dropFirst().reduce(first.min) { simd_min($0, $1.min) }
+                let hi = boxes.dropFirst().reduce(first.max) { simd_max($0, $1.max) }
+                return handle("Scale", center, SIMD3(1, 0, 0), sf.factor, unit: .none, per: max(simd_reduce_max(hi - lo) / 2, 1))
+            }
             // From the sketch's origin along its x axis: the arrow is as long as the sketch is wide, times the factor.
             guard let sk = result.sketchInputs[id]?[sf.sketches.first ?? ""], let box = sk.bounds else { return nil }
             let size = max(simd_reduce_max(box.max - box.min) / 2, 1)

@@ -522,13 +522,33 @@ public struct CombineFeature: Codable, Hashable, Sendable {
     }
 }
 
-/// Scales sketches evenly about their origins. The features after it see the scaled sketches; a sketch
-/// itself stays as it was drawn, so its dimensions and this factor stay editable.
+/// Scales sketches and bodies evenly. Sketches scale about their own origins; the features after it see the
+/// scaled sketches, while a sketch itself stays as it was drawn, so its dimensions and this factor stay editable.
+/// Bodies scale about the middle of their bounding box (all the bodies together, so their layout scales too).
 public struct ScaleFeature: Codable, Hashable, Sendable {
     public var sketches: [FeatureID]
+    public var bodies: [FeatureID]
     /// Plain number, or an expression: "2", "width / 40".
     public var factor: String
-    public init(sketches: [FeatureID], factor: String = "1") { self.sketches = sketches; self.factor = factor }
+    public init(sketches: [FeatureID] = [], bodies: [FeatureID] = [], factor: String = "1") {
+        self.sketches = sketches; self.bodies = bodies; self.factor = factor
+    }
+
+    private enum CodingKeys: String, CodingKey { case sketches, bodies, factor }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sketches = try c.decode([FeatureID].self, forKey: .sketches)
+        bodies = try c.decodeIfPresent([FeatureID].self, forKey: .bodies) ?? []  // older files scale sketches only
+        factor = try c.decode(String.self, forKey: .factor)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(sketches, forKey: .sketches)
+        if !bodies.isEmpty { try c.encode(bodies, forKey: .bodies) }
+        try c.encode(factor, forKey: .factor)
+    }
 }
 
 /// Rotates bodies about an axis (parallel to X, Y or Z) through the middle of their bounding box.

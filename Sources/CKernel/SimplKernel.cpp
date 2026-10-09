@@ -2140,6 +2140,18 @@ SKHandle sk_rotate(SKHandle body, double ox, double oy, double oz, double ax, do
   SK_CATCH(0)
 }
 
+SKHandle sk_scale(SKHandle body, double ox, double oy, double oz, double factor) {
+  SK_TRY
+  if (!(factor > 1e-9)) {
+    setError("the scale factor must be more than zero");
+    return 0;
+  }
+  gp_Trsf t;
+  t.SetScale(gp_Pnt(ox, oy, oz), factor);
+  return transformed(body, t);
+  SK_CATCH(0)
+}
+
 SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op) {
   SK_TRY
   Body *a, *b;

@@ -163,7 +163,7 @@ extension Feature {
         case .fillet(let f), .chamfer(let f): f.edges.forEach { add($0.body) }; f.faces.forEach { add($0.body) }
         case .move(let f): f.bodies.forEach { add($0) }; f.sketches.forEach { add($0) }
         case .rotate(let f): f.bodies.forEach { add($0) }
-        case .scale(let f): f.sketches.forEach { add($0) }
+        case .scale(let f): f.sketches.forEach { add($0) }; f.bodies.forEach { add($0) }
         case .combine(let f): add(f.target); f.tools.forEach { add($0) }
         case .split(let f):
             f.bodies.forEach { add($0) }
@@ -204,6 +204,7 @@ extension Feature {
         case .fillet(let f), .chamfer(let f): f.edges.forEach { out.insert($0.body) }; f.faces.forEach { out.insert($0.body) }
         case .move(let f): f.bodies.forEach { out.insert($0) }
         case .rotate(let f): f.bodies.forEach { out.insert($0) }
+        case .scale(let f): f.bodies.forEach { out.insert($0) }
         case .combine(let f): out.insert(f.target)
         case .split(let f): f.bodies.forEach { out.insert($0) }
         case .mirror(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
@@ -211,7 +212,7 @@ extension Feature {
         case .shell(let f): out.insert(f.body)
         case .draft(let f): out.insert(f.body)
         case .project(let f): out.insert(f.target)
-        case .sketch, .plane, .importBody, .scale, .image: break
+        case .sketch, .plane, .importBody, .image: break
         }
         return out
     }

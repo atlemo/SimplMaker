@@ -1023,9 +1023,13 @@ struct ScaleInspector: View {
     var body: some View {
         Section("Scale") {
             edit.row("Factor", scale.factor, "Edit Scale Factor") { $0.factor = $1 }
-            let names = scale.sketches.map { model.featureName($0) }
-            LabeledContent(names.count == 1 ? "Sketch" : "Sketches", value: names.joined(separator: ", "))
-            Text("Scales about each sketch's origin. Features after this one use the scaled sketch.")
+            if !scale.bodies.isEmpty { BodiesRow(model: model, ids: scale.bodies) }
+            if !scale.sketches.isEmpty {
+                let names = scale.sketches.map { model.featureName($0) }
+                LabeledContent(names.count == 1 ? "Sketch" : "Sketches", value: names.joined(separator: ", "))
+            }
+            Text(scale.bodies.isEmpty ? "Scales about each sketch's origin. Features after this one use the scaled sketch."
+                 : "Bodies scale about the middle of them all, sketches about their own origins. Features after this one use the scaled shapes.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

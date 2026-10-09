@@ -344,6 +344,11 @@ public final class KBody: @unchecked Sendable {
         try KBody.wrap(sk_rotate(handle, origin.x, origin.y, origin.z, a.x, a.y, a.z, angle), "rotate")
     }
 
+    /// The body enlarged or shrunk evenly by `factor` about a point. Face and edge names are kept.
+    public func scaled(by factor: Double, about origin: SIMD3<Double>) throws -> KBody {
+        try KBody.wrap(sk_scale(handle, origin.x, origin.y, origin.z, factor), "scale")
+    }
+
     /// Copies for mirror and pattern features, with every face name prefixed so the copies' faces
     /// stay distinct from the original's when they're joined.
     public func translatedCopy(_ d: SIMD3<Double>, prefix: String) throws -> KBody {

@@ -122,6 +122,8 @@ SKHandle sk_thread(SKHandle body, const char *faceName, double majorDiameter, do
 /// (ox, oy, oz) along (ax, ay, az). Face and edge names are kept.
 SKHandle sk_translate(SKHandle body, double dx, double dy, double dz);
 SKHandle sk_rotate(SKHandle body, double ox, double oy, double oz, double ax, double ay, double az, double angle);
+/// A copy of a body enlarged (or shrunk) evenly by `factor` about the point (ox, oy, oz). Names are kept.
+SKHandle sk_scale(SKHandle body, double ox, double oy, double oz, double factor);
 // Copies for mirror and pattern features: moved, turned or mirrored, every face name prefixed
 // with `prefix` so the copy's faces stay distinct from the original's once joined.
 SKHandle sk_translate_copy(SKHandle body, double dx, double dy, double dz, const char *prefix);

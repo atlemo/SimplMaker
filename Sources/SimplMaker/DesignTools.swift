@@ -122,7 +122,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .pipe: return "a round tube along sketch curves"
         case .fillet: return "round the selected edges, or every edge around a selected face"
         case .move: return "slide or turn bodies and sketches with the arrows, squares and rings, or type a distance or an angle"
-        case .scale: return "make sketches bigger or smaller, about their origins"
+        case .scale: return "make bodies and sketches bigger or smaller by a factor (bodies about the middle of them, sketches about their origins)"
         case .chamfer: return "bevel the selected edges, or every edge around a selected face"
         case .thread: return "cut a metric or inch screw thread on a shaft or in a hole"
         case .combine: return "join, cut or intersect bodies (e.g. cut text out of a plate)"
@@ -161,7 +161,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// Works on whole bodies: a click on any face picks the body (and so does a body in the browser).
     var picksBodies: Bool {
         switch self {
-        case .move, .combine, .split, .mirror, .pattern: return true
+        case .move, .scale, .combine, .split, .mirror, .pattern: return true
         default: return false
         }
     }
@@ -179,7 +179,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .move: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve
         case .combine: return kind == .face || kind == .edge
         case .split: return kind == .face || kind == .plane || kind == .region  // the bodies, then the plane, profile or face
-        case .scale: return kind == .region || kind == .sketchCurve
+        case .scale: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve  // bodies, or sketches
         case .plane, .canvas: return kind == .plane || kind == .face
         case .mirror: return kind == .face || kind == .edge || kind == .plane  // bodies, then the plane
         case .pattern: return kind == .face || kind == .edge  // bodies (faces), and a straight edge for the direction
@@ -290,7 +290,7 @@ extension DocumentModel {
         case .box, .cylinder, .sphere, .torus, .coil:
             return "Click a plane or flat face to place the \(tool.rawValue.lowercased())"
         case .move: return "Click the bodies or sketches to move or rotate"
-        case .scale: return "Click the sketches to scale"
+        case .scale: return "Click the bodies or sketches to scale"
         case .plane: return "Click an origin plane, a construction plane or a flat face to start the new plane from"
         case .canvas: return "Click a plane or flat face to place the image on, then choose the image"
         case .mirror:
@@ -402,12 +402,13 @@ extension DocumentModel {
         case .scale:
             var sketches: [FeatureID] = []
             for s in profiles.map(\.sketch) + curves.map(\.sketch) where !sketches.contains(s) { sketches.append(s) }
+            let bodies = pickedBodies
             // A sketch selected in the browser counts too.
-            if sketches.isEmpty, let id = selectedFeature, case .sketch? = document.features.first(where: { $0.id == id })?.kind {
+            if sketches.isEmpty, bodies.isEmpty, let id = selectedFeature, case .sketch? = document.features.first(where: { $0.id == id })?.kind {
                 sketches = [id]
             }
-            guard !sketches.isEmpty else { return false }
-            add(Feature(name: document.nextName(tool.rawValue), .scale(ScaleFeature(sketches: sketches))))
+            guard !sketches.isEmpty || !bodies.isEmpty else { return false }
+            add(Feature(name: document.nextName(tool.rawValue), .scale(ScaleFeature(sketches: sketches, bodies: bodies))))
         case .plane, .canvas:
             guard selection.count == 1, let pick = selection.first else { return false }
             return place(tool, on: pick)
@@ -607,12 +608,12 @@ extension DocumentModel {
             bodies: bodies, sketches: sketches, arrow: .x, rotating: false))))
     }
 
-    /// Scales whole sketches (from the browser or a right-click), with a drag handle to set the factor.
-    func scale(sketches: [FeatureID]) {
-        guard !sketches.isEmpty else { return }
+    /// Scales whole sketches or bodies (from the browser or a right-click), with a drag handle to set the factor.
+    func scale(sketches: [FeatureID] = [], bodies: [FeatureID] = []) {
+        guard !sketches.isEmpty || !bodies.isEmpty else { return }
         if sketchSession != nil { finishSketch(keepingView: true) }
         pendingTool = nil
-        add(Feature(name: document.nextName(DesignTool.scale.rawValue), .scale(ScaleFeature(sketches: sketches))))
+        add(Feature(name: document.nextName(DesignTool.scale.rawValue), .scale(ScaleFeature(sketches: sketches, bodies: bodies))))
     }
 
     /// Places a hole or primitive on a picked origin plane or flat face, where the user clicked

@@ -5,7 +5,7 @@ import Foundation
 import Testing
 @testable import SimplMaker
 
-/// Scaling sketches: the Scale feature, its tool, its drag handle and what is built after it.
+/// Scaling sketches (bodies are in ScaleBodyToolTests): the Scale feature, its tool, its drag handle and what is built after it.
 @Suite @MainActor struct ScaleSketchTests {
     private func settle(_ model: DocumentModel) async throws {
         try await Task.sleep(for: .milliseconds(5))
@@ -96,7 +96,7 @@ import Testing
         try await settle(model)
         model.selectedFeature = nil
         model.run(.scale)
-        #expect(model.pendingTool == .scale && model.toolPrompt == "Click the sketches to scale")
+        #expect(model.pendingTool == .scale && model.toolPrompt == "Click the bodies or sketches to scale")
         #expect(model.document.features.count == 1)
     }
 

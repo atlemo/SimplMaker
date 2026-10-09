@@ -825,6 +825,7 @@ struct BrowserList: View {
             } else if model.bodies.contains(where: { $0.id == id }) {
                 Button(model.isHidden(id) ? "Show Body" : "Hide Body") { model.setHidden([id], !model.isHidden(id)) }
                 Button("Move or Rotate Body") { model.move(bodies: [id]) }
+                Button("Scale Body") { model.scale(bodies: [id]) }
                 Button("Rename Body") { renaming = id }
                 Button("Appearance…") { model.openAppearance(for: id) }
                 Menu("Export Body") {
@@ -1588,8 +1589,7 @@ struct DesignToolbar: View {
     }
 
     private var groups: [ToolGroupSpec] {
-        // Scale (sketches only for now) stays in the Modify menu and the sketch context menu, but has no button.
-        let modify = DesignTool.modifiers.filter { $0 != .scale }
+        let modify = DesignTool.modifiers
         return [group("Create", id: "design.create", DesignTool.shapes, defaults: [.extrude, .revolve, .sweep, .loft]),
                 group("Shapes", id: "design.shapes", DesignTool.primitives, defaults: [.box, .cylinder, .sphere]),
                 group("Modify", id: "design.modify", modify, defaults: modify),

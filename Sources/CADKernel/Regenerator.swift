@@ -912,12 +912,12 @@ public enum Regenerator {
     }
 
     /// The bodies a move or rotate works on, recorded as they were before it (for its drag handle).
-    static func transformInputs(_ ids: [FeatureID], _ feature: Feature, _ r: inout RegenResult) throws -> [Int] {
+    static func transformInputs(_ ids: [FeatureID], _ feature: Feature, _ r: inout RegenResult, verb: String = "moves") throws -> [Int] {
         let indices = try ids.map { id in
-            guard let i = r.bodies.firstIndex(where: { $0.id == id }) else { throw KernelError(message: "a body it moves is missing") }
+            guard let i = r.bodies.firstIndex(where: { $0.id == id }) else { throw KernelError(message: "a body it \(verb) is missing") }
             return i
         }
-        guard !indices.isEmpty else { throw KernelError(message: "no body to move") }
+        guard !indices.isEmpty else { throw KernelError(message: "no body to \(verb.dropLast())") }
         for i in indices { r.featureInputs[feature.id, default: [:]][r.bodies[i].id] = r.bodies[i].body }
         return indices
     }
@@ -962,12 +962,17 @@ public enum Regenerator {
         let p = r.parameters
         let k = try p.value(of: f.factor, kind: .none)
         guard k > 1e-9 else { throw KernelError(message: "the scale factor must be more than zero") }
-        guard !f.sketches.isEmpty else { throw KernelError(message: "no sketch to scale") }
+        guard !f.sketches.isEmpty || !f.bodies.isEmpty else { throw KernelError(message: "nothing to scale") }
         for id in f.sketches {
             guard let sk = r.sketches[id] else { throw KernelError(message: "a sketch it scales failed or is missing") }
             r.sketchInputs[feature.id, default: [:]][id] = sk
             r.sketches[id] = try sketchResult(sk.solved.scaled(by: k, parameters: p), solve: sk.solve, frame: sk.frame, parameters: p)
         }
+        // Bodies grow about the middle of them all, as they were before this feature.
+        guard !f.bodies.isEmpty else { return }
+        let indices = try transformInputs(f.bodies, feature, &r, verb: "scales")
+        guard let pivot = center(of: indices.map { r.bodies[$0].body }) else { throw KernelError(message: "the body is empty") }
+        for i in indices { r.bodies[i].body = try r.bodies[i].body.scaled(by: k, about: pivot) }
     }
 
     static func combine(_ f: CombineFeature, _ feature: Feature, _ r: inout RegenResult) throws {
