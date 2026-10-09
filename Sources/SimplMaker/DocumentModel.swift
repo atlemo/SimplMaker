@@ -127,6 +127,9 @@ final class DocumentModel {
     var showTimeline = true
     /// The browser (bodies, sketches, timeline, parameters) on the left.
     var showSidebar = true
+    /// The browser panel and the parameters panel are each open or folded up to their header.
+    var browserOpen = true
+    var parametersOpen = true
     /// The Appearance panel, for giving bodies colours (A, or View ▸ Show Appearance).
     var showAppearance = false
     /// A colour shown on bodies while it is being picked, before it is kept (see previewBodyColor).

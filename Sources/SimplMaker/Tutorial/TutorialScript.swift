@@ -38,7 +38,7 @@ enum TutorialScript {
         text: "**Drag** on empty space to orbit, **pinch** or use the wheel to zoom, **scroll** with two fingers to pan. The cube in the corner jumps to standard views. The **browser** on the left lists everything in your part, and the **inspector** on the right shows what you select.",
         kind: .read(button: "Next"),
         spotlight: { _ in ["browser", "inspector"] },
-        enter: { $0.showSidebar = true; $0.showInspector = true })
+        enter: { $0.showSidebar = true; $0.browserOpen = true; $0.showInspector = true })
 
     static let parameters = TutorialStep(
         id: "parameters", chapter: .start,
@@ -48,6 +48,7 @@ enum TutorialScript {
         spotlight: { _ in ["parameters"] },
         enter: { model in
             model.showSidebar = true
+            model.parametersOpen = true
             TutorialActions.seedParameters(model)
         })
 
@@ -341,7 +342,7 @@ enum TutorialScript {
             let facts = TutorialFacts(model)
             return Set(["width", "depth"].filter { !facts.isChanged($0) }.map { "parameter-\($0)" })
         },
-        enter: { $0.showSidebar = true; $0.show(.home) },
+        enter: { $0.showSidebar = true; $0.parametersOpen = true; $0.show(.home) },
         assist: { await TutorialActions.resize($0) })
 
     static let done = TutorialStep(

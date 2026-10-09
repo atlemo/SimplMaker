@@ -112,8 +112,6 @@ struct DocumentWindow: View {
             HStack(alignment: .top, spacing: 0) {
                 if model.showSidebar {
                     Sidebar(model: model)
-                        .floatingPanel(width: Panel.sidebarWidth)
-                        .tutorialSpot("browser", cornerRadius: DS.Radius.window, outset: 0, filled: false)
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 Spacer(minLength: 0)  // empty: clicks go through to the viewport
@@ -548,17 +546,167 @@ struct StatusBar: View {
 
 // MARK: - Sidebar
 
+/// The left column: the browser and the parameters, two glass panels that each fold up to their header. The
+/// panel that stays open takes the room the other gives up, and the heights animate together.
 struct Sidebar: View {
+    @Bindable var model: DocumentModel
+    /// The share of the room the browser gets while both panels are open; dragging the gap between them changes it.
+    @State private var split: CGFloat = 0.5
+    /// The browser's height when the current drag began.
+    @State private var dragStart: CGFloat?
+
+    /// The least a panel can be dragged down to: its header and a few rows.
+    private static let minimumHeight = SidebarPanel<EmptyView, EmptyView>.headerHeight + 80
+
+    /// A panel's height: the header alone when it is closed, else the share `split` gives it when both are open,
+    /// or everything the closed one leaves.
+    static func heights(total: CGFloat, browserOpen: Bool, parametersOpen: Bool, split: CGFloat = 0.5) -> (browser: CGFloat, parameters: CGFloat) {
+        let head = SidebarPanel<EmptyView, EmptyView>.headerHeight
+        let room = max(total - Panel.inset, 2 * head)
+        switch (browserOpen, parametersOpen) {
+        case (true, true):
+            let least = min(minimumHeight, room / 2)
+            let browser = min(max(room * split, least), room - least)
+            return (browser, room - browser)
+        case (true, false): return (room - head, head)
+        case (false, true): return (head, room - head)
+        case (false, false): return (head, head)
+        }
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let h = Self.heights(total: geo.size.height, browserOpen: model.browserOpen, parametersOpen: model.parametersOpen, split: split)
+            VStack(spacing: 0) {
+                SidebarPanel(title: "Browser", open: $model.browserOpen, accessory: { EmptyView() }) {
+                    BrowserList(model: model)
+                }
+                .frame(height: h.browser)
+                .tutorialSpot("browser", cornerRadius: DS.Radius.window, outset: 0, filled: false)
+                divider(room: max(geo.size.height - Panel.inset, 1), browserHeight: h.browser)
+                SidebarPanel(title: "Parameters", open: $model.parametersOpen, accessory: {
+                    HeaderIconButton(systemImage: "plus", help: "Add a parameter") {
+                        model.parametersOpen = true  // show the new one
+                        model.addParameter()
+                    }
+                }) {
+                    ParametersList(model: model)
+                }
+                .frame(height: h.parameters)
+                .tutorialSpot("parameters", cornerRadius: DS.Radius.window, outset: 0, filled: false)
+                Spacer(minLength: 0)
+            }
+            .animation(.easeInOut(duration: DS.Duration.base), value: model.browserOpen)
+            .animation(.easeInOut(duration: DS.Duration.base), value: model.parametersOpen)
+        }
+        .frame(width: Panel.sidebarWidth)
+        .frame(maxHeight: .infinity)
+    }
+
+    /// The gap between the panels, which drags to give one panel more room than the other (double-click to even them out).
+    private func divider(room: CGFloat, browserHeight: CGFloat) -> some View {
+        let resizable = model.browserOpen && model.parametersOpen
+        return Color.clear
+            .frame(height: Panel.inset)
+            .contentShape(Rectangle())
+            .pointerStyle(resizable ? .rowResize : nil)
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { drag in
+                    guard resizable else { return }
+                    let start = dragStart ?? browserHeight
+                    dragStart = start
+                    let least = min(Self.minimumHeight, room / 2)  // stay inside the range, so the drag can turn back at once
+                    split = min(max(start + drag.translation.height, least), room - least) / room
+                }
+                .onEnded { _ in dragStart = nil })
+            .onTapGesture(count: 2) { if resizable { withAnimation(.easeInOut(duration: DS.Duration.base)) { split = 0.5 } } }
+            .accessibilityHidden(true)
+    }
+}
+
+/// A floating glass panel with a header that folds its content away.
+struct SidebarPanel<Accessory: View, Content: View>: View {
+    static var headerHeight: CGFloat { 40 }
+    let title: String
+    @Binding var open: Bool
+    @ViewBuilder let accessory: () -> Accessory
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous)
+        VStack(spacing: 0) {
+            HStack(spacing: DS.Spacing.space1) {
+                Button { open.toggle() } label: {
+                    HStack(spacing: DS.Spacing.space1) {
+                        Text(title)
+                            .font(.headline)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(title)
+                .accessibilityValue(open ? "expanded" : "collapsed")
+                accessory()
+                HeaderIconButton(systemImage: "chevron.down", rotation: open ? 0 : -90,
+                                 help: open ? "Hide the \(title.lowercased())" : "Show the \(title.lowercased())") {
+                    open.toggle()
+                }
+            }
+            .padding(.leading, DS.Spacing.space5)
+            .padding(.trailing, DS.Spacing.space4)
+            .frame(height: Self.headerHeight)
+            content()
+                .scrollContentBackground(.hidden)
+                .frame(maxHeight: .infinity)
+                .opacity(open ? 1 : 0)
+                .allowsHitTesting(open)
+                .accessibilityHidden(!open)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .clipShape(shape)
+        .glassEffect(.regular, in: shape)
+    }
+}
+
+/// The parameters: a name and a value each, with the name editable in place.
+struct ParametersList: View {
+    @Bindable var model: DocumentModel
+    /// The parameter whose name is being edited in place.
+    @State private var renaming: String?
+    @State private var selection: String?
+
+    var body: some View {
+        List(selection: $selection) {
+            ForEach(model.document.parameters) { p in
+                ParameterRow(model: model, parameter: p, renaming: renamingBinding(p.name))
+                    .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
+                    .tag(p.name)
+            }
+        }
+        .listStyle(.sidebar)
+        .contextMenu(forSelectionType: String.self) { names in
+            if names.count == 1, let name = names.first {
+                Button("Rename") { renaming = name }
+                Button("Delete", role: .destructive) { model.removeParameter(name) }
+            }
+        }
+    }
+
+    private func renamingBinding(_ name: String) -> Binding<Bool> {
+        Binding(get: { renaming == name }, set: { if !$0, renaming == name { renaming = nil } else if $0 { renaming = name } })
+    }
+}
+
+/// The browser's list: bodies, sketches, planes and canvases, in folders.
+struct BrowserList: View {
     @Bindable var model: DocumentModel
     @State private var bodiesOpen = true
     @State private var sketchesOpen = true
-    @State private var parametersOpen = true
     @State private var planesOpen = true
     @State private var imagesOpen = true
     /// The body or sketch whose name is being edited in place.
     @State private var renaming: FeatureID?
-    /// The parameter whose name is being edited in place.
-    @State private var renamingParameter: String?
 
     /// Body rows are tagged apart from features ("body:<id>"): a click selects the body, not the
     /// feature that made it (that one opens on double-click).
@@ -570,99 +718,67 @@ struct Sidebar: View {
                     else { model.selectedFeature = tag }
                 })
     }
-    /// Parameter rows are tagged too ("param:<name>"): without a tag the list tags each row with its name,
-    /// and its own context menu then shows Hide / Show instead of the row's.
-    private static let parameterTag = "param:"
     private func featureID(_ tag: FeatureID) -> FeatureID {
         tag.hasPrefix(Self.bodyTag) ? String(tag.dropFirst(Self.bodyTag.count)) : tag
     }
 
     var body: some View {
         List(selection: listSelection) {
-            Section("Browser") {
-                DisclosureGroup(isExpanded: $bodiesOpen) {
-                    ForEach(model.bodies) { b in
-                        BrowserRow(name: b.name, hidden: model.isHidden(b.id),
-                                   toggle: { model.setHidden([b.id], !model.isHidden(b.id)) },
-                                   renaming: renamingBinding(b.id), rename: { model.renameBody(b.id, to: $0) }) {
-                            Image(systemName: "cylinder")
-                        }
-                        .tag(Self.bodyTag + b.id)
-                        .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(b.id) && model.selectedBody != b.id))
+            DisclosureGroup(isExpanded: $bodiesOpen) {
+                ForEach(model.bodies) { b in
+                    BrowserRow(name: b.name, hidden: model.isHidden(b.id),
+                               toggle: { model.setHidden([b.id], !model.isHidden(b.id)) },
+                               renaming: renamingBinding(b.id), rename: { model.renameBody(b.id, to: $0) }) {
+                        Image(systemName: "cylinder")
                     }
-                } label: {
-                    FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model)
+                    .tag(Self.bodyTag + b.id)
+                    .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(b.id) && model.selectedBody != b.id))
                 }
-                DisclosureGroup(isExpanded: $sketchesOpen) {
-                    ForEach(model.sketches) { f in
+            } label: {
+                FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model)
+            }
+            DisclosureGroup(isExpanded: $sketchesOpen) {
+                ForEach(model.sketches) { f in
+                    BrowserRow(name: f.name, hidden: model.isHidden(f.id),
+                               toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
+                               renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
+                        SketchIcon(editing: model.sketchSession?.featureID == f.id,
+                                   locked: model.result?.sketches[f.id]?.solve.degreesOfFreedom == 0,
+                                   failed: model.result?.errors[f.id] != nil)
+                    }
+                    .tag(f.id)
+                    .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(f.id)))
+                }
+            } label: {
+                FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model)
+            }
+            if !model.planeFeatures.isEmpty {
+                DisclosureGroup(isExpanded: $planesOpen) {
+                    ForEach(model.planeFeatures) { f in
                         BrowserRow(name: f.name, hidden: model.isHidden(f.id),
                                    toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
                                    renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
-                            SketchIcon(editing: model.sketchSession?.featureID == f.id,
-                                       locked: model.result?.sketches[f.id]?.solve.degreesOfFreedom == 0,
-                                       failed: model.result?.errors[f.id] != nil)
+                            Icon("plane", size: 14)
                         }
                         .tag(f.id)
-                        .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(f.id)))
                     }
                 } label: {
-                    FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model)
-                }
-                if !model.planeFeatures.isEmpty {
-                    DisclosureGroup(isExpanded: $planesOpen) {
-                        ForEach(model.planeFeatures) { f in
-                            BrowserRow(name: f.name, hidden: model.isHidden(f.id),
-                                       toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
-                                       renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
-                                Icon("plane", size: 14)
-                            }
-                            .tag(f.id)
-                        }
-                    } label: {
-                        FolderRow(title: "Planes", ids: model.planeFeatures.map(\.id), model: model)
-                    }
-                }
-                if !model.imageFeatures.isEmpty {
-                    DisclosureGroup(isExpanded: $imagesOpen) {
-                        ForEach(model.imageFeatures) { f in
-                            BrowserRow(name: f.name, hidden: model.isHidden(f.id),
-                                       toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
-                                       renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
-                                Icon("image", size: 14)
-                            }
-                            .tag(f.id)
-                        }
-                    } label: {
-                        FolderRow(title: "Canvases", ids: model.imageFeatures.map(\.id), model: model)
-                    }
+                    FolderRow(title: "Planes", ids: model.planeFeatures.map(\.id), model: model)
                 }
             }
-            // A plain section with its own chevron: the sidebar's built-in one only shows on hover.
-            Section {
-                if parametersOpen {
-                    ForEach(model.document.parameters) { p in
-                        ParameterRow(model: model, parameter: p, renaming: parameterRenamingBinding(p.name))
-                            .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
-                            .tag(Self.parameterTag + p.name)
+            if !model.imageFeatures.isEmpty {
+                DisclosureGroup(isExpanded: $imagesOpen) {
+                    ForEach(model.imageFeatures) { f in
+                        BrowserRow(name: f.name, hidden: model.isHidden(f.id),
+                                   toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
+                                   renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
+                            Icon("image", size: 14)
+                        }
+                        .tag(f.id)
                     }
+                } label: {
+                    FolderRow(title: "Canvases", ids: model.imageFeatures.map(\.id), model: model)
                 }
-            } header: {
-                HStack(spacing: DS.Spacing.space1) {
-                    Text("Parameters")
-                        .contentShape(Rectangle())
-                        .onTapGesture { toggleParameters() }
-                    Spacer()
-                    HeaderIconButton(systemImage: "plus", help: "Add a parameter") {
-                        withAnimation(.easeOut(duration: 0.15)) { parametersOpen = true }  // show the new one
-                        model.addParameter()
-                    }
-                    HeaderIconButton(systemImage: "chevron.right", rotation: parametersOpen ? 90 : 0,
-                                     help: parametersOpen ? "Hide the parameters" : "Show the parameters") {
-                        toggleParameters()
-                    }
-                }
-                .padding(.trailing, DS.Spacing.space4)  // clear of the panel edge, in line with the rows below
-                .tutorialSpot("parameters", outset: 4)
             }
         }
         .listStyle(.sidebar)
@@ -675,17 +791,9 @@ struct Sidebar: View {
         }
     }
 
-    private func toggleParameters() {
-        withAnimation(.easeOut(duration: 0.15)) { parametersOpen.toggle() }
-    }
-
     /// Whether a row is being renamed; ending the edit clears it.
     private func renamingBinding(_ id: FeatureID) -> Binding<Bool> {
         Binding(get: { renaming == id }, set: { if !$0, renaming == id { renaming = nil } })
-    }
-
-    private func parameterRenamingBinding(_ name: String) -> Binding<Bool> {
-        Binding(get: { renamingParameter == name }, set: { if !$0, renamingParameter == name { renamingParameter = nil } else if $0 { renamingParameter = name } })
     }
 
     private func isSketch(_ id: FeatureID) -> Bool {
@@ -695,11 +803,7 @@ struct Sidebar: View {
 
     @ViewBuilder private func menu(for tags: Set<FeatureID>) -> some View {
         let ids = Set(tags.map(featureID))
-        if tags.count == 1, let tag = tags.first, tag.hasPrefix(Self.parameterTag) {
-            let name = String(tag.dropFirst(Self.parameterTag.count))
-            Button("Rename") { renamingParameter = name }
-            Button("Delete", role: .destructive) { model.removeParameter(name) }
-        } else if ids.count == 1, let id = ids.first, let f = model.document.features.first(where: { $0.id == id }) {
+        if ids.count == 1, let id = ids.first, let f = model.document.features.first(where: { $0.id == id }) {
             if isSketch(id) {
                 Button(model.sketchSession?.featureID == id ? "Finish Sketch" : "Edit Sketch") {
                     if model.sketchSession?.featureID == id { model.finishSketch() } else { model.editSketch(id) }
