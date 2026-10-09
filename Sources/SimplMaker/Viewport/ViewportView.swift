@@ -731,7 +731,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         var items = model.contextItems(for: pick, ray: ray)
         if model.sketchSession == nil, model.pendingTool == nil, model.visualStyle.isShaded {
             items += [.separator, .action(model.printPreview ? "Leave 3D Print Preview" : "FDM 3D Print Preview",
-                                          symbol: "square.stack.3d.up") { model.printPreview.toggle() }]
+                                          symbol: "square.stack.3d.up") { model.setPrintPreview(!model.printPreview) }]
         }
         let menu = ContextMenuBuilder.menu(items) { [weak self] in self?.refreshOverlay() }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
@@ -1739,6 +1739,8 @@ struct ViewportView: NSViewRepresentable {
     let orthographic: Bool
     var visualStyle = VisualStyle.standard
     var printPreview = false
+    var printLayer = 0.2
+    var printNozzle = 0.4
     let showGrid: Bool
     /// Grid square and unit setting, so a change in Settings redraws the sketch grid.
     var gridSetting = ""
@@ -1799,6 +1801,8 @@ struct ViewportView: NSViewRepresentable {
         renderer.camera.orthographic = orthographic
         renderer.visualStyle = visualStyle
         renderer.printPreview = printPreview
+        renderer.printLayer = Float(printLayer)
+        renderer.printNozzle = Float(printNozzle)
         renderer.showGrid = showGrid
         renderer.showAxes = showAxes
         if view.gridSetting != gridSetting {

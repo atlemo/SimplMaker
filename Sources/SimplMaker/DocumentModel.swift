@@ -142,6 +142,18 @@ final class DocumentModel {
     var visualStyle = VisualStyle.standard
     /// Shaded bodies drawn like an FDM print, with layer lines (View ▸ FDM 3D Print Preview). Not saved.
     var printPreview = false
+    /// The print preview's layer height and nozzle width, in mm, and whether its options panel is open.
+    var printLayer = 0.2
+    var printNozzle = 0.4
+    var showPrintOptions = false
+    static let printLayerHeights = [0.12, 0.16, 0.2, 0.24]
+    static let printNozzles = [0.2, 0.4, 0.6, 0.8]
+
+    /// Turns the print preview on or off; on, it opens its options.
+    func setPrintPreview(_ on: Bool) {
+        printPreview = on
+        if on { showPrintOptions = true }
+    }
     var fileURL: URL?
     var alert: AlertInfo?
 

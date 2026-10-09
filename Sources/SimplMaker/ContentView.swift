@@ -101,6 +101,7 @@ struct DocumentWindow: View {
                          highlighted: model.highlighted, fitRevision: model.fitRevision,
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
                          visualStyle: model.visualStyle, printPreview: model.printPreview,
+                         printLayer: model.printLayer, printNozzle: model.printNozzle,
                          showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
@@ -171,6 +172,16 @@ struct DocumentWindow: View {
             }
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.showAppearance)
+        // The print preview's options float at the top left of the view.
+        .overlay(alignment: .topLeading) {
+            if model.printPreview, model.showPrintOptions, model.visualStyle.isShaded, model.sketchSession == nil {
+                PrintPreviewPanel(model: model)
+                    .padding(.top, Panel.inset)
+                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.showPrintOptions && model.printPreview)
         // The Measure tool's readout floats in the same corner.
         .overlay(alignment: .topTrailing) {
             if model.pendingTool == .measure, model.sketchSession == nil {

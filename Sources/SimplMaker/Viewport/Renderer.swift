@@ -147,11 +147,10 @@ struct Uniforms {
     var faceSelectedColor: SIMD4<Float>
     var regionColor: SIMD4<Float>
     var wholeBodies: UInt32 = 0
-    /// View ▸ FDM 3D Print Preview: the faces shaded as printed layers (see printLook in the shader).
-    var printPreview: UInt32 = 0
-    /// The layer height of the print preview, in mm.
+    var pad0: UInt32 = 0
+    /// The print preview's layer height and nozzle width, in mm (see printLook in the shader).
     var printLayer: Float = 0.2
-    var pad2: UInt32 = 0
+    var printNozzle: Float = 0.4
 }
 
 /// The grid drawn in the plane of the sketch being edited: minor and major lines over the visible
@@ -250,6 +249,25 @@ struct FaceVertex {
     var id: UInt32
 }
 
+/// A corner of a triangle drawn for the print preview, which needs to know how far a point is from the edge of its
+/// face (the layout of PrintVertex in the shader).
+struct PrintVertex {
+    var px, py, pz: Float
+    var nx, ny, nz: Float
+    var id: UInt32
+    /// The mesh vertices of the triangle's corners.
+    var c0, c1, c2: UInt32
+    /// Bit j: corner j is on the boundary of the face.
+    var mask: UInt32
+}
+
+/// A mesh vertex, and the vertices next to it along the boundary of its face (w = 0: there is none).
+struct PrintCorner {
+    var p: SIMD4<Float>
+    var a: SIMD4<Float>
+    var b: SIMD4<Float>
+}
+
 struct SegmentInstance {
     var ax, ay, az: Float
     var bx, by, bz: Float
@@ -325,6 +343,7 @@ final class Renderer {
     let device: MTLDevice
     private let queue: MTLCommandQueue
     private let facePipeline: MTLRenderPipelineState
+    private let printFacePipeline: MTLRenderPipelineState
     /// Faces in the ID buffer and depth only (the Wireframe style: faces can be picked but don't show).
     private let faceIDPipeline: MTLRenderPipelineState
     private let segmentPipeline: MTLRenderPipelineState
@@ -361,6 +380,10 @@ final class Renderer {
         var indexCount = 0
         var segments: MTLBuffer?
         var segmentCount = 0
+        /// The triangles apart, with their distances to the face's edge: made when the print preview first needs them.
+        var printFaces: MTLBuffer?
+        var printCorners: MTLBuffer?
+        var printVertexCount = 0
     }
     private var bodies: [GPUBody] = []
     /// Each body's own colour, in the order of setScene's meshes; nil = the palette's face colour.
@@ -419,6 +442,9 @@ final class Renderer {
     var visualStyle = VisualStyle.standard
     /// Bodies drawn as if FDM printed. Only for the shaded styles, and without edges, which would spoil it.
     var printPreview = false
+    /// The print preview's layer height and nozzle width, in mm.
+    var printLayer: Float = 0.2
+    var printNozzle: Float = 0.4
     var hovered: UInt32 = 0
     /// A tool is picking bodies: hovering and selecting a face lights up its whole body.
     var wholeBodies = false
@@ -428,9 +454,12 @@ final class Renderer {
     var onPick: (@MainActor @Sendable (UInt32) -> Void)?
 
     static let colorFormat = MTLPixelFormat.bgra8Unorm
-    /// How wide (in points) a body edge is for clicking and hovering; it is drawn 0.8 wide.
+    /// How wide (in points) a construction plane's side is for clicking and hovering.
     static let edgePickWidth: Float = 5
-    /// A selected body edge: 1.33 pt black, 1.33 pt selection colour, 1.33 pt black.
+    /// How wide (in points) a body edge is for clicking and hovering; it is drawn 0.8 wide, so most
+    /// of the band is unseen. Wide enough to hit without aiming, narrow enough to leave small faces pickable.
+    static let bodyEdgePickWidth: Float = 12
+    /// A selected body edge, in the body's highlight colour (blue unless the body has a colour of its own).
     static let selectedEdgeWidth: Float = 4
     static let depthFormat = MTLPixelFormat.depth32Float
 
@@ -474,6 +503,7 @@ final class Renderer {
                 return try device.makeRenderPipelineState(descriptor: d)
             }
             facePipeline = try pipeline("faceVertex", "faceFragment")
+            printFacePipeline = try pipeline("printFaceVertex", "printFaceFragment")
             faceIDPipeline = try pipeline("faceVertex", "faceFragment", writesColor: false)
             segmentPipeline = try pipeline("segmentVertex", "segmentFragment")
             decorationPipeline = try pipeline("segmentVertex", "segmentFragment", writesID: false)
@@ -611,6 +641,50 @@ final class Renderer {
         g.segments = makeBuffer(segs)
         g.segmentCount = segs.count
         return g
+    }
+
+    /// Makes a body's triangles for the print preview, each apart from the others, and for each vertex on the edge of
+    /// its face the vertices next to it along the edge. A side that only one triangle of the face has is on the
+    /// boundary. (The mesh shares vertices within a face, never between faces.)
+    private func makePrintFaces(of body: Int) {
+        guard let faceBuffer = bodies[body].faces, let indexBuffer = bodies[body].indices else { return }
+        let indexCount = bodies[body].indexCount
+        let vertexCount = faceBuffer.length / MemoryLayout<FaceVertex>.stride
+        let verts = faceBuffer.contents().bindMemory(to: FaceVertex.self, capacity: vertexCount)
+        let idx = indexBuffer.contents().bindMemory(to: UInt32.self, capacity: indexCount)
+        struct Side: Hashable { var a: UInt32, b: UInt32 }
+        func side(_ p: UInt32, _ q: UInt32) -> Side { Side(a: min(p, q), b: max(p, q)) }
+        var uses: [Side: Int] = [:]
+        uses.reserveCapacity(indexCount)
+        for t in 0..<(indexCount / 3) {
+            let i0 = idx[t * 3], i1 = idx[t * 3 + 1], i2 = idx[t * 3 + 2]
+            uses[side(i0, i1), default: 0] += 1
+            uses[side(i1, i2), default: 0] += 1
+            uses[side(i2, i0), default: 0] += 1
+        }
+        func position(_ i: UInt32) -> SIMD4<Float> { SIMD4(verts[Int(i)].px, verts[Int(i)].py, verts[Int(i)].pz, 1) }
+        var corners = (0..<vertexCount).map { PrintCorner(p: position(UInt32($0)), a: .zero, b: .zero) }
+        var onBoundary = [Bool](repeating: false, count: vertexCount)
+        func link(_ v: UInt32, to w: UInt32) {
+            onBoundary[Int(v)] = true
+            if corners[Int(v)].a.w == 0 { corners[Int(v)].a = position(w) } else if corners[Int(v)].b.w == 0 { corners[Int(v)].b = position(w) }
+        }
+        for (side, count) in uses where count == 1 { link(side.a, to: side.b); link(side.b, to: side.a) }
+        var out: [PrintVertex] = []
+        out.reserveCapacity(indexCount)
+        for t in 0..<(indexCount / 3) {
+            let c = [idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]]
+            var mask: UInt32 = 0
+            for j in 0..<3 where onBoundary[Int(c[j])] { mask |= 1 << UInt32(j) }
+            for j in 0..<3 {
+                let v = verts[Int(c[j])]
+                out.append(PrintVertex(px: v.px, py: v.py, pz: v.pz, nx: v.nx, ny: v.ny, nz: v.nz, id: v.id,
+                                       c0: c[0], c1: c[1], c2: c[2], mask: mask))
+            }
+        }
+        bodies[body].printFaces = makeBuffer(out)
+        bodies[body].printCorners = makeBuffer(corners)
+        bodies[body].printVertexCount = out.count
     }
 
     private func makeBuffer<T>(_ array: [T]) -> MTLBuffer? {
@@ -783,7 +857,7 @@ final class Renderer {
                                 faceColor: palette.face, faceHoverColor: palette.faceHover,
                                 faceSelectedColor: palette.faceSelected, regionColor: palette.region,
                                 wholeBodies: wholeBodies ? 1 : 0,
-                                printPreview: printing ? 1 : 0)
+                                printLayer: printLayer, printNozzle: printNozzle)
         var sel = Array(selected.prefix(256))
         if sel.isEmpty { sel = [0] }
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
@@ -805,6 +879,17 @@ final class Renderer {
             let bg = palette.background
             for (i, b) in bodies.enumerated() {
                 guard let faces = b.faces, let indices = b.indices else { continue }
+                if printing && !wireframe {
+                    if b.printFaces == nil, b.printVertexCount == 0 { makePrintFaces(of: i) }
+                    guard let printFaces = bodies[i].printFaces else { continue }
+                    var params = DrawParams(color: tints[i].face, hoverColor: tints[i].faceHover, selectColor: tints[i].faceSelected,
+                                            thickness: 0, depthBias: 0, pickable: 1)
+                    enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
+                    enc.setVertexBuffer(printFaces, offset: 0, index: 0)
+                    enc.setFragmentBuffer(bodies[i].printCorners, offset: 0, index: 4)
+                    enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: bodies[i].printVertexCount)
+                    continue
+                }
                 let t = tints[i]
                 var params = wireframe
                     ? DrawParams(color: bg, hoverColor: simd_mix(bg, t.faceHover, SIMD4(repeating: 0.3)),
@@ -818,7 +903,7 @@ final class Renderer {
                                           indexBuffer: indices, indexBufferOffset: 0)
             }
         }
-        if style != .wireframe { drawFaces(facePipeline, wireframe: !style.isShaded) }
+        if style != .wireframe { drawFaces(printing ? printFacePipeline : facePipeline, wireframe: !style.isShaded) }
 
         // Depth bias per layer, as a fraction of the view depth (0.001 ≈ 0.2 mm at the default zoom).
         let biasScale = camera.depthBiasScale * 2.5
@@ -936,7 +1021,7 @@ final class Renderer {
         enc.setDepthStencilState(noWriteDepthState)
         for b in bodies {
             segments(b.segments, b.segmentCount,
-                     DrawParams(color: p.edge, hoverColor: p.hover, selectColor: p.selection, thickness: Self.edgePickWidth * scale,
+                     DrawParams(color: p.edge, hoverColor: p.hover, selectColor: p.selection, thickness: Self.bodyEdgePickWidth * scale,
                                 depthBias: 0.0004, pickable: 1), pipeline: pickBandPipeline)
         }
         let edgeColor = style.isShaded ? p.edge : p.wireEdge

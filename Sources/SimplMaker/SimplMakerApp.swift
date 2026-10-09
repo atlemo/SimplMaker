@@ -165,7 +165,7 @@ struct SimplMakerCommands: Commands {
             }
             .disabled(model == nil)
             Toggle("FDM 3D Print Preview", isOn: Binding(get: { model?.printPreview ?? false },
-                                                         set: { model?.printPreview = $0 }))
+                                                         set: { model?.setPrintPreview($0) }))
                 .disabled(model == nil || !(model?.visualStyle.isShaded ?? true))
             Divider()
             Toggle("Show Grid", isOn: $showGrid)

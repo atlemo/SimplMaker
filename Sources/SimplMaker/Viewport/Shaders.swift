@@ -17,9 +17,9 @@ enum Shaders {
         float4 faceSelectedColor;
         float4 regionColor;     // rgb + base alpha
         uint wholeBodies;       // a tool is picking bodies: hover and selection cover the whole body
-        uint printPreview;      // View ▸ FDM 3D Print Preview: faces get the look of printed layers
-        float printLayer;       // layer height in mm
-        uint pad2;
+        uint pad0;
+        float printLayer;       // print preview: layer height in mm
+        float printNozzle;      // print preview: nozzle width in mm
     };
 
     struct FaceVertex { packed_float3 position; packed_float3 normal; uint id; };
@@ -89,62 +89,156 @@ enum Shaders {
     // at the edges and flat in the middle. The sudden change where one line meets the next is the groove.
     static float beadTilt(float t) { return 0.3 * t * rsqrt(1.02 - 0.9 * t * t); }
 
-    // What an FDM print looks like at this point: horizontal layer lines on walls and slopes, and the
-    // diagonal lines of the top skin on flat faces. Changes the normal and returns how much light the
-    // groove between lines lets in. Approximate: nothing is sliced. Lines too fine for the screen fade out.
-    static float printLook(thread float3& n, float3 world, float layer) {
+    // One set of printed lines along `coord` (one unit = one line), as the tilt of the surface and how dark
+    // the groove between lines is. Zoomed out, lines closer than `minPx` pixels would shimmer, so they are
+    // drawn at the next wider spacing (every second line, ...) with the two nearest spacings cross-faded.
+    // That is a lie about the layer height, so it only goes so far (about 2.8 times) before the lines fade
+    // out instead of growing. Their grooves are lines of the finer spacing too, so nothing slides while
+    // zooming. A little stronger the further out, softer the further in.
+    static float2 printLines(float coord, float minPx) {
+        float w = fwidth(coord);                       // lines per pixel
+        float level = log2(max(minPx * w, 1.0));       // 0 = every line fits; 1 = every second line, ...
+        float tooFar = 1.0 - smoothstep(1.5, 2.5, level);
+        level = min(level, 2.5);
+        float k = floor(level);
+        float blend = smoothstep(0.0, 1.0, level - k);
+        float pitch = exp2(k);
+        float tA = 2.0 * fract(coord / pitch) - 1.0;
+        float tB = 2.0 * fract(coord / (2.0 * pitch)) - 1.0;
+        float tilt = mix(beadTilt(tA), beadTilt(tB), blend);
+        float groove = mix(smoothstep(0.7, 1.0, abs(tA)), smoothstep(0.7, 1.0, abs(tB)), blend);
+        float closeUp = 1.0 - smoothstep(minPx, 4.0 * minPx, 1.0 / max(w, 1e-4));  // 0 once a line is wide
+        float gain = mix(0.6, 1.0, closeUp) * (1.0 + 0.2 * min(level, 1.5)) * tooFar;
+        return float2(tilt, groove) * gain;
+    }
+
+    // What an FDM print looks like at this point: horizontal layer lines on walls and slopes, and on flat
+    // faces two perimeter lines along the edges with the diagonal lines of the top skin inside them.
+    // Changes the normal and returns how much light the grooves between lines let in. `ring` is how far
+    // the point is from the face's edge (mm). Approximate: nothing is sliced.
+    static float printLook(thread float3& n, float3 world, float layer, float nozzle, float ring) {
         float zl = world.z / layer;
-        float t = 2.0 * fract(zl) - 1.0;
-        float layerFade = 1.0 - smoothstep(0.2, 0.5, fwidth(zl));
-        float flat = smoothstep(0.9, 0.98, abs(n.z));      // 0 on walls and slopes, 1 on tops and bottoms
+        float flatness = smoothstep(0.9, 0.98, abs(n.z));  // 0 on walls and slopes, 1 on tops and bottoms
+        float2 wall = printLines(zl, 4.0);
 
-        // Top skin: lines about as wide as a nozzle's, crossing at 45 degrees on every other layer.
-        float spacing = 0.4;
+        // Perimeters: lines one nozzle wide, counted from the edge in. Zoomed out they widen to stay about
+        // four pixels each.
+        float perimeters = 2.0;
+        float scale = max(1.0, 4.0 * fwidth(ring) / nozzle);
+        float rd = ring / (nozzle * scale);
+        float aa = fwidth(rd);
+        float inRing = 1.0 - smoothstep(perimeters - aa, perimeters + aa, rd);
+        float ringLine = smoothstep(0.7, 1.0, abs(2.0 * fract(rd) - 1.0)) * inRing;
+        float divider = 1.0 - smoothstep(0.0, 0.12 + aa, abs(rd - perimeters));
+
+        // Top skin: lines a nozzle wide, crossing at 45 degrees on every other layer, inside the perimeters.
         float side = (int(floor(zl - 0.002)) & 1) != 0 ? 1.0 : -1.0;
-        float2 along = float2(1.0, side) * 0.70710678;
         float2 across = float2(-side, 1.0) * 0.70710678;
-        float d = dot(world.xy, across) / spacing;
-        float skinFade = 1.0 - smoothstep(0.12, 0.3, fwidth(d));
-        float st = 2.0 * fract(d) - 1.0;
+        float2 skin = printLines(dot(world.xy, across) / nozzle, 4.0);
+        skin *= 1.0 - inRing;
 
-        float wallTilt = beadTilt(t) * layerFade * (1.0 - flat);
-        float2 skinTilt = across * (0.3 * beadTilt(st) * skinFade * flat);
-        n = normalize(n + float3(skinTilt, wallTilt));
-        float groove = 1.0 - 0.1 * smoothstep(0.7, 1.0, abs(t)) * layerFade * (1.0 - flat)
-                           - 0.04 * smoothstep(0.7, 1.0, abs(st)) * skinFade * flat;
-        return groove;
+        float2 skinTilt = across * (0.3 * skin.x * flatness);
+        n = normalize(n + float3(skinTilt, wall.x * (1.0 - flatness)));
+        return 1.0 - 0.1 * wall.y * (1.0 - flatness)
+                   - 0.04 * skin.y * flatness
+                   - 0.07 * ringLine * flatness
+                   - 0.1 * divider * flatness;
+    }
+
+    // Lighting, hover and selection colours; `print` gives the surface the look of an FDM print.
+    static FragOut shadeFace(float3 normal, float3 world, uint id, bool print, float ring,
+                             constant Uniforms& u, constant uint* sel, constant DrawParams& p) {
+        float3 n = normalize(normal);
+        float3 v = normalize(u.eye.xyz - world);
+        if (dot(n, v) < 0.0) n = -n;
+        float groove = 1.0;
+        if (print) groove = printLook(n, world, max(u.printLayer, 0.01), max(u.printNozzle, 0.05), ring);
+        float3 key = normalize(v + float3(0.25, 0.15, 0.6));
+        float diffuse = max(dot(n, key), 0.0);
+        float spec = print ? pow(max(dot(reflect(-key, n), v), 0.0), 14.0) * 0.07
+                           : pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
+        // The body's colour (its own from the Appearance panel, or the palette's), with hover and
+        // selection colours made from it (see Renderer.tint).
+        float3 base = p.color.rgb;
+        // Face and edge ids carry their body in bits 20-29; "(body) | 0xFFFFF" stands for the whole body.
+        uint bodyBits = id & 0x3FF00000u;
+        bool hoverBody = u.wholeBodies != 0 && u.hovered != 0 && (u.hovered & 0x40000000u) == 0
+                         && (u.hovered & 0x3FF00000u) == bodyBits;
+        if (id == u.hovered || hoverBody) base = p.hoverColor.rgb;
+        if (isSelected(id, sel, u.selectedCount) || isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount))
+            base = p.selectColor.rgb;
+        FragOut o;
+        o.color = (p.style & 4u) != 0 ? float4(base, 1.0) : float4(base * (0.32 + 0.68 * diffuse) * groove + spec, 1.0);
+        o.id = id;
+        return o;
     }
 
     fragment FragOut faceFragment(FaceOut in [[stage_in]],
                                   constant Uniforms& u [[buffer(1)]],
                                   constant uint* sel [[buffer(2)]],
                                   constant DrawParams& p [[buffer(3)]]) {
-        float3 n = normalize(in.normal);
-        float3 v = normalize(u.eye.xyz - in.world);
-        if (dot(n, v) < 0.0) n = -n;
-        // fwidth needs every pixel of a quad to run it, so it sits out here rather than in a branch.
-        float groove = 1.0;
-        float3 printN = n;
-        float printGroove = printLook(printN, in.world, max(u.printLayer, 0.01));
-        if (u.printPreview != 0 && (p.style & 4u) == 0) { n = printN; groove = printGroove; }
-        float3 key = normalize(v + float3(0.25, 0.15, 0.6));
-        float diffuse = max(dot(n, key), 0.0);
-        float spec = u.printPreview != 0 ? pow(max(dot(reflect(-key, n), v), 0.0), 14.0) * 0.07
-                                         : pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
-        // The body's colour (its own from the Appearance panel, or the palette's), with hover and
-        // selection colours made from it (see Renderer.tint).
-        float3 base = p.color.rgb;
-        // Face and edge ids carry their body in bits 20-29; "(body) | 0xFFFFF" stands for the whole body.
-        uint bodyBits = in.id & 0x3FF00000u;
-        bool hoverBody = u.wholeBodies != 0 && u.hovered != 0 && (u.hovered & 0x40000000u) == 0
-                         && (u.hovered & 0x3FF00000u) == bodyBits;
-        if (in.id == u.hovered || hoverBody) base = p.hoverColor.rgb;
-        if (isSelected(in.id, sel, u.selectedCount) || isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount))
-            base = p.selectColor.rgb;
-        FragOut o;
-        o.color = (p.style & 4u) != 0 ? float4(base, 1.0) : float4(base * (0.32 + 0.68 * diffuse) * groove + spec, 1.0);
-        o.id = in.id;
+        return shadeFace(in.normal, in.world, in.id, false, 1e9, u, sel, p);
+    }
+
+    // The print preview draws each triangle on its own, with what it takes to tell how far a point is from the
+    // edge of its face: which of its corners lie on the face's boundary, and the mesh vertex of each corner, to
+    // look up the boundary segments that run from it (see Renderer.makePrintFaces).
+    struct PrintVertex {
+        packed_float3 position; packed_float3 normal; uint id;
+        uint c0, c1, c2;        // the mesh vertices of the triangle's corners
+        uint mask;              // bit j: corner j is on the boundary of the face
+    };
+    struct PrintCorner {
+        float4 p;               // the vertex
+        float4 a, b;            // the vertices next to it along the boundary (w = 0: none)
+    };
+    struct PrintOut {
+        float4 position [[position]];
+        float3 normal;
+        float3 world;
+        uint id [[flat]];
+        uint3 corner [[flat]];
+        uint mask [[flat]];
+    };
+
+    vertex PrintOut printFaceVertex(uint vid [[vertex_id]],
+                                    device const PrintVertex* verts [[buffer(0)]],
+                                    constant Uniforms& u [[buffer(1)]]) {
+        PrintVertex v = verts[vid];
+        PrintOut o;
+        o.world = float3(v.position);
+        o.position = u.viewProj * float4(o.world, 1.0);
+        o.normal = float3(v.normal);
+        o.id = v.id;
+        o.corner = uint3(v.c0, v.c1, v.c2);
+        o.mask = v.mask;
         return o;
+    }
+
+    static float segmentDistance(float3 p, float3 a, float3 b) {
+        float3 ab = b - a;
+        float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-12), 0.0, 1.0);
+        return length(p - (a + ab * t));
+    }
+
+    fragment FragOut printFaceFragment(PrintOut in [[stage_in]],
+                                       constant Uniforms& u [[buffer(1)]],
+                                       constant uint* sel [[buffer(2)]],
+                                       constant DrawParams& p [[buffer(3)]],
+                                       device const PrintCorner* corners [[buffer(4)]]) {
+        // How far this point is from the face's boundary: the distance to the boundary segments that start at
+        // the triangle's corners on it. (Only flat faces get a ring, so the others skip the lookups.)
+        float ring = 1e9;
+        if (abs(in.normal.z) > 0.8) {
+            for (uint j = 0; j < 3; j++) {
+                if (((in.mask >> j) & 1u) == 0) continue;
+                PrintCorner c = corners[in.corner[j]];
+                ring = min(ring, length(in.world - c.p.xyz));
+                if (c.a.w > 0.0) ring = min(ring, segmentDistance(in.world, c.p.xyz, c.a.xyz));
+                if (c.b.w > 0.0) ring = min(ring, segmentDistance(in.world, c.p.xyz, c.b.xyz));
+            }
+        }
+        return shadeFace(in.normal, in.world, in.id, true, ring, u, sel, p);
     }
 
     // Sketch profiles: translucent fills on the sketch plane, pulled slightly toward the camera
@@ -231,7 +325,7 @@ enum Shaders {
                                  constant DrawParams& p [[buffer(3)]]) {
         Segment s = segs[iid];
         // A selected body edge (top bit set) draws wider, and so does every edge of a selected body's
-        // border, to make room for its black-colour-black stripes. A selected sketch curve or point is wider too.
+        // border. A selected sketch curve or point is wider too.
         float thickness = p.thickness;
         if (p.pickable != 0 && p.selectedThickness > 0.0
             && (edgeSelected(s.id, sel, u.selectedCount) || isSelected(s.id, sel, u.selectedCount)))
@@ -265,6 +359,16 @@ enum Shaders {
                           : nrm * side * (0.5 * p.thickness + g) - d * (0.416 * p.thickness + g));
         }
         c.xy += offset / halfSize * c.w;
+        // The quad reaches half a width past each end of the line, but its corners there would keep the
+        // end's own depth, which flattens the depth along the line: the line then reads too far away at one
+        // end, and the faces beside it hide a wide line (a selected edge, the pick band) there. Carry the
+        // depth on past the ends at the line's own slope, so it matches the faces all along.
+        if ((p.style & 8u) == 0 && ca.w > 1e-4 && cb.w > 1e-4 && screenLength > 1.0) {
+            float za = ca.z / ca.w, zb = cb.z / cb.w;
+            float reach = thickness * 0.5 / screenLength;
+            float ze = atB ? zb + (zb - za) * reach : za + (za - zb) * reach;
+            c.z = clamp(ze, 0.0, 1.0) * c.w;
+        }
         // Constant in clip space: a fixed fraction of the view depth (see Camera.depthBiasScale). A wider line (a selected
         // edge) reaches farther across the face it lies on, which slopes away in depth, so its bias grows with it.
         c.z -= p.depthBias * max(thickness / max(p.thickness, 1e-3), 1.0);
@@ -344,10 +448,6 @@ enum Shaders {
         if (p.pickable != 0) {
             if (in.id == u.hovered) c = p.hoverColor;
             if (isSelected(in.id, sel, u.selectedCount) || edgeSelected(in.id, sel, u.selectedCount)) c = p.selectColor;
-            // A selected body edge: the selection colour down the middle third, black on either side,
-            // so it shows against a face of the same colour.
-            if (p.selectedThickness > 0.0 && edgeSelected(in.id, sel, u.selectedCount) && abs(in.across) > 1.0 / 3.0)
-                c = float4(0.0, 0.0, 0.0, 1.0);
         }
         FragOut o;
         o.color = float4(c.rgb, c.a * coverage);
