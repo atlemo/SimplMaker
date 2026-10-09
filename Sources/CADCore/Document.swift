@@ -509,6 +509,13 @@ public struct SplitFeature: Codable, Hashable, Sendable {
     public init(bodies: [FeatureID], tool: Tool) { self.bodies = bodies; self.tool = tool }
 }
 
+/// Lays a body on the floor (the XY plane, z = 0, with Z up): turns it so the picked flat face looks straight down,
+/// then lets it drop until that face sits flush. The face stays where it is sideways.
+public struct LayOnFloorFeature: Codable, Hashable, Sendable {
+    public var face: FaceRef
+    public init(face: FaceRef) { self.face = face }
+}
+
 /// Combines bodies: joins the tool bodies to the target, cuts them out of it, or keeps only where
 /// they overlap. The tool bodies are used up unless `keepTools` is set.
 public struct CombineFeature: Codable, Hashable, Sendable {
@@ -712,6 +719,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case scale(ScaleFeature)
         case combine(CombineFeature)
         case split(SplitFeature)
+        case layOnFloor(LayOnFloorFeature)
         case plane(PlaneFeature)
         case mirror(MirrorFeature)
         case pattern(PatternFeature)
@@ -749,6 +757,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .scale: return "Scale"
         case .combine: return "Combine"
         case .split: return "Split"
+        case .layOnFloor: return "Lay on Floor"
         case .plane: return "Plane"
         case .mirror: return "Mirror"
         case .pattern(let p): return p.kind == .linear ? "Pattern" : "Circular Pattern"
@@ -764,7 +773,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
     public var sketchesUsed: [FeatureID] {
         switch kind {
         case .sketch, .fillet, .chamfer, .hole, .thread, .primitive, .move, .rotate, .scale, .combine, .plane, .mirror, .pattern,
-             .shell, .draft, .importBody, .image: return []
+             .shell, .draft, .importBody, .image, .layOnFloor: return []
         case .split(let f): if case .profile(let sketch) = f.tool { return [sketch] } else { return [] }
         case .project(let p): return [p.sketch]
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
@@ -788,7 +797,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .mirror(let m): return m.operation == .newBody
         case .pattern(let p): return p.operation == .newBody
         case .importBody: return true
-        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .split, .plane, .shell, .draft, .project, .image: return false
+        case .sketch, .fillet, .chamfer, .rib, .hole, .thread, .move, .rotate, .scale, .combine, .split, .layOnFloor, .plane, .shell, .draft, .project, .image: return false
         }
     }
 }

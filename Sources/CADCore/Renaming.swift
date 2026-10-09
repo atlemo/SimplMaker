@@ -60,7 +60,7 @@ extension Feature.Kind {
             if !f.second.isEmpty { f.second = change(f.second) }
             self = .chamfer(f)
         case .revolve(var f): f.angle = change(f.angle); self = .revolve(f)
-        case .sweep, .loft, .combine, .split: break
+        case .sweep, .loft, .combine, .split, .layOnFloor: break
         case .rib(var f): f.thickness = change(f.thickness); self = .rib(f)
         case .hole(var f):
             f.u = change(f.u); f.v = change(f.v); f.diameter = change(f.diameter); f.depth = f.depth.map(change)
@@ -172,6 +172,7 @@ extension Feature {
             case .face(let face): add(face.body)
             case .profile(let sketch): add(sketch)
             }
+        case .layOnFloor(let f): add(f.face.body)
         case .plane(let f): add(f.base.feature)
         case .mirror(let f): f.bodies.forEach { add($0) }; add(f.plane.feature)
         case .pattern(let f):
@@ -207,6 +208,7 @@ extension Feature {
         case .scale(let f): f.bodies.forEach { out.insert($0) }
         case .combine(let f): out.insert(f.target)
         case .split(let f): f.bodies.forEach { out.insert($0) }
+        case .layOnFloor(let f): out.insert(f.face.body)
         case .mirror(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
         case .pattern(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
         case .shell(let f): out.insert(f.body)

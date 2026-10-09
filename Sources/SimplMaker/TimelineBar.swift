@@ -29,6 +29,7 @@ extension Feature {
         case .shell: return DesignTool.shell.symbol
         case .draft: return DesignTool.draft.symbol
         case .split: return DesignTool.split.symbol
+        case .layOnFloor: return DesignTool.layOnFloor.symbol
         case .project: return DesignTool.project.symbol
         case .importBody: return "file-box"
         case .image: return DesignTool.canvas.symbol

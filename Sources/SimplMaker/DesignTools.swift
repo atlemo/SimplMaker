@@ -12,7 +12,7 @@ import simd
 enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
-    case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", scale = "Scale", combine = "Combine", split = "Split Body"
+    case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", scale = "Scale", combine = "Combine", split = "Split Body", layOnFloor = "Lay on Floor"
     case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell", draft = "Draft", canvas = "Canvas"
     case project = "Project"
     case measure = "Measure"
@@ -23,7 +23,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     /// change an existing body.
     static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
-    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .draft, .project, .move, .scale, .combine, .split]
+    static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .draft, .project, .move, .scale, .layOnFloor, .combine, .split]
     /// Construction planes, copies of bodies, and reference images.
     static let construct: [DesignTool] = [.plane, .mirror, .pattern, .canvas]
     /// Tools that read the model without changing it.
@@ -51,6 +51,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .scale: return "scaling"
         case .combine: return "combine"
         case .split: return "split-body"
+        case .layOnFloor: return "lay-on-floor"
         case .plane: return "plane"
         case .mirror: return "flip-horizontal-2"
         case .pattern: return "pattern"
@@ -88,6 +89,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .scale: return "z"
         case .combine: return "j"
         case .split: return "s"  // with ⇧ (see defaultModifiers): every plain letter is taken
+        case .layOnFloor: return "l"  // with ⇧ too (L for lay)
         case .plane: return "n"
         case .mirror: return "q"
         case .pattern: return "t"
@@ -98,7 +100,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Held with the letter by default. Every plain letter has a tool (or Appearance), so a tool added since has ⇧ with one.
-    var defaultModifiers: KeyChord.Modifiers { self == .draft || self == .split ? .shift : [] }
+    var defaultModifiers: KeyChord.Modifiers { self == .draft || self == .split || self == .layOnFloor ? .shift : [] }
 
     /// The tooltip: the name, its current shortcut, and what the tool does.
     var help: String {
@@ -127,6 +129,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .thread: return "cut a metric or inch screw thread on a shaft or in a hole"
         case .combine: return "join, cut or intersect bodies (e.g. cut text out of a plate)"
         case .split: return "divide bodies into new bodies along a plane, a face or a sketch profile"
+        case .layOnFloor: return "click a flat face and the body turns and drops to the floor, that face down and flush"
         case .plane: return "a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
         case .mirror: return "copy bodies across a plane"
         case .pattern: return "copy bodies in a row or around an axis"
@@ -179,6 +182,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .move: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve
         case .combine: return kind == .face || kind == .edge
         case .split: return kind == .face || kind == .plane || kind == .region  // the bodies, then the plane, profile or face
+        case .layOnFloor: return kind == .face  // the face that goes down
         case .scale: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve  // bodies, or sketches
         case .plane, .canvas: return kind == .plane || kind == .face
         case .mirror: return kind == .face || kind == .edge || kind == .plane  // bodies, then the plane
@@ -306,6 +310,7 @@ extension DocumentModel {
         case .shell:
             let n = selection.filter(\.isFace).count
             return n == 0 ? "Click the faces to leave open" : "Click more faces, or press Return to shell (\(n) open)"
+        case .layOnFloor: return "Click the flat face that should lie on the floor"
         case .draft:
             let n = selection.filter(\.isFace).count
             return n == 0 ? "Click the faces to draft" : "Click more faces, or press Return to draft (\(n) picked)"
@@ -431,6 +436,14 @@ extension DocumentModel {
             let faces = selection.compactMap { faceRef($0) }
             guard let body = faces.first?.body, !waiting else { return false }
             add(Feature(name: document.nextName("Shell"), .shell(ShellFeature(body: body, faces: faces.filter { $0.body == body }))))
+        case .layOnFloor:
+            guard selection.count == 1, let pick = selection.first, pick.isFace else { return false }
+            guard let ref = faceRef(pick), let body = result?.body(ref.body), (try? body.faceFrame(ref.face)) != nil else {
+                selection = []
+                alert = AlertInfo(title: "Only flat faces can lie on the floor", message: "Pick a flat face of the body.")
+                return false
+            }
+            add(Feature(name: document.nextName("Lay on Floor"), .layOnFloor(LayOnFloorFeature(face: ref))))
         case .draft:
             let faces = selection.compactMap { faceRef($0) }
             guard let body = faces.first?.body, !waiting else { return false }

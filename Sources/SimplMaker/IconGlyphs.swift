@@ -193,6 +193,9 @@ enum IconGlyphs {
     // The user's own artwork: a body cut in two by a slanted plane (the line), the near half in ink, the far half in the accent colour.
     // Drawn from an 18 x 15 pt artwork at 1.25 times its size, centred in the 24-unit box (see SVGGlyph for the attributes).
     "split-body": "<path d=\"M20.874 15.532L16.091 20.999L2.5 20.999L2.5 16.375L4 16.375L4 19.5L15 19.5L15 16.375L16.5 16.375L16.5 18.254L19.375 14.966L19.375 13.88L20.874 12.132L20.874 15.532Z\" fill=\"currentColor\" /><path d=\"M20.874 6.369L19.375 8.117L19.375 5.369L16.5 8.656L16.5 11.473L15.512 12.625L15 12.625L15 9.124L4 9.124L4 12.625L2.5 12.625L2.5 8.064L7.94 2.625L20.874 2.625L20.874 6.369ZM5.059 7.625L15.409 7.625L18.472 4.124L8.56 4.124L5.059 7.625Z\" fill=\"accent\" /><path d=\"M22.625 7.625L16.375 14.5L0.75 14.5\" stroke-opacity=\"0.38\" stroke-weight=\"0.833\" />",
+    // The user's own artwork: a square tipped onto its corner (the accent outline) above the floor line (ink).
+    // Drawn from a 17 x 17 pt artwork at 1.25 times its size, centred in the 24-unit box (see SVGGlyph for the attributes).
+    "lay-on-floor": "<path d=\"M2.125 20.75L19 20.75\" /><path d=\"M11.519 2.207L21.688 7.144L16.876 17.188L6.707 12.376Z\" stroke=\"accent\" stroke-weight=\"0.833\" stroke-linejoin=\"miter\" />",
     "shell": "<path d=\"M3 7v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7\" /><path d=\"M7 7v9h10V7\" stroke=\"accent\" />",
     "square-center": "<rect width=\"18\" height=\"14\" x=\"3\" y=\"5\" rx=\"1\" /><circle cx=\"12\" cy=\"12\" r=\"1.4\" fill=\"currentColor\" stroke=\"none\" />",
     "arc-3-point": "<path d=\"M4 18A9 9 0 0 1 20 18\" /><circle cx=\"4\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"12\" cy=\"9.6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"20\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",

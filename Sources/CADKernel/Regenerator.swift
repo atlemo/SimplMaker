@@ -198,6 +198,7 @@ public enum Regenerator {
                 case .shell(let f): try shell(f, feature, &r)
                 case .draft(let f): try draft(f, feature, &r)
                 case .split(let f): try split(f, feature, &r)
+                case .layOnFloor(let f): try layOnFloor(f, feature, &r)
                 case .project(let f): try project(f, feature, &r)
                 case .importBody(let f): try importBody(f, feature, &r)
                 case .image(let f): r.images[feature.id] = try image(f, &r)
@@ -973,6 +974,32 @@ public enum Regenerator {
         let indices = try transformInputs(f.bodies, feature, &r, verb: "scales")
         guard let pivot = center(of: indices.map { r.bodies[$0].body }) else { throw KernelError(message: "the body is empty") }
         for i in indices { r.bodies[i].body = try r.bodies[i].body.scaled(by: k, about: pivot) }
+    }
+
+    /// The turn that brings a face looking along `normal` to look straight down, about the shortest way: as an axis
+    /// and an angle (nil when it already does). A face looking straight up has no shortest way; it turns about X.
+    static func turnToFaceDown(_ normal: SIMD3<Double>) -> (axis: SIMD3<Double>, angle: Double)? {
+        let n = normal / (normal * normal).sum().squareRoot()
+        let down = SIMD3<Double>(0, 0, -1)
+        let cosine = max(-1, min(1, (n * down).sum()))
+        let side = SIMD3(n.y * down.z - n.z * down.y, n.z * down.x - n.x * down.z, n.x * down.y - n.y * down.x)
+        let sine = (side * side).sum().squareRoot()
+        if sine < 1e-9 { return cosine > 0 ? nil : (SIMD3(1, 0, 0), .pi) }
+        return (side / sine, atan2(sine, cosine))
+    }
+
+    static func layOnFloor(_ f: LayOnFloorFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        guard let i = r.bodies.firstIndex(where: { $0.id == f.face.body }) else {
+            throw KernelError(message: "the body to lay on the floor is missing. Pick the face again")
+        }
+        let whole = r.bodies[i].body
+        guard let frame = try? whole.faceFrame(f.face.face), let pivot = try? whole.faceOutlineCenter(f.face.face) else {
+            throw KernelError(message: "only a flat face can lie on the floor. Pick a flat face")
+        }
+        // Turned about the middle of the face, which then drops straight down to the floor.
+        var body = whole
+        if let turn = turnToFaceDown(frame.normal) { body = try body.rotated(about: pivot, axis: turn.axis, angle: turn.angle) }
+        r.bodies[i].body = abs(pivot.z) > 1e-12 ? try body.translated(SIMD3(0, 0, -pivot.z)) : body
     }
 
     static func combine(_ f: CombineFeature, _ feature: Feature, _ r: inout RegenResult) throws {

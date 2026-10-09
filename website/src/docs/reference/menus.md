@@ -61,7 +61,7 @@ While you are editing a sketch, the menu also lists the sketch tools, **Offset S
 
 ## Modify
 
-**Fillet**, **Chamfer**, **Hole**, **Thread**, **Shell**, **Draft**, **Project**, **Move**, **Scale**, **Combine**, **Split Body**, **Mirror**, **Pattern**.
+**Fillet**, **Chamfer**, **Hole**, **Thread**, **Shell**, **Draft**, **Project**, **Move**, **Scale**, **Lay on Floor**, **Combine**, **Split Body**, **Mirror**, **Pattern**.
 
 ## Inspect
 

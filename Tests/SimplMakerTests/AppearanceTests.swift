@@ -109,7 +109,7 @@ import Testing
         #expect(DesignTool.allCases.allSatisfy { $0.defaultKey.isLowercase && $0.defaultKey.isLetter })
         let plain = DesignTool.allCases.filter { $0.defaultModifiers.isEmpty }.map(\.defaultKey)
         #expect(Set(plain).count == plain.count, "two tools share a plain letter")
-        #expect(Set(DesignTool.allCases.filter { !$0.defaultModifiers.isEmpty }) == [.draft, .split])
+        #expect(Set(DesignTool.allCases.filter { !$0.defaultModifiers.isEmpty }) == [.draft, .split, .layOnFloor])
         for tool in DesignTool.allCases {
             let label = KeyChord(tool.defaultKey, tool.defaultModifiers).label
             #expect(tool.help.hasPrefix("\(tool.rawValue) (\(label)):"), "the tooltip names the key")

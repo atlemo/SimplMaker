@@ -1581,7 +1581,7 @@ final class DocumentModel {
             guard let landed = result.projectionHandles[id] else { return nil }
             return handle(pf.mode == .emboss ? "Height" : "Depth", landed.origin,
                           pf.mode == .emboss ? landed.normal : -landed.normal, pf.height)
-        case .sketch, .sweep, .loft, .combine, .split, .mirror, .pattern, .importBody, .image:
+        case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .pattern, .importBody, .image:
             return nil
         }
     }
@@ -2067,7 +2067,7 @@ final class DocumentModel {
         case .project(var pf):
             pf.height = text
             doc.features[i].kind = .project(pf)
-        case .sketch, .sweep, .loft, .combine, .split, .mirror, .importBody, .image:
+        case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .importBody, .image:
             break
         }
     }
