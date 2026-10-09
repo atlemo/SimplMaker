@@ -5,6 +5,7 @@ import SwiftUI
 enum Preferences {
     static let trackpadScroll = "trackpadScroll"
     static let invertZoom = "invertZoom"
+    static let navigation = "navigation"
     static let showGrid = "showGrid"
     static let showAxes = "showAxes"
     static let showConstraints = "showConstraints"
@@ -23,17 +24,23 @@ enum Preferences {
     /// The tools pinned to a toolbar group (see ToolGroups.swift), by the group's id.
     static func toolbarPins(_ group: String) -> String { "toolbarPins.\(group)" }
 
-    /// What a two-finger trackpad scroll does in the viewport; ⇧ switches to the other one.
-    enum TrackpadScroll: String, CaseIterable, Identifiable {
-        case pan, orbit
-        var id: String { rawValue }
-        var title: String { self == .pan ? "Pan (like Apple's 3D viewers)" : "Orbit (like many CAD apps)" }
+    /// How the mouse, trackpad and wheel navigate the viewport (see NavigationConfig), stored as JSON. Before
+    /// there were bindings to edit, the Settings held only the trackpad's scroll mode and one inversion.
+    static var navigationConfig: NavigationConfig {
+        get {
+            let defaults = UserDefaults.standard
+            if let data = defaults.string(forKey: navigation)?.data(using: .utf8),
+               let config = try? JSONDecoder().decode(NavigationConfig.self, from: data) {
+                return config
+            }
+            return .simplMaker(trackpadOrbits: defaults.string(forKey: trackpadScroll) == "orbit",
+                               invertZoom: defaults.bool(forKey: invertZoom))
+        }
+        set {
+            guard let data = try? JSONEncoder().encode(newValue), let text = String(data: data, encoding: .utf8) else { return }
+            UserDefaults.standard.set(text, forKey: navigation)
+        }
     }
-
-    static var trackpadScrollMode: TrackpadScroll {
-        TrackpadScroll(rawValue: UserDefaults.standard.string(forKey: trackpadScroll) ?? "") ?? .pan
-    }
-    static var invertsZoom: Bool { UserDefaults.standard.bool(forKey: invertZoom) }
     /// Show the welcome window at launch instead of an empty document (on by default).
     static var showsWelcome: Bool { UserDefaults.standard.object(forKey: showWelcome) as? Bool ?? true }
     /// Sketch points snap to a grid that follows the zoom (on by default; ⌥ turns all snapping off).
@@ -121,8 +128,7 @@ enum Preferences {
 }
 
 struct SettingsView: View {
-    @AppStorage(Preferences.trackpadScroll) private var trackpadScroll = Preferences.TrackpadScroll.pan
-    @AppStorage(Preferences.invertZoom) private var invertZoom = false
+    @State private var navigation = Preferences.navigationConfig
     @AppStorage(Preferences.showGrid) private var showGrid = true
     @AppStorage(Preferences.showAxes) private var showAxes = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
@@ -193,7 +199,8 @@ struct SettingsView: View {
             case .shortcuts: ShortcutsPane()
             }
         }
-        .frame(width: 520, height: 560)
+        .frame(width: 520)
+        .frame(minHeight: 360, idealHeight: 560, maxHeight: .infinity)  // the height can be dragged, the width is fixed
         .navigationTitle(pane.rawValue)
     }
 
@@ -228,15 +235,93 @@ struct SettingsView: View {
 
     @ViewBuilder private var navigationPane: some View {
         Form {
-            Picker("Two-finger scroll", selection: $trackpadScroll) {
-                ForEach(Preferences.TrackpadScroll.allCases) { Text($0.title).tag($0) }
+            Section {
+                VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                    Picker("Navigate like", selection: Binding(
+                        get: { navigation.matchingPreset },
+                        set: { navigation.apply($0) })) {
+                        ForEach(NavigationPreset.choosable) { Text($0.title).tag($0) }
+                        if navigation.matchingPreset == .custom { Text(NavigationPreset.custom.title).tag(NavigationPreset.custom) }
+                    }
+                    Text("Sets what the mouse buttons, the wheel and the trackpad's scrolling do, as in that app. Change any of them below. Your direction and speed choices stay.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            Text("Hold ⇧ while scrolling to do the other one. Pinch zooms, rotate spins the view, and dragging on empty space orbits.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Toggle("Invert mouse-wheel zoom", isOn: $invertZoom)
+            Section("Mouse") {
+                bindingsGrid(note: "The left button only navigates on empty space; on a face, an edge or a handle it selects or drags that. ⌃-click is a right-click on a Mac.") {
+                    bindingsRow("Left button", $navigation.left, unavailable: [.control])
+                    bindingsRow("Right button", $navigation.right)
+                    bindingsRow("Middle button", $navigation.middle)
+                    bindingsRow("Wheel", $navigation.wheel)
+                }
+            }
+            Section("Trackpad") {
+                bindingsGrid(note: "Two fingers on the trackpad. Pinch zooms.") {
+                    bindingsRow("Scroll", $navigation.trackpad)
+                }
+                Toggle("Rotate gesture spins the view", isOn: $navigation.rotateSpins)
+            }
+            Section("Mouse and trackpad") {
+                Toggle("Invert orbit up and down", isOn: $navigation.invertOrbitVertical)
+                Toggle("Invert orbit left and right", isOn: $navigation.invertOrbitHorizontal)
+                Toggle("Invert pan up and down", isOn: $navigation.invertPanVertical)
+                Toggle("Invert pan left and right", isOn: $navigation.invertPanHorizontal)
+                Toggle("Invert zoom (wheel, scroll and drag)", isOn: $navigation.invertZoom)
+                speedSlider("Orbit speed", value: $navigation.orbitSpeed)
+                speedSlider("Zoom speed", value: $navigation.zoomSpeed)
+            }
+            Section {
+                Button("Reset Navigation") { navigation = .simplMaker() }
+                    .disabled(navigation == .simplMaker())
+            }
         }
         .formStyle(.grouped)
+        .onChange(of: navigation) { _, new in Preferences.navigationConfig = new }
+    }
+
+    private static let bindingLabelWidth: CGFloat = 100
+    private static let bindingPickerWidth: CGFloat = 80
+
+    private func speedSlider(_ title: String, value: Binding<Double>) -> some View {
+        LabeledContent(title) {
+            HStack {
+                Slider(value: value, in: NavigationConfig.speedRange)
+                Text(String(format: "%.2g×", value.wrappedValue))
+                    .monospacedDigit()
+                    .frame(width: 40, alignment: .trailing)
+            }
+        }
+    }
+
+    /// Rows of what each input does with each modifier key held, under a header of the keys.
+    private func bindingsGrid<Rows: View>(note: String, @ViewBuilder rows: () -> Rows) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Grid(alignment: .leading, horizontalSpacing: 6, verticalSpacing: 6) {
+                GridRow {
+                    Color.clear.frame(width: Self.bindingLabelWidth, height: 1)
+                    ForEach(NavModifier.allCases) { Text($0.symbol).font(.caption).foregroundStyle(.secondary).frame(width: Self.bindingPickerWidth) }
+                }
+                rows()
+            }
+            Text(note)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func bindingsRow(_ title: String, _ bindings: Binding<NavBindings>, unavailable: Set<NavModifier> = []) -> some View {
+        GridRow {
+            Text(title).frame(width: Self.bindingLabelWidth, alignment: .leading)  // the same in every grid, so the columns line up
+            ForEach(NavModifier.allCases) { modifier in
+                Picker(title, selection: bindings[modifier]) {
+                    ForEach(NavAction.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .frame(width: Self.bindingPickerWidth)
+                .disabled(unavailable.contains(modifier))
+            }
+        }
     }
 
     @ViewBuilder private var viewportPane: some View {
@@ -277,5 +362,11 @@ struct SettingsView: View {
             Toggle("Show sketch constraints", isOn: $showConstraints)
         }
         .formStyle(.grouped)
+    }
+}
+
+private extension Binding where Value == NavBindings {
+    subscript(modifier: NavModifier) -> Binding<NavAction> {
+        Binding<NavAction>(get: { wrappedValue[modifier] }, set: { wrappedValue[modifier] = $0 })
     }
 }

@@ -10,6 +10,7 @@ import SwiftUI
 enum AppWindows {
     static let welcomeID = "welcome"
     static let licenseID = "license"
+    static let settingsID = "settings"
     static var openWindow: OpenWindowAction?
 
     /// Shows the welcome window, or a new document if no SwiftUI view has appeared yet.

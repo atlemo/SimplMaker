@@ -1,8 +1,9 @@
 // The 3D viewport: an MTKView subclass for input, wrapped for SwiftUI.
 //
 // Navigation (see README):
-//   trackpad: two-finger scroll = pan (or orbit, see Settings), ⇧ swaps, pinch = zoom, rotate = spin
+//   trackpad: two-finger scroll = pan, ⇧ = orbit, pinch = zoom, rotate = spin
 //   mouse:    left-drag on empty space = orbit, right/middle-drag = pan, wheel = zoom
+//   All of it can be changed in Settings → Navigation (see NavigationConfig).
 //   click = select face/edge/profile (⇧/⌘ to add), Esc = clear selection
 // In sketch mode, clicks go to the active sketch tool; see SketchSession.
 //
@@ -638,7 +639,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             refreshOverlay()
             return
         }
-        drag(event) { self.renderer?.camera.orbit(dx: $0, dy: $1) }
+        navigateByDragging(event, bindings: navigation.left)
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -708,13 +709,30 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let menu = ContextMenuBuilder.menu(model.contextItems(for: pick, ray: ray)) { [weak self] in self?.refreshOverlay() }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
-    override func rightMouseDragged(with event: NSEvent) { drag(event, pan) }
+    override func rightMouseDragged(with event: NSEvent) { navigateByDragging(event, bindings: navigation.right) }
     override func otherMouseDown(with event: NSEvent) { lastDrag = location(event); dragged = false }
-    override func otherMouseDragged(with event: NSEvent) { drag(event, pan) }
+    override func otherMouseDragged(with event: NSEvent) { navigateByDragging(event, bindings: navigation.middle) }
 
-    /// `dy` arrives upward-positive (see `drag`); the camera's pan, like the scroll wheel's, takes downward-positive.
-    private func pan(_ dx: Float, _ dy: Float) {
-        renderer?.camera.pan(dx: dx, dy: -dy, viewHeight: Float(bounds.height))
+    /// The navigation settings, read again only when they change (this is asked for on every mouse move).
+    private var navigation: NavigationConfig {
+        let raw = UserDefaults.standard.string(forKey: Preferences.navigation)
+        if let cachedNavigation, cachedNavigationSource == raw { return cachedNavigation }
+        let config = Preferences.navigationConfig
+        cachedNavigation = config
+        cachedNavigationSource = raw
+        return config
+    }
+    private var cachedNavigation: NavigationConfig?
+    private var cachedNavigationSource: String?
+
+    /// Orbits, pans or zooms by a drag, as the settings bind the button and the modifier keys held.
+    private func navigateByDragging(_ event: NSEvent, bindings: NavBindings) {
+        let action = bindings[NavModifier(event.modifierFlags)]
+        let config = navigation
+        drag(event) { dx, dyUp in  // `drag` gives dy upward-positive
+            guard let renderer else { return }
+            config.navigate(&renderer.camera, action, input: .drag, dx: dx, dy: -dyUp, viewHeight: Float(bounds.height))
+        }
     }
 
     private func drag(_ event: NSEvent, _ apply: (Float, Float) -> Void) {
@@ -729,29 +747,25 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     override func scrollWheel(with event: NSEvent) {
         guard let renderer else { return }
-        if event.hasPreciseScrollingDeltas {  // trackpad
-            let dx = Float(event.scrollingDeltaX), dy = Float(event.scrollingDeltaY)
-            var orbit = Preferences.trackpadScrollMode == .orbit
-            if event.modifierFlags.contains(.shift) { orbit.toggle() }
-            if orbit {
-                renderer.camera.orbit(dx: -dx, dy: dy)
-            } else {
-                renderer.camera.pan(dx: dx, dy: dy, viewHeight: Float(bounds.height))
-            }
-        } else {
-            let delta = Float(event.scrollingDeltaY) * (Preferences.invertsZoom ? 1 : -1)
-            renderer.camera.zoom(pow(1.1, delta))
-        }
+        let config = navigation
+        let precise = event.hasPreciseScrollingDeltas  // a trackpad
+        var dx = Float(event.scrollingDeltaX), dy = Float(event.scrollingDeltaY)
+        // Held with ⇧, many mice turn the wheel sideways.
+        if !precise, dy == 0 { (dx, dy) = (0, dx) }
+        let action = (precise ? config.trackpad : config.wheel)[NavModifier(event.modifierFlags)]
+        config.navigate(&renderer.camera, action, input: precise ? .trackpad : .wheel, dx: dx, dy: dy, viewHeight: Float(bounds.height))
         needsDisplay = true
     }
 
     override func rotate(with event: NSEvent) {
-        renderer?.camera.orbit(dx: Float(event.rotation) * 4, dy: 0)
+        guard let renderer else { return }
+        navigation.rotate(&renderer.camera, degrees: event.rotation)
         needsDisplay = true
     }
 
     override func magnify(with event: NSEvent) {
-        renderer?.camera.zoom(Float(1 / (1 + event.magnification)))
+        guard let renderer else { return }
+        navigation.pinch(&renderer.camera, magnification: Float(event.magnification))
         needsDisplay = true
     }
 

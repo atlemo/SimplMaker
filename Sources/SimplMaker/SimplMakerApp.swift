@@ -41,9 +41,14 @@ struct SimplMakerApp: App {
         .defaultPosition(.center)
         .restorationBehavior(.disabled)
 
-        Settings {
+        // An ordinary window rather than a Settings scene, whose window SwiftUI keeps from being resized.
+        // The "Settings…" item (⌘,) is in SimplMakerCommands.
+        Window("Settings", id: AppWindows.settingsID) {
             SettingsView().modifier(AccentScope())
         }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        .restorationBehavior(.disabled)
     }
 }
 
@@ -84,6 +89,10 @@ struct SimplMakerCommands: Commands {
     @AppStorage(Preferences.showAxes) private var showAxes = true
 
     var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { openWindow(id: AppWindows.settingsID) }
+                .keyboardShortcut(",")
+        }
         CommandGroup(replacing: .appInfo) {
             Button("About SimplMaker") { AboutPanel.show() }
             if updater.isAvailable {
