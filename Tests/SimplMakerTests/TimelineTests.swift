@@ -50,6 +50,21 @@ import Testing
         try await settle(model)
     }
 
+    @Test func aNewFeatureThatDoesNotBuildIsNotKept() async throws {
+        let model = DocumentModel(document: .demo())
+        try await settle(model)
+        let count = model.document.features.count
+        let tooBig = Feature(id: "huge", name: "Huge Fillet", .fillet(EdgeFeature(
+            edges: [EdgeRef(body: "plate", edge: "plate.side.L0|plate.side.L1")], size: "500 mm")))
+        model.add(tooBig)
+        try await settle(model)
+        for _ in 0..<1000 where model.document.features.count != count { try await Task.sleep(for: .milliseconds(5)) }
+        try await settle(model)
+        #expect(model.document.features.count == count && model.document.index(of: "huge") == nil)
+        #expect(model.newFeature == nil && model.alert != nil)
+        #expect(model.result?.errors.isEmpty == true, "the model is as it was")
+    }
+
     @Test func theTimelineLightsTheFeaturesBehindWhatIsSelected() async throws {
         let model = DocumentModel(document: .demo())
         try await settle(model)

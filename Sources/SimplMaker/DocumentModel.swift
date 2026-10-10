@@ -95,6 +95,8 @@ final class DocumentModel {
     /// The feature just created by a tool, while it is still being sized: Cancel takes it out again.
     var newFeature: FeatureID?
     @ObservationIgnored var documentBeforeNewFeature: CADDocument?
+    /// `newFeature` has not been through a complete rebuild yet: if that one fails, the feature is taken out again.
+    @ObservationIgnored private var newFeatureUnbuilt = false
     /// A tool waiting for the user to pick what it needs (a profile, a path, a face...). See DesignTools.swift.
     var pendingTool: DesignTool? {
         didSet {
@@ -622,6 +624,7 @@ final class DocumentModel {
         pendingTool = nil
         selectedFeature = feature.id
         newFeature = feature.id
+        newFeatureUnbuilt = true
         handleFocusRequest += 1
     }
 
@@ -684,6 +687,19 @@ final class DocumentModel {
         if regenRunning { queuedRegen = job } else { job() }
     }
 
+    /// Takes out a feature that was just created and does not build, and says why. `rebuilt` is the rebuild that
+    /// showed it failing (its errors are read for the reason); the rebuild without the feature follows.
+    func dropFailedNewFeature(_ id: FeatureID, rebuilt r: RegenResult) {
+        let name = featureName(id)
+        let reason = r.errors[id].map { error -> String in
+            let parts = error.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            let text = parts.count == 2 && parts[0].lowercased() == (document.features.first { $0.id == id }?.typeName.lowercased() ?? "") ? parts[1] : error
+            return text.prefix(1).uppercased() + text.dropFirst()
+        } ?? "It could not be built."
+        cancelNewFeature()
+        alert = AlertInfo(title: "\(name) could not be made", message: reason)
+    }
+
     private func noteProgress(_ step: RegenProgress) {
         guard isRegenerating else { return }  // the rebuild finished while this was on its way
         regenProgress = step
@@ -726,6 +742,14 @@ final class DocumentModel {
             handleProblem = "Can't build it at that size: \(reason)"
             overlayRevision += 1
             return
+        }
+        if previewFeature == nil, final, newFeatureUnbuilt, let id = newFeature {
+            newFeatureUnbuilt = false
+            if r.errors[id] != nil {
+                // A tool that fails leaves nothing in the timeline: the feature goes, the model stays as it was.
+                dropFailedNewFeature(id, rebuilt: r)
+                return
+            }
         }
         previewInvalid = false
         handleProblem = nil
@@ -825,6 +849,9 @@ final class DocumentModel {
 
     /// Return (or Esc) after sizing a feature: done with it, so its handle and size field go away.
     func finishFeatureEdit() {
+        if let id = newFeature, let r = result, r.errors[id] != nil {
+            return dropFailedNewFeature(id, rebuilt: r)  // sized to something that does not build: not kept
+        }
         newFeature = nil
         guard dragHandle != nil || featureWithoutHandle != nil else { return }
         selectedFeature = nil
