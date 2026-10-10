@@ -480,7 +480,8 @@ final class Renderer {
     var selected: [UInt32] = []
     /// Pixel (in drawable coordinates, origin top-left) to read from the ID buffer on the next frame.
     var pickRequest: SIMD2<Int>?
-    var onPick: (@MainActor @Sendable (UInt32) -> Void)?
+    /// Called with the ID under a requested pixel, and that pixel (a result can arrive after the pointer moved on).
+    var onPick: (@MainActor @Sendable (UInt32, SIMD2<Int>) -> Void)?
 
     static let colorFormat = MTLPixelFormat.bgra8Unorm
     /// How wide (in points) a construction plane's side is for clicking and hovering.
@@ -1250,7 +1251,7 @@ final class Renderer {
             let callback = onPick
             cmd.addCompletedHandler { _ in
                 let id = buffer.contents().load(as: UInt32.self)
-                Task { @MainActor in callback?(id) }
+                Task { @MainActor in callback?(id, pick) }
             }
         }
         cmd.present(drawable)

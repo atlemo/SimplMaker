@@ -22,6 +22,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var lastDrag: NSPoint?
     private var lastPoint: NSPoint?
     private var dragged = false
+    /// Where the button went down: a press that wanders less than a few points is still a click.
+    private var downPoint: NSPoint?
     private var sketchDrag = false
     private var handleDrag = false
     /// A hole's move dot is being dragged.
@@ -426,11 +428,20 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     private func location(_ event: NSEvent) -> NSPoint { convert(event.locationInWindow, from: nil) }
 
-    private func requestPick(at p: NSPoint) {
+    private func pickPixel(_ p: NSPoint) -> SIMD2<Int> {
         let scale = window?.backingScaleFactor ?? 2
-        renderer?.pickRequest = SIMD2(Int(p.x * scale), Int(p.y * scale))
+        return SIMD2(Int(p.x * scale), Int(p.y * scale))
+    }
+
+    private func requestPick(at p: NSPoint) {
+        renderer?.pickRequest = pickPixel(p)
         needsDisplay = true
     }
+
+    /// The pixel whose pick result `renderer.hovered` holds.
+    private var pickedPixel: SIMD2<Int>?
+    /// A click waiting for the pick under the pointer, which the pointer's last move may not have delivered yet.
+    private var pendingClick: (pixel: SIMD2<Int>, action: () -> Void)?
 
     /// The origin plane whose name the pointer is over (while the planes are offered): that plane lights up, not
     /// whichever plane happens to lie under the label in this view.
@@ -450,7 +461,16 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }
     }
 
-    func pickResult(_ result: UInt32) {
+    func pickResult(_ result: UInt32, at pixel: SIMD2<Int>?) {
+        pickedPixel = pixel
+        applyPick(result)
+        if let pending = pendingClick, pending.pixel == pixel {
+            pendingClick = nil
+            pending.action()
+        }
+    }
+
+    private func applyPick(_ result: UInt32) {
         let raw = hoveredPlaneLabel?.pickID.raw ?? result
         guard let renderer, renderer.hovered != raw else { return }
         renderer.hovered = raw
@@ -537,7 +557,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     override func mouseEntered(with event: NSEvent) { mouseInside = true }
     override func mouseExited(with event: NSEvent) {
         mouseInside = false
-        pickResult(0)
+        pickResult(0, at: nil)
         needsDisplay = true  // hides the cursor prompt
     }
 
@@ -576,6 +596,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             return
         }
         lastDrag = p
+        downPoint = p
         dragged = false
         sketchDrag = false
         if model?.sketchSession != nil {
@@ -713,13 +734,36 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }
         // A double-click's second release isn't a click: the double-click already did its job.
         guard !dragged, event.clickCount < 2, let renderer, let model, model.sketchSession == nil else { return }
-        let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
+        let p = location(event)
+        let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
+        let pixel = pickPixel(p)
+        // The click acts on what is under the pointer now: if the last move's pick hasn't come back (or was for
+        // another pixel), ask again and click when it arrives.
+        let inside = pixel.x >= 0 && pixel.y >= 0 && p.x <= bounds.width && p.y <= bounds.height
+        if pickedPixel == pixel || !inside {
+            pendingClick = nil
+            performClick(at: p, additive: additive)
+        } else {
+            let action: () -> Void = { [weak self] in self?.performClick(at: p, additive: additive) }
+            pendingClick = (pixel, action)
+            requestPick(at: p)
+            // Should the pick never come back, click on what is known.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, let pending = self.pendingClick, pending.pixel == pixel else { return }
+                self.pendingClick = nil
+                pending.action()
+            }
+        }
+    }
+
+    private func performClick(at p: NSPoint, additive: Bool) {
+        guard let renderer, let model, model.sketchSession == nil else { return }
+        let ray = renderer.camera.ray(at: p, viewSize: bounds.size)
         model.clickRay = (SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
                           SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)))
-        let next = renderer.camera.ray(at: CGPoint(x: location(event).x + 1, y: location(event).y), viewSize: bounds.size)
+        let next = renderer.camera.ray(at: CGPoint(x: p.x + 1, y: p.y), viewSize: bounds.size)
         model.clickRayNext = (SIMD3(Double(next.origin.x), Double(next.origin.y), Double(next.origin.z)),
                               SIMD3(Double(next.direction.x), Double(next.direction.y), Double(next.direction.z)))
-        let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
         var pick = renderer.hovered == 0 ? nil : PickID(raw: renderer.hovered)
         // While a plane is being asked for, the grid floor (the XY plane) answers too.
         if pick == nil, renderer.showGrid, model.showsOriginPlanes, let ray = model.clickRay,
@@ -730,7 +774,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         refreshOverlay()
     }
 
-    override func rightMouseDown(with event: NSEvent) { lastDrag = location(event); dragged = false; rollDragRaw = nil }
+    override func rightMouseDown(with event: NSEvent) { lastDrag = location(event); downPoint = lastDrag; dragged = false; rollDragRaw = nil }
     /// A right-click without dragging (dragging pans) opens the menu for what's under the cursor.
     override func rightMouseUp(with event: NSEvent) {
         defer { lastDrag = nil }
@@ -763,7 +807,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     override func rightMouseDragged(with event: NSEvent) { navigateByDragging(event, bindings: navigation.right) }
-    override func otherMouseDown(with event: NSEvent) { lastDrag = location(event); dragged = false; rollDragRaw = nil }
+    override func otherMouseDown(with event: NSEvent) { lastDrag = location(event); downPoint = lastDrag; dragged = false; rollDragRaw = nil }
     override func otherMouseDragged(with event: NSEvent) { navigateByDragging(event, bindings: navigation.middle) }
 
     /// The navigation settings, read again only when they change (this is asked for on every mouse move).
@@ -824,7 +868,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let p = location(event)
         guard let last = lastDrag else { lastDrag = p; return }
         let dx = Float(p.x - last.x), dy = Float(p.y - last.y)
-        if abs(dx) + abs(dy) > 0 { dragged = true }
+        if let down = downPoint, hypot(p.x - down.x, p.y - down.y) > 4 { dragged = true }  // a click may jitter a little
         apply(dx, -dy)  // view is flipped: screen-up is negative y
         lastDrag = p
         needsDisplay = true
@@ -1179,6 +1223,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }
         let size = NSSize(width: 110, height: 24)
         var placed: [NSRect] = []
+        // The room a hole's move dot needs around it (about 22 points each way), where no field goes.
+        let moveDotZone: NSRect? = model.holeMoveDot.flatMap {
+            renderer.camera.project(SIMD3(Float($0.x), Float($0.y), Float($0.z)), viewSize: bounds.size)
+        }.map { NSRect(x: $0.x - 22, y: $0.y - 22, width: 44, height: 44) }
         for h in handles {
             guard let field = handleFields[h.slot], let text = model.handleFieldText(for: h.slot) else { continue }
             field.toolTip = "\(h.label): type a size or an expression, then press Return · Tab for the next · Esc cancels"
@@ -1205,8 +1253,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 continue
             }
             field.isHidden = false
-            let x = min(max(p.x + 26, 0), max(bounds.width - size.width, 0))
+            let maxX = max(bounds.width - size.width, 0)
+            var x = min(max(p.x + 26, 0), maxX)
             var y = min(max(p.y - size.height / 2, 0), max(bounds.height - size.height, 0))
+            // A hole's move dot has to stay easy to grab: a field that would crowd it moves out to the side of it.
+            if let dot = moveDotZone, dot.intersects(NSRect(origin: NSPoint(x: x, y: y), size: size)) {
+                x = dot.maxX <= maxX ? dot.maxX : max(dot.minX - size.width, 0)
+            }
             // Two arrows can end close together: the later field steps down out of the earlier one's way.
             for _ in 0..<4 where placed.contains(where: { $0.insetBy(dx: -2, dy: -2).intersects(NSRect(origin: NSPoint(x: x, y: y), size: size)) }) {
                 y = min(y + size.height + 4, max(bounds.height - size.height, 0))
@@ -1801,7 +1854,7 @@ struct ViewportView: NSViewRepresentable {
         view.applyAppearance()
         view.isPaused = true
         view.enableSetNeedsDisplay = true
-        renderer.onPick = { [weak view] raw in view?.pickResult(raw) }
+        renderer.onPick = { [weak view] raw, pixel in view?.pickResult(raw, at: pixel) }
         return view
     }
 

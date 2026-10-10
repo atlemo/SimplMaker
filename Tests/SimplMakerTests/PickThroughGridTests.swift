@@ -31,7 +31,7 @@ import Testing
         renderer.camera.distance = 80
 
         var picked: UInt32?
-        renderer.onPick = { picked = $0 }
+        renderer.onPick = { id, _ in picked = id }
         func pick(_ world: SIMD3<Float>) async throws -> UInt32? {
             picked = nil
             let scale = window.backingScaleFactor
