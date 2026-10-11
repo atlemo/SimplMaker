@@ -59,6 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Updater.shared.start()
         Telemetry.start()
         LicenseManager.shared.start()
+        if AIFeature.isAvailable { AIConnection.shared.startIfEnabled() }  // only when the user has turned it on in Settings ▸ AI
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if AIFeature.isAvailable { AIConnection.shared.stop() }  // closes the connections and marks the connection file as not running
     }
 
     /// No empty document at launch while the welcome window is on; the Window scene presents it.

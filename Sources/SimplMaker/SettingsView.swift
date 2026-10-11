@@ -143,7 +143,7 @@ struct SettingsView: View {
     @ObservedObject private var updater = Updater.shared
 
     private enum Pane: String, CaseIterable, Identifiable {
-        case general = "General", license = "License", navigation = "Navigation", viewport = "Viewport", shortcuts = "Shortcuts"
+        case general = "General", license = "License", navigation = "Navigation", viewport = "Viewport", shortcuts = "Shortcuts", ai = "AI"
         var id: String { rawValue }
         var icon: String {
             switch self {
@@ -152,13 +152,16 @@ struct SettingsView: View {
             case .navigation: return "hand.draw"
             case .viewport: return "cube"
             case .shortcuts: return "keyboard"
+            case .ai: return "sparkles"
             }
         }
     }
     @State private var pane = Pane.general
     @Environment(\.accent) private var accent
 
-    private var panes: [Pane] { Pane.allCases.filter { $0 != .license || LicenseManager.shared.isEnforced } }
+    private var panes: [Pane] {
+        Pane.allCases.filter { ($0 != .license || LicenseManager.shared.isEnforced) && ($0 != .ai || AIFeature.isAvailable) }
+    }
 
     /// The categories, as a row of buttons in the app's accent colour (a TabView draws its selection grey).
     private var categoryBar: some View {
@@ -197,6 +200,7 @@ struct SettingsView: View {
             case .navigation: navigationPane
             case .viewport: viewportPane
             case .shortcuts: ShortcutsPane()
+            case .ai: AISettingsPane()
             }
         }
         .frame(width: 520)

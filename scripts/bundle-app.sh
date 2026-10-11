@@ -6,6 +6,10 @@
 #   add --licensed to make a debug build ask for a license too (see Licensing below); without it a development
 #   build never does, so your own copy does not lock after 14 days
 #   add --open to launch it afterwards
+#   add --with-ai to put the AI mode in a release build. It is in debug builds (and left out of release builds), because it is
+#   an unfinished feature: the AI interface (a local MCP server, Settings > AI, the stdio relay in Contents/Helpers) is switched
+#   by the Info.plist key SCAIEnabled, which this script writes. Without the mode, a build neither contains the relay nor can
+#   be made to start the server (see Sources/SimplMaker/AI/AIFeature.swift).
 # The bundle's Info.plist declares the .simplmaker document type, which the document features
 # (Open Recent, autosave, versions) rely on; prefer this (or Xcode) over `swift run`.
 #
@@ -36,6 +40,7 @@ cd "$ROOT"
 CONFIG=release
 OPEN=0
 RELEASE=0
+WITH_AI="${WITH_AI:-0}"
 ENFORCE="${LICENSE:-0}"
 for arg in "$@"; do
   case "$arg" in
@@ -43,15 +48,26 @@ for arg in "$@"; do
     --release) RELEASE=1 ;;
     --licensed) ENFORCE=1 ;;
     --open) OPEN=1 ;;
+    --with-ai) WITH_AI=1 ;;
     *) echo "unknown option $arg" >&2; exit 2 ;;
   esac
 done
+# The AI mode: on in debug builds, off in release builds unless asked for.
+AI_ENABLED=0
+{ [ "$CONFIG" = debug ] || [ "$WITH_AI" = 1 ]; } && AI_ENABLED=1
 swift build -c "$CONFIG" --product SimplMaker
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/SimplMaker"
+[ "$AI_ENABLED" != 1 ] || swift build -c "$CONFIG" --product simplmaker-mcp
+BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
+BIN="$BIN_DIR/SimplMaker"
 APP="$ROOT/dist/SimplMaker.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SimplMaker"
+if [ "$AI_ENABLED" = 1 ]; then
+  # The stdio relay for AI clients that start servers as programs (Claude Desktop); Settings > AI points them at it.
+  mkdir -p "$APP/Contents/Helpers"
+  cp "$BIN_DIR/simplmaker-mcp" "$APP/Contents/Helpers/simplmaker-mcp"
+fi
 cp "$ROOT/Packaging/Info.plist" "$APP/Contents/Info.plist"
 
 # Version numbers.
@@ -59,6 +75,15 @@ PLIST="$APP/Contents/Info.plist"
 plist_set() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"; }
 plist_set CFBundleShortVersionString "$(tr -d '[:space:]' < "$ROOT/VERSION")"
 plist_set CFBundleVersion "${BUILD_NUMBER:-$(git rev-list --count HEAD)}"
+# The AI mode (a real boolean, which the app reads as such).
+/usr/libexec/PlistBuddy -c "Delete :SCAIEnabled" "$PLIST" 2>/dev/null || true
+if [ "$AI_ENABLED" = 1 ]; then
+  /usr/libexec/PlistBuddy -c "Add :SCAIEnabled bool true" "$PLIST"
+  echo "note: this build has the AI mode (SCAIEnabled)"
+  [ "$RELEASE" != 1 ] || echo "WARNING: this is a --release build WITH the AI mode (--with-ai); a normal release leaves it out" >&2
+else
+  /usr/libexec/PlistBuddy -c "Add :SCAIEnabled bool false" "$PLIST"
+fi
 
 # Licensing configuration.
 POLAR_ORGANIZATION_ID="$(conf_get POLAR_ORGANIZATION_ID)"
@@ -128,8 +153,9 @@ if [ "$RELEASE" = 1 ]; then
   # Inside out: Sparkle's helpers, the frameworks and dylib, then the app. The hardened runtime and a timestamp are
   # what notarization requires.
   SPK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
-  for item in "$SPK/Autoupdate" "$SPK/Updater.app" "$APP/Contents/Frameworks/Sparkle.framework" \
-              "$APP/Contents/Frameworks/libSimplOCCT.dylib" "$APP"; do
+  SIGN_ITEMS=("$SPK/Autoupdate" "$SPK/Updater.app" "$APP/Contents/Frameworks/Sparkle.framework" "$APP/Contents/Frameworks/libSimplOCCT.dylib")
+  [ ! -f "$APP/Contents/Helpers/simplmaker-mcp" ] || SIGN_ITEMS+=("$APP/Contents/Helpers/simplmaker-mcp")
+  for item in "${SIGN_ITEMS[@]}" "$APP"; do
     codesign --force --options runtime --timestamp --sign "$IDENTITY" "$item"
   done
   codesign --verify --deep --strict "$APP"

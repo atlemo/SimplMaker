@@ -44,6 +44,7 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
         if let m = modelStorage { return m }
         let m = DocumentModel(document: initial)
         m.onDocumentChange = { [latest] doc in latest.withLock { $0 = doc } }
+        if AIFeature.isAvailable { DocumentRegistry.shared.register(m) }  // the AI interface can now name this document
         modelStorage = m
         return m
     }

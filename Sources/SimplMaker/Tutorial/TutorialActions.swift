@@ -11,10 +11,7 @@ enum TutorialActions {
 
     /// Waits until the model has been rebuilt for the latest change.
     static func settle(_ model: DocumentModel) async {
-        try? await Task.sleep(for: .milliseconds(5))
-        for _ in 0..<1000 where model.isRegenerating || model.result == nil {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await model.rebuilt()
     }
 
     // MARK: parameters

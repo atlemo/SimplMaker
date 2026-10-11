@@ -919,6 +919,13 @@ public struct CADDocument: Codable, Hashable, Sendable {
         }
     }
 
+    /// Adds a new feature the way the tools do: where the timeline marker is, and hiding the sketches it is built
+    /// from. The one place this rule lives, for the interface and for anything else that creates features.
+    public mutating func addFeature(_ feature: Feature) {
+        insertAtMarker(feature)
+        hidden.formUnion(feature.sketchesUsed)
+    }
+
     public func index(of id: FeatureID) -> Int? { features.firstIndex { $0.id == id } }
 
     /// Next free "<base><n>" name, e.g. "Fillet3".

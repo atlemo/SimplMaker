@@ -54,6 +54,8 @@ struct RegenProgress: Equatable {
 @Observable
 final class DocumentModel {
     private(set) var document: CADDocument
+    /// Counts the changes made to the document (also undo and redo), so a reader can tell whether it has changed since.
+    private(set) var documentRevision = 0
     private(set) var result: RegenResult?
     private(set) var meshes: [BodyMesh] = []
     private(set) var sceneRevision = 0
@@ -166,6 +168,9 @@ final class DocumentModel {
     }
     var fileURL: URL?
     var alert: AlertInfo?
+    /// What an AI client connected to SimplMaker is doing to this part right now ("Creating Box1"), shown in the
+    /// status bar so the user can tell the model is being changed from outside. Nil when nothing is. Not saved.
+    var aiActivity: String?
 
     @ObservationIgnored var undoManager: UndoManager?
     /// Called with every new document, so the file can snapshot it off the main thread.
@@ -174,6 +179,7 @@ final class DocumentModel {
     /// Rebuilds run one at a time: while one runs, only the newest request waits (a drag asks
     /// many times a second, and piling those up made every one of them slower).
     @ObservationIgnored private var regenRunning = false
+    @ObservationIgnored private var rebuildWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var queuedRegen: (@MainActor () -> Void)?
     /// The newest rebuild whose result is on screen: older results arriving later are dropped.
     @ObservationIgnored private var appliedGeneration = 0
@@ -213,6 +219,7 @@ final class DocumentModel {
         change(&f)
         guard f != document.features[i] else { return }
         document.features[i] = f
+        documentRevision += 1
         onDocumentChange?(document)
         overlayRevision += 1
     }
@@ -220,6 +227,7 @@ final class DocumentModel {
     private func replace(with doc: CADDocument, actionName: String) {
         let old = document
         document = doc
+        documentRevision += 1
         onDocumentChange?(doc)
         syncSession()
         undoManager?.registerUndo(withTarget: self) { model in
@@ -380,15 +388,7 @@ final class DocumentModel {
 
     func setParameter(_ name: String, expression: String) {
         let values = parameterValues
-        mutate("Change \(name)") { doc in
-            guard let i = doc.parameters.firstIndex(where: { $0.name == name }) else { return }
-            doc.parameters[i].expression = expression
-            // An expression that is plainly an angle ("60 deg") or a length ("5 mm") makes the parameter one.
-            if let q = try? Expressions.evaluate(try Expressions.parse(expression), lookup: values.lookup),
-               let kind: UnitKind = q.angle == 1 && q.length == 0 ? .angle : q.length == 1 && q.angle == 0 ? .length : nil {
-                doc.parameters[i].unit = kind
-            }
-        }
+        mutate("Change \(name)") { $0.setParameterExpression(name, expression, values: values) }
     }
 
     /// Shows a parameter's new expression while its name is dragged, without an undo step.
@@ -606,16 +606,18 @@ final class DocumentModel {
         add(Feature(name: document.nextName(base), fillet ? .fillet(edgeFeature) : .chamfer(edgeFeature)))
     }
 
+    /// Puts a new feature in the document as one undo step: at the timeline marker, hiding the sketches it uses.
+    /// Nothing else changes (no selection, no handle): what the tools do on top of this is in `add`.
+    func commit(_ feature: Feature) {
+        mutate("Add \(feature.typeName)") { $0.addFeature(feature) }
+    }
+
     /// Adds a new feature as one undo step, hides the sketches it uses, and selects it so its
     /// drag handle and size field appear.
     func add(_ feature: Feature) {
         documentBeforeNewFeature = document
         let alreadyHidden = document.hidden
-        mutate("Add \(feature.typeName)") { doc in
-            // At the timeline marker: rolled back, a new feature goes where the marker is.
-            doc.insertAtMarker(feature)
-            doc.hidden.formUnion(feature.sketchesUsed)
-        }
+        commit(feature)
         if isRegenerating {
             sketchesHiddenPendingRebuild = Set(feature.sketchesUsed).subtracting(alreadyHidden)
             highlightPendingRebuild = highlighted
@@ -629,6 +631,20 @@ final class DocumentModel {
     }
 
     var selectedEdgeCount: Int { selection.filter(\.isEdge).count }
+
+    /// What the user is in the middle of in the window, if anything: a sketch being drawn, a tool waiting for picks, a
+    /// feature being sized, a handle being dragged. Anything else that changes the part (an AI assistant, say) waits
+    /// for it, since it would pull the ground from under them. Nil when the user is just looking.
+    var userActivity: String? {
+        if sketchSession != nil { return "editing a sketch" }
+        if let tool = pendingTool { return "using the \(tool.rawValue) tool" }
+        if isPickingSketchPlane { return "choosing where to put a sketch" }
+        if reselecting != nil { return "picking profiles again" }
+        if newFeature != nil { return "setting the size of a new feature" }
+        if handleDragStart != nil || manipulatorStart != nil || holeMoveStart != nil { return "dragging a handle" }
+        if isImporting { return "importing a file" }
+        return nil
+    }
 
     // MARK: regeneration
 
@@ -719,6 +735,25 @@ final class DocumentModel {
         queuedRegen = nil
         if let r { apply(r, meshes, generation: gen, fit: fit, previewFeature: previewFeature, final: next == nil) }
         next?()
+        resumeRebuildWaiters()
+    }
+
+    /// Whether no rebuild is running or waiting.
+    var isRebuildIdle: Bool { !regenRunning && queuedRegen == nil }
+
+    /// Waits until the model has been rebuilt for every change made so far: the bodies, sketches and errors in
+    /// `result` are then the ones of the current document. Returns at once when no rebuild is running.
+    func rebuilt() async {
+        guard !isRebuildIdle else { return }
+        await withCheckedContinuation { rebuildWaiters.append($0) }
+    }
+
+    private func resumeRebuildWaiters() {
+        // A rebuild that came out of this one (a new feature that failed is taken out again) keeps them waiting.
+        guard isRebuildIdle, !rebuildWaiters.isEmpty else { return }
+        let waiting = rebuildWaiters
+        rebuildWaiters = []
+        for w in waiting { w.resume() }
     }
 
     /// Shows a rebuild's result. Intermediate ones (a newer rebuild is queued) are shown too, so a

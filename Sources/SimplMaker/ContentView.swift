@@ -256,11 +256,13 @@ struct DocumentWindow: View {
         .onAppear {
             model.undoManager = undoManager
             model.fileURL = fileURL
+            if AIFeature.isAvailable, activeState == .key { DocumentRegistry.shared.activate(model) }
             if let fileURL { RecentParts.note(fileURL) }
             AppWindows.openWindow = openWindow
             dismissWindow(id: AppWindows.welcomeID)  // a part is open; the welcome window has done its job
         }
         .onChange(of: undoManager) { model.undoManager = undoManager }
+        .onChange(of: activeState) { if AIFeature.isAvailable, activeState == .key { DocumentRegistry.shared.activate(model) } }
         .onChange(of: fileURL) {
             model.fileURL = fileURL
             if let fileURL { RecentParts.note(fileURL) }  // saved for the first time, or saved as
@@ -509,6 +511,7 @@ struct StatusBar: View {
                 .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
             Group {
                 if !model.selection.isEmpty { Text("\(model.selection.count) selected") }
+                if let ai = model.aiActivity { Label("AI is editing the model · \(ai)", systemImage: "sparkles").foregroundStyle(.tint) }
                 if model.isImporting { Text("Reading the file…").foregroundStyle(.secondary) }
                 if let step = model.regenProgress {
                     Text("Building \(step.feature) · \(step.done + 1) of \(step.total)").foregroundStyle(.secondary)

@@ -15,6 +15,8 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: [
         .executable(name: "SimplMaker", targets: ["SimplMaker"]),
+        // The stdio relay for MCP clients that start servers as programs (Claude Desktop); bundle-app.sh puts it in the app.
+        .executable(name: "simplmaker-mcp", targets: ["SimplMakerMCP"]),
         // Used by the Xcode app project (SimplMaker.xcodeproj).
         .library(name: "CADCore", targets: ["CADCore"]),
         .library(name: "CADKernel", targets: ["CADKernel"]),
@@ -52,9 +54,13 @@ let package = Package(
             // SwiftPM executables only look for frameworks next to the binary; an .app keeps them in Contents/Frameworks.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
+        // Plain Foundation: forwards MCP messages from standard input to the running app. No CAD, no UI.
+        .executableTarget(name: "SimplMakerMCP", path: "Sources/SimplMakerMCP"),
         .testTarget(name: "CADCoreTests", dependencies: ["CADCore"], path: "Tests/CADCoreTests"),
         .testTarget(name: "CADKernelTests", dependencies: ["CADCore", "CADKernel"], path: "Tests/CADKernelTests"),
-        .testTarget(name: "SimplMakerTests", dependencies: ["SimplMaker"], path: "Tests/SimplMakerTests"),
+        .testTarget(name: "SimplMakerMCPTests", dependencies: ["SimplMakerMCP"], path: "Tests/SimplMakerMCPTests"),
+        // SimplMakerMCP is a dependency only so that the relay program is built before the tests that start it.
+        .testTarget(name: "SimplMakerTests", dependencies: ["SimplMaker", "SimplMakerMCP"], path: "Tests/SimplMakerTests"),
     ],
     cxxLanguageStandard: .cxx17
 )

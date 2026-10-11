@@ -70,3 +70,19 @@ public enum ParameterEvaluator {
         return out
     }
 }
+
+extension CADDocument {
+    /// Gives a parameter a new expression. An expression that is plainly an angle ("60 deg") or a length ("5 mm") makes the
+    /// parameter one; any other keeps the parameter's unit. False if there is no such parameter. The one place this rule
+    /// lives, for the parameter list and for the AI interface.
+    @discardableResult
+    public mutating func setParameterExpression(_ name: String, _ expression: String, values: ParameterValues) -> Bool {
+        guard let i = parameters.firstIndex(where: { $0.name == name }) else { return false }
+        parameters[i].expression = expression
+        if let q = try? Expressions.evaluate(try Expressions.parse(expression), lookup: values.lookup),
+           let kind: UnitKind = q.angle == 1 && q.length == 0 ? .angle : q.length == 1 && q.angle == 0 ? .length : nil {
+            parameters[i].unit = kind
+        }
+        return true
+    }
+}
