@@ -173,9 +173,9 @@ import Testing
         #expect(names == ["list_documents", "get_document", "get_feature", "get_selection", "list_parameters",
                           "create_box", "modify_feature", "set_parameter", "create_sketch", "edit_sketch", "create_extrude", "create_fillet", "create_chamfer", "create_hole", "create_shell", "create_mirror", "create_pattern", "create_combine", "create_revolve", "create_sweep", "create_loft", "create_thread", "create_draft", "create_plane", "create_move", "create_scale",
                           "import_file", "export_file", "delete_feature", "batch",
-                          "get_body", "measure", "get_viewport_image", "undo", "redo"])
+                          "get_body", "measure", "get_viewport_image", "check_design", "get_design_guide", "undo", "redo"])
         #expect(tools.allSatisfy { ($0["description"]?.string?.count ?? 0) > 200 && $0["inputSchema"]?["type"] == "object" })
-        let reads = Set(["list_documents", "get_document", "get_feature", "get_selection", "list_parameters", "get_body", "measure", "get_viewport_image"])
+        let reads = Set(["list_documents", "get_document", "get_feature", "get_selection", "list_parameters", "get_body", "measure", "get_viewport_image", "check_design", "get_design_guide"])
         for tool in tools {
             let name = tool["name"]?.string ?? ""
             #expect((tool["annotations"]?["readOnlyHint"] == true) == reads.contains(name), "\(name)")
@@ -385,7 +385,7 @@ import Testing
         let picture = answers[3]["result"]?["content"]?.array?.first { $0["type"]?.string == "image" }
         #expect((picture?["data"]?.string?.count ?? 0) > 10_000, "a whole picture comes through the relay")
         #expect(answers[0]["result"]?["serverInfo"]?["name"] == "SimplMaker")
-        #expect(answers[1]["result"]?["tools"]?.array?.count == 35)
+        #expect(answers[1]["result"]?["tools"]?.array?.count == 37)
         #expect(answers[2]["result"]?["structuredContent"]?["features"]?.array?.count == 6)
     }
 

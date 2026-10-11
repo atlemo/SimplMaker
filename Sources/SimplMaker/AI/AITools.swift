@@ -11,6 +11,10 @@ enum AITools {
     SimplMaker rebuilds whenever anything changes. The user has the part open in a window and sees everything you read and \
     change, as it happens.
 
+    Before designing anything bigger than a plain block, read the guide: get_design_guide (no topic lists them; "workflow", \
+    "parameters" and the topic that fits the request, such as "snap_fit_lid" for a box with a lid). It has the numbers that matter \
+    for printing and recipes that are known to build. After building something meant to be printed, run check_design.
+
     Do everything through these tools, never by clicking or typing in the SimplMaker window or controlling the screen: the \
     tools are exact and undoable, and the window updates by itself. If a tool you need is not in your list, say so instead of \
     falling back to the screen: the user may need to restart this chat client so that it reloads SimplMaker's tools.
@@ -1124,6 +1128,66 @@ enum AITools {
                         "bodies": .array(r.bodies.map { .string($0) }),
                         "_images": [["data": .string(r.image.png.base64EncodedString()), "mime_type": "image/png"]],
                     ]
+                }),
+
+            MCPTool(
+                name: "check_design", title: "Check the part for printing problems",
+                description: """
+                Looks over the part like an experienced designer would before it goes to the printer, and lists what is likely to go wrong: \
+                features that do not build, invalid solids, walls thinner than a 0.4 mm nozzle can make (default 1.2 mm), gaps that will fuse \
+                shut, overhangs that need support (and whether printing a body upside down avoids them), parts too big for the bed, the \
+                clearance between separate bodies (a lid and its box), and sizes that are fixed numbers although they should follow parameters. \
+                Use it after building anything meant to be printed, and fix what it finds before you say you are done. The checks are \
+                heuristics on flat faces: a finding is a reason to look (get_viewport_image, measure), not a verdict.
+
+                Arguments: document_id (optional, default the front window); bed (optional: [x, y, z] mm, default [220, 220, 250]); \
+                min_wall (optional: mm, default 1.2). Read-only. Returns {success, document_id, revision, summary, findings: [{severity \
+                ("error", "warning", "note"), code, message, about (ids), fix}], bed, min_wall}. Fails with INVALID_ARGUMENTS, \
+                DOCUMENT_NOT_FOUND or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": documentID,
+                    "bed": ["type": "array", "items": ["type": "number"], "minItems": 3, "maxItems": 3, "description": "Printer bed [x, y, z] in mm (default [220, 220, 250])."],
+                    "min_wall": ["type": "number", "description": "Thinnest wall to accept, in mm (default 1.2)."],
+                ], []),
+                readOnly: true,
+                handler: { args in
+                    let a = AIArguments(args)
+                    try a.rejectUnknown(["document_id", "bed", "min_wall"], in: "check_design")
+                    var bed: [Double]?
+                    if let list = try a.array("bed") {
+                        let numbers = list.compactMap(\.number)
+                        guard numbers.count == list.count else { throw AIError(.invalidArguments, "bed must be three numbers [x, y, z] in mm.") }
+                        bed = numbers
+                    }
+                    let wall: Double?
+                    if let v = args["min_wall"], v != .null {
+                        guard let n = v.number else { throw AIError(.invalidArguments, "min_wall must be a number of mm.") }
+                        wall = n
+                    } else { wall = nil }
+                    return try JSONValue(encoding: try await service.checkDesign(documentID: try a.string("document_id"), bed: bed, minWall: wall))
+                }),
+
+            MCPTool(
+                name: "get_design_guide", title: "Read the design guide",
+                description: """
+                A short guide, a topic at a time, to designing well in SimplMaker: how to go from a request to a finished part, how to use \
+                parameters, the numbers that matter for 3D printing (wall thickness, clearances, overhangs), hole and thread sizes, the \
+                order of fillets, shells and holes, how to find faces and edges, how to recreate a part from a photo, how to fix a failing \
+                step, and RECIPES that are known to build: a rounded box with a snap-fit lid, a rounded open box, a name tag with raised text. \
+                Use it BEFORE designing anything bigger than a plain block, and again when a step fails. Without a topic it lists the \
+                topics; ask for "workflow" and "parameters" first, then the ones that fit the request ("snap_fit_lid" for a box with a lid).
+
+                Arguments: topic (optional: a topic id from the list). Read-only; needs no document. Returns {topics: [{id, title, when}]} or \
+                {topic, title, guide}. A recipe in a guide is the exact list of steps for the batch tool: change the numbers in the first \
+                set_parameter steps to the user's and send the rest as they are.
+                """,
+                inputSchema: object(["topic": ["type": "string", "description": "A topic id from the list (omit to list them)."]], []),
+                readOnly: true,
+                handler: { args in
+                    let a = AIArguments(args)
+                    try a.rejectUnknown(["topic"], in: "get_design_guide")
+                    return try await service.designGuide(topic: try a.string("topic"))
                 }),
 
             MCPTool(
