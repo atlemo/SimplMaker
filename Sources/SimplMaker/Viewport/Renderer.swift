@@ -607,6 +607,13 @@ final class Renderer {
 
     // MARK: scene
 
+    /// Returns once everything drawn so far has finished on the GPU, so a frame can be read back (the AI interface's snapshots).
+    func waitForGPU() {
+        guard let cmd = queue.makeCommandBuffer() else { return }
+        cmd.commit()
+        cmd.waitUntilCompleted()
+    }
+
     func setScene(_ meshes: [BodyMesh]) {
         bodies = meshes.map { upload($0) }
     }

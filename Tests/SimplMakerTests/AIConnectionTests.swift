@@ -173,9 +173,9 @@ import Testing
         #expect(names == ["list_documents", "get_document", "get_feature", "get_selection", "list_parameters",
                           "create_box", "modify_feature", "set_parameter", "create_sketch", "edit_sketch", "create_extrude", "create_fillet", "create_chamfer", "create_hole", "create_shell", "create_mirror", "create_pattern", "create_combine", "create_revolve", "create_sweep", "create_loft", "create_thread", "create_draft", "create_plane", "create_move", "create_scale",
                           "import_file", "export_file", "delete_feature", "batch",
-                          "get_body", "measure", "undo", "redo"])
+                          "get_body", "measure", "get_viewport_image", "undo", "redo"])
         #expect(tools.allSatisfy { ($0["description"]?.string?.count ?? 0) > 200 && $0["inputSchema"]?["type"] == "object" })
-        let reads = Set(["list_documents", "get_document", "get_feature", "get_selection", "list_parameters", "get_body", "measure"])
+        let reads = Set(["list_documents", "get_document", "get_feature", "get_selection", "list_parameters", "get_body", "measure", "get_viewport_image"])
         for tool in tools {
             let name = tool["name"]?.string ?? ""
             #expect((tool["annotations"]?["readOnlyHint"] == true) == reads.contains(name), "\(name)")
@@ -379,10 +379,13 @@ import Testing
             JSONValue.object(["jsonrpc": "2.0", "method": "notifications/initialized"]).text(),
             rpc(2, "tools/list").text(),
             rpc(3, "tools/call", ["name": "get_document", "arguments": ["document_id": .string(docID)]]).text(),
+            rpc(4, "tools/call", ["name": "get_viewport_image", "arguments": ["document_id": .string(docID), "view": "top"]]).text(),
         ])
-        #expect(answers.count == 3, "no answer to the notification: \(answers.count)")
+        #expect(answers.count == 4, "no answer to the notification: \(answers.count)")
+        let picture = answers[3]["result"]?["content"]?.array?.first { $0["type"]?.string == "image" }
+        #expect((picture?["data"]?.string?.count ?? 0) > 10_000, "a whole picture comes through the relay")
         #expect(answers[0]["result"]?["serverInfo"]?["name"] == "SimplMaker")
-        #expect(answers[1]["result"]?["tools"]?.array?.count == 34)
+        #expect(answers[1]["result"]?["tools"]?.array?.count == 35)
         #expect(answers[2]["result"]?["structuredContent"]?["features"]?.array?.count == 6)
     }
 

@@ -15,8 +15,8 @@ enum AITools {
     tools are exact and undoable, and the window updates by itself. If a tool you need is not in your list, say so instead of \
     falling back to the screen: the user may need to restart this chat client so that it reloads SimplMaker's tools.
 
-    Work in this order: understand (list_documents, get_document), inspect (get_feature, list_parameters, get_selection), \
-    plan, change, and then check the result. Look before you act. Prefer changing an existing feature or parameter over \
+    Work in this order: understand (list_documents, get_document), inspect (get_feature, list_parameters, get_selection, get_viewport_image), \
+    plan, change, and then check the result (including a picture). Look before you act. Prefer changing an existing feature or parameter over \
     making a new one: "make it 20 mm wider" means modify_feature on the box, not a new box.
 
     Units: lengths are millimetres and angles are degrees, always. A size you send is a number (mm or degrees) or an \
@@ -39,7 +39,8 @@ enum AITools {
     profiles. Text is a shape: centre it with anchor "center" and check the profile bounds that come back to be sure it fits. \
     Give the things you create your own short ids ("outline", "hole"), and size them with the parameters you made (see above), so a \
     later "make it longer" is a single change. Anything made of several steps goes in ONE batch: the user gets one Undo, and a failing step \
-    leaves nothing behind. Check the result with get_document, get_body and measure, and say so plainly when it is not what was asked.
+    leaves nothing behind. Check the result with get_document, get_body and measure, and LOOK at it with get_viewport_image (iso first, then the view \
+    that matters): numbers do not show a lid on upside down or text in the wrong place. Say so plainly when it is not what was asked.
 
     Changes: every change tool needs document_id (never guess which part), is applied whole or not at all, and is one step \
     in the user's Undo (named "AI: …"). It answers with the part as it is now and its new revision. Pass expected_revision \
@@ -1066,6 +1067,63 @@ enum AITools {
                     let a = AIArguments(args)
                     return try JSONValue(encoding: try await service.measure(documentID: try a.string("document_id"),
                                                                               a: try a.requiredString("a"), b: try a.string("b")))
+                }),
+
+            MCPTool(
+                name: "get_viewport_image", title: "Look at the part (picture)",
+                description: """
+                Returns a PICTURE of the part as the app draws it: shaded, with its edges, framed to fit, with the X (red), Y (green) \
+                and Z (blue) axes through the origin. Use it to LOOK at what you built: after any build, check that it looks like what \
+                was asked (is the lid on the right way up, is the text where it should be, does the handle reach the body), and when a \
+                number looks right but something feels off. Numbers from get_body and measure do not show shapes; the picture does. Look \
+                from more than one direction for anything three-dimensional: iso first, then front, top or the side that matters.
+
+                Arguments: document_id (optional, default the front window); view (optional: "iso" (default), "front", "back", "left", \
+                "right", "top", "bottom"); azimuth and elevation (optional, degrees: your own angle instead of view; azimuth turns about Z \
+                from the right side (+X), elevation tilts up from the XY plane); width, height (optional pixels, default 1024 × 768); axes \
+                (optional, default true). The picture shows visible bodies only; sketches are not drawn.
+
+                Read-only: does not change the part or the user's own view. Returns the image and {document_id, revision, view, width, \
+                height, orientation (which way X, Y and Z run in this picture), bodies}. Fails with INVALID_ARGUMENTS (nothing to show, bad \
+                size), DOCUMENT_NOT_FOUND or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": documentID,
+                    "view": ["type": "string", "enum": .array(SnapshotDirection.allCases.map { .string($0.rawValue) }), "description": "Direction to look from (default iso)."],
+                    "azimuth": ["type": "number", "description": "Your own angle about Z in degrees (0 = from +X, -90 = from the front)."],
+                    "elevation": ["type": "number", "description": "Your own tilt above the XY plane in degrees (-89…89)."],
+                    "width": ["type": "integer", "description": "Picture width in pixels (256–1600, default 1024)."],
+                    "height": ["type": "integer", "description": "Picture height in pixels (192–1200, default 768)."],
+                    "axes": ["type": "boolean", "description": "Draw the X, Y, Z axes (default true)."],
+                ], []),
+                readOnly: true,
+                handler: { args in
+                    let a = AIArguments(args)
+                    try a.rejectUnknown(["document_id", "view", "azimuth", "elevation", "width", "height", "axes"], in: "get_viewport_image")
+                    let viewText = try a.string("view") ?? "iso"
+                    guard let direction = SnapshotDirection(rawValue: viewText) else {
+                        throw AIError(.invalidArguments, "view \"\(viewText)\" is not one of \(SnapshotDirection.allCases.map(\.rawValue).joined(separator: ", ")).")
+                    }
+                    func number(_ key: String) throws -> Double? {
+                        guard let v = args[key], v != .null else { return nil }
+                        guard let n = v.number, n.isFinite else { throw AIError(.invalidArguments, "\(key) must be a number of degrees.") }
+                        return n
+                    }
+                    let azimuth = try number("azimuth"), elevation = try number("elevation")
+                    let r = try await service.viewportImage(documentID: try a.string("document_id"), direction: direction, azimuth: azimuth,
+                                                            elevation: elevation, width: try a.integer("width") ?? 1024,
+                                                            height: try a.integer("height") ?? 768, axes: try a.bool("axes") ?? true)
+                    let custom = azimuth != nil || elevation != nil
+                    let orientation = custom
+                        ? "Your own angle (azimuth \(azimuth.map { AIValues.number($0) } ?? "of the \(direction.rawValue) view"), elevation \(elevation.map { AIValues.number($0) } ?? "of the \(direction.rawValue) view") degrees). Axes: X red, Y green, Z blue."
+                        : r.direction.orientation + " Axes: X red, Y green, Z blue."
+                    return [
+                        "success": true, "document_id": .string(r.documentID), "revision": .int(r.revision),
+                        "view": .string(custom ? "custom" : r.direction.rawValue), "width": .int(r.image.width), "height": .int(r.image.height),
+                        "orientation": .string(orientation),
+                        "bodies": .array(r.bodies.map { .string($0) }),
+                        "_images": [["data": .string(r.image.png.base64EncodedString()), "mime_type": "image/png"]],
+                    ]
                 }),
 
             MCPTool(

@@ -217,3 +217,28 @@ extension CADService {
         return result
     }
 }
+
+struct ViewportImageResult {
+    var documentID: String
+    var revision: Int
+    var direction: SnapshotDirection
+    var image: SnapshotImage
+    var bodies: [String]
+}
+
+extension CADService {
+    /// A picture of the part, from a direction (or an angle of your own).
+    func viewportImage(documentID: String?, direction: SnapshotDirection, azimuth: Double?, elevation: Double?, width: Int, height: Int,
+                       axes: Bool) async throws -> ViewportImageResult {
+        try checkLicense()
+        guard (256...1600).contains(width), (192...1200).contains(height) else {
+            throw AIError(.invalidArguments, "The picture size must be 256–1600 wide and 192–1200 high (asked for \(width) × \(height)).",
+                          reason: "The default of 1024 × 768 is good for most views.")
+        }
+        let (id, model) = try resolve(documentID)
+        await model.rebuilt()
+        let image = try await ViewportSnapshot.render(model, direction: direction, azimuth: azimuth, elevation: elevation, width: width, height: height, axes: axes)
+        return ViewportImageResult(documentID: id, revision: model.documentRevision, direction: direction, image: image,
+                                   bodies: model.visibleMeshes.map(\.id))
+    }
+}

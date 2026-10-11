@@ -152,7 +152,19 @@ final class MCPServer: Sendable {
 
     /// The structured result, and the same as text for clients that only show text.
     private func toolResult(_ value: JSONValue, isError: Bool) -> JSONValue {
-        var result: [String: JSONValue] = ["content": [["type": "text", "text": .string(value.text())]]]
+        // A tool that makes pictures puts them under "_images" ([{data: base64, mime_type}]): they become image content, and the
+        // rest is the structured result.
+        var value = value
+        var images: [JSONValue] = []
+        if var object = value.object, let pictures = object["_images"]?.array {
+            for picture in pictures {
+                guard let data = picture["data"]?.string, let mime = picture["mime_type"]?.string else { continue }
+                images.append(["type": "image", "data": .string(data), "mimeType": .string(mime)])
+            }
+            object["_images"] = nil
+            value = .object(object)
+        }
+        var result: [String: JSONValue] = ["content": .array([["type": "text", "text": .string(value.text())]] + images)]
         if value.object != nil { result["structuredContent"] = value }
         if isError { result["isError"] = true }
         return .object(result)
