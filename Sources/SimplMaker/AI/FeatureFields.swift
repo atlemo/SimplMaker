@@ -95,13 +95,100 @@ enum FeatureFields {
                                  read: { if case .extrude(let x) = $0 { return x.taper ?? "0 deg" } else { return nil } },
                                  write: { kind, text in if case .extrude(var x) = kind { x.taper = text; kind = .extrude(x) } }))
             return out
+        case .fillet(let e), .chamfer(let e):
+            func edge(_ name: String, _ unit: UnitKind, read: @escaping (EdgeFeature) -> String?, write: @escaping (inout EdgeFeature, String) -> Void) -> FieldSpec {
+                FieldSpec(name: name, unit: unit, positive: true,
+                          read: { kind in
+                              switch kind { case .fillet(let x), .chamfer(let x): return read(x); default: return nil }
+                          },
+                          write: { kind, text in
+                              switch kind {
+                              case .fillet(var x): write(&x, text); kind = .fillet(x)
+                              case .chamfer(var x): write(&x, text); kind = .chamfer(x)
+                              default: break
+                              }
+                          })
+            }
+            var out = [edge("size", .length, read: { $0.size }, write: { $0.size = $1 })]
+            if case .chamfer = kind, let secondKind = e.mode.secondKind {
+                out.append(edge("second", secondKind, read: { $0.second }, write: { $0.second = $1 }))
+            }
+            return out
+        case .hole(let h):
+            func hole(_ name: String, _ unit: UnitKind, _ positive: Bool, _ path: WritableKeyPath<HoleFeature, String>) -> FieldSpec {
+                FieldSpec(name: name, unit: unit, positive: positive,
+                          read: { if case .hole(let x) = $0 { return x[keyPath: path] } else { return nil } },
+                          write: { kind, text in if case .hole(var x) = kind { x[keyPath: path] = text; kind = .hole(x) } })
+            }
+            var out = [hole("diameter", .length, true, \.diameter), hole("u", .length, false, \.u), hole("v", .length, false, \.v)]
+            if h.depth != nil {  // a hole through everything has no depth to set
+                out.append(FieldSpec(name: "depth", unit: .length, positive: true,
+                                     read: { if case .hole(let x) = $0 { return x.depth } else { return nil } },
+                                     write: { kind, text in if case .hole(var x) = kind { x.depth = text; kind = .hole(x) } }))
+                out.append(hole("tip_angle", .angle, false, \.tipAngle))
+            }
+            if h.kind != .simple { out.append(hole("head_diameter", .length, true, \.headDiameter)) }
+            if h.kind == .counterbore { out.append(hole("head_depth", .length, true, \.headDepth)) }
+            if h.kind == .countersink { out.append(hole("head_angle", .angle, true, \.headAngle)) }
+            return out
+        case .shell:
+            return [FieldSpec(name: "thickness", unit: .length, positive: true,
+                              read: { if case .shell(let x) = $0 { return x.thickness } else { return nil } },
+                              write: { kind, text in if case .shell(var x) = kind { x.thickness = text; kind = .shell(x) } })]
+        case .revolve:
+            return [FieldSpec(name: "angle", unit: .angle, positive: true,
+                              read: { if case .revolve(let x) = $0 { return x.angle } else { return nil } },
+                              write: { kind, text in if case .revolve(var x) = kind { x.angle = text; kind = .revolve(x) } })]
+        case .pattern(let p):
+            return [FieldSpec(name: "count", unit: .none, positive: true,
+                              read: { if case .pattern(let x) = $0 { return x.count } else { return nil } },
+                              write: { kind, text in if case .pattern(var x) = kind { x.count = text; kind = .pattern(x) } }),
+                    FieldSpec(name: "spacing", unit: p.kind == .linear ? .length : .angle, positive: true,
+                              read: { if case .pattern(let x) = $0 { return x.spacing } else { return nil } },
+                              write: { kind, text in if case .pattern(var x) = kind { x.spacing = text; kind = .pattern(x) } })]
+        case .thread(let t):
+            var out: [FieldSpec] = []
+            if t.length != nil {
+                out.append(FieldSpec(name: "length", unit: .length, positive: true,
+                                     read: { if case .thread(let x) = $0 { return x.length } else { return nil } },
+                                     write: { kind, text in if case .thread(var x) = kind { x.length = text; kind = .thread(x) } }))
+            }
+            if t.tolerance != nil {
+                out.append(FieldSpec(name: "tolerance", unit: t.toleranceUnit == .percent ? .none : .length, positive: false,
+                                     read: { if case .thread(let x) = $0 { return x.tolerance } else { return nil } },
+                                     write: { kind, text in if case .thread(var x) = kind { x.tolerance = text; x.toleranceMaterial = nil; kind = .thread(x) } }))
+            }
+            return out
+        case .draft:
+            return [FieldSpec(name: "angle", unit: .angle, positive: false,
+                              read: { if case .draft(let x) = $0 { return x.angle } else { return nil } },
+                              write: { kind, text in if case .draft(var x) = kind { x.angle = text; kind = .draft(x) } })]
+        case .plane:
+            func plane(_ name: String, _ unit: UnitKind, _ path: WritableKeyPath<PlaneFeature, String>) -> FieldSpec {
+                FieldSpec(name: name, unit: unit, positive: false,
+                          read: { if case .plane(let x) = $0 { return x[keyPath: path] } else { return nil } },
+                          write: { kind, text in if case .plane(var x) = kind { x[keyPath: path] = text; kind = .plane(x) } })
+            }
+            return [plane("offset", .length, \.offset), plane("angle", .angle, \.angle)]
+        case .move:
+            func move(_ name: String, _ unit: UnitKind, _ path: WritableKeyPath<MoveFeature, String>) -> FieldSpec {
+                FieldSpec(name: name, unit: unit, positive: false,
+                          read: { if case .move(let x) = $0 { return x[keyPath: path] } else { return nil } },
+                          write: { kind, text in if case .move(var x) = kind { x[keyPath: path] = text; kind = .move(x) } })
+            }
+            return [move("dx", .length, \.dx), move("dy", .length, \.dy), move("dz", .length, \.dz),
+                    move("rx", .angle, \.rx), move("ry", .angle, \.ry), move("rz", .angle, \.rz)]
+        case .scale:
+            return [FieldSpec(name: "factor", unit: .none, positive: true,
+                              read: { if case .scale(let x) = $0 { return x.factor } else { return nil } },
+                              write: { kind, text in if case .scale(var x) = kind { x.factor = text; kind = .scale(x) } })]
         default:
             return []
         }
     }
 
     /// For the message when a feature can't be changed.
-    static let supportedTypes = "Box, Cylinder, Sphere, Torus and Coil (their sizes), Sketch (its dimensions and text heights) and Extrude (distance, taper)"
+    static let supportedTypes = "Box, Cylinder, Sphere, Torus and Coil (their sizes), Sketch (its dimensions and text heights), Extrude (distance, taper), Fillet and Chamfer (size, second), Hole (diameter, depth, position…), Shell (thickness), Revolve (angle), Pattern (count, spacing), Thread (length, tolerance), Draft (angle), Plane (offset, angle), Move (distances, turns) and Scale (factor)"
 
     private static func size(_ name: String, _ path: WritableKeyPath<PrimitiveFeature, String>, unit: UnitKind = .length) -> FieldSpec {
         primitive(name, unit, true, path)

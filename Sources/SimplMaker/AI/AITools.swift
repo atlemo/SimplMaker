@@ -23,12 +23,22 @@ enum AITools {
     expression with a unit ("2 in", "wall * 2"). Every size comes back as {expression, value, unit}; an expression that names \
     a parameter means the size follows that parameter, so change the parameter (set_parameter), not the number.
 
+    Parameters first: this is a parametric CAD program, and the user expects a part they can resize afterwards by changing a \
+    number, not a pile of fixed sizes. For anything you build, start the batch with set_parameter steps for every dimension that \
+    matters (width, depth, height, wall, corner_radius, clearance, hole_diameter, fillet_radius, lid_height…), put derived values \
+    in terms of the others ("inner_radius" = "corner_radius - wall", "lid_width" = "width - 2 * clearance"), and then write \
+    those names, or expressions made of them, wherever a size is asked for: box sizes, sketch shapes, extrude distances, fillet \
+    and chamfer sizes, shell thickness, hole diameters. Use plain numbers only for something that really is a one-off. Later \
+    steps in the same batch see the parameters made by the earlier ones. When the user asks for a change afterwards ("make it \
+    5 mm wider", "thicker walls"), change the parameter with set_parameter and everything follows. Tell the user which \
+    parameters you made and what each one does.
+
     Building: for a plain block use create_box. For anything else draw first and extrude after: create_sketch on a plane or on \
     a flat face (get_body shows each face's "facing", "+z" is a top face), edit_sketch to add shapes (rectangle, circle, polygon, \
     line, polyline, arc, text; a rectangle with corner_radius of half its shorter side is a slot), then create_extrude of the \
     profiles. Text is a shape: centre it with anchor "center" and check the profile bounds that come back to be sure it fits. \
-    Give the things you create your own short ids ("outline", "hole") and sizes that matter a name with set_parameter, so a later \
-    "make it longer" is a single change. Anything made of several steps goes in ONE batch: the user gets one Undo, and a failing step \
+    Give the things you create your own short ids ("outline", "hole"), and size them with the parameters you made (see above), so a \
+    later "make it longer" is a single change. Anything made of several steps goes in ONE batch: the user gets one Undo, and a failing step \
     leaves nothing behind. Check the result with get_document, get_body and measure, and say so plainly when it is not what was asked.
 
     Changes: every change tool needs document_id (never guess which part), is applied whole or not at all, and is one step \
@@ -218,7 +228,7 @@ enum AITools {
                 (degrees for angles) or an expression); unlink (optional, default false: see below); expected_revision (optional). \
                 get_feature lists the settings a feature accepts under "editable". Box, Cylinder, Sphere, Torus and Coil features can be \
                 changed (width, length, height, diameter, tube, pitch, turns, u, v as they apply); a Sketch's settings are its dimensions by \
-                the ids edit_sketch gave them ("plate.width", "ring_hole.diameter", "name.height"); an Extrude has distance and taper. \
+                the ids edit_sketch gave them ("plate.width", "ring_hole.diameter", "name.height"); an Extrude has distance and taper; a Fillet or Chamfer has size (and second, for the two-value chamfer modes); a Hole has diameter, depth, u, v (and head sizes); a Shell has thickness; a Revolve has angle; a Pattern has count and spacing. \
                 Changing a text's height or words ("name.text") keeps the middle of its letters where it was, so a name centred on a \
                 plate stays centred. New words change which regions the letters make, so an extrude made from the old letters stops \
                 building and the change is refused (REBUILD_FAILED): do it in a batch that deletes that extrude (delete_feature), changes \
@@ -398,6 +408,525 @@ enum AITools {
                 handler: { args in try await changeTool("create_extrude", service: service, args) }),
 
             MCPTool(
+                name: "create_fillet", title: "Round edges (fillet)",
+                description: """
+                Rounds edges of a body with a fillet of a given radius, like the Fillet tool. Use it for smooth, printable, comfortable \
+                edges: the rim of a lid, the corners of a plate, the top edge of a button. Rounding the edges of a body BEFORE cutting holes or \
+                adding text into it is more reliable than after.
+
+                Arguments: document_id (required); size (required: the radius, a number in mm or an expression); edges (optional: edge ids \
+                "edge:<body>/<name>" from get_body); faces (optional: face ids "face:<body>/<name>"; every edge around the face is rounded, \
+                and keeps following the face if the part changes). At least one of edges and faces. name, id, expected_revision (optional). \
+                A radius that is too large for the edges or the neighbouring faces fails with REBUILD_FAILED and leaves the part unchanged; \
+                try a smaller one. Check the result with measure or get_body: the kernel may accept a radius that is larger than the \
+                part's walls allow.
+
+                Changes the document (one undo step "AI: Create Fillet…"). Returns {success, document_id, revision, message, feature, \
+                changes, bodies}. The radius can be changed later with modify_feature ("size"). Fails with FEATURE_NOT_FOUND (an edge or \
+                face that does not exist), INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED, TIMELINE_ROLLED_BACK, USER_BUSY, \
+                STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "size": quantity("The fillet radius."),
+                    "edges": ["type": "array", "items": ["type": "string"], "description": "Edge ids to round, from get_body."],
+                    "faces": ["type": "array", "items": ["type": "string"], "description": "Face ids whose every edge is rounded, from get_body."],
+                    "name": ["type": "string", "description": "A name for the feature (default Fillet1, Fillet2…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "size"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_fillet", service: service, args) }),
+
+            MCPTool(
+                name: "create_chamfer", title: "Bevel edges (chamfer)",
+                description: """
+                Bevels edges of a body with a flat cut, like the Chamfer tool. Use it where a flat 45° edge is wanted: the entry of a hole, \
+                the bottom edge of a print (an "elephant's foot" bevel), a decorative edge. For a rounded edge use create_fillet.
+
+                Arguments: document_id (required); size (required: the distance from the edge, a number in mm or an expression); edges \
+                (optional: edge ids "edge:<body>/<name>" from get_body); faces (optional: face ids; every edge around the face is bevelled). \
+                At least one of edges and faces. mode (optional): "equal_distance" (default; the same distance on both faces), \
+                "two_distances" (size on one face, second on the other) or "distance_angle" (size on one face, second is the angle in degrees \
+                to it). second (required for those two modes). flipped (optional, default false): put size on the other of the edge's two \
+                faces; without it, on the picked face when faces were given. name, id, expected_revision (optional). A distance that is too large \
+                fails with REBUILD_FAILED and leaves the part unchanged.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. size and \
+                second can be changed later with modify_feature. Fails like create_fillet.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "size": quantity("The chamfer distance."),
+                    "edges": ["type": "array", "items": ["type": "string"], "description": "Edge ids to bevel, from get_body."],
+                    "faces": ["type": "array", "items": ["type": "string"], "description": "Face ids whose every edge is bevelled, from get_body."],
+                    "mode": ["type": "string", "enum": ["equal_distance", "two_distances", "distance_angle"], "description": "How the chamfer is measured (default equal_distance)."],
+                    "second": ["type": ["number", "string"], "description": "The distance on the other face (two_distances, mm) or the angle (distance_angle, degrees)."],
+                    "flipped": ["type": "boolean", "description": "Put size on the other face of the edge (default false)."],
+                    "name": ["type": "string", "description": "A name for the feature (default Chamfer1, Chamfer2…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "size"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_chamfer", service: service, args) }),
+
+            MCPTool(
+                name: "create_hole", title: "Drill a hole",
+                description: """
+                Drills a round hole into a flat face of a body, like the Hole tool: a plain hole, a counterbore (a wider flat-bottomed step \
+                for a screw head) or a countersink (a cone for a flat-head screw). Use it for screw holes, pegs' sockets and pass-throughs; \
+                to cut any other shape, sketch it on the face and use create_extrude with operation "cut".
+
+                Arguments: document_id, face (required: a flat face id "face:<body>/<name>" from get_body; the hole goes into the body from \
+                that face); diameter (required); depth (how far the full diameter goes, mm) OR through_all: true (one of them is required); \
+                where: at = [x, y, z] a point in the part's coordinates (it is projected onto the face; the easy way), or u and v in the \
+                face's own frame; with neither, the hole is in the middle of the face. kind: "simple" (default), "counterbore" (needs \
+                head_diameter and head_depth) or "countersink" (needs head_diameter, head_angle defaults to 90). tip_angle (blind holes: the \
+                drill point, default 118; 0 gives a flat bottom). name, id, expected_revision. For several holes make one create_hole each, \
+                or one hole and create_pattern.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. The \
+                size, depth and position can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS (a curved \
+                face; a position outside the face), INVALID_VALUE, REBUILD_FAILED, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "face": ["type": "string", "description": "A flat face id from get_body."],
+                    "diameter": quantity("The hole diameter."),
+                    "depth": quantity("How deep the full diameter goes (omit with through_all)."),
+                    "through_all": ["type": "boolean", "description": "Drill through the whole body instead of a depth."],
+                    "at": ["type": "array", "items": ["type": "number"], "minItems": 3, "maxItems": 3, "description": "[x, y, z] in mm, projected onto the face."],
+                    "u": quantity("Position along the face's own x axis (alternative to at)."),
+                    "v": quantity("Position along the face's own y axis (alternative to at)."),
+                    "kind": ["type": "string", "enum": ["simple", "counterbore", "countersink"], "description": "Default simple."],
+                    "head_diameter": quantity("Diameter of the counterbore or countersink."),
+                    "head_depth": quantity("Depth of the counterbore step."),
+                    "head_angle": ["type": ["number", "string"], "description": "Countersink cone angle in degrees (default 90)."],
+                    "tip_angle": ["type": ["number", "string"], "description": "Drill point angle in degrees for a blind hole (default 118; 0 = flat)."],
+                    "name": ["type": "string", "description": "A name for the feature (default Hole1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "face", "diameter"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_hole", service: service, args) }),
+
+            MCPTool(
+                name: "create_shell", title: "Hollow out a body (shell)",
+                description: """
+                Hollows a body into a thin-walled box or cup, like the Shell tool: the faces you name are removed (left open) and the rest \
+                becomes walls of the given thickness. Use it for boxes, lids, cups, covers and enclosures. Shell BEFORE adding fillets to the \
+                outside is not required, but a wall thicker than the body can hold, or rounds smaller than the wall, make it fail: when \
+                it does, the error says why. Do the shell before fillets and chamfers where you can.
+
+                Arguments: document_id; body (required: the body id from get_document); open_faces (required: face ids "face:<body>/<name>" \
+                to leave open, at least one, for example the top face of a box); thickness (required, mm); inside (optional, default true: \
+                the walls grow into the body, so outside size stays; false grows them outwards); name, id, expected_revision.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. The thickness \
+                can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED \
+                (the wall is too thick for the shape; the part is unchanged), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "body": ["type": "string", "description": "The body to hollow, from get_document."],
+                    "open_faces": ["type": "array", "items": ["type": "string"], "description": "Face ids to leave open, from get_body."],
+                    "thickness": quantity("The wall thickness."),
+                    "inside": ["type": "boolean", "description": "Walls grow inwards (default true) or outwards."],
+                    "name": ["type": "string", "description": "A name for the feature (default Shell1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "body", "open_faces", "thickness"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_shell", service: service, args) }),
+
+            MCPTool(
+                name: "create_mirror", title: "Mirror bodies",
+                description: """
+                Mirrors bodies across a plane, like the Mirror tool. Use it for symmetric parts: model one half, mirror it, and the two \
+                halves are joined into one body.
+
+                Arguments: document_id; bodies (required: body ids); plane (required: "xy", "xz", "yz", a construction plane as \
+                "plane:<id>", or a flat face id); operation (optional: "join" (default) adds each mirrored copy to its own body; \
+                "new_body" keeps all the copies together as a new body with the id of this feature); name, id, expected_revision. The \
+                origin planes pass through the origin: "yz" mirrors left/right (x → -x), "xz" front/back, "xy" top/bottom.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED (for join: the copy does not touch the body), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "bodies": ["type": "array", "items": ["type": "string"], "description": "The bodies to mirror, from get_document."],
+                    "plane": ["type": "string", "description": "xy, xz, yz, plane:<id> or a flat face id."],
+                    "operation": ["type": "string", "enum": ["join", "new_body"], "description": "Join the copy to its body (default) or keep it as a new body."],
+                    "name": ["type": "string", "description": "A name for the feature (default Mirror1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "bodies", "plane"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_mirror", service: service, args) }),
+
+            MCPTool(
+                name: "create_pattern", title: "Repeat bodies in a row or a circle",
+                description: """
+                Makes copies of bodies, like the Pattern tools: a LINEAR pattern puts them in a row, a CIRCULAR one spreads them around an \
+                axis. Use it for rows of pegs, ribs and teeth, and bolt circles (a hole plus a circular pattern of the tool body).
+
+                Arguments: document_id; kind ("linear" (default) or "circular"); bodies (required: body ids); axis (required: "x", "y", "z" or \
+                a straight edge id; linear: the direction of the row; circular: the axis of rotation, which passes through the ORIGIN for x, \
+                y and z, so a body to be repeated around its own centre must be centred on the origin, or use an edge as the axis); count \
+                (required: the number of bodies in all, the original included, 2 to 500); spacing (linear: the distance between copies, \
+                required; circular: the angle they are spread over, default 360 = all the way round); operation ("join" (default) adds the copies \
+                to their body, "new_body" collects them in a new body); name, id, expected_revision.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. count and \
+                spacing can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, \
+                REBUILD_FAILED (for join: a copy does not touch the body), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "kind": ["type": "string", "enum": ["linear", "circular"], "description": "Default linear."],
+                    "bodies": ["type": "array", "items": ["type": "string"], "description": "The bodies to repeat, from get_document."],
+                    "axis": ["type": "string", "description": "x, y, z or a straight edge id."],
+                    "count": ["type": ["integer", "string"], "description": "Number of bodies in all, the original included."],
+                    "spacing": ["type": ["number", "string"], "description": "Linear: distance between copies in mm. Circular: total angle in degrees (default 360)."],
+                    "operation": ["type": "string", "enum": ["join", "new_body"], "description": "Join the copies to their body (default) or make a new body."],
+                    "name": ["type": "string", "description": "A name for the feature (default Pattern1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "bodies", "axis", "count"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_pattern", service: service, args) }),
+
+            MCPTool(
+                name: "create_combine", title: "Combine bodies (join, cut, intersect)",
+                description: """
+                Combines bodies with each other, like the Combine tool: JOIN fuses the tool bodies into the target, CUT removes them from \
+                it (a body used as a cutter), INTERSECT keeps only where they overlap. Use it to cut a shape made as its own body out of \
+                another, or to merge separate pieces. (When a new shape is made by extrude, revolve or box, its own operation setting does this \
+                already.)
+
+                Arguments: document_id; target (required: the body that keeps its id); tools (required: other body ids); operation ("join" \
+                (default), "cut" or "intersect"); keep_tools (optional, default false: the tool bodies are used up; true keeps them as they \
+                are); name, id, expected_revision.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED (the cut removes everything, or the bodies do not overlap), USER_BUSY, \
+                STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "target": ["type": "string", "description": "The body that is kept, from get_document."],
+                    "tools": ["type": "array", "items": ["type": "string"], "description": "The bodies combined into the target."],
+                    "operation": ["type": "string", "enum": ["join", "cut", "intersect"], "description": "Default join."],
+                    "keep_tools": ["type": "boolean", "description": "Keep the tool bodies (default false: they are used up)."],
+                    "name": ["type": "string", "description": "A name for the feature (default Combine1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "target", "tools"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_combine", service: service, args) }),
+
+            MCPTool(
+                name: "create_revolve", title: "Revolve sketch profiles around an axis",
+                description: """
+                Spins closed sketch profiles around an axis into a solid, like the Revolve tool. Use it for anything round: vases, bowls, \
+                knobs, pulleys, rings, pegs, a lathe-turned part. Draw HALF of the cross-section on one side of the axis in a sketch (a \
+                polyline or lines and arcs) and revolve it; the profile must not cross the axis.
+
+                Arguments: document_id; sketch_id (required); profiles (required, as for create_extrude: "solid", ids, or {"at": [u, v]}); \
+                axis (required: "x", "y", "z" (the origin axes), "sketch_x" or "sketch_y" (the sketch's own horizontal and vertical axis \
+                through its origin), or a straight line drawn in the sketch as "curve:<sketch id>/<line id>"); angle (optional, degrees, \
+                default 360); operation ("new_body" (default), "join", "cut", "intersect") and target as for create_extrude; name, id, \
+                expected_revision. Example: a sketch on plane "xz" with a rectangle from x = 5 to 15 and z = 0 to 20, revolved about \
+                "sketch_y" (the vertical axis of that sketch, at u = 0), makes a tube 20 mm tall with an inner radius of 5 and an outer radius of 15.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. The angle \
+                can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED \
+                (for instance when the profile crosses the axis), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "sketch_id": ["type": "string", "description": "The sketch whose profiles are revolved."],
+                    "profiles": ["description": "\"solid\", or a list of profile ids and {\"at\": [u, v]} points, as for create_extrude."],
+                    "axis": ["type": "string", "description": "x, y, z, sketch_x, sketch_y or curve:<sketch>/<line id>."],
+                    "angle": ["type": ["number", "string"], "description": "Degrees, default 360."],
+                    "operation": ["type": "string", "enum": ["new_body", "join", "cut", "intersect"], "description": "Default new_body."],
+                    "target": ["type": "string", "description": "The body to combine with (default the newest)."],
+                    "name": ["type": "string", "description": "A name for the feature (default Revolve1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "sketch_id", "profiles", "axis"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_revolve", service: service, args) }),
+
+            MCPTool(
+                name: "create_sweep", title: "Sweep a profile along a path",
+                description: """
+                Pulls a closed sketch profile along a path, like the Sweep tool. Use it for pipes, rails, handles, wires, rims and trim: \
+                a circle swept along a curved path is a bent tube; a rectangle swept along a line is a bar. The PROFILE and the PATH are \
+                drawn in two different sketches: the profile on a plane square to the start of the path, the path on the plane it runs in \
+                (a line, a polyline or arcs; the curves must connect).
+
+                Arguments: document_id; sketch_id (required: the sketch with the profile); profiles (required, as for create_extrude: \
+                "solid", ids, or {"at": [u, v]}); path_sketch (required: the sketch with the path); path (required: the curve ids of the path \
+                in order, as edit_sketch returned them under "curves", for example ["rail.1", "rail.2"]; "curve:<sketch>/<id>" also works); \
+                operation ("new_body" (default), "join", "cut", "intersect") and target as for create_extrude; name, id, expected_revision.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS (profile and path in the same sketch), REBUILD_FAILED (the path turns too sharply for the \
+                profile; try a smaller profile or gentler curves), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "sketch_id": ["type": "string", "description": "The sketch with the profile."],
+                    "profiles": ["description": "\"solid\", or a list of profile ids and {\"at\": [u, v]} points."],
+                    "path_sketch": ["type": "string", "description": "The sketch with the path."],
+                    "path": ["type": "array", "items": ["type": "string"], "description": "Curve ids of the path, in order."],
+                    "operation": ["type": "string", "enum": ["new_body", "join", "cut", "intersect"], "description": "Default new_body."],
+                    "target": ["type": "string", "description": "The body to combine with (default the newest)."],
+                    "name": ["type": "string", "description": "A name for the feature (default Sweep1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "sketch_id", "profiles", "path"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_sweep", service: service, args) }),
+
+            MCPTool(
+                name: "create_loft", title: "Loft between sections",
+                description: """
+                Blends a solid through two or more closed sketch profiles at different places, like the Loft tool. Use it for shapes that \
+                change along their length: a bottle neck, a funnel, a square-to-round adapter, a boat hull. Draw each section in its own \
+                sketch (on planes at different heights: create_plane makes one) and pass them in order, bottom to top.
+
+                Arguments: document_id; sections (required: at least two, in order; each {sketch_id, profile} where profile is a profile \
+                id from get_feature, "solid" when the sketch has just one shape, or {"at": [u, v]}); ruled (optional, default false: straight \
+                sides between sections instead of a smooth blend); operation ("new_body" (default), "join", "cut", "intersect"), target, \
+                name, id, expected_revision. Sections with a similar number of corners blend best.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "sections": ["type": "array", "minItems": 2, "description": "The sections in order.", "items": [
+                        "type": "object", "properties": ["sketch_id": ["type": "string"], "profile": ["description": "Profile id, \"solid\" or {\"at\": [u, v]}."]],
+                        "required": ["sketch_id", "profile"]]],
+                    "ruled": ["type": "boolean", "description": "Straight sides between sections (default false: smooth)."],
+                    "operation": ["type": "string", "enum": ["new_body", "join", "cut", "intersect"], "description": "Default new_body."],
+                    "target": ["type": "string", "description": "The body to combine with (default the newest)."],
+                    "name": ["type": "string", "description": "A name for the feature (default Loft1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "sections"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_loft", service: service, args) }),
+
+            MCPTool(
+                name: "create_thread", title: "Cut a screw thread",
+                description: """
+                Cuts a real screw thread into a round face, like the Thread tool: the outside of a shaft or the inside of a hole. The face is \
+                sized to the thread first (a shaft turned to the major diameter, a hole bored to the minor one). Use it for bolts, nuts, \
+                bottle necks and screw-on lids. Threads are slow to build; add them last.
+
+                Arguments: document_id; faces (required: face ids of cylindrical faces from get_body, shape "cylinder"; several faces get \
+                the same thread); size (required: a size name from the standard: "M6x1", "M8x1.25"… (metric), "M8x1" (metric_fine), "1/4-20" (unc), \
+                "1/4-28" (unf); a wrong name answers with the list); standard (optional: "metric" (default), "metric_fine", "unc", "unf"); \
+                length (optional: how far along the face; default all of it); flipped (start from the other end); left_handed; \
+                tolerance (optional, for 3D printing: how much larger the thread is modelled than nominal; a share of the diameter, or mm \
+                with tolerance_unit "mm"; negative makes it smaller; a nut thread wants a positive offset around 2–4 %); name, id, \
+                expected_revision.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS (not a round face, unknown size), REBUILD_FAILED (the size does not fit that face; the \
+                reason lists sizes that do), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "faces": ["type": "array", "items": ["type": "string"], "description": "Cylindrical face ids from get_body."],
+                    "size": ["type": "string", "description": "Thread size such as M6x1 or 1/4-20."],
+                    "standard": ["type": "string", "enum": ["metric", "metric_fine", "unc", "unf"], "description": "Default metric."],
+                    "length": quantity("How far along the face the thread runs (default all)."),
+                    "flipped": ["type": "boolean", "description": "Start from the other end of the face."],
+                    "left_handed": ["type": "boolean", "description": "Left-hand thread."],
+                    "tolerance": ["type": ["number", "string"], "description": "Printing offset: percent of the diameter (default) or mm."],
+                    "tolerance_unit": ["type": "string", "enum": ["percent", "mm"], "description": "Unit of tolerance (default percent)."],
+                    "name": ["type": "string", "description": "A name for the feature (default Thread1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "faces", "size"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_thread", service: service, args) }),
+
+            MCPTool(
+                name: "create_draft", title: "Lean faces by a draft angle",
+                description: """
+                Leans side faces over by a small angle so a part can be pulled out of a mould or printed with a slight taper, like the Draft \
+                tool. Each face keeps the line where it meets the fixed face and tilts away from it, so the body gets narrower the further \
+                it is from that face. Use it for moulded and cast parts, and stackable cups.
+
+                Arguments: document_id; body (required); faces (required: face ids of that body to lean, for example its four walls); \
+                fixed_face (required: a flat face of the body that stays put, such as the bottom); angle (required, degrees, usually 1–5; \
+                negative leans the other way); name, id, expected_revision. Do it before fillets on those walls.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. The angle \
+                can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED \
+                (try a smaller angle), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "body": ["type": "string", "description": "The body to draft."],
+                    "faces": ["type": "array", "items": ["type": "string"], "description": "Face ids to lean, from get_body."],
+                    "fixed_face": ["type": "string", "description": "A flat face that stays put."],
+                    "angle": ["type": ["number", "string"], "description": "Draft angle in degrees."],
+                    "name": ["type": "string", "description": "A name for the feature (default Draft1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "body", "faces", "fixed_face", "angle"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_draft", service: service, args) }),
+
+            MCPTool(
+                name: "create_plane", title: "Make a construction plane",
+                description: """
+                Makes a plane of your own to sketch on, mirror across or build another plane from: another plane moved along its normal \
+                and/or tilted. Use it where no face or origin plane is where you need one: a section halfway up for a loft, a sloped plane \
+                for an angled cut, a mid-plane for a mirror.
+
+                Arguments: document_id; base (optional, default "xy": "xy", "xz", "yz", "plane:<id>" or a flat face id); offset (optional, mm \
+                along the base's normal, default 0); angle (optional, degrees to tilt, default 0); axis (optional: "horizontal" (default) tilts \
+                about the base's x axis, "vertical" about its y axis); name, id (give it an id: later steps use "plane:<id>"), expected_revision.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}; use \
+                "plane:<id of the feature>" as plane in create_sketch, create_mirror and create_plane. offset and angle can be changed later with \
+                modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "base": ["type": "string", "description": "xy (default), xz, yz, plane:<id> or a flat face id."],
+                    "offset": quantity("Distance along the base's normal (default 0)."),
+                    "angle": ["type": ["number", "string"], "description": "Tilt in degrees (default 0)."],
+                    "axis": ["type": "string", "enum": ["horizontal", "vertical"], "description": "Tilt about the base's x (horizontal) or y (vertical) axis."],
+                    "name": ["type": "string", "description": "A name for the feature (default Plane1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_plane", service: service, args) }),
+
+            MCPTool(
+                name: "create_move", title: "Move and turn bodies",
+                description: """
+                Moves and/or turns bodies (and sketches) as a feature in the timeline, like the Move tool. The turns happen first, about the \
+                middle of what moves (rx about X, then ry about Y, then rz about Z), then the move by dx, dy, dz. Use it to place parts \
+                next to each other, stand a body on its side, or lay out a print plate. To change where something is later, change this \
+                feature's values with modify_feature rather than adding another.
+
+                Arguments: document_id; bodies and/or sketches (ids; at least one); dx, dy, dz (mm, default 0); rx, ry, rz (degrees, \
+                default 0); at least one value must be non-zero; name, id, expected_revision.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "bodies": ["type": "array", "items": ["type": "string"], "description": "Body ids to move."],
+                    "sketches": ["type": "array", "items": ["type": "string"], "description": "Sketch ids to move."],
+                    "dx": quantity("Move along X."), "dy": quantity("Move along Y."), "dz": quantity("Move along Z."),
+                    "rx": ["type": ["number", "string"], "description": "Turn about X, degrees."],
+                    "ry": ["type": ["number", "string"], "description": "Turn about Y, degrees."],
+                    "rz": ["type": ["number", "string"], "description": "Turn about Z, degrees."],
+                    "name": ["type": "string", "description": "A name for the feature (default Move1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_move", service: service, args) }),
+
+            MCPTool(
+                name: "create_scale", title: "Scale bodies or sketches",
+                description: """
+                Scales bodies (about the middle of their bounding box, all together) and/or sketches (about their own origins) evenly, like \
+                the Scale tool. Use it to make a copy of a part bigger or smaller by a factor (2 = twice as big, 0.5 = half). To make ONE \
+                dimension longer, change that dimension instead; scaling changes every dimension at once.
+
+                Arguments: document_id; bodies and/or sketches (ids; at least one); factor (required, more than 0 and not 1; a number or an \
+                expression); name, id, expected_revision.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. factor can \
+                be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED, USER_BUSY, \
+                STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "bodies": ["type": "array", "items": ["type": "string"], "description": "Body ids to scale."],
+                    "sketches": ["type": "array", "items": ["type": "string"], "description": "Sketch ids to scale."],
+                    "factor": ["type": ["number", "string"], "description": "The scale factor, for example 2 or 0.5."],
+                    "name": ["type": "string", "description": "A name for the feature (default Scale1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "factor"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_scale", service: service, args) }),
+
+            MCPTool(
+                name: "import_file", title: "Import a STEP or STL file",
+                description: """
+                Adds a STEP (.step, .stp) or STL (.stl) file from this Mac to the part as a body of its own, like Import. Use it to \
+                build on a part someone else made, or a mesh. An STL must be watertight and is read in millimetres; the file is stored \
+                inside the part, so it opens without the original. Only these file types are read, up to 100 MB.
+
+                Arguments: document_id; path (required: the absolute path of the file, such as /Users/me/Downloads/bracket.step); name \
+                (optional: the body's name, default the file's name); id (optional); expected_revision. Faces and edges of an imported body \
+                are named by the file, so read them with get_body before using them.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
+                INVALID_ARGUMENTS (not an absolute path, not a STEP/STL file, missing, too large), REBUILD_FAILED (the kernel cannot make a body \
+                of it, for instance an STL with holes), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "path": ["type": "string", "description": "Absolute path of a .step, .stp or .stl file."],
+                    "name": ["type": "string", "description": "The body's name (default the file's name)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "path"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("import_file", service: service, args) }),
+
+            MCPTool(
+                name: "export_file", title: "Export bodies to STL or STEP",
+                description: """
+                Writes the part's bodies to an STL file (for 3D printing) or a STEP file (for other CAD programs), like Export. The file is \
+                written to the folder "SimplMaker Exports" in the user's Documents folder, never over a file that is already there (a number \
+                is added to the name instead). Tell the user where it is. The part itself does not change.
+
+                Arguments: document_id (required); format (required: "stl" or "step"); bodies (optional: body ids; default every body); \
+                file_name (optional: a name without folders; default the part's name). For a print with several parts, either export them \
+                together or one file per body with bodies.
+
+                Returns {success, document_id, message, path, format, bytes, bodies}. Fails with INVALID_ARGUMENTS (no bodies, bad format), \
+                FEATURE_NOT_FOUND (a body that does not exist) or LICENSE_REQUIRED.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to export, from list_documents."],
+                    "format": ["type": "string", "enum": ["stl", "step"], "description": "stl for printing, step for CAD."],
+                    "bodies": ["type": "array", "items": ["type": "string"], "description": "Body ids to export (default all)."],
+                    "file_name": ["type": "string", "description": "File name without folders (default the part's name)."],
+                ], ["document_id", "format"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in
+                    let a = AIArguments(args)
+                    try a.rejectUnknown(["document_id", "format", "bodies", "file_name"], in: "export_file")
+                    let ids: [String]? = try a.array("bodies")?.enumerated().map { index, item in
+                        guard let text = item.string else { throw AIError(.invalidArguments, "bodies[\(index)] must be a body id.") }
+                        return text
+                    }
+                    return try JSONValue(encoding: try await service.exportFile(documentID: try a.requiredDocumentID(), bodyIDs: ids,
+                                                                                format: try a.requiredString("format", hint: "\"stl\" or \"step\"."),
+                                                                                fileName: try a.string("file_name")))
+                }),
+
+            MCPTool(
                 name: "delete_feature", title: "Delete a feature",
                 description: """
                 Removes a feature (a box, a sketch, an extrude…) from the part. Use it to take away something that is wrong or no longer \
@@ -428,8 +957,12 @@ enum AITools {
                 single Undo and never sees a half-built model. Each step sees what the earlier ones made, so a step can extrude a profile \
                 found by {"at": [x, y]} or use a face of a body an earlier step created.
 
+                Start a batch that builds something with set_parameter steps for the dimensions that matter (width, wall, radius…), and \
+                write those names as the sizes in the later steps: later steps see the parameters earlier ones made, and the user can \
+                then resize the whole part by changing one number.
+
                 Arguments: document_id (required); operations (required): a list of {tool, arguments}, where tool is one of create_box, \
-                create_sketch, edit_sketch, create_extrude, modify_feature, set_parameter and arguments are that tool's arguments WITHOUT \
+                create_sketch, edit_sketch, create_extrude, create_revolve, create_fillet, create_chamfer, create_hole, create_shell, create_mirror, create_pattern, create_combine, create_sweep, create_loft, create_thread, create_draft, create_plane, create_move, create_scale, import_file, modify_feature, set_parameter, delete_feature and arguments are that tool's arguments WITHOUT \
                 document_id; label (optional: the name of the undo step); expected_revision (optional). Give your own ids to what you create \
                 (id: "outline") so later steps can name it; ids made for you cannot be known in advance.
 
@@ -609,8 +1142,9 @@ enum AITools {
         return s
     }
 
-    static func makeServer(service: CADService, version: String) -> MCPServer {
+    static func makeServer(service: CADService, version: String,
+                           onInitialize: (@Sendable (String, String) -> Void)? = nil) -> MCPServer {
         MCPServer(name: "SimplMaker", version: version, instructions: serverInstructions, tools: make(service: service),
-                  describeFailure: { AIError.describing($0) })
+                  describeFailure: { AIError.describing($0) }, onInitialize: onInitialize)
     }
 }

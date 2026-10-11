@@ -48,7 +48,7 @@ extension AIArguments {
 
 enum AIOperationParser {
     /// The tools that make changes, which a batch can run.
-    static let changeTools = ["create_box", "create_sketch", "edit_sketch", "create_extrude", "modify_feature", "set_parameter", "delete_feature"]
+    static let changeTools = ["create_box", "create_sketch", "edit_sketch", "create_extrude", "create_fillet", "create_chamfer", "create_hole", "create_shell", "create_mirror", "create_pattern", "create_combine", "create_revolve", "create_sweep", "create_loft", "create_thread", "create_draft", "create_plane", "create_move", "create_scale", "import_file", "modify_feature", "set_parameter", "delete_feature"]
 
     /// `names` are the part's feature names by id, for naming steps in Undo.
     static func parse(tool: String, arguments: JSONValue, names: [FeatureID: String] = [:]) throws -> any AIOperation {
@@ -87,17 +87,7 @@ enum AIOperationParser {
             guard let direction = CreateExtrudeOperation.Direction(rawValue: directionText) else {
                 throw AIError(.invalidArguments, "direction \"\(directionText)\" is not one of forward, backward, symmetric.")
             }
-            let items: [JSONValue]
-            if arguments["profiles"]?.string == "solid" { items = ["solid"] } else if let list = try a.array("profiles"), !list.isEmpty { items = list } else {
-                throw AIError(.invalidArguments, "profiles is required: the profiles of the sketch to extrude.",
-                              reason: "\"solid\" for every profile that is not the filling of a hole, or a list of ids from get_feature (\"profile:<sketch>/<curves>\") and {\"at\": [x, y]} points.")
-            }
-            let selectors: [ProfileSelector] = try items.enumerated().map { index, item in
-                if item.string == "solid" { return .solid }
-                if let text = item.string { return .id(text) }
-                if let at = item["at"] { return .at(try AIArguments.point(at, field: "profiles[\(index)].at")) }
-                throw AIError(.invalidArguments, "profiles[\(index)] must be a profile id or {\"at\": [u, v]}.")
-            }
+            let selectors = try profileSelectors(a, arguments)
             let throughAll = try a.bool("through_all") ?? false
             let distance = try a.quantity("distance", kind: .length)
             guard throughAll || distance != nil else {
@@ -109,6 +99,166 @@ enum AIOperationParser {
             return CreateExtrudeOperation(sketchID: try a.requiredString("sketch_id", hint: "Take it from create_sketch or get_document."),
                                           profiles: selectors, distance: throughAll ? nil : distance, direction: direction, operation: operation,
                                           target: try a.string("target"), startFace: try a.string("start_face"), name: try a.string("name"), id: try a.string("id"))
+
+        case "create_fillet", "create_chamfer":
+            let fillet = tool == "create_fillet"
+            try a.rejectUnknown(["document_id", "edges", "faces", "size", "name", "id", "expected_revision"]
+                                + (fillet ? [] : ["mode", "second", "flipped"]), in: tool)
+            func ids(_ key: String) throws -> [String] {
+                try (a.array(key) ?? []).enumerated().map { index, item in
+                    guard let text = item.string else { throw AIError(.invalidArguments, "\(key)[\(index)] must be an id text.") }
+                    return text
+                }
+            }
+            var mode = ChamferMode.equalDistance
+            if let text = try a.string("mode") {
+                guard let found = ChamferMode.allCases.first(where: { EdgeFinishOperation.modeName($0) == text }) else {
+                    throw AIError(.invalidArguments, "mode \"\(text)\" is not one of equal_distance, distance_angle, two_distances.")
+                }
+                mode = found
+            }
+            let secondKind = mode.secondKind
+            return EdgeFinishOperation(fillet: fillet, edges: try ids("edges"), faces: try ids("faces"),
+                                       size: try a.requiredQuantity("size", kind: .length, hint: fillet ? "The radius in mm, for example 2." : "The distance in mm, for example 1."),
+                                       mode: mode, second: try a.quantity("second", kind: secondKind ?? .length),
+                                       flipped: try a.bool("flipped") ?? false, name: try a.string("name"), id: try a.string("id"))
+
+        case "create_hole":
+            try a.rejectUnknown(["document_id", "face", "at", "u", "v", "kind", "diameter", "depth", "through_all", "tip_angle", "head_diameter", "head_depth",
+                                 "head_angle", "name", "id", "expected_revision"], in: tool)
+            let kindText = try a.string("kind") ?? "simple"
+            guard let kind = HoleKind.allCases.first(where: { $0.rawValue.lowercased() == kindText }) else {
+                throw AIError(.invalidArguments, "kind \"\(kindText)\" is not one of simple, counterbore, countersink.")
+            }
+            let throughAll = try a.bool("through_all") ?? false
+            let depth = try a.quantity("depth", kind: .length)
+            guard throughAll != (depth != nil) else {
+                throw AIError(.invalidArguments, throughAll ? "Send either depth or through_all, not both." : "depth is required (or through_all: true).",
+                              reason: "depth is how far the full diameter goes, in mm; through_all drills through the whole body.")
+            }
+            var at: [Double]?
+            if let list = try a.array("at") {
+                let numbers = list.compactMap(\.number)
+                guard list.count == 3, numbers.count == 3 else {
+                    throw AIError(.invalidArguments, "at must be three numbers [x, y, z] in mm.", reason: "A point in the part's coordinates; it is projected onto the face. Or send u and v in the face's own frame.")
+                }
+                at = numbers
+            }
+            return CreateHoleOperation(face: try a.requiredString("face", hint: "A flat face id from get_body, such as \"face:base/base.end\"."),
+                                       at: at, u: try a.quantity("u", kind: .length), v: try a.quantity("v", kind: .length), kind: kind,
+                                       diameter: try a.requiredQuantity("diameter", kind: .length), depth: throughAll ? nil : depth,
+                                       tipAngle: try a.quantity("tip_angle", kind: .angle), headDiameter: try a.quantity("head_diameter", kind: .length),
+                                       headDepth: try a.quantity("head_depth", kind: .length), headAngle: try a.quantity("head_angle", kind: .angle),
+                                       name: try a.string("name"), id: try a.string("id"))
+
+        case "create_shell":
+            try a.rejectUnknown(["document_id", "body", "open_faces", "thickness", "inside", "name", "id", "expected_revision"], in: tool)
+            return CreateShellOperation(body: try a.requiredString("body", hint: "The id of the body to hollow, from get_document."),
+                                        openFaces: try ids(a, "open_faces"), thickness: try a.requiredQuantity("thickness", kind: .length),
+                                        inside: try a.bool("inside") ?? true, name: try a.string("name"), id: try a.string("id"))
+
+        case "create_mirror":
+            try a.rejectUnknown(["document_id", "bodies", "plane", "operation", "name", "id", "expected_revision"], in: tool)
+            return CreateMirrorOperation(bodies: try ids(a, "bodies"), plane: try a.requiredString("plane", hint: "\"xy\", \"xz\", \"yz\", \"plane:<id>\" or a flat face id."),
+                                         operation: try bodyOperation(a, allowed: [.join, .newBody], default: .join), name: try a.string("name"), id: try a.string("id"))
+
+        case "create_pattern":
+            try a.rejectUnknown(["document_id", "kind", "bodies", "axis", "count", "spacing", "operation", "name", "id", "expected_revision"], in: tool)
+            let kindText = try a.string("kind") ?? "linear"
+            guard kindText == "linear" || kindText == "circular" else { throw AIError(.invalidArguments, "kind \"\(kindText)\" is not linear or circular.") }
+            return CreatePatternOperation(circular: kindText == "circular", bodies: try ids(a, "bodies"),
+                                          axis: try a.requiredString("axis", hint: "\"x\", \"y\", \"z\" or a straight edge id."),
+                                          count: try a.requiredQuantity("count", kind: .none, hint: "How many bodies in all, the original included, for example 4."),
+                                          spacing: try a.quantity("spacing", kind: kindText == "circular" ? .angle : .length),
+                                          operation: try bodyOperation(a, allowed: [.join, .newBody], default: .join), name: try a.string("name"), id: try a.string("id"))
+
+        case "create_combine":
+            try a.rejectUnknown(["document_id", "target", "tools", "operation", "keep_tools", "name", "id", "expected_revision"], in: tool)
+            return CreateCombineOperation(target: try a.requiredString("target", hint: "The body that keeps its id, from get_document."), tools: try ids(a, "tools"),
+                                          operation: try bodyOperation(a, allowed: [.join, .cut, .intersect], default: .join), keepTools: try a.bool("keep_tools") ?? false,
+                                          name: try a.string("name"), id: try a.string("id"))
+
+        case "create_revolve":
+            try a.rejectUnknown(["document_id", "sketch_id", "profiles", "axis", "angle", "operation", "target", "name", "id", "expected_revision"], in: tool)
+            return CreateRevolveOperation(sketchID: try a.requiredString("sketch_id", hint: "Take it from create_sketch or get_document."),
+                                          profiles: try profileSelectors(a, arguments),
+                                          axis: try a.requiredString("axis", hint: "\"x\", \"y\", \"z\", \"sketch_x\", \"sketch_y\" or a line of the sketch as \"curve:<sketch>/<id>\"."),
+                                          angle: try a.quantity("angle", kind: .angle) ?? "360 deg", operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody),
+                                          target: try a.string("target"), name: try a.string("name"), id: try a.string("id"))
+
+        case "create_sweep":
+            try a.rejectUnknown(["document_id", "sketch_id", "profiles", "path_sketch", "path", "operation", "target", "name", "id", "expected_revision"], in: tool)
+            let pathSketch = try a.string("path_sketch")
+            let path = try ids(a, "path").map { $0.contains(":") || pathSketch == nil ? $0 : AIEntityRef.curve(sketch: pathSketch!, id: $0).string }
+            return CreateSweepOperation(sketchID: try a.requiredString("sketch_id", hint: "The sketch holding the profile to sweep."),
+                                        profiles: try profileSelectors(a, arguments), path: path,
+                                        operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody), target: try a.string("target"),
+                                        name: try a.string("name"), id: try a.string("id"))
+
+        case "create_loft":
+            try a.rejectUnknown(["document_id", "sections", "ruled", "operation", "target", "name", "id", "expected_revision"], in: tool)
+            let sections: [LoftSectionRequest] = try (a.array("sections") ?? []).enumerated().map { index, item in
+                let sectionArgs = AIArguments(item)
+                try sectionArgs.rejectUnknown(["sketch_id", "profile"], in: "sections[\(index)]")
+                let selector: ProfileSelector
+                if let text = item["profile"]?.string { selector = text == "solid" ? .solid : .id(text) } else if let at = item["profile"]?["at"] {
+                    selector = .at(try AIArguments.point(at, field: "sections[\(index)].profile.at"))
+                } else {
+                    throw AIError(.invalidArguments, "sections[\(index)] needs a \"profile\": a profile id, \"solid\", or {\"at\": [u, v]}.")
+                }
+                return LoftSectionRequest(sketchID: try sectionArgs.requiredString("sketch_id"), profile: selector)
+            }
+            return CreateLoftOperation(sections: sections, ruled: try a.bool("ruled") ?? false,
+                                       operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody), target: try a.string("target"),
+                                       name: try a.string("name"), id: try a.string("id"))
+
+        case "create_thread":
+            try a.rejectUnknown(["document_id", "faces", "standard", "size", "length", "flipped", "left_handed", "tolerance", "tolerance_unit", "name", "id", "expected_revision"], in: tool)
+            let standards: [String: ThreadStandard] = ["metric": .metric, "metric_fine": .metricFine, "unc": .unc, "unf": .unf]
+            let standardText = try a.string("standard") ?? "metric"
+            guard let standard = standards[standardText] else {
+                throw AIError(.invalidArguments, "standard \"\(standardText)\" is not one of metric, metric_fine, unc, unf.")
+            }
+            let unitText = try a.string("tolerance_unit") ?? "percent"
+            guard unitText == "percent" || unitText == "mm" else { throw AIError(.invalidArguments, "tolerance_unit must be \"percent\" or \"mm\".") }
+            return CreateThreadOperation(faces: try ids(a, "faces"), standard: standard,
+                                         size: try a.requiredString("size", hint: "A size from the standard, such as \"M6x1\" (metric) or \"1/4-20\" (unc)."),
+                                         length: try a.quantity("length", kind: .length), flipped: try a.bool("flipped") ?? false,
+                                         leftHanded: try a.bool("left_handed") ?? false,
+                                         tolerance: try a.quantity("tolerance", kind: unitText == "percent" ? .none : .length),
+                                         toleranceUnit: unitText == "percent" ? .percent : .distance, name: try a.string("name"), id: try a.string("id"))
+
+        case "create_draft":
+            try a.rejectUnknown(["document_id", "body", "faces", "fixed_face", "angle", "name", "id", "expected_revision"], in: tool)
+            return CreateDraftOperation(body: try a.requiredString("body", hint: "The body whose faces lean."), faces: try ids(a, "faces"),
+                                        fixedFace: try a.requiredString("fixed_face", hint: "The flat face that stays put, from get_body."),
+                                        angle: try a.requiredQuantity("angle", kind: .angle, hint: "Degrees, usually 1 to 5."),
+                                        name: try a.string("name"), id: try a.string("id"))
+
+        case "create_plane":
+            try a.rejectUnknown(["document_id", "base", "offset", "angle", "axis", "name", "id", "expected_revision"], in: tool)
+            let axisText = try a.string("axis") ?? "horizontal"
+            guard axisText == "horizontal" || axisText == "vertical" else { throw AIError(.invalidArguments, "axis must be \"horizontal\" or \"vertical\".") }
+            return CreatePlaneOperation(base: try a.string("base") ?? "xy", offset: try a.quantity("offset", kind: .length) ?? "0 mm",
+                                        angle: try a.quantity("angle", kind: .angle) ?? "0 deg", vertical: axisText == "vertical",
+                                        name: try a.string("name"), id: try a.string("id"))
+
+        case "create_move":
+            try a.rejectUnknown(["document_id", "bodies", "sketches", "dx", "dy", "dz", "rx", "ry", "rz", "name", "id", "expected_revision"], in: tool)
+            return CreateMoveOperation(bodies: try ids(a, "bodies"), sketches: try ids(a, "sketches"),
+                                       dx: try a.quantity("dx", kind: .length) ?? "0 mm", dy: try a.quantity("dy", kind: .length) ?? "0 mm", dz: try a.quantity("dz", kind: .length) ?? "0 mm",
+                                       rx: try a.quantity("rx", kind: .angle) ?? "0 deg", ry: try a.quantity("ry", kind: .angle) ?? "0 deg", rz: try a.quantity("rz", kind: .angle) ?? "0 deg",
+                                       name: try a.string("name"), id: try a.string("id"))
+
+        case "create_scale":
+            try a.rejectUnknown(["document_id", "bodies", "sketches", "factor", "name", "id", "expected_revision"], in: tool)
+            return CreateScaleOperation(bodies: try ids(a, "bodies"), sketches: try ids(a, "sketches"),
+                                        factor: try a.requiredQuantity("factor", kind: .none, hint: "A number such as 2 (twice as big) or 0.5."),
+                                        name: try a.string("name"), id: try a.string("id"))
+
+        case "import_file":
+            try a.rejectUnknown(["document_id", "path", "name", "id", "expected_revision"], in: tool)
+            return ImportFileOperation(path: try a.requiredString("path", hint: "The absolute path of a .step, .stp or .stl file."), name: try a.string("name"), id: try a.string("id"))
 
         case "modify_feature":
             try a.rejectUnknown(["document_id", "feature_id", "parameters", "unlink", "expected_revision"], in: "modify_feature")
@@ -138,6 +288,36 @@ enum AIOperationParser {
 
         default:
             throw AIError(.invalidArguments, "\"\(tool)\" is not a tool a batch can run.", reason: "A batch can run: \(changeTools.joined(separator: ", ")).")
+        }
+    }
+
+    /// The "profiles" argument: "solid", or a list of profile ids and {"at": [u, v]} points.
+    static func profileSelectors(_ a: AIArguments, _ arguments: JSONValue) throws -> [ProfileSelector] {
+        let items: [JSONValue]
+        if arguments["profiles"]?.string == "solid" { items = ["solid"] } else if let list = try a.array("profiles"), !list.isEmpty { items = list } else {
+            throw AIError(.invalidArguments, "profiles is required: the profiles of the sketch to use.",
+                          reason: "\"solid\" for every profile that is not the filling of a hole, or a list of ids from get_feature (\"profile:<sketch>/<curves>\") and {\"at\": [x, y]} points.")
+        }
+        return try items.enumerated().map { index, item in
+            if item.string == "solid" { return .solid }
+            if let text = item.string { return .id(text) }
+            if let at = item["at"] { return .at(try AIArguments.point(at, field: "profiles[\(index)].at")) }
+            throw AIError(.invalidArguments, "profiles[\(index)] must be a profile id or {\"at\": [u, v]}.")
+        }
+    }
+
+    static func bodyOperation(_ a: AIArguments, allowed: [BodyOperation], default def: BodyOperation) throws -> BodyOperation {
+        let text = try a.string("operation") ?? AIOperationNames.name(def)
+        guard let found = allowed.first(where: { AIOperationNames.name($0) == text }) else {
+            throw AIError(.invalidArguments, "operation \"\(text)\" is not one of \(allowed.map { AIOperationNames.name($0) }.joined(separator: ", ")).")
+        }
+        return found
+    }
+
+    static func ids(_ a: AIArguments, _ key: String) throws -> [String] {
+        try (a.array(key) ?? []).enumerated().map { index, item in
+            guard let text = item.string else { throw AIError(.invalidArguments, "\(key)[\(index)] must be an id text.") }
+            return text
         }
     }
 

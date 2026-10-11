@@ -49,7 +49,7 @@ struct FeatureDescriber {
         case .fillet(let f), .chamfer(let f):
             out["size"] = length(f.size)
             if case .chamfer = feature.kind {
-                out["mode"] = .text(Self.snake(f.mode.rawValue))
+                out["mode"] = .text(EdgeFinishOperation.modeName(f.mode))
                 if let kind = f.mode.secondKind, !f.second.isEmpty { out["second"] = kind == .angle ? angle(f.second) : length(f.second) }
             }
             out["edges"] = .list(f.edges.map { AIEntityRef.edge($0).string })

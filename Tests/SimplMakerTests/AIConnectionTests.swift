@@ -72,7 +72,7 @@ import Testing
         #expect((attributes[.posixPermissions] as? Int) == 0o600, "readable by this user only")
         let dir = try FileManager.default.attributesOfItem(atPath: s.directory.path)
         #expect((dir[.posixPermissions] as? Int) == 0o700)
-        #expect(ai.claudeCodeCommand?.contains("--scope user --transport http simplmaker http://127.0.0.1:\(port)/mcp") == true)
+        #expect(ai.claudeCodeCommand?.contains("--scope user --transport http SimplMaker http://127.0.0.1:\(port)/mcp") == true)
         #expect(ai.claudeCodeCommand?.contains("Bearer \(ai.token)") == true)
     }
 
@@ -171,7 +171,8 @@ import Testing
         let tools = try #require(list.json?["result"]?["tools"]?.array)
         let names = tools.compactMap { $0["name"]?.string }
         #expect(names == ["list_documents", "get_document", "get_feature", "get_selection", "list_parameters",
-                          "create_box", "modify_feature", "set_parameter", "create_sketch", "edit_sketch", "create_extrude", "delete_feature", "batch",
+                          "create_box", "modify_feature", "set_parameter", "create_sketch", "edit_sketch", "create_extrude", "create_fillet", "create_chamfer", "create_hole", "create_shell", "create_mirror", "create_pattern", "create_combine", "create_revolve", "create_sweep", "create_loft", "create_thread", "create_draft", "create_plane", "create_move", "create_scale",
+                          "import_file", "export_file", "delete_feature", "batch",
                           "get_body", "measure", "undo", "redo"])
         #expect(tools.allSatisfy { ($0["description"]?.string?.count ?? 0) > 200 && $0["inputSchema"]?["type"] == "object" })
         let reads = Set(["list_documents", "get_document", "get_feature", "get_selection", "list_parameters", "get_body", "measure"])
@@ -381,7 +382,7 @@ import Testing
         ])
         #expect(answers.count == 3, "no answer to the notification: \(answers.count)")
         #expect(answers[0]["result"]?["serverInfo"]?["name"] == "SimplMaker")
-        #expect(answers[1]["result"]?["tools"]?.array?.count == 17)
+        #expect(answers[1]["result"]?["tools"]?.array?.count == 34)
         #expect(answers[2]["result"]?["structuredContent"]?["features"]?.array?.count == 6)
     }
 

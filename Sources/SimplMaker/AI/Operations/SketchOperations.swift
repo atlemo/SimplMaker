@@ -100,10 +100,7 @@ struct CreateExtrudeOperation: AIOperation {
         guard !profiles.isEmpty else {
             throw AIError(.invalidArguments, "profiles is empty.", reason: "Pick at least one profile: an id from get_feature, or {\"at\": [u, v]} for the profile containing a point.")
         }
-        var refs: [ProfileRef] = []
-        for selector in profiles {
-            for ref in try resolve(selector, in: built, sketchName: sketchFeature.name, values: context.values) where !refs.contains(ref) { refs.append(ref) }
-        }
+        let refs = try Self.resolve(profiles, sketchID: sketchID, in: built, sketchName: sketchFeature.name, values: context.values)
         var extent: ExtrudeExtent
         if let distance {
             _ = try AIValues.evaluate(distance, kind: .length, field: "distance", positive: true, values: context.values)
@@ -141,7 +138,16 @@ struct CreateExtrudeOperation: AIOperation {
                                 created: ["profiles": .array(refs.map { .string(AIEntityRef.profile(sketch: sketchID, curves: $0.curves, copy: 0).string) })])
     }
 
-    private func resolve(_ selector: ProfileSelector, in built: SketchResult, sketchName: String, values: ParameterValues) throws -> [ProfileRef] {
+    /// The profiles the selectors stand for, each once (an extrude and a revolve pick them the same way).
+    static func resolve(_ selectors: [ProfileSelector], sketchID: FeatureID, in built: SketchResult, sketchName: String, values: ParameterValues) throws -> [ProfileRef] {
+        var refs: [ProfileRef] = []
+        for selector in selectors {
+            for ref in try resolve(selector, sketchID: sketchID, in: built, sketchName: sketchName, values: values) where !refs.contains(ref) { refs.append(ref) }
+        }
+        return refs
+    }
+
+    private static func resolve(_ selector: ProfileSelector, sketchID: FeatureID, in built: SketchResult, sketchName: String, values: ParameterValues) throws -> [ProfileRef] {
         switch selector {
         case .solid:
             let infos = built.regions.map { r in ProfileInfo(id: "", area: r.area, inside: [], bounds: CADService.bounds(ofRegion: r.index, in: built), insideProfile: nil) }

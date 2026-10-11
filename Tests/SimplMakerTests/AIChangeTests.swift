@@ -162,8 +162,10 @@ import Testing
     }
 
     @Test func aFeatureThatCannotBeChangedYetSaysWhatCan() async throws {
-        let t = await open(.demo())
-        let e = await refusal { _ = try await t.service.modifyFeature(documentID: t.id, featureID: "corners", settings: ["size": 5], unlink: false) }
+        var doc = CADDocument.demo()
+        doc.features.append(Feature(id: "hollow", name: "Hollow", .rib(RibFeature(path: CurveRef(sketch: "base", curves: ["L0"])))))
+        let t = await open(doc)
+        let e = await refusal { _ = try await t.service.modifyFeature(documentID: t.id, featureID: "hollow", settings: ["thickness": 5], unlink: false) }
         #expect(e?.code == .unsupportedFeature && e?.reason?.contains("Box") == true && e?.reason?.contains("set_parameter") == true)
     }
 
@@ -381,7 +383,8 @@ import Testing
         let d = try await t.service.getFeature(documentID: t.id, featureID: id)
         #expect(d.editable == ["width", "length", "height", "u", "v"])
         let demo = await open(.demo())
-        #expect(try await demo.service.getFeature(documentID: demo.id, featureID: "corners").editable.isEmpty, "a fillet can be read, not yet changed")
+        #expect(try await demo.service.getFeature(documentID: demo.id, featureID: "corners").editable == ["size"])
+        #expect(try await demo.service.getFeature(documentID: demo.id, featureID: "topedge").editable == ["size"])
         #expect(try await demo.service.getFeature(documentID: demo.id, featureID: "plate").editable == ["distance", "taper"])
     }
 }
