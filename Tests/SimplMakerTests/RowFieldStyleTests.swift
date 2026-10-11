@@ -25,29 +25,31 @@ import Testing
     }
 }
 
-/// The caret and the selection highlight of a focused row field are set explicitly: inside a selected list row
-/// the text view's own came out white on the white field, so neither could be seen.
-@Suite(.serialized) @MainActor struct RowFieldEditorColorTests {
-    struct Host: View {
-        @State private var text = "10 mm"
-        @FocusState private var focused: Bool
-        var body: some View {
-            TextField("x", text: $text).rowFieldStyle(focused: focused).focused($focused)
-                .onAppear { focused = true }
+extension KeyWindowTests {
+    /// The caret and the selection highlight of a focused row field are set explicitly: inside a selected list row
+    /// the text view's own came out white on the white field, so neither could be seen.
+    @Suite(.serialized) @MainActor struct RowFieldEditorColorTests {
+        struct Host: View {
+            @State private var text = "10 mm"
+            @FocusState private var focused: Bool
+            var body: some View {
+                TextField("x", text: $text).rowFieldStyle(focused: focused).focused($focused)
+                    .onAppear { focused = true }
+            }
         }
-    }
 
-    @Test func aFocusedRowFieldShowsItsCaretAndSelection() async throws {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 60), styleMask: [.titled], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: Host())
-        window.makeKeyAndOrderFront(nil)
-        try await Task.sleep(for: .milliseconds(400))
-        let editor = try #require(window.firstResponder as? NSTextView)
-        #expect(editor.insertionPointColor == .textColor)
-        #expect(editor.selectedTextAttributes[.foregroundColor] as? NSColor == .white)
-        window.makeFirstResponder(nil)
-        try await Task.sleep(for: .milliseconds(400))
-        window.close()
+        @Test func aFocusedRowFieldShowsItsCaretAndSelection() async throws {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 60), styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: Host())
+            window.makeKeyAndOrderFront(nil)
+            try await Task.sleep(for: .milliseconds(400))
+            let editor = try #require(window.firstResponder as? NSTextView)
+            #expect(editor.insertionPointColor == .textColor)
+            #expect(editor.selectedTextAttributes[.foregroundColor] as? NSColor == .white)
+            window.makeFirstResponder(nil)
+            try await Task.sleep(for: .milliseconds(400))
+            window.close()
+        }
     }
 }
