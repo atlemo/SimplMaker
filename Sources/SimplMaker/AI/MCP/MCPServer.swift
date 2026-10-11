@@ -39,11 +39,14 @@ final class MCPServer: Sendable {
     private let tools: [MCPTool]
     /// What a tool's failure reads like to the AI: a JSON object (see `AIError`).
     private let describeFailure: @Sendable (Error) -> JSONValue
+    /// Told the name and version a client gives when it connects ("initialize"), so the app can show that something is connected.
+    private let onInitialize: (@Sendable (_ clientName: String, _ clientVersion: String) -> Void)?
 
     init(name: String, version: String, instructions: String, tools: [MCPTool],
-         describeFailure: @escaping @Sendable (Error) -> JSONValue) {
+         describeFailure: @escaping @Sendable (Error) -> JSONValue,
+         onInitialize: (@Sendable (_ clientName: String, _ clientVersion: String) -> Void)? = nil) {
         self.name = name; self.version = version; self.instructions = instructions
-        self.tools = tools; self.describeFailure = describeFailure
+        self.tools = tools; self.describeFailure = describeFailure; self.onInitialize = onInitialize
     }
 
     // MARK: messages
@@ -101,6 +104,9 @@ final class MCPServer: Sendable {
     // MARK: methods
 
     private func initialize(_ params: JSONValue) -> JSONValue {
+        if let info = params["clientInfo"], let clientName = info["name"]?.string {
+            onInitialize?(clientName, info["version"]?.string ?? "")
+        }
         let asked = params["protocolVersion"]?.string
         let version = asked.flatMap { Self.supportedVersions.contains($0) ? $0 : nil } ?? Self.supportedVersions[0]
         return [

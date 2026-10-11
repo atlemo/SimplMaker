@@ -11,7 +11,7 @@ import Testing
     }
 
     private func command(_ root: [String: Any]) -> String? {
-        ((root["mcpServers"] as? [String: Any])?["simplmaker"] as? [String: Any])?["command"] as? String
+        ((root["mcpServers"] as? [String: Any])?["SimplMaker"] as? [String: Any])?["command"] as? String
     }
 
     @Test func aNewFileGetsJustOurServer() throws {
@@ -31,11 +31,18 @@ import Testing
     }
 
     @Test func anOldEntryOfOursIsUpdatedNotDuplicated() throws {
-        let existing = #"{"mcpServers":{"simplmaker":{"command":"/old/path","args":["--x"]}}}"#
+        let existing = #"{"mcpServers":{"SimplMaker":{"command":"/old/path","args":["--x"]}}}"#
         let root = try parse(ClaudeDesktopConfig.merging(command: relay, into: Data(existing.utf8)))
         let servers = try #require(root["mcpServers"] as? [String: Any])
         #expect(servers.count == 1 && command(root) == relay)
-        #expect((servers["simplmaker"] as? [String: Any])?["args"] == nil, "the entry is ours, so it is replaced whole")
+        #expect((servers["SimplMaker"] as? [String: Any])?["args"] == nil, "the entry is ours, so it is replaced whole")
+    }
+
+    @Test func theLowerCaseEntryOfAnEarlierVersionIsReplaced() throws {
+        let existing = #"{"mcpServers":{"simplmaker":{"command":"/old/path"},"other":{"command":"x"}}}"#
+        let root = try parse(ClaudeDesktopConfig.merging(command: relay, into: Data(existing.utf8)))
+        let servers = try #require(root["mcpServers"] as? [String: Any])
+        #expect(servers.keys.sorted() == ["SimplMaker", "other"] && command(root) == relay, "renamed, not duplicated")
     }
 
     @Test func aFileThatIsNotWhatWeExpectIsNotTouched() {
@@ -68,5 +75,17 @@ import Testing
         #expect(try String(contentsOf: backup, encoding: .utf8) == original)
         #expect(command(try parse(Data(contentsOf: file))) == "/new/path")
         #expect(try parse(Data(contentsOf: file))["theme"] as? String == "dark")
+    }
+
+    @Test func anEntryThatPointsSomewhereElseDoesNotCountAsInstalled() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("claude-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("claude_desktop_config.json")
+        #expect(ClaudeDesktopConfig.installedCommand(at: file) == nil && !ClaudeDesktopConfig.isInstalled(at: file))
+        try ClaudeDesktopConfig.install(command: "/old/place/simplmaker-mcp", at: file)
+        #expect(ClaudeDesktopConfig.installedCommand(at: file) == "/old/place/simplmaker-mcp")
+        #expect(ClaudeDesktopConfig.isInstalled(at: file), "any entry, when no program is asked for")
+        #expect(ClaudeDesktopConfig.isInstalled(command: "/old/place/simplmaker-mcp", at: file))
+        #expect(!ClaudeDesktopConfig.isInstalled(command: relay, at: file), "an app that moved needs connecting again")
     }
 }

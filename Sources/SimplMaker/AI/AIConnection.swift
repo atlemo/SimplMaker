@@ -25,6 +25,8 @@ final class AIConnection {
 
     private(set) var status = Status.off
     private(set) var token: String
+    /// The assistants that have connected since the app started, most recent first.
+    private(set) var clients: [AIClientActivity] = []
 
     /// What the server reads for each request, from any thread.
     private let secrets: OSAllocatedUnfairLock<(token: String, port: UInt16)>
@@ -81,7 +83,9 @@ final class AIConnection {
         if case .running = status { return }
         let preferred = UInt16(exactly: defaults.integer(forKey: Self.portKey)).flatMap { $0 == 0 ? nil : $0 } ?? Self.defaultPort
         let handler = MCPHTTPHandler(
-            server: AITools.makeServer(service: service, version: version),
+            server: AITools.makeServer(service: service, version: version, onInitialize: { [weak self] name, clientVersion in
+                Task { @MainActor in self?.noteClient(name: name, version: clientVersion) }
+            }),
             token: { [secrets] in secrets.withLock { $0.token } },
             port: { [secrets] in secrets.withLock { $0.port } })
         // A taken port is no reason not to start: any free one will do, and it is remembered.
@@ -99,6 +103,17 @@ final class AIConnection {
                 if candidate == 0 { status = .failed("\(error)") }
             }
         }
+    }
+
+    /// An assistant said hello.
+    func noteClient(name: String, version: String, at date: Date = Date()) {
+        clients.removeAll { $0.rawName == name }
+        clients.insert(AIClientActivity(rawName: name, version: version, lastSeen: date), at: 0)
+    }
+
+    /// When the named kind of assistant ("Claude Desktop") last connected.
+    func lastConnected(_ displayName: String) -> Date? {
+        clients.filter { $0.displayName == displayName }.map(\.lastSeen).max()
     }
 
     func stop() {
@@ -130,6 +145,6 @@ final class AIConnection {
     /// For Claude Code. `--scope user` makes it available in every folder; without it Claude Code ties the server to the
     /// folder the command is run in (a "project").
     var claudeCodeCommand: String? {
-        endpoint.map { "claude mcp add --scope user --transport http simplmaker \($0) --header \"Authorization: Bearer \(token)\"" }
+        endpoint.map { "claude mcp add --scope user --transport http \(ClaudeDesktopConfig.serverName) \($0) --header \"Authorization: Bearer \(token)\"" }
     }
 }

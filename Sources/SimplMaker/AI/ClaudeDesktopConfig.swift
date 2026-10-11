@@ -7,6 +7,11 @@ import Foundation
 enum ClaudeDesktopConfig {
     struct Failure: Error, CustomStringConvertible { var description: String }
 
+    /// The name Claude shows for the server ("Claude couldn't connect to SimplMaker"). Earlier versions wrote it in lower case; that
+    /// entry is replaced when the server is added again.
+    static let serverName = "SimplMaker"
+    static let legacyServerName = "simplmaker"
+
     static var url: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Claude/claude_desktop_config.json")
@@ -14,7 +19,7 @@ enum ClaudeDesktopConfig {
 
     /// The entry itself, as JSON text a user can paste by hand.
     static func snippet(command: String) -> String {
-        let object: [String: Any] = ["mcpServers": ["simplmaker": ["command": command]]]
+        let object: [String: Any] = ["mcpServers": [serverName: ["command": command]]]
         return String(decoding: (try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data(), as: UTF8.self)
     }
 
@@ -31,7 +36,8 @@ enum ClaudeDesktopConfig {
         if root["mcpServers"] != nil, root["mcpServers"] as? [String: Any] == nil {
             throw Failure(description: "\"mcpServers\" in Claude Desktop's configuration file isn't a list of servers, so SimplMaker left it alone.")
         }
-        servers["simplmaker"] = ["command": command]
+        servers[legacyServerName] = nil
+        servers[serverName] = ["command": command]
         root["mcpServers"] = servers
         return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
@@ -49,17 +55,30 @@ enum ClaudeDesktopConfig {
         try merged.write(to: file, options: .atomic)
     }
 
-    /// Whether the file already lists SimplMaker.
-    static func isInstalled(at file: URL = url) -> Bool {
-        guard let data = try? Data(contentsOf: file), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
-        return (root["mcpServers"] as? [String: Any])?["simplmaker"] != nil
+    /// The program the file starts for SimplMaker, if it lists it under the current name (an entry from an earlier version, in lower
+    /// case, doesn't count: adding the server again replaces it).
+    static func installedCommand(at file: URL = url) -> String? {
+        guard let data = try? Data(contentsOf: file), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let entry = (root["mcpServers"] as? [String: Any])?[serverName] as? [String: Any] else { return nil }
+        return entry["command"] as? String
+    }
+
+    /// Whether the file already lists SimplMaker, and (when `command` is given) starts that very program: an entry that points at
+    /// somewhere else (an app that was moved or replaced) would fail silently, so it doesn't count.
+    static func isInstalled(command: String? = nil, at file: URL = url) -> Bool {
+        guard let installed = installedCommand(at: file) else { return false }
+        return command == nil || installed == command
     }
 }
 
 extension AIConnection {
+    /// For tests and screenshots: pretends the relay is at this path.
+    nonisolated(unsafe) static var relayPathOverride: String?
+
     /// The relay program: inside the installed app, or next to the executable in a build run from the command line.
     /// Nil when there is none (a build from Xcode makes only the app).
     static var relayPath: String? {
+        if let relayPathOverride { return relayPathOverride }
         let candidates = [
             Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/simplmaker-mcp"),
             Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("simplmaker-mcp"),
