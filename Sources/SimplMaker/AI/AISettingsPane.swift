@@ -138,7 +138,7 @@ struct AISettingsPane: View {
 
     @ViewBuilder private var desktopSubtitle: some View {
         if let seen = ai.lastConnected("Claude Desktop") {
-            (Text("Connected ") + Text(seen, format: .relative(presentation: .named))).font(.caption).foregroundStyle(.green)
+            Text("Connected \(seen, format: .relative(presentation: .named))").font(.caption).foregroundStyle(.green)
         } else if case .failed(let why) = desktop {
             Text(why).font(.caption).foregroundStyle(.red)
         } else if desktop == .added || ClaudeDesktopConfig.isInstalled(command: relay) {
@@ -180,7 +180,7 @@ struct AISettingsPane: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Claude Code")
                 if let seen = ai.lastConnected("Claude Code") {
-                    (Text("Connected ") + Text(seen, format: .relative(presentation: .named))).font(.caption).foregroundStyle(.green)
+                    Text("Connected \(seen, format: .relative(presentation: .named))").font(.caption).foregroundStyle(.green)
                 } else if current {
                     Text("Added. It connects when you start Claude Code.").font(.caption).foregroundStyle(.secondary)
                 } else if stale {
