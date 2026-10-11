@@ -12,6 +12,8 @@ struct AISettingsPane: View {
     @State private var confirmRestart = false
     @State private var copied: String?
     @State private var desktop = DesktopState.idle
+    /// SimplMaker's entry in Claude Code's list, read when the pane opens and whenever the app is brought back to the front.
+    @State private var codeRegistration: ClaudeCodeConfig.Registration?
 
     enum DesktopState: Equatable {
         case idle, working, restarting
@@ -61,7 +63,13 @@ struct AISettingsPane: View {
             }
         }
         .formStyle(.grouped)
-        .task { await ai.refresh() }  // the license may have changed since the window was last open
+        .task {
+            await ai.refresh()  // the license may have changed since the window was last open
+            codeRegistration = await Task.detached { ClaudeCodeConfig.registration() }.value
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { codeRegistration = await Task.detached { ClaudeCodeConfig.registration() }.value }  // back from pasting the command in a terminal
+        }
         .confirmationDialog("Make a new secret?", isPresented: $confirmNewToken) {
             Button("Make a New Secret", role: .destructive) { ai.regenerateToken(); copied = nil }
             Button("Cancel", role: .cancel) {}
@@ -147,36 +155,48 @@ struct AISettingsPane: View {
         if let relay {
             let connected = ai.lastConnected("Claude Desktop") != nil
             let added = desktop == .added || ClaudeDesktopConfig.isInstalled(command: relay)
-            if added && !connected {
+            if connected {
+                Button("Connected") {}.buttonStyle(.bordered).disabled(true)
+            } else if added {
                 Button(ClaudeDesktopApp.isRunning ? "Restart Claude" : "Open Claude") {
                     if ClaudeDesktopApp.isRunning { confirmRestart = true } else { ClaudeDesktopApp.open() }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(desktop == .restarting)
-            } else if !added {
+            } else {
                 Button("Connect") { connectDesktop(relay) }
                     .buttonStyle(.borderedProminent)
                     .disabled(desktop == .working)
-            } else {
-                Button("Reconnect") { connectDesktop(relay) }.disabled(desktop == .working)
             }
         }
     }
 
     private func codeRow(_ path: String) -> some View {
-        let command = AIClients.claudeCodeCommand(relay: relay, endpoint: ai.endpoint, token: ai.token)
+        let add = AIClients.claudeCodeCommand(relay: relay, endpoint: ai.endpoint, token: ai.token)
+        let connected = ai.lastConnected("Claude Code") != nil
+        let current = ClaudeCodeConfig.isCurrent(codeRegistration, relay: relay)
+        let stale = codeRegistration != nil && !current
         return HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Claude Code")
                 if let seen = ai.lastConnected("Claude Code") {
                     (Text("Connected ") + Text(seen, format: .relative(presentation: .named))).font(.caption).foregroundStyle(.green)
+                } else if current {
+                    Text("Added. It connects when you start Claude Code.").font(.caption).foregroundStyle(.secondary)
+                } else if stale {
+                    Text("Set up for another copy of SimplMaker. Copy the command to update it.").font(.caption).foregroundStyle(.secondary)
                 } else {
                     Text("Copy the command and paste it into a terminal once.").font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 8)
-            if let command {
-                copyButton(title: "Copy Command", text: command, id: "code", prominent: true, preparing: { ai.setEnabled(true) })
+            if connected {
+                Button("Connected") {}.buttonStyle(.bordered).disabled(true)
+            } else if current {
+                Button("Added") {}.buttonStyle(.bordered).disabled(true)
+            } else if let add {
+                copyButton(title: "Copy Command", text: ClaudeCodeConfig.command(add: add, replacing: codeRegistration), id: "code", prominent: true,
+                           preparing: { ai.setEnabled(true) })
             }
         }
     }
@@ -200,6 +220,7 @@ struct AISettingsPane: View {
         }
         if let relay {
             copyButton(title: "Copy Claude Desktop Configuration", text: ClaudeDesktopConfig.snippet(command: relay), id: "desktop")
+            Button("Write Claude Desktop Configuration Again") { connectDesktop(relay) }.disabled(desktop == .working)
         }
         if let http = AIClients.claudeCodeCommand(relay: nil, endpoint: ai.endpoint, token: ai.token) {
             copyButton(title: "Copy Claude Code Command (network version)", text: http, id: "http")

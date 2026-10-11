@@ -8,6 +8,7 @@ import Testing
     @Test func clientsAreNamedTheWayAPersonWouldName() {
         #expect(AIClients.displayName(for: "claude-ai") == "Claude Desktop")
         #expect(AIClients.displayName(for: "Claude Desktop") == "Claude Desktop")
+        #expect(AIClients.displayName(for: "local-agent-mode-SimplMaker") == "Claude Desktop", "Claude Desktop's agent mode")
         #expect(AIClients.displayName(for: "claude-code") == "Claude Code")
         #expect(AIClients.displayName(for: "claude-code-vscode") == "Claude Code")
         #expect(AIClients.displayName(for: "mcp-inspector") == "mcp-inspector", "an unknown client keeps its own name")
@@ -84,5 +85,44 @@ import Testing
         _ = try await URLSession.shared.data(for: request)
         try await Task.sleep(for: .milliseconds(100))
         #expect(ai.clients.isEmpty, "a client that gives no name is not shown")
+    }
+
+    // MARK: Claude Code's own list
+
+    private func claudeJSON(_ text: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("claude-\(UUID().uuidString).json")
+        try Data(text.utf8).write(to: url)
+        return url
+    }
+
+    @Test func anEntryInClaudeCodesListIsFoundByNameAndByProgram() throws {
+        let relay = "/Applications/SimplMaker.app/Contents/Helpers/simplmaker-mcp"
+        let file = try claudeJSON(#"{"numStartups": 9, "mcpServers": {"other": {"command": "x"}, "SimplMaker": {"type": "stdio", "command": "\#(relay)", "args": []}}}"#)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let found = ClaudeCodeConfig.registration(at: file)
+        #expect(found == ClaudeCodeConfig.Registration(command: relay))
+        #expect(ClaudeCodeConfig.isCurrent(found, relay: relay))
+        #expect(!ClaudeCodeConfig.isCurrent(found, relay: "/Volumes/Other/SimplMaker.app/Contents/Helpers/simplmaker-mcp"), "an app that moved would fail")
+        #expect(!ClaudeCodeConfig.isCurrent(nil, relay: relay))
+    }
+
+    @Test func noFileAnOldNameOrNoEntryIsNotRegistered() throws {
+        #expect(ClaudeCodeConfig.registration(at: URL(fileURLWithPath: "/nonexistent/.claude.json")) == nil)
+        for text in [#"{"mcpServers": {"simplmaker": {"command": "x"}}}"#, #"{"projects": {}}"#, "not json", #"{"mcpServers": 5}"#] {
+            let file = try claudeJSON(text)
+            defer { try? FileManager.default.removeItem(at: file) }
+            #expect(ClaudeCodeConfig.registration(at: file) == nil, "\(text)")
+        }
+    }
+
+    @Test func aNetworkEntryCountsAndAStaleOneIsRemovedBeforeAdding() throws {
+        let file = try claudeJSON(#"{"mcpServers": {"SimplMaker": {"type": "http", "url": "http://127.0.0.1:1/mcp"}}}"#)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let http = ClaudeCodeConfig.registration(at: file)
+        #expect(http?.command == nil && ClaudeCodeConfig.isCurrent(http, relay: "/x"))
+        let add = "claude mcp add --scope user SimplMaker -- '/x'"
+        #expect(ClaudeCodeConfig.command(add: add, replacing: nil) == add)
+        let stale = ClaudeCodeConfig.Registration(command: "/old")
+        #expect(ClaudeCodeConfig.command(add: add, replacing: stale) == "claude mcp remove --scope user SimplMaker; " + add)
     }
 }

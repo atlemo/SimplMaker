@@ -23,6 +23,8 @@ enum AIClients {
     static func displayName(for rawName: String) -> String {
         let n = rawName.lowercased()
         if n.contains("claude-code") || n.contains("claude code") { return "Claude Code" }
+        // Claude Desktop's agent mode introduces itself as "local-agent-mode-<server name>".
+        if n.hasPrefix("local-agent-mode") { return "Claude Desktop" }
         if n.contains("claude-ai") || n.contains("claude desktop") || n.contains("claude") { return "Claude Desktop" }
         return rawName
     }
@@ -86,5 +88,36 @@ enum ClaudeDesktopApp {
         guard let url = AIClients.claudeDesktopURL() else { return false }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
         return true
+    }
+}
+
+/// Claude Code keeps the servers added with `claude mcp add --scope user` in its own file. Settings only looks for SimplMaker's entry (its
+/// name and the program it starts), to say "Added" instead of offering the command again; nothing else in the file is read or kept.
+enum ClaudeCodeConfig {
+    struct Registration: Equatable {
+        /// The program it starts; nil for a server reached over the network.
+        var command: String?
+    }
+
+    static var url: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json") }
+
+    /// SimplMaker's entry in the user-level list, if there is one under the current name.
+    static func registration(at file: URL = url) -> Registration? {
+        guard let data = try? Data(contentsOf: file),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let entry = (root["mcpServers"] as? [String: Any])?[ClaudeDesktopConfig.serverName] as? [String: Any] else { return nil }
+        return Registration(command: entry["command"] as? String)
+    }
+
+    /// Whether the entry will start `relay` (an entry for a moved or replaced app would fail, so it doesn't count), or is the network version.
+    static func isCurrent(_ registration: Registration?, relay: String?) -> Bool {
+        guard let registration else { return false }
+        guard let relay, let command = registration.command else { return true }
+        return command == relay
+    }
+
+    /// The command to paste: when an entry for another copy of the app is there, it is removed first (`claude mcp add` refuses a name it has).
+    static func command(add: String, replacing existing: Registration?) -> String {
+        existing == nil ? add : "claude mcp remove --scope user \(ClaudeDesktopConfig.serverName); \(add)"
     }
 }
