@@ -185,11 +185,29 @@ public enum SketchSolver {
             // Normal equations: (JᵀJ + λI) step = -Jᵀf
             var A = [Double](repeating: 0, count: n * n)
             var g = [Double](repeating: 0, count: n)
-            for r in 0..<m {
-                let row = r * n
-                for i in 0..<n where J[row + i] != 0 {
-                    g[i] += J[row + i] * f[r]
-                    for j in 0..<n where J[row + j] != 0 { A[i * n + j] += J[row + i] * J[row + j] }
+            J.withUnsafeBufferPointer { jac in
+                A.withUnsafeMutableBufferPointer { a in
+                    g.withUnsafeMutableBufferPointer { gv in
+                        var r = 0
+                        while r < m {
+                            let row = r * n
+                            var i = 0
+                            while i < n {
+                                let ji = jac[row + i]
+                                if ji != 0 {
+                                    gv[i] += ji * f[r]
+                                    var j = 0
+                                    while j < n {
+                                        let jj = jac[row + j]
+                                        if jj != 0 { a[i * n + j] += ji * jj }
+                                        j += 1
+                                    }
+                                }
+                                i += 1
+                            }
+                            r += 1
+                        }
+                    }
                 }
             }
             let err = sumSquares(f)
@@ -474,29 +492,50 @@ public enum SketchSolver {
     static func sumSquares(_ v: [Double]) -> Double { v.reduce(0) { $0 + $1 * $1 } }
 
     /// Solves the symmetric positive definite system M x = b. Nil if M is not SPD.
+    /// Plain index loops over unsafe buffers: the same arithmetic in the same order as the obvious version, without the cost of
+    /// iterators and bounds checks, which dominated a solve in an unoptimised build.
     static func choleskySolve(_ M: [Double], _ b: [Double], _ n: Int) -> [Double]? {
         var L = [Double](repeating: 0, count: n * n)
-        for i in 0..<n {
-            for j in 0...i {
-                var sum = M[i * n + j]
-                for k in 0..<j { sum -= L[i * n + k] * L[j * n + k] }
-                if i == j {
-                    guard sum > 1e-300 else { return nil }
-                    L[i * n + i] = sum.squareRoot()
-                } else {
-                    L[i * n + j] = sum / L[j * n + j]
+        var y = b
+        let ok: Bool = M.withUnsafeBufferPointer { m in
+            L.withUnsafeMutableBufferPointer { l in
+                y.withUnsafeMutableBufferPointer { v in
+                    var i = 0
+                    while i < n {
+                        var j = 0
+                        while j <= i {
+                            var sum = m[i * n + j]
+                            var k = 0
+                            while k < j { sum -= l[i * n + k] * l[j * n + k]; k += 1 }
+                            if i == j {
+                                guard sum > 1e-300 else { return false }
+                                l[i * n + i] = sum.squareRoot()
+                            } else {
+                                l[i * n + j] = sum / l[j * n + j]
+                            }
+                            j += 1
+                        }
+                        i += 1
+                    }
+                    i = 0
+                    while i < n {
+                        var k = 0
+                        while k < i { v[i] -= l[i * n + k] * v[k]; k += 1 }
+                        v[i] /= l[i * n + i]
+                        i += 1
+                    }
+                    i = n - 1
+                    while i >= 0 {
+                        var k = i + 1
+                        while k < n { v[i] -= l[k * n + i] * v[k]; k += 1 }
+                        v[i] /= l[i * n + i]
+                        i -= 1
+                    }
+                    return true
                 }
             }
         }
-        var y = b
-        for i in 0..<n {
-            for k in 0..<i { y[i] -= L[i * n + k] * y[k] }
-            y[i] /= L[i * n + i]
-        }
-        for i in stride(from: n - 1, through: 0, by: -1) {
-            for k in (i + 1)..<n { y[i] -= L[k * n + i] * y[k] }
-            y[i] /= L[i * n + i]
-        }
+        guard ok else { return nil }
         return y.allSatisfy(\.isFinite) ? y : nil
     }
 
