@@ -10,6 +10,7 @@ enum Preferences {
     static let showAxes = "showAxes"
     static let showConstraints = "showConstraints"
     static let showWelcome = "showWelcome"
+    static let settingsHeight = "settingsWindowHeight"  // the height the user dragged the Settings window to
     static let snapToGrid = "snapToGrid"
     static let unitSystem = "unitSystem"
     static let gridSizeMetric = "gridSizeMetric"
@@ -141,6 +142,14 @@ struct SettingsView: View {
     @AppStorage(Preferences.accentSource) private var accentSource = Preferences.AccentSource.simplMaker
     @AppStorage(Preferences.sendUsageStatistics) private var sendUsageStatistics = true
     @ObservedObject private var updater = Updater.shared
+    /// The height the window had when it was last closed or resized. Read once, when the window opens: feeding it back
+    /// while the window is open would fight the user's drag.
+    @State private var openingHeight = Self.savedHeight
+
+    private static var savedHeight: CGFloat {
+        let h = UserDefaults.standard.double(forKey: Preferences.settingsHeight)
+        return h >= 360 ? CGFloat(h) : 560
+    }
 
     private enum Pane: String, CaseIterable, Identifiable {
         case general = "General", license = "License", navigation = "Navigation", viewport = "Viewport", shortcuts = "Shortcuts", ai = "AI"
@@ -204,7 +213,10 @@ struct SettingsView: View {
             }
         }
         .frame(width: 520)
-        .frame(minHeight: 360, idealHeight: 560, maxHeight: .infinity)  // the height can be dragged, the width is fixed
+        .frame(minHeight: 360, idealHeight: openingHeight, maxHeight: .infinity)  // the height can be dragged, the width is fixed
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            if height >= 360 { UserDefaults.standard.set(Double(height), forKey: Preferences.settingsHeight) }
+        }
         .navigationTitle(pane.rawValue)
     }
 
