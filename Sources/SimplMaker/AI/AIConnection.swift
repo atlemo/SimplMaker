@@ -33,6 +33,8 @@ final class AIConnection {
     private let defaults: UserDefaults
     private let file: MCPConnectionFile
     private let service: CADService
+    /// What the assistants did, for Settings ▸ AI.
+    let log: AIActivityLog
     private let licensed: @MainActor () -> Bool
     private let version: String
     /// Whether this build has the AI mode at all (see AIFeature). Without it nothing here ever starts.
@@ -42,8 +44,8 @@ final class AIConnection {
     init(defaults: UserDefaults = .standard, file: MCPConnectionFile = .standard, service: CADService = CADService(),
          licensed: @escaping @MainActor () -> Bool = { LicenseManager.shared.allowsEditing },
          version: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
-         available: Bool = AIFeature.isAvailable) {
-        self.defaults = defaults; self.file = file; self.service = service; self.licensed = licensed; self.version = version
+         available: Bool = AIFeature.isAvailable, log: AIActivityLog = AIActivityLog()) {
+        self.defaults = defaults; self.file = file; self.service = service; self.licensed = licensed; self.version = version; self.log = log
         isAvailable = available
         isEnabled = available && defaults.bool(forKey: Self.enabledKey)
         let initial = file.read()?.token ?? MCPConnectionFile.makeToken()
@@ -85,6 +87,8 @@ final class AIConnection {
         let handler = MCPHTTPHandler(
             server: AITools.makeServer(service: service, version: version, onInitialize: { [weak self] name, clientVersion in
                 Task { @MainActor in self?.noteClient(name: name, version: clientVersion) }
+            }, onToolCall: { [log] call in
+                Task { @MainActor in log.record(call) }
             }),
             token: { [secrets] in secrets.withLock { $0.token } },
             port: { [secrets] in secrets.withLock { $0.port } })

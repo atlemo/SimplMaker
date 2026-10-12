@@ -14,6 +14,7 @@ struct AISettingsPane: View {
     @State private var desktop = DesktopState.idle
     /// SimplMaker's entry in Claude Code's list, read when the pane opens and whenever the app is brought back to the front.
     @State private var codeRegistration: ClaudeCodeConfig.Registration?
+    @State private var showLooks = false
 
     enum DesktopState: Equatable {
         case idle, working, restarting
@@ -57,6 +58,7 @@ struct AISettingsPane: View {
                     Text("The first time an assistant changes your part it asks you for permission. Choose Always allow to stop it asking each time.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                activitySection
                 Section {
                     DisclosureGroup("Advanced") { advanced }
                 }
@@ -82,6 +84,48 @@ struct AISettingsPane: View {
         } message: {
             Text("Claude keeps your conversations, but anything you were in the middle of typing may be lost.")
         }
+    }
+
+    // MARK: activity
+
+    private var activitySection: some View {
+        let entries = ai.log.shown(includingLooks: showLooks)
+        return Section("What the assistant did") {
+            if entries.isEmpty {
+                Text(ai.log.entries.isEmpty ? "Nothing yet. What an assistant does shows up here, newest first." : "Nothing but looking so far.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach(entries.prefix(12)) { entry in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: entry.isError ? "xmark.octagon.fill" : (entry.readOnly ? "eye" : "checkmark.circle.fill"))
+                        .foregroundStyle(entry.isError ? Color.red : (entry.readOnly ? Color.secondary : Color.green))
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(entry.summary).font(.callout).lineLimit(3)
+                        Text(detail(entry)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    Text(entry.date, format: .dateTime.hour().minute().second()).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+            if entries.count > 12 {
+                Text("\(entries.count - 12) older not shown. Copy has them all.").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                Toggle("Include looking", isOn: $showLooks).toggleStyle(.checkbox).controlSize(.small)
+                Spacer()
+                copyButton(title: "Copy", text: ai.log.text(includingLooks: showLooks), id: "log")
+                    .disabled(entries.isEmpty)
+                Button("Clear") { ai.log.clear() }.disabled(ai.log.entries.isEmpty)
+            }
+        }
+    }
+
+    private func detail(_ entry: AIActivityEntry) -> String {
+        var parts = [entry.tool]
+        if let code = entry.code { parts.append(code) }
+        if entry.seconds >= 0.5 { parts.append(String(format: "%.1f s", entry.seconds)) }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: status

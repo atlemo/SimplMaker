@@ -1509,8 +1509,9 @@ enum AITools {
     }
 
     static func makeServer(service: CADService, version: String,
-                           onInitialize: (@Sendable (String, String) -> Void)? = nil) -> MCPServer {
+                           onInitialize: (@Sendable (String, String) -> Void)? = nil,
+                           onToolCall: (@Sendable (MCPToolCall) -> Void)? = nil) -> MCPServer {
         MCPServer(name: "SimplMaker", version: version, instructions: serverInstructions, tools: make(service: service),
-                  describeFailure: { AIError.describing($0) }, onInitialize: onInitialize)
+                  describeFailure: { AIError.describing($0) }, onInitialize: onInitialize, onToolCall: onToolCall)
     }
 }

@@ -20,6 +20,19 @@ struct MCPTool: Sendable {
     var handler: @Sendable (JSONValue) async throws -> JSONValue
 }
 
+/// One finished tool call, for whoever wants to keep track of what the assistant did.
+struct MCPToolCall: Sendable {
+    var name: String
+    var title: String
+    var readOnly: Bool
+    var arguments: JSONValue
+    /// What the tool answered, or for a failure the description `describeFailure` made of it.
+    var result: JSONValue
+    var isError: Bool
+    var seconds: Double
+    var date: Date
+}
+
 enum MCPError {
     static let parseError = -32700
     static let invalidRequest = -32600
@@ -41,12 +54,15 @@ final class MCPServer: Sendable {
     private let describeFailure: @Sendable (Error) -> JSONValue
     /// Told the name and version a client gives when it connects ("initialize"), so the app can show that something is connected.
     private let onInitialize: (@Sendable (_ clientName: String, _ clientVersion: String) -> Void)?
+    /// Told after every tool call that ran (not those refused as protocol errors), whether it worked or not.
+    private let onToolCall: (@Sendable (MCPToolCall) -> Void)?
 
     init(name: String, version: String, instructions: String, tools: [MCPTool],
          describeFailure: @escaping @Sendable (Error) -> JSONValue,
-         onInitialize: (@Sendable (_ clientName: String, _ clientVersion: String) -> Void)? = nil) {
+         onInitialize: (@Sendable (_ clientName: String, _ clientVersion: String) -> Void)? = nil,
+         onToolCall: (@Sendable (MCPToolCall) -> Void)? = nil) {
         self.name = name; self.version = version; self.instructions = instructions
-        self.tools = tools; self.describeFailure = describeFailure; self.onInitialize = onInitialize
+        self.tools = tools; self.describeFailure = describeFailure; self.onInitialize = onInitialize; self.onToolCall = onToolCall
     }
 
     // MARK: messages
@@ -143,10 +159,19 @@ final class MCPServer: Sendable {
         guard arguments.object != nil else {
             return .failure(RPCFailure(code: MCPError.invalidParams, message: "The arguments must be a JSON object."))
         }
+        let started = Date()
+        func told(_ result: JSONValue, isError: Bool) {
+            onToolCall?(MCPToolCall(name: tool.name, title: tool.title, readOnly: tool.readOnly, arguments: arguments, result: result,
+                                    isError: isError, seconds: Date().timeIntervalSince(started), date: started))
+        }
         do {
-            return .success(toolResult(try await tool.handler(arguments), isError: false))
+            let result = try await tool.handler(arguments)
+            told(result, isError: false)
+            return .success(toolResult(result, isError: false))
         } catch {
-            return .success(toolResult(describeFailure(error), isError: true))
+            let failure = describeFailure(error)
+            told(failure, isError: true)
+            return .success(toolResult(failure, isError: true))
         }
     }
 
