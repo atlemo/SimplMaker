@@ -280,6 +280,23 @@ import Testing
         #expect(try #require(r.body("lid")).volume == (try #require(before.body("lid")).volume), "the lid is untouched")
     }
 
+    /// A line that ends exactly on a body's edge touches it at a point only: the extension goes by above the rim.
+    @Test func aRibEndingOnAnEdgeSaysSo() throws {
+        let plate = Self.box("plate", "40", "40", "5")
+        let wall = Self.box("wall", v: "17.5", "40", "5", "40", .join)  // its inner face is at y = 15, its top at z = 40
+        let top = 40.0
+        let rib = Self.sketch("ribsk", on: .yz) { s in
+            let a = s.addPoint(15, top), b = s.addPoint(-10, 5)  // the first end exactly on the wall's top edge
+            s.constrain(.fix(a, x: 15, y: top)); s.constrain(.fix(b, x: -10, y: 5))
+            s.addLine(a, b, id: "R")
+        }
+        var doc = CADDocument()
+        doc.features = [plate, wall, rib,
+                        Feature(id: "rib", name: "rib", .rib(RibFeature(path: CurveRef(sketch: "ribsk", curves: ["R"]), thickness: "3 mm")))]
+        let r = Regenerator.regenerate(doc)
+        #expect(r.errors["rib"]?.contains("only touches the body at an edge or a corner") == true, "\(r.errors["rib"] ?? "no error")")
+    }
+
     @Test func aRibThatReachesNoBodyIsAnError() throws {
         let plate = Self.box("plate", "40", "40", "5")
         let wall = Self.box("wall", v: "17.5", "40", "5", "40", .join)
@@ -294,7 +311,8 @@ import Testing
                         Feature(id: "rib", name: "rib", .rib(RibFeature(path: CurveRef(sketch: "ribsk", curves: ["R"]),
                                                                         thickness: "3 mm")))]
         let r = Regenerator.regenerate(doc)
-        #expect(r.errors["rib"] != nil, "the rib needs a body to close against")
+        #expect(r.errors["rib"]?.contains("does not reach the body") == true, "\(r.errors["rib"] ?? "no error")")
+        #expect(r.errors["rib"]?.contains("misses it by") == true)
     }
 
     @Test func holesCutTheBody() throws {

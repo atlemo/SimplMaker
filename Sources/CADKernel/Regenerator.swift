@@ -841,21 +841,22 @@ public enum Regenerator {
         let thickness = try r.parameters.value(of: f.thickness, kind: .length)
         let path = try path(f.path, r).path
         var best: (index: Int, body: KBody, gain: Double)?
-        var firstError: Error?
+        var failures: [(body: String, reason: String)] = []
         for i in candidates {
             do {
                 let grown = try r.bodies[i].body.rib(along: path, thickness: thickness, featureID: feature.id)
                 let gain = grown.volume - r.bodies[i].body.volume
                 if best == nil || gain > best!.gain * (1 + 1e-9) { best = (i, grown, gain) }
             } catch {
-                firstError = firstError ?? error
+                let text = (error as? KernelError)?.message ?? "\(error)"
+                failures.append((r.bodies[i].name, text.hasPrefix("rib: ") ? String(text.dropFirst(5)) : text))
             }
         }
         guard let best else {
-            if candidates.count > 1 {
-                throw KernelError(message: "the line closes off no body: extended past both ends, it has to run into the same body at each end (draw it across a corner, on a plane through the body)")
-            }
-            throw firstError ?? KernelError(message: "there is no body to add it to")
+            // With a target there is one reason; without one, each body says why the line does not close it off.
+            if failures.count == 1 { throw KernelError(message: failures[0].reason) }
+            throw KernelError(message: "the line closes off none of the bodies. "
+                              + failures.map { "\($0.body): \($0.reason)" }.joined(separator: " · "))
         }
         r.bodies[best.index].body = best.body
     }
