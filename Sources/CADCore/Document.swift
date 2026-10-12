@@ -258,7 +258,7 @@ public struct LoftFeature: Codable, Hashable, Sendable {
 public struct RibFeature: Codable, Hashable, Sendable {
     public var path: CurveRef
     public var thickness: String
-    /// Body to add the rib to. Nil = the most recently created body.
+    /// Body to add the rib to. Nil = the body the rib adds the most to (the newest one wins a tie).
     public var target: FeatureID?
     public init(path: CurveRef, thickness: String = "2 mm", target: FeatureID? = nil) {
         self.path = path; self.thickness = thickness; self.target = target
