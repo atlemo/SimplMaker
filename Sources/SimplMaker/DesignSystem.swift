@@ -123,3 +123,30 @@ struct AccentScope: ViewModifier {
         content.environment(\.accent, color).tint(color)
     }
 }
+
+extension View {
+    /// Liquid Glass on macOS 26; on older systems the system's thin material with a hairline edge,
+    /// which is the nearest look the older SDK offers.
+    @ViewBuilder
+    func panelGlass<S: Shape>(in shape: S) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular, in: shape)
+        } else {
+            self
+                .background(.regularMaterial, in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+        }
+    }
+}
+
+extension ToolbarContent {
+    /// Drops the glass pill macOS 26 draws behind a toolbar item; older systems draw none.
+    @ToolbarContentBuilder
+    func withoutSharedBackground() -> some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
+    }
+}

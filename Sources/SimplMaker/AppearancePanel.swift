@@ -97,7 +97,7 @@ struct AppearancePanel: View {
         }
         .padding(DS.Spacing.space6)
         .frame(width: Self.width)
-        .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.window))
+        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
         .task(id: pending) {
             guard let p = pending else { return }
             try? await Task.sleep(for: .milliseconds(400))

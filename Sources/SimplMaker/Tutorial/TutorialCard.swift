@@ -61,7 +61,7 @@ struct TutorialCard: View {
         }
         .padding(DS.Spacing.space6)
         .frame(width: Self.width)
-        .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.window))
+        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
         .offset(drag)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tutorial, step \(position.index + 1) of \(position.count)")

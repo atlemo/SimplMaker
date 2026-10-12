@@ -89,7 +89,7 @@ struct DocumentWindow: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Tools")
             }
-            .sharedBackgroundVisibility(.hidden)  // the tools sit on the toolbar itself, with no glass of their own
+            .withoutSharedBackground()  // the tools sit on the toolbar itself, with no glass of their own
     }
 
     var body: some View {
@@ -447,7 +447,7 @@ struct StartCard: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(DS.Spacing.space8)
-        .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.window))
+        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
     }
 }
 
@@ -467,7 +467,7 @@ struct LoadingCard: View {
                 .frame(width: 220)
         }
         .padding(DS.Spacing.space8)
-        .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.window))
+        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
         .accessibilityElement(children: .combine)
     }
 }
@@ -496,7 +496,7 @@ extension View {
             .frame(width: width)
             .frame(maxHeight: .infinity)
             .clipShape(shape)
-            .glassEffect(.regular, in: shape)
+            .panelGlass(in: shape)
     }
 }
 
@@ -690,7 +690,7 @@ struct SidebarPanel<Accessory: View, Content: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .clipShape(shape)
-        .glassEffect(.regular, in: shape)
+        .panelGlass(in: shape)
     }
 }
 
