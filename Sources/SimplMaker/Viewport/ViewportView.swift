@@ -733,7 +733,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             return
         }
         // A double-click's second release isn't a click: the double-click already did its job.
-        guard !dragged, event.clickCount < 2, let renderer, let model, model.sketchSession == nil else { return }
+        guard !dragged, event.clickCount < 2, renderer != nil, let model, model.sketchSession == nil else { return }
         let p = location(event)
         let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
         let pixel = pickPixel(p)
