@@ -33,6 +33,21 @@ import Testing
         #expect(abs(s.point(a)!.y - 0.5) < 1e-6 && abs(s.point(b)!.y - 0.5) < 1e-6)  // met in the middle
     }
 
+    /// A sketch that can't be satisfied settles on a compromise; the solver has to see that it is creeping and stop, not use up its
+    /// iterations (solveLocally tries a sketch several ways, and every attempt that can't succeed used to cost the full 200).
+    @Test func aSketchThatCannotBeSatisfiedGivesUpEarly() {
+        var s = Sketch()
+        let q = [s.addPoint(0, 0), s.addPoint(10, 0), s.addPoint(0, 5), s.addPoint(10, 6)]
+        let l1 = s.addLine(q[0], q[1]), l2 = s.addLine(q[2], q[3])
+        s.constrain(.coincident(q[0], "origin")); s.constrain(.horizontal(l1)); s.constrain(.parallel(l1, l2))
+        s.constrain(.coincident(q[1], q[3]))  // parallel lines 5 apart can't meet, and are told to
+        s.dimension(.length(l1), "10", id: "x"); s.dimension(.pointLineDistance(point: q[2], line: l1), "5", id: "y")
+        s.dimension(.angle(l1, l2), "0.5", id: "z")
+        let r = SketchSolver.solve(&s, dimensionValues: ["x": 10, "y": 5, "z": 0.5])
+        #expect(r.status == .failed)
+        #expect(r.iterations < 60, "gave up after \(r.iterations) iterations")
+    }
+
     @Test func conflictingConstraintsFail() {
         var s = Sketch()
         let a = s.addPoint(0, 0), b = s.addPoint(10, 0)

@@ -26,6 +26,9 @@ public enum SoftTarget: Sendable, Equatable {
 
 public enum SketchSolver {
     public static let tolerance = 1e-9
+    /// A solve gives up after this many accepted steps in a row that each reduce the squared error by less than this fraction.
+    static let stallSteps = 5
+    static let stallRatio = 1e-3
 
     /// Solves `sketch` in place. `dimensionValues` maps dimension id -> value in base units (mm / rad).
     /// `soft` targets are weighted down so constraints win; with soft targets the result is a
@@ -178,6 +181,7 @@ public enum SketchSolver {
         var f = system.residuals(x)
         var iterations = 0
         var lambda = 1e-3
+        var crawling = 0
         solving: while iterations < 200, maxAbs(f) > tolerance, !x.isEmpty {
             iterations += 1
             let J = system.jacobian(x)
@@ -223,6 +227,11 @@ public enum SketchSolver {
                         lambda = max(lambda * 0.3, 1e-12)
                         // Converged to a least-squares minimum that isn't zero (soft targets, conflicts).
                         if err - errNew <= 1e-14 * max(err, 1e-30) + 1e-30 { break solving }
+                        // Creeping towards a minimum that isn't zero: a solve that is going to succeed takes off by whole factors
+                        // (the slowest step of any that did cut the squared error by 4 %), and a hold-still attempt in solveLocally
+                        // that can't succeed would otherwise run to the iteration limit.
+                        crawling = err - errNew < stallRatio * err ? crawling + 1 : 0
+                        if crawling >= stallSteps { break solving }
                         break
                     }
                 }
