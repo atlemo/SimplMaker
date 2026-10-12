@@ -44,7 +44,14 @@ enum AITools {
     Give the things you create your own short ids ("outline", "hole"), and size them with the parameters you made (see above), so a \
     later "make it longer" is a single change. Anything made of several steps goes in ONE batch: the user gets one Undo, and a failing step \
     leaves nothing behind. Check the result with get_document, get_body and measure, and LOOK at it with get_viewport_image (iso first, then the view \
-    that matters): numbers do not show a lid on upside down or text in the wrong place. Say so plainly when it is not what was asked.
+    that matters): numbers do not show a lid on upside down or text in the wrong place. Say so plainly when it is not what was asked. \
+    A picture can cut the part open (section), show only some bodies (only) and draw sketches: use the section to check walls, hollows \
+    and snap fits.
+
+    More than extrudes: create_revolve, create_sweep and create_pipe follow a path or an axis; create_loft blends sections; create_rib \
+    braces a corner; create_project puts text or a logo on a curved surface; create_split cuts a body into pieces and \
+    create_lay_on_floor sets how each sits for printing; set_body names, colours or hides a body; create_image places a reference picture \
+    to trace. The guide has recipes and numbers for these (hinges, screw-post cases, multi-part prints).
 
     Changes: every change tool needs document_id (never guess which part), is applied whole or not at all, and is one step \
     in the user's Undo (named "AI: …"). It answers with the part as it is now and its new revision. Pass expected_revision \
