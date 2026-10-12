@@ -1157,10 +1157,23 @@ final class Renderer {
                                 thickness: Self.edgePickWidth * scale, depthBias: 0, pickable: 1), pipeline: pickBandPipeline)
             enc.setDepthStencilState(depthState)
         }
+        let curveColor = overlay.fullyConstrained ? p.sketchConstrained : p.sketch
+        // With hidden edges on, the part of a sketch that lies inside or behind a body shows too, dashed and softened like the edges.
+        if style.showsHiddenEdges {
+            enc.setDepthStencilState(cuttingShaded ? hiddenCutState : hiddenDepthState)
+            let seenThrough = style.isShaded ? p.face : p.background
+            for (buffer, count, color) in [(overlay.inactive, overlay.inactiveCount, p.inactiveSketch),
+                                           (overlay.curves, overlay.curveCount, curveColor),
+                                           (overlay.construction, overlay.constructionCount, p.construction)] {
+                let hidden = simd_mix(color, seenThrough, SIMD4(repeating: 0.3))
+                segments(buffer, count, DrawParams(color: hidden, hoverColor: hidden, selectColor: hidden, thickness: 1.6 * scale,
+                                                   depthBias: 0.0006, pickable: 0, style: DrawStyle.dashed | clipStyle))
+            }
+            enc.setDepthStencilState(depthState)
+        }
         segments(overlay.inactive, overlay.inactiveCount,
                  DrawParams(color: p.inactiveSketch, hoverColor: hover, selectColor: select,
                             thickness: 1.6 * scale, depthBias: 0.0006, pickable: 1, selectedThickness: 3.6 * scale))
-        let curveColor = overlay.fullyConstrained ? p.sketchConstrained : p.sketch
         segments(overlay.curves, overlay.curveCount,
                  DrawParams(color: curveColor, hoverColor: hover, selectColor: select,
                             thickness: 2 * scale, depthBias: 0.0008, pickable: 1, selectedThickness: 4.5 * scale))
