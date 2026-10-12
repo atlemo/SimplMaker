@@ -972,7 +972,7 @@ final class DocumentModel {
         selection = []
         selectedFeature = feature.id
         mutate("New Sketch") { doc in
-            doc.features.append(feature)
+            doc.insertAtMarker(feature)  // like every new feature: at the timeline marker, inside the model that is shown
             doc.hidden.remove(feature.id)
         }
         lookAt(frame)
@@ -991,6 +991,13 @@ final class DocumentModel {
 
     func editSketch(_ id: FeatureID) {
         guard let f = document.features.first(where: { $0.id == id }), case .sketch(let sf) = f.kind else { return }
+        if let i = document.index(of: id), i >= markerPosition {
+            // The marker has rolled the sketch back, so its face may not exist yet: build it again (the marker moves to
+            // just after it, as for any feature picked for editing), then edit it.
+            bringIntoModel(id)
+            Task { await rebuilt(); editSketch(id) }
+            return
+        }
         let frame: Frame
         if let r = result?.sketches[id] { frame = r.frame } else {
             switch sf.plane {

@@ -24,6 +24,7 @@
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Common.hxx>
+#include <BRepAdaptor_CompCurve.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
@@ -1622,17 +1623,88 @@ SKHandle sk_rib(SKHandle body, SKHandle path, double thickness, const char *feat
     setError("a rib needs an open curve, not a closed shape");
     return 0;
   }
-  Handle(Geom_Plane) plane = new Geom_Plane(pa->frame);
-  const gp_Vec n = gp_Vec(pa->frame.Direction()) * (thickness / 2);
-  BRepFeat_MakeLinearForm form(b->shape, pa->wire, plane, n, n.Reversed(), 1, true);
-  form.Perform();
-  if (!form.IsDone() || form.Shape().IsNull()) {
+  // The rib is the part of the sketch plane that the path closes off against the body, thickened across the plane.
+  // (BRepFeat_MakeLinearForm builds the same thing, but only for one handedness of path against plane: the other way
+  // it throws, fills towards infinity or never returns, so it is not used.) The path's two ends are extended along
+  // their tangents far past the body; the plane outside the body is cut by the path and the extensions; the pieces
+  // that stay within the room of the body and the path and touch the path are the rib's profile.
+  Bnd_Box room;
+  BRepBndLib::Add(b->shape, room);
+  BRepBndLib::Add(pa->wire, room);
+  const double reach = 4 * std::sqrt(room.SquareExtent()) + 1;
+  room.Enlarge(1e-3 + thickness);
+
+  BRepAdaptor_CompCurve curve(pa->wire);
+  gp_Pnt first, last;
+  gp_Vec dFirst, dLast;
+  curve.D1(curve.FirstParameter(), first, dFirst);
+  curve.D1(curve.LastParameter(), last, dLast);
+  if (dFirst.Magnitude() < Precision::Confusion() || dLast.Magnitude() < Precision::Confusion()) {
+    setError("the rib's path has no direction at one end");
+    return 0;
+  }
+  dFirst.Normalize();
+  dLast.Normalize();
+
+  ShapeList tools;
+  for (TopExp_Explorer ex(pa->wire, TopAbs_EDGE); ex.More(); ex.Next()) tools.Append(ex.Current());
+  tools.Append(BRepBuilderAPI_MakeEdge(first, first.Translated(dFirst.Reversed() * reach)).Edge());
+  tools.Append(BRepBuilderAPI_MakeEdge(last, last.Translated(dLast * reach)).Edge());
+
+  const gp_Dir normal = pa->frame.Direction();
+  gp_Pnt centre(0.5 * (room.CornerMin().X() + room.CornerMax().X()), 0.5 * (room.CornerMin().Y() + room.CornerMax().Y()),
+                0.5 * (room.CornerMin().Z() + room.CornerMax().Z()));
+  centre.Translate(gp_Vec(normal).Reversed() * gp_Vec(pa->frame.Location(), centre).Dot(gp_Vec(normal)));  // onto the plane
+  TopoDS_Face base = BRepBuilderAPI_MakeFace(gp_Pln(gp_Ax3(centre, normal, pa->frame.XDirection())), -reach, reach, -reach, reach).Face();
+
+  BRepAlgoAPI_Cut outside(base, b->shape);
+  if (!outside.IsDone() || outside.HasErrors()) {
+    setError("could not find the space the rib fills");
+    return 0;
+  }
+  BRepAlgoAPI_Splitter split;
+  ShapeList args;
+  args.Append(outside.Shape());
+  split.SetArguments(args);
+  split.SetTools(tools);
+  split.SetFuzzyValue(1e-6);
+  split.Build();
+  if (!split.IsDone() || split.HasErrors()) {
+    setError("could not find the space the rib fills");
+    return 0;
+  }
+
+  const gp_Vec half = gp_Vec(normal) * (thickness / 2);
+  gp_Trsf back;
+  back.SetTranslation(half.Reversed());
+  TopoDS_Shape rib;
+  for (TopExp_Explorer fx(split.Shape(), TopAbs_FACE); fx.More(); fx.Next()) {
+    const TopoDS_Shape &piece = fx.Current();
+    Bnd_Box pb;
+    BRepBndLib::Add(piece, pb);
+    if (pb.IsVoid() || room.IsOut(pb.CornerMin()) || room.IsOut(pb.CornerMax())) continue;  // runs off to the edge: open air
+    BRepExtrema_DistShapeShape touch(piece, pa->wire);
+    if (!touch.IsDone() || touch.Value() > 1e-3) continue;  // not bounded by the path
+    TopoDS_Shape moved = BRepBuilderAPI_Transform(piece, back, true).Shape();
+    TopoDS_Shape slab = BRepPrimAPI_MakePrism(moved, gp_Vec(normal) * thickness).Shape();
+    if (rib.IsNull()) {
+      rib = slab;
+    } else {
+      BRepAlgoAPI_Fuse more(rib, slab);
+      if (more.IsDone() && !more.HasErrors()) rib = more.Shape();
+    }
+  }
+  if (rib.IsNull()) {
     setError("the rib must meet the body at both ends (draw it across a corner, on a plane through the body)");
     return 0;
   }
-  std::vector<Named> names;
-  carry(form, namedFaces(*b), names);
-  TopoDS_Shape result = unify(form.Shape(), names);
+  std::vector<Named> names = namedFaces(*b);
+  TopoDS_Shape fused = b->shape;
+  if (!namedBoolean(fused, names, rib, feat + ".rib", SK_FUSE)) {
+    setError("the rib could not be joined to the body");
+    return 0;
+  }
+  TopoDS_Shape result = unify(fused, names);
   return storeChecked(result, names, feat + ".rib", "the rib produced an invalid solid");
   SK_CATCH(0)
 }

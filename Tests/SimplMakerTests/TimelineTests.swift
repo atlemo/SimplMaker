@@ -87,4 +87,37 @@ import Testing
         #expect(model.timelineMarks == ["topedge"])
         try await settle(model)
     }
+
+    @Test func aNewSketchGoesInAtTheMarker() async throws {
+        let model = DocumentModel(document: .demo())
+        try await settle(model)
+        model.setMarker(2)  // after Base Sketch and Plate
+        try await settle(model)
+        model.beginSketch(on: .xy)
+        #expect(model.document.features[2].typeName == "Sketch", "in at the marker, not at the end")
+        #expect(model.markerPosition == 3 && model.document.features.count == 7)
+        model.finishSketch()
+        try await settle(model)
+        #expect(model.result?.sketches[model.document.features[2].id] != nil, "the sketch is inside the model that is shown")
+    }
+
+    @Test func editingASketchTheMarkerRolledBackBringsItBack() async throws {
+        var doc = CADDocument.demo()
+        // A sketch on the plate's end face, at the end of the timeline.
+        doc.features.append(Feature(id: "onface", name: "Face Sketch", .sketch(SketchFeature(
+            plane: .face(FaceRef(body: "plate", face: "plate.end")), sketch: Sketch()))))
+        let model = DocumentModel(document: doc)
+        try await settle(model)
+        model.setMarker(1)  // before the plate: the sketch's face does not exist
+        try await settle(model)
+        #expect(model.result?.sketches["onface"] == nil)
+
+        model.editSketch("onface")
+        for _ in 0..<1000 where model.sketchSession == nil { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(model.alert == nil, "no 'face or plane is missing'")
+        #expect(model.sketchSession?.featureID == "onface")
+        #expect(model.markerPosition == model.document.index(of: "onface")! + 1, "the marker moved to just after the sketch")
+        model.finishSketch()
+        try await settle(model)
+    }
 }
