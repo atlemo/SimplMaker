@@ -1649,8 +1649,53 @@ SKHandle sk_rib(SKHandle body, SKHandle path, double thickness, const char *feat
 
   ShapeList tools;
   for (TopExp_Explorer ex(pa->wire, TopAbs_EDGE); ex.More(); ex.Next()) tools.Append(ex.Current());
-  tools.Append(BRepBuilderAPI_MakeEdge(first, first.Translated(dFirst.Reversed() * reach)).Edge());
-  tools.Append(BRepBuilderAPI_MakeEdge(last, last.Translated(dLast * reach)).Edge());
+  const TopoDS_Edge beyondFirst = BRepBuilderAPI_MakeEdge(first, first.Translated(dFirst.Reversed() * reach)).Edge();
+  const TopoDS_Edge beyondLast = BRepBuilderAPI_MakeEdge(last, last.Translated(dLast * reach)).Edge();
+  tools.Append(beyondFirst);
+  tools.Append(beyondLast);
+
+  // Each end, carried on past itself, has to run into the body. Say which one does not, where it is in the sketch
+  // and how far it misses, because the fix is to move that end.
+  auto sketchPoint = [&](const gp_Pnt &p) {
+    const gp_Vec d(pa->frame.Location(), p);
+    char text[64];
+    std::snprintf(text, sizeof text, "(%.1f, %.1f)", d.Dot(gp_Vec(pa->frame.XDirection())), d.Dot(gp_Vec(pa->frame.YDirection())));
+    return std::string(text);
+  };
+  const std::pair<const char *, std::pair<gp_Pnt, TopoDS_Edge>> ends[] = {{"first", {first, beyondFirst}}, {"last", {last, beyondLast}}};
+  for (const auto &[which, end] : ends) {
+    BRepExtrema_DistShapeShape reach_(end.second, b->shape);
+    if (!reach_.IsDone()) continue;
+    char text[300];
+    if (reach_.Value() > 1e-4) {
+      std::snprintf(text, sizeof text,
+                    "the %s end of the line, at %s mm in its sketch, does not reach the body: carried on past the end, the line misses it by %.2f mm "
+                    "(move that end, or change the line's angle, so that it runs into the body)",
+                    which, sketchPoint(end.first).c_str(), reach_.Value());
+      setError(text);
+      return 0;
+    }
+    // It meets the body: does it run into the material, or only brush an edge or a corner on its way past?
+    double inside = 1;
+    try {
+      BRepAlgoAPI_Common within(end.second, b->shape);
+      if (within.IsDone() && !within.HasErrors()) {
+        GProp_GProps g;
+        BRepGProp::LinearProperties(within.Shape(), g);
+        inside = g.Mass();
+      }
+    } catch (const Standard_Failure &) {
+    }
+    if (inside <= 1e-4) {
+      std::snprintf(text, sizeof text,
+                    "the %s end of the line, at %s mm in its sketch, only touches the body at an edge or a corner: carried on past the end, the "
+                    "line goes by without running into it (end the line a little way up a face instead of on its edge, or change "
+                    "its angle)",
+                    which, sketchPoint(end.first).c_str());
+      setError(text);
+      return 0;
+    }
+  }
 
   const gp_Dir normal = pa->frame.Direction();
   gp_Pnt centre(0.5 * (room.CornerMin().X() + room.CornerMax().X()), 0.5 * (room.CornerMin().Y() + room.CornerMax().Y()),
@@ -1696,7 +1741,8 @@ SKHandle sk_rib(SKHandle body, SKHandle path, double thickness, const char *feat
     }
   }
   if (rib.IsNull()) {
-    setError("the rib must meet the body at both ends (draw it across a corner, on a plane through the body)");
+    setError("both ends of the line run into the body, but the line closes off no space against it "
+             "(a rib is the space between the line and a corner of the body; the line has to cross that corner)");
     return 0;
   }
   std::vector<Named> names = namedFaces(*b);
@@ -1714,9 +1760,13 @@ SKHandle sk_rib(SKHandle body, SKHandle path, double thickness, const char *feat
   // A line that only clips a corner of the body (a rib sketched across another body's thin wall) closes off a sliver;
   // that is not what was drawn, and the rib would be silently built there, so a sliver is an error.
   const double pathLength = GCPnts_AbscissaPoint::Length(curve);
-  if (volumeOf(fused) - bodyVolume <= std::max(1e-6 * bodyVolume, 1e-3 * thickness * pathLength * pathLength)) {
-    setError("the rib adds almost nothing to this body (the line has to reach the body at both ends, "
-             "once it is extended past them)");
+  const double added = volumeOf(fused) - bodyVolume;
+  if (added <= std::max(1e-6 * bodyVolume, 1e-3 * thickness * pathLength * pathLength)) {
+    char text[220];
+    std::snprintf(text, sizeof text,
+                  "the line closes off only %.2f mm3 against this body, too little to be a rib: it only clips the body "
+                  "(a line %.0f mm long needs a corner to run across)", std::max(added, 0.0), pathLength);
+    setError(text);
     return 0;
   }
   TopoDS_Shape result = unify(fused, names);
