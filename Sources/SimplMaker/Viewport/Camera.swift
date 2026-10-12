@@ -115,6 +115,9 @@ struct Camera {
         target + distance * SIMD3(cos(pitch) * cos(yaw), cos(pitch) * sin(yaw), sin(pitch))
     }
     var forward: SIMD3<Float> { simd_normalize(target - eye) }
+    /// The view is from under the ground plane (Z = 0): looking up at it in an orthographic view, which has no
+    /// eye of its own to place, or with the eye below it in a perspective one.
+    var isBelowGround: Bool { orthographic ? sin(pitch) < -1e-4 : eye.z < 0 }
     /// Right and up before the roll: up is as near the world's Z as the view allows.
     private var levelRight: SIMD3<Float> { simd_normalize(simd_cross(forward, SIMD3(0, 0, 1))) }
     private var levelUp: SIMD3<Float> { simd_cross(levelRight, forward) }

@@ -425,6 +425,30 @@ enum Shaders {
             thickness = p.selectedThickness;
         float4 ca = u.viewProj * float4(segA, 1.0);
         float4 cb = u.viewProj * float4(segB, 1.0);
+        // Trim the line to the depth range (0 <= z <= w) before anything is worked out from its ends. A long line
+        // (the ground grid) often runs past the near or far plane, or behind the camera; its end's screen position
+        // and depth then mean nothing, and the quad built from them is wrong: huge, and at the wrong depth, so it
+        // shows through bodies. Arrowheads sit at their end point, so they are left alone.
+        if ((p.style & 8u) == 0) {
+            float fa[2] = { ca.z, ca.w - ca.z }, fb[2] = { cb.z, cb.w - cb.z };
+            float t0 = 0.0, t1 = 1.0;
+            for (int k = 0; k < 2; k++) {
+                if (fa[k] < 0.0 && fb[k] < 0.0) { t0 = 2.0; break; }
+                if (fa[k] < 0.0) t0 = max(t0, fa[k] / (fa[k] - fb[k]));
+                else if (fb[k] < 0.0) t1 = min(t1, fa[k] / (fa[k] - fb[k]));
+            }
+            if (t0 >= t1) {
+                LineOut gone;
+                gone.position = float4(2.0, 2.0, 2.0, 1.0);
+                gone.across = 0.0;
+                gone.dir = float2(0.0);
+                gone.tip = float2(0.0);
+                gone.id = 0;
+                return gone;
+            }
+            float4 ta = mix(ca, cb, t0), tb = mix(ca, cb, t1);
+            ca = ta; cb = tb;
+        }
         float2 halfSize = u.viewport * 0.5;
         float2 sa = ca.xy / max(ca.w, 1e-6) * halfSize;
         float2 sb = cb.xy / max(cb.w, 1e-6) * halfSize;

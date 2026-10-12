@@ -68,6 +68,10 @@ struct SnapshotOptions: Sendable {
     /// Finished sketches to draw as lines, hidden or not.
     var sketches: [FeatureID] = []
     var section: SnapshotSection?
+    /// Draw the ground grid too (pictures for an assistant don't; the tests of how the grid meets the bodies do).
+    var grid = false
+    /// A perspective camera instead of the orthographic one (for the tests too).
+    var perspective = false
 }
 
 @MainActor
@@ -154,7 +158,7 @@ enum ViewportSnapshot {
         renderer.palette = .make(dark: false, increaseContrast: false)
         let background = renderer.palette.background
         view.clearColor = MTLClearColor(red: Double(background.x), green: Double(background.y), blue: Double(background.z), alpha: 1)
-        renderer.showGrid = false
+        renderer.showGrid = options.grid
         renderer.showAxes = axes
         renderer.visualStyle = .standard
         renderer.printPreview = false
@@ -170,7 +174,7 @@ enum ViewportSnapshot {
             }
         }
         var camera = Camera()
-        camera.orthographic = true
+        camera.orthographic = !options.perspective
         let angles = direction.angles
         camera.yaw = azimuth.map { Float($0 * .pi / 180) } ?? angles.yaw
         camera.pitch = elevation.map { min(max(Float($0 * .pi / 180), -1.55), 1.55) } ?? angles.pitch

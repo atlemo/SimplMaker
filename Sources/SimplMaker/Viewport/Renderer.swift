@@ -1036,7 +1036,7 @@ final class Renderer {
             line(b.major, b.majorCount, p.grid, 1)
             line(b.axisU, 1, p.sketchAxisU, 1.2)
             line(b.axisV, 1, p.sketchAxisV, 1.2)
-        } else if showGrid, let g = worldGrid {
+        } else if showGrid, !camera.isBelowGround, let g = worldGrid {  // seen from under the floor the grid would only be in the way
             segments(g.minor, g.minorCount, DrawParams(color: p.gridMinor, hoverColor: p.gridMinor, selectColor: p.gridMinor,
                                                        thickness: 1 * scale, depthBias: 0, pickable: 0))
             segments(g.major, g.majorCount, DrawParams(color: p.grid, hoverColor: p.grid, selectColor: p.grid,
