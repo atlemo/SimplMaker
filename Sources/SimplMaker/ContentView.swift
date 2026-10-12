@@ -37,7 +37,9 @@ struct DocumentWindow: View {
     static let titledSketchWidth: CGFloat = 1100
     /// How wide the tool groups last laid out, by mode and title setting. Below this width plus the
     /// room the other toolbar items take, the groups give way to one menu holding every tool.
-    @State private var toolRowWidths: [String: CGFloat] = [:]
+    /// Kept between launches: a layout that has not been measured has to be shown to be measured, and shown too wide
+    /// at a window's first, narrow size, macOS folds it away and keeps it folded as the window grows.
+    @State private var toolRowWidths: [String: CGFloat] = (UserDefaults.standard.dictionary(forKey: "toolRowWidths") as? [String: Double] ?? [:]).mapValues { CGFloat($0) }
     /// Where the title and subtitle in the toolbar end, measured from the window's left edge.
     @State private var titleEdge: CGFloat?
     static let toolbarGap: CGFloat = 16
@@ -45,15 +47,36 @@ struct DocumentWindow: View {
     private func toolRowKey(_ layout: ToolbarLayout) -> String {
         "\(layout.rawValue)-\(model.sketchSession != nil)-\(model.sketchSession == nil || windowWidth >= Self.titledSketchWidth)"
     }
-    /// The widest layout that fits. The tools are centred, so each side needs as much room as the
-    /// title takes on the left. A layout not shown yet has no width to go by, so it is tried.
+    /// How far the tools item's right edge sits from the window's right edge (the inspector button's room),
+    /// and how much room macOS wants between the title's end and the tools' left edge.
+    static let trailingInset: CGFloat = 57
+    static let titleClearance: CGFloat = 96
+    /// Windows too narrow for a layout that never got measured, by layout: macOS folds an item that is too
+    /// wide away before it lays out, so its width is never reported. Such a layout is skipped until the window grows.
+    @State private var gaveUpAt: [String: CGFloat] = [:]
+    /// The window has had its first moments to settle on its size. A layout is only shown to be measured after that,
+    /// since a window opens small and grows to its saved size, and a wide row shown too early is folded for good.
+    @State private var windowSettled = false
+    /// The widest layout that fits between the title and the inspector button. A layout not shown
+    /// yet has no width to go by, so it is tried.
     private var toolbarLayout: ToolbarLayout {
-        guard let titleEdge else { return .full }
-        let room = windowWidth - 2 * (titleEdge + Self.toolbarGap)
+        guard let titleEdge else { return .single }  // the title is not laid out yet; the smallest layout is safe to show
+        let room = windowWidth - Self.trailingInset - titleEdge - Self.titleClearance
         for layout in [ToolbarLayout.full, .groups] {
-            if let width = toolRowWidths[toolRowKey(layout)] { if room >= width { return layout } } else { return layout }
+            let key = toolRowKey(layout)
+            if let width = toolRowWidths[key] {
+                if room >= width { return layout }
+            } else if windowSettled, windowWidth > gaveUpAt[key] ?? 0 {
+                return layout
+            }
         }
         return .single
+    }
+    /// The empty space after the tools in their item. The item sits at the toolbar's right end and
+    /// this space fills it out to the window's width, so the tools stay next to the title at any window width.
+    private var toolsTrailingSpace: CGFloat {
+        guard let width = toolRowWidths[toolRowKey(toolbarLayout)] else { return 0 }
+        return max(0, windowWidth - Self.trailingInset - (titleEdge ?? 0) - Self.titleClearance - width)
     }
 
     @Environment(\.controlActiveState) private var activeState
@@ -74,16 +97,20 @@ struct DocumentWindow: View {
     }
 
     @ToolbarContentBuilder private var toolsItem: some ToolbarContent {
-            ToolbarItem(placement: .principal) {
-                Group {
-                    if let session = model.sketchSession {
-                        SketchToolbar(model: model, session: session, layout: toolbarLayout)
-                    } else {
-                        DesignToolbar(model: model, layout: toolbarLayout)
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 0) {
+                    Group {
+                        if let session = model.sketchSession {
+                            SketchToolbar(model: model, session: session, layout: toolbarLayout)
+                        } else {
+                            DesignToolbar(model: model, layout: toolbarLayout)
+                        }
                     }
-                }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
-                    if toolbarLayout != .single { toolRowWidths[toolRowKey(toolbarLayout)] = width }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                        toolRowWidths[toolRowKey(toolbarLayout)] = width
+                        UserDefaults.standard.set(toolRowWidths.mapValues { Double($0) }, forKey: "toolRowWidths")
+                    }
+                    Color.clear.frame(width: toolsTrailingSpace, height: 1)
                 }
                 .environment(\.toolTitles, model.sketchSession == nil || windowWidth >= Self.titledSketchWidth)
                 .accessibilityElement(children: .contain)
@@ -228,9 +255,19 @@ struct DocumentWindow: View {
         .background(ToolbarTitleReader(edge: $titleEdge))
         .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+        .task {
+            try? await Task.sleep(for: .milliseconds(600))
+            windowSettled = true
+        }
+        .task(id: toolRowKey(toolbarLayout)) {
+            let key = toolRowKey(toolbarLayout), width = windowWidth
+            guard toolbarLayout != .single, toolRowWidths[key] == nil else { return }
+            try? await Task.sleep(for: .milliseconds(600))
+            if toolRowWidths[key] == nil { gaveUpAt[key] = width }
+        }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
         .toolbar {
-            // The tools sit in the middle of the toolbar, in Design and in Sketch mode. Each layout is its own
+            // The tools sit next to the title, in Design and in Sketch mode. Each layout is its own
             // item: once macOS has folded the tools away, it doesn't bring a narrower layout back in the same item.
             if toolbarLayout == .full {
                 toolsItem
@@ -331,7 +368,7 @@ struct ToolbarFade: View {
     }
 }
 
-/// Reads where the window's title and subtitle end in the toolbar, which the centred tools must
+/// Reads where the window's title and subtitle end in the toolbar, which the tools next to it must
 /// clear: a longer name leaves less room for them.
 struct ToolbarTitleReader: NSViewRepresentable {
     @Binding var edge: CGFloat?
@@ -1451,7 +1488,7 @@ struct ToolDivider: View {
     }
 }
 
-/// Sketch mode's tools, in the middle of the toolbar, in groups: Select · draw · change curves ·
+/// Sketch mode's tools, next to the title, in groups: Select · draw · change curves ·
 /// dimension and constrain · Finish. Each group shows the tools pinned to it; its name opens the rest.
 struct SketchToolbar: View {
     let model: DocumentModel
@@ -1598,7 +1635,7 @@ struct SketchToolbar: View {
     }
 }
 
-/// Design mode's tools, in the middle of the toolbar, in groups: Sketch · shapes from sketches ·
+/// Design mode's tools, next to the title, in groups: Sketch · shapes from sketches ·
 /// primitives · tools that change a body · planes and copies. Each group shows the tools pinned to
 /// it; its name opens the rest. A tool that is waiting for picks is highlighted.
 struct DesignToolbar: View {
