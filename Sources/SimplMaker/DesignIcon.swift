@@ -14,8 +14,9 @@ struct Icon: View {
     var renderedStroke: CGFloat?
     @Environment(\.accent) private var accent
     @Environment(\.toolsOnTint) private var onTint
+    @Environment(\.toolsInk) private var toolsInk
 
-    /// How much of the glyph's accent parts show on a tinted toolbar, where they are drawn in white.
+    /// How much of the glyph's accent parts show on a tinted toolbar, where they are drawn in the toolbar ink.
     static let onTintAccentOpacity = 0.4
 
     /// The thickness of tool icons in the toolbars and their menus, in points as rendered.
@@ -52,7 +53,7 @@ struct Icon: View {
             ForEach(elements.indices, id: \.self) { i in
                 let element = elements[i]
                 if element.filled {
-                    if let color = element.fillIsAccent ? (onTint ? .white : accent) : element.fillColor {
+                    if let color = element.fillIsAccent ? (onTint ? toolsInk : accent) : element.fillColor {
                         element.path.fill(color).opacity(element.opacity)
                     } else {
                         element.path.fill().opacity(element.opacity)
@@ -62,8 +63,8 @@ struct Icon: View {
                     let style = StrokeStyle(lineWidth: gridStrokeWidth * element.strokeWeight, lineCap: element.cap,
                                             lineJoin: element.join)
                     if element.strokeIsAccent && onTint {
-                        // The accent would vanish on the accent-coloured toolbar: draw it as faded white.
-                        element.path.stroke(Color.white, style: style)
+                        // The accent would vanish on the accent-coloured toolbar: draw it as faded ink.
+                        element.path.stroke(toolsInk, style: style)
                             .opacity(element.strokeOpacity * Self.onTintAccentOpacity)
                     } else if let color = element.strokeIsAccent ? accent : element.strokeColor {
                         element.path.stroke(color, style: style).opacity(element.strokeOpacity)

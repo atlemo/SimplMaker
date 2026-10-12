@@ -192,12 +192,13 @@ private extension View {
 struct ToolGroupMenu: View {
     let group: ToolGroupSpec
     @Environment(\.toolsOnTint) private var onTint
+    @Environment(\.toolsInk) private var toolsInk
 
     var body: some View {
         Menu(group.title) { ToolMenuRows(tools: group.tools) }
             .menuStyle(.borderlessButton)
             .menuIndicator(.visible)
-            .tint(onTint ? Color.white : Color.primary)  // not the accent colour
+            .tint(onTint ? toolsInk : Color.primary)  // not the accent colour
             .fixedSize()
             .toolPopovers(group.tools)
             .help("All \(group.title) tools")
@@ -209,12 +210,13 @@ struct ToolGroupMenu: View {
 struct SoloToolButton: View {
     let tool: GroupTool
     @Environment(\.toolsOnTint) private var onTint
+    @Environment(\.toolsInk) private var toolsInk
     @Environment(\.accent) private var accent
 
     var body: some View {
         Button(action: tool.action) {
             Text(tool.title).font(.system(size: 13))
-                .foregroundStyle(tool.active && !onTint ? accent : onTint ? Color.white : Color.primary)
+                .foregroundStyle(tool.active && !onTint ? accent : onTint ? toolsInk : Color.primary)
                 .padding(.horizontal, DS.Spacing.space3)
                 .frame(minHeight: 28)
                 .contentShape(Rectangle())
@@ -276,9 +278,10 @@ private struct GroupLabel: View {
     let highlighted: Bool
     let action: () -> Void
     @Environment(\.toolsOnTint) private var onTint
+    @Environment(\.toolsInk) private var toolsInk
     @State private var hovering = false
 
-    private var ink: Color { onTint ? .white : .primary }
+    private var ink: Color { onTint ? toolsInk : .primary }
 
     var body: some View {
         Button(action: action) {
@@ -298,7 +301,7 @@ private struct GroupLabel: View {
     }
 
     private var background: Color {
-        if highlighted { return onTint ? Color.white.opacity(0.24) : accent.opacity(0.16) }
+        if highlighted { return onTint ? toolsInk.opacity(0.24) : accent.opacity(0.16) }
         return hovering ? ink.opacity(onTint ? 0.14 : 0.07) : .clear
     }
 }
@@ -309,6 +312,7 @@ private struct PinnedTool: View {
     let tool: GroupTool
     @State private var modesOpen = false
     @Environment(\.toolsOnTint) private var onTint
+    @Environment(\.toolsInk) private var toolsInk
 
     var body: some View {
         if tool.modes.isEmpty {
@@ -322,7 +326,7 @@ private struct PinnedTool: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(onTint ? Color.white : Color.primary)
+                .foregroundStyle(onTint ? toolsInk : Color.primary)
                 .toolTip("Choose how to draw the \(tool.title.lowercased())")
                 .accessibilityLabel("\(tool.title) options")
                 .popover(isPresented: $modesOpen, arrowEdge: .bottom) {

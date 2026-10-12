@@ -73,16 +73,17 @@ enum Preferences {
             case .none: return nil
             }
         }
-        /// The toolbar's colour while sketching (it carries white controls): a deeper shade of the paper,
-        /// or the system accent colour, which is itself blue, for blue and None.
-        var toolbarTint: Color {
+        /// The toolbar's colour while sketching: a deeper shade of the paper, or the system accent colour for
+        /// blue and None. The controls on it take black or white by contrast (`ContrastColor`), since the
+        /// accent colour can be anything from graphite to yellow.
+        var toolbarNSColor: NSColor {
             switch self {
-            case .green: return Color(red: 0.16, green: 0.46, blue: 0.33)
-            case .cream: return Color(red: 0.55, green: 0.47, blue: 0.27)
-            case .blue: return Color(nsColor: .controlAccentColor)  // tones of the system's colour, as it is in sketch mode
-            case .none: return Color(nsColor: .controlAccentColor)
+            case .green: return NSColor(srgbRed: 0.16, green: 0.46, blue: 0.33, alpha: 1)
+            case .cream: return NSColor(srgbRed: 0.55, green: 0.47, blue: 0.27, alpha: 1)
+            case .blue, .none: return .controlAccentColor  // tones of the system's colour, as it is in sketch mode
             }
         }
+        var toolbarTint: Color { Color(nsColor: toolbarNSColor) }
     }
     static var sketchPaperSetting: SketchPaper {
         SketchPaper(rawValue: UserDefaults.standard.string(forKey: sketchPaper) ?? "") ?? .blue

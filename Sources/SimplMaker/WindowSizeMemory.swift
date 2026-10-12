@@ -49,13 +49,12 @@ struct WindowSizeMemory: NSViewRepresentable {
     }
 }
 
-/// Put in a document window's content: while `dark`, the titlebar (the document title and the
-/// toolbar buttons) draws in its dark appearance, so it reads white on Sketch mode's accent-coloured
-/// toolbar. The content below keeps the system appearance. `tabTint` colours the window's tab bar
-/// to match the toolbar; nil leaves it as the system draws it.
+/// Put in a document window's content: while the toolbar is filled with `tint` (Sketch mode's colour),
+/// the titlebar (the document title and the toolbar buttons) draws in whichever appearance contrasts
+/// with it, white symbols on a deep tint and black on a pale one. The content below keeps the system
+/// appearance. The window's tab bar takes the same tint; nil leaves both as the system draws them.
 struct TitlebarAppearance: NSViewRepresentable {
-    let dark: Bool
-    var tabTint: NSColor?
+    var tint: NSColor?
 
     /// Re-applies the tab tint when the window's tabs come and go or it becomes the front tab, since
     /// the system builds the tab bar's views anew then.
@@ -94,21 +93,23 @@ struct TitlebarAppearance: NSViewRepresentable {
 
     func updateNSView(_ view: NSView, context: Context) {
         let coordinator = context.coordinator
-        let tabTint = tabTint
+        let tint = tint
         // The window isn't known until the view is in it, so apply on the next turn of the run loop.
         DispatchQueue.main.async { [weak view] in
             guard let window = view?.window else { return }
-            coordinator.tint = tabTint
+            // The tint is judged as the content draws it (the system appearance), since that is what fills the toolbar.
+            let system = NSApp.effectiveAppearance
+            coordinator.tint = tint
             coordinator.attach(to: window)
             coordinator.reapply()
-            window.appearance = dark ? NSAppearance(named: .darkAqua) : nil
-            window.contentView?.appearance = dark ? NSApp.effectiveAppearance : nil
+            window.appearance = tint.flatMap { ContrastColor.appearance(for: $0, in: system) }
+            window.contentView?.appearance = tint == nil ? nil : system
             // The title and subtitle labels keep their own colour whatever the appearance, so set it.
             guard let titlebar = window.contentView?.superview else { return }
-            Self.recolorTitles(in: titlebar, dark: dark)
+            Self.recolorTitles(in: titlebar, on: tint, appearance: system)
             // The subtitle ("Edited") can appear a moment after the first edit, so go over them again.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak titlebar] in
-                if let titlebar { Self.recolorTitles(in: titlebar, dark: dark) }
+                if let titlebar { Self.recolorTitles(in: titlebar, on: tint, appearance: system) }
             }
         }
     }
@@ -149,19 +150,10 @@ struct TitlebarAppearance: NSViewRepresentable {
         let buttons = allSubviews(of: bar).filter { $0.className == "NSTabButton" }.sorted { $0.frame.minX < $1.frame.minX }
         let tabs = window.tabGroup?.windows ?? []
         let selected = window.tabGroup?.selectedWindow.flatMap { tabs.firstIndex(of: $0) }
-        let appearance = tint.map { prefersWhiteText(on: $0) ? NSAppearance(named: .darkAqua) : NSAppearance(named: .aqua) }
+        let appearance = tint.flatMap { ContrastColor.appearance(for: $0) }
         for (i, button) in buttons.enumerated() {
             button.appearance = i == selected ? appearance ?? nil : nil
         }
-    }
-
-    /// True when white text contrasts more than black on `color` (WCAG relative luminance: the two
-    /// have equal contrast at a luminance of about 0.179).
-    static func prefersWhiteText(on color: NSColor) -> Bool {
-        guard let rgb = color.usingColorSpace(.sRGB) else { return true }
-        func linear(_ c: CGFloat) -> CGFloat { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
-        let luminance = 0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent) + 0.0722 * linear(rgb.blueComponent)
-        return luminance < 0.179
     }
 
     private static func isInTabBar(_ view: NSView) -> Bool {
@@ -173,16 +165,21 @@ struct TitlebarAppearance: NSViewRepresentable {
         return false
     }
 
-    private static func recolorTitles(in view: NSView, dark: Bool) {
+    /// Colours the title and subtitle for `tint` behind them: whichever of black and white contrasts, the
+    /// subtitle a little softer where that still passes. With no tint they go back to the system's colours.
+    private static func recolorTitles(in view: NSView, on tint: NSColor?, appearance: NSAppearance) {
         if view.className == "NSToolbarTitleView" {
             for case let label as NSTextField in allSubviews(of: view) {
                 let primary = label.className == "_NSToolbarTitleField"
-                label.textColor = dark ? NSColor.white.withAlphaComponent(primary ? 1 : 0.75)
-                                       : (primary ? .labelColor : .secondaryLabelColor)
+                if let tint {
+                    label.textColor = ContrastColor.foreground(on: tint, alpha: primary ? 1 : 0.75, in: appearance)
+                } else {
+                    label.textColor = primary ? .labelColor : .secondaryLabelColor
+                }
             }
             return
         }
-        for sub in view.subviews { recolorTitles(in: sub, dark: dark) }
+        for sub in view.subviews { recolorTitles(in: sub, on: tint, appearance: appearance) }
     }
 
     private static func allSubviews(of view: NSView) -> [NSView] {

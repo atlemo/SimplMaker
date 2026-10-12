@@ -226,7 +226,7 @@ struct DocumentWindow: View {
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
         .background(ToolbarTitleReader(edge: $titleEdge))
-        .background(TitlebarAppearance(dark: sketchTint, tabTint: sketchTint ? NSColor(sketchPaper.toolbarTint) : nil))
+        .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
         .toolbar {
@@ -1359,13 +1359,14 @@ struct ToolButton: View {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.toolTitles) private var showsTitle
     @Environment(\.toolsOnTint) private var onTint
+    @Environment(\.toolsInk) private var toolsInk
     @State private var hovering = false
 
-    private var ink: Color { onTint ? .white : .primary }
+    private var ink: Color { onTint ? toolsInk : .primary }
     /// The hover and active fill and the focus ring, as round as the popovers and toolbar these sit in.
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: DS.Radius.xl3, style: .continuous) }
     private var background: Color {
-        if active { return onTint ? Color.white.opacity(0.24) : accent.opacity(0.16) }
+        if active { return onTint ? toolsInk.opacity(0.24) : accent.opacity(0.16) }
         return hovering && isEnabled ? ink.opacity(onTint ? 0.14 : 0.07) : .clear
     }
 
@@ -1420,8 +1421,10 @@ extension EnvironmentValues {
     /// Whether toolbar tools show their title under the icon (tools in a group don't: the group's
     /// name is under them), and Finish Sketch its title (not when the window is narrow).
     @Entry var toolTitles = true
-    /// Whether the tools sit on a tinted (accent-coloured) toolbar, as in Sketch mode, and so draw in white.
+    /// Whether the tools sit on a tinted (accent-coloured) toolbar, as in Sketch mode, and so draw in `toolsInk`.
     @Entry var toolsOnTint = false
+    /// The colour tools draw in on a tinted toolbar: white or black, whichever `ContrastColor` finds readable on the tint.
+    @Entry var toolsInk = Color.white
 }
 
 extension View {
@@ -1439,9 +1442,10 @@ extension View {
 struct ToolDivider: View {
     @Environment(\.toolTitles) private var showsTitles
     @Environment(\.toolsOnTint) private var onTint
+    @Environment(\.toolsInk) private var toolsInk
     var body: some View {
         Group {
-            if onTint { Rectangle().fill(Color.white.opacity(0.35)).frame(width: 1) } else { Divider() }
+            if onTint { Rectangle().fill(toolsInk.opacity(0.35)).frame(width: 1) } else { Divider() }
         }
         .frame(height: 30).padding(.horizontal, showsTitles ? DS.Spacing.space3 : DS.Spacing.space2)
     }
@@ -1458,6 +1462,7 @@ struct SketchToolbar: View {
     @State private var constrainOpen = false
     @Environment(\.toolTitles) private var showsTitles
     @Environment(\.controlActiveState) private var activeState
+    @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
 
     private var groups: [ToolGroupSpec] {
         [ToolGroupSpec(title: "Draw", id: "sketch.draw", defaults: ["Line", "Rectangle", "Circle", "Polygon", "Spline", "Text"],
@@ -1514,6 +1519,7 @@ struct SketchToolbar: View {
         }
         // Sketch mode tints the tools' glass while the window is active.
         .environment(\.toolsOnTint, activeState != .inactive)
+        .environment(\.toolsInk, ContrastColor.ink(on: sketchPaper.toolbarNSColor))
         .toolsPanel()
     }
 
