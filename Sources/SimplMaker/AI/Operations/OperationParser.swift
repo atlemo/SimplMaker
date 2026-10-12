@@ -48,7 +48,7 @@ extension AIArguments {
 
 enum AIOperationParser {
     /// The tools that make changes, which a batch can run.
-    static let changeTools = ["create_box", "create_sketch", "edit_sketch", "create_extrude", "create_fillet", "create_chamfer", "create_hole", "create_shell", "create_mirror", "create_pattern", "create_combine", "create_revolve", "create_sweep", "create_loft", "create_thread", "create_draft", "create_plane", "create_move", "create_scale", "import_file", "modify_feature", "set_parameter", "delete_feature"]
+    static let changeTools = ["create_box", "create_sketch", "edit_sketch", "create_extrude", "create_fillet", "create_chamfer", "create_hole", "create_shell", "create_mirror", "create_pattern", "create_combine", "create_revolve", "create_sweep", "create_loft", "create_thread", "create_draft", "create_plane", "create_move", "create_scale", "create_rib", "create_pipe", "create_split", "create_lay_on_floor", "create_project", "create_image", "set_body", "import_file", "modify_feature", "set_parameter", "delete_feature"]
 
     /// `names` are the part's feature names by id, for naming steps in Undo.
     static func parse(tool: String, arguments: JSONValue, names: [FeatureID: String] = [:]) throws -> any AIOperation {
@@ -255,6 +255,65 @@ enum AIOperationParser {
             return CreateScaleOperation(bodies: try ids(a, "bodies"), sketches: try ids(a, "sketches"),
                                         factor: try a.requiredQuantity("factor", kind: .none, hint: "A number such as 2 (twice as big) or 0.5."),
                                         name: try a.string("name"), id: try a.string("id"))
+
+        case "create_rib", "create_pipe":
+            let rib = tool == "create_rib"
+            try a.rejectUnknown(["document_id", "path_sketch", "path", "target", "name", "id", "expected_revision"]
+                                + (rib ? ["thickness"] : ["diameter", "wall", "operation"]), in: tool)
+            let pathSketch = try a.string("path_sketch")
+            let path = try ids(a, "path").map { $0.contains(":") || pathSketch == nil ? $0 : AIEntityRef.curve(sketch: pathSketch!, id: $0).string }
+            if rib {
+                return CreateRibOperation(path: path, thickness: try a.quantity("thickness", kind: .length) ?? "2 mm", target: try a.string("target"),
+                                          name: try a.string("name"), id: try a.string("id"))
+            }
+            return CreatePipeOperation(path: path, diameter: try a.requiredQuantity("diameter", kind: .length, hint: "The outside diameter in mm."),
+                                       wall: try a.quantity("wall", kind: .length),
+                                       operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody), target: try a.string("target"),
+                                       name: try a.string("name"), id: try a.string("id"))
+
+        case "create_split":
+            try a.rejectUnknown(["document_id", "bodies", "plane", "face", "sketch_id", "name", "id", "expected_revision"], in: tool)
+            let plane = try a.string("plane"), face = try a.string("face"), sketch = try a.string("sketch_id")
+            let tools: [CreateSplitOperation.Tool] = [plane.map { .plane($0) }, face.map { .face($0) }, sketch.map { .sketch($0) }].compactMap { $0 }
+            guard tools.count == 1, let splitTool = tools.first else {
+                throw AIError(.invalidArguments, "Send exactly one of plane, face or sketch_id: what cuts the bodies.",
+                              reason: "plane: \"xy\", \"xz\", \"yz\" or \"plane:<id>\" (create_plane makes one at any height); face: a face id (its plane if flat); sketch_id: cut along the plane that sketch lies on.")
+            }
+            return CreateSplitOperation(bodies: try ids(a, "bodies"), tool: splitTool, name: try a.string("name"), id: try a.string("id"))
+
+        case "create_lay_on_floor":
+            try a.rejectUnknown(["document_id", "face", "name", "id", "expected_revision"], in: tool)
+            return CreateLayOnFloorOperation(face: try a.requiredString("face", hint: "A flat face id from get_body: the one that should sit on the floor."),
+                                             name: try a.string("name"), id: try a.string("id"))
+
+        case "create_project":
+            try a.rejectUnknown(["document_id", "sketch_id", "profiles", "target", "faces", "mode", "height", "flipped", "name", "id", "expected_revision"], in: tool)
+            let modeText = try a.string("mode") ?? "emboss"
+            guard let mode = ProjectMode.allCases.first(where: { CreateProjectOperation.modeName($0) == modeText }) else {
+                throw AIError(.invalidArguments, "mode \"\(modeText)\" is not one of emboss, deboss.")
+            }
+            return CreateProjectOperation(sketchID: try a.requiredString("sketch_id", hint: "The sketch with the text or shapes to project."),
+                                          profiles: try profileSelectors(a, arguments),
+                                          target: try a.requiredString("target", hint: "The body to project onto, from get_document."), faces: try ids(a, "faces"),
+                                          mode: mode, height: try a.quantity("height", kind: .length) ?? "1 mm", flipped: try a.bool("flipped") ?? false,
+                                          name: try a.string("name"), id: try a.string("id"))
+
+        case "set_body":
+            try a.rejectUnknown(["document_id", "body", "name", "color", "visible", "expected_revision"], in: tool)
+            return SetBodyOperation(body: try a.requiredString("body", hint: "A body id from get_document."), newName: try a.string("name"),
+                                    color: try a.string("color"), visible: try a.bool("visible"))
+
+        case "create_image":
+            try a.rejectUnknown(["document_id", "path", "plane", "u", "v", "width", "angle", "opacity", "name", "id", "expected_revision"], in: tool)
+            var opacity = 0.5
+            if let value = a.json["opacity"], value != .null {
+                guard let number = value.number else { throw AIError(.invalidArguments, "opacity must be a number from 0 to 1.") }
+                opacity = number
+            }
+            return CreateImageOperation(path: try a.requiredString("path", hint: "The absolute path of a PNG, JPEG, HEIC or TIFF picture."), plane: try a.string("plane") ?? "xy",
+                                        u: try a.quantity("u", kind: .length) ?? "0 mm", v: try a.quantity("v", kind: .length) ?? "0 mm",
+                                        width: try a.quantity("width", kind: .length) ?? "100 mm", angle: try a.quantity("angle", kind: .angle) ?? "0 deg",
+                                        opacity: opacity, name: try a.string("name"), id: try a.string("id"))
 
         case "import_file":
             try a.rejectUnknown(["document_id", "path", "name", "id", "expected_revision"], in: tool)

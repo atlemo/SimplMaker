@@ -115,7 +115,7 @@ extension CADService {
         try checkLicense()
         let (docID, model) = try resolve(documentID)
         await model.rebuilt()
-        guard let built = model.result?.bodies.first(where: { $0.id == bodyID }) else {
+        guard let built = model.bodies.first(where: { $0.id == bodyID }) else {
             let known = (model.result?.bodies ?? []).map(\.id).joined(separator: ", ")
             throw AIError(.featureNotFound, "There is no body with the id \(bodyID).",
                           reason: known.isEmpty ? "The part has no bodies yet." : "The bodies are: \(known). get_document lists them.")

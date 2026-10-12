@@ -40,7 +40,7 @@ extension CADService {
         }
         let (docID, model) = try resolve(documentID)
         await model.rebuilt()
-        let all = model.result?.bodies ?? []
+        let all = model.bodies
         guard !all.isEmpty else {
             throw AIError(.invalidArguments, "The part has no bodies to export.", reason: "Make a body first, for example by extruding a sketch.")
         }

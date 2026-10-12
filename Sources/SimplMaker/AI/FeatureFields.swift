@@ -182,13 +182,38 @@ enum FeatureFields {
             return [FieldSpec(name: "factor", unit: .none, positive: true,
                               read: { if case .scale(let x) = $0 { return x.factor } else { return nil } },
                               write: { kind, text in if case .scale(var x) = kind { x.factor = text; kind = .scale(x) } })]
+        case .rib:
+            return [FieldSpec(name: "thickness", unit: .length, positive: true,
+                              read: { if case .rib(let x) = $0 { return x.thickness } else { return nil } },
+                              write: { kind, text in if case .rib(var x) = kind { x.thickness = text; kind = .rib(x) } })]
+        case .pipe(let p):
+            var out = [FieldSpec(name: "diameter", unit: .length, positive: true,
+                                 read: { if case .pipe(let x) = $0 { return x.diameter } else { return nil } },
+                                 write: { kind, text in if case .pipe(var x) = kind { x.diameter = text; kind = .pipe(x) } })]
+            if p.wall != nil {
+                out.append(FieldSpec(name: "wall", unit: .length, positive: true,
+                                     read: { if case .pipe(let x) = $0 { return x.wall } else { return nil } },
+                                     write: { kind, text in if case .pipe(var x) = kind { x.wall = text; kind = .pipe(x) } }))
+            }
+            return out
+        case .project:
+            return [FieldSpec(name: "height", unit: .length, positive: true,
+                              read: { if case .project(let x) = $0 { return x.height } else { return nil } },
+                              write: { kind, text in if case .project(var x) = kind { x.height = text; kind = .project(x) } })]
+        case .image:
+            func image(_ name: String, _ unit: UnitKind, _ positive: Bool, _ path: WritableKeyPath<ImageFeature, String>) -> FieldSpec {
+                FieldSpec(name: name, unit: unit, positive: positive,
+                          read: { if case .image(let x) = $0 { return x[keyPath: path] } else { return nil } },
+                          write: { kind, text in if case .image(var x) = kind { x[keyPath: path] = text; kind = .image(x) } })
+            }
+            return [image("u", .length, false, \.u), image("v", .length, false, \.v), image("width", .length, true, \.width), image("angle", .angle, false, \.angle)]
         default:
             return []
         }
     }
 
     /// For the message when a feature can't be changed.
-    static let supportedTypes = "Box, Cylinder, Sphere, Torus and Coil (their sizes), Sketch (its dimensions and text heights), Extrude (distance, taper), Fillet and Chamfer (size, second), Hole (diameter, depth, position…), Shell (thickness), Revolve (angle), Pattern (count, spacing), Thread (length, tolerance), Draft (angle), Plane (offset, angle), Move (distances, turns) and Scale (factor)"
+    static let supportedTypes = "Box, Cylinder, Sphere, Torus and Coil (their sizes), Sketch (its dimensions and text heights), Extrude (distance, taper), Fillet and Chamfer (size, second), Hole (diameter, depth, position…), Shell (thickness), Revolve (angle), Pattern (count, spacing), Thread (length, tolerance), Draft (angle), Plane (offset, angle), Move (distances, turns), Scale (factor), Rib (thickness), Pipe (diameter, wall), Project (height) and Canvas image (u, v, width, angle)"
 
     private static func size(_ name: String, _ path: WritableKeyPath<PrimitiveFeature, String>, unit: UnitKind = .length) -> FieldSpec {
         primitive(name, unit, true, path)

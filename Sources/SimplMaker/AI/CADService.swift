@@ -144,7 +144,7 @@ final class CADService {
     }
 
     func bodies(of model: DocumentModel) -> [BodyInfo] {
-        (model.result?.bodies ?? []).map { b in
+        model.bodies.map { b in
             // The tight box (what the Measure tool shows): the quick one the viewport uses is padded by a few hundredths of a
             // millimetre round curved faces, which would make a 35 mm part read as 35.08.
             let bounds = (try? b.body.measure(.body))?.bounds ?? b.body.bounds

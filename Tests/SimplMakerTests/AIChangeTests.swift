@@ -163,9 +163,9 @@ import Testing
 
     @Test func aFeatureThatCannotBeChangedYetSaysWhatCan() async throws {
         var doc = CADDocument.demo()
-        doc.features.append(Feature(id: "hollow", name: "Hollow", .rib(RibFeature(path: CurveRef(sketch: "base", curves: ["L0"])))))
+        doc.features.append(Feature(id: "hollow", name: "Hollow", .split(SplitFeature(bodies: ["base"], tool: .plane(.xy)))))
         let t = await open(doc)
-        let e = await refusal { _ = try await t.service.modifyFeature(documentID: t.id, featureID: "hollow", settings: ["thickness": 5], unlink: false) }
+        let e = await refusal { _ = try await t.service.modifyFeature(documentID: t.id, featureID: "hollow", settings: ["tool": 5], unlink: false) }
         #expect(e?.code == .unsupportedFeature && e?.reason?.contains("Box") == true && e?.reason?.contains("set_parameter") == true)
     }
 
