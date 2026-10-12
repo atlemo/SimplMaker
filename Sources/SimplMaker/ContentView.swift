@@ -1,4 +1,4 @@
-// Main window: timeline + parameters on the left, viewport in the middle, inspector on the right.
+// Main window: browser + parameters on the left, viewport in the middle, inspector on the right, timeline along the bottom.
 // Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import CADCore
