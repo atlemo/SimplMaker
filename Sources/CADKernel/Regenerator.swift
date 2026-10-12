@@ -832,10 +832,32 @@ public enum Regenerator {
         return i
     }
 
+    /// Grows the rib on its target body. Without a target it goes on the body the rib adds the most to: the newest
+    /// body is not necessarily the one the line was drawn against (a lid made after the box it closes), and a body
+    /// the line cannot reach is simply not a candidate.
     static func rib(_ f: RibFeature, _ feature: Feature, _ r: inout RegenResult) throws {
-        let i = try targetIndex(f.target, r)
+        let candidates = f.target != nil ? [try targetIndex(f.target, r)] : Array(r.bodies.indices.reversed())
+        guard !candidates.isEmpty else { throw KernelError(message: "there is no body to add it to") }
         let thickness = try r.parameters.value(of: f.thickness, kind: .length)
-        r.bodies[i].body = try r.bodies[i].body.rib(along: try path(f.path, r).path, thickness: thickness, featureID: feature.id)
+        let path = try path(f.path, r).path
+        var best: (index: Int, body: KBody, gain: Double)?
+        var firstError: Error?
+        for i in candidates {
+            do {
+                let grown = try r.bodies[i].body.rib(along: path, thickness: thickness, featureID: feature.id)
+                let gain = grown.volume - r.bodies[i].body.volume
+                if best == nil || gain > best!.gain * (1 + 1e-9) { best = (i, grown, gain) }
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        guard let best else {
+            if candidates.count > 1 {
+                throw KernelError(message: "the line closes off no body: extended past both ends, it has to run into the same body at each end (draw it across a corner, on a plane through the body)")
+            }
+            throw firstError ?? KernelError(message: "there is no body to add it to")
+        }
+        r.bodies[best.index].body = best.body
     }
 
     /// Where a hole's top centre is: (u, v) in its face's frame, drilling against the face normal.

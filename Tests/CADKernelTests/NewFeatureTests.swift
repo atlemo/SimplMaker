@@ -259,6 +259,44 @@ import Testing
         #expect(box.max.z < 60 && box.max.x < 41 && box.min.x > -41, "the rib stays within the part: \(box)")
     }
 
+    /// With no target the rib goes on the body it can reach, not just the newest body: a lid made after the box
+    /// must not take the rib meant for the box.
+    @Test func aRibWithoutATargetGoesOnTheBodyItReaches() throws {
+        let plate = Self.box("plate", "40", "40", "5")
+        let wall = Self.box("wall", v: "17.5", "40", "5", "40", .join)
+        let lid = Self.box("lid", u: "200", "30", "30", "10")  // newer, and nowhere near the rib's plane
+        let rib = Self.sketch("ribsk", on: .yz) { s in
+            let a = s.addPoint(15, 25), b = s.addPoint(-10, 5)
+            s.constrain(.fix(a, x: 15, y: 25)); s.constrain(.fix(b, x: -10, y: 5))
+            s.addLine(a, b, id: "R")
+        }
+        let before = try Self.regen([plate, wall, lid])
+        let r = try Self.regen([plate, wall, lid, rib,
+                                Feature(id: "rib", name: "rib", .rib(RibFeature(path: CurveRef(sketch: "ribsk", curves: ["R"]),
+                                                                                thickness: "3 mm")))])
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let grown = try #require(r.body("plate")).volume - (try #require(before.body("plate")).volume)
+        #expect(Self.close(grown, 0.5 * 25 * 20 * 3, 0.1), "\(grown)")
+        #expect(try #require(r.body("lid")).volume == (try #require(before.body("lid")).volume), "the lid is untouched")
+    }
+
+    @Test func aRibThatReachesNoBodyIsAnError() throws {
+        let plate = Self.box("plate", "40", "40", "5")
+        let wall = Self.box("wall", v: "17.5", "40", "5", "40", .join)
+        // Both ends in the air, 30 mm from the wall.
+        let rib = Self.sketch("ribsk", on: .yz) { s in
+            let a = s.addPoint(-12, 25), b = s.addPoint(-30, 5)
+            s.constrain(.fix(a, x: -12, y: 25)); s.constrain(.fix(b, x: -30, y: 5))
+            s.addLine(a, b, id: "R")
+        }
+        var doc = CADDocument()
+        doc.features = [plate, wall, rib,
+                        Feature(id: "rib", name: "rib", .rib(RibFeature(path: CurveRef(sketch: "ribsk", curves: ["R"]),
+                                                                        thickness: "3 mm")))]
+        let r = Regenerator.regenerate(doc)
+        #expect(r.errors["rib"] != nil, "the rib needs a body to close against")
+    }
+
     @Test func holesCutTheBody() throws {
         let block = Self.box("blk", "40", "40", "10")
         var doc = CADDocument()

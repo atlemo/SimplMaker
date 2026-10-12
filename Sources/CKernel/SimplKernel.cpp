@@ -25,6 +25,7 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAdaptor_CompCurve.hxx>
+#include <GCPnts_AbscissaPoint.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
@@ -1702,6 +1703,20 @@ SKHandle sk_rib(SKHandle body, SKHandle path, double thickness, const char *feat
   TopoDS_Shape fused = b->shape;
   if (!namedBoolean(fused, names, rib, feat + ".rib", SK_FUSE)) {
     setError("the rib could not be joined to the body");
+    return 0;
+  }
+  auto volumeOf = [](const TopoDS_Shape &sh) {
+    GProp_GProps g;
+    BRepGProp::VolumeProperties(sh, g);
+    return g.Mass();
+  };
+  const double bodyVolume = volumeOf(b->shape);
+  // A line that only clips a corner of the body (a rib sketched across another body's thin wall) closes off a sliver;
+  // that is not what was drawn, and the rib would be silently built there, so a sliver is an error.
+  const double pathLength = GCPnts_AbscissaPoint::Length(curve);
+  if (volumeOf(fused) - bodyVolume <= std::max(1e-6 * bodyVolume, 1e-3 * thickness * pathLength * pathLength)) {
+    setError("the rib adds almost nothing to this body (the line has to reach the body at both ends, "
+             "once it is extended past them)");
     return 0;
   }
   TopoDS_Shape result = unify(fused, names);
