@@ -232,6 +232,33 @@ import Testing
         #expect(Self.close(body.volume - before, 0.5 * 25 * 20 * 3, 0.1), "\(body.volume - before)")
     }
 
+    /// The same triangular rib whichever way the line was drawn: from the wall or from the plate, and with the wall on
+    /// either side. The kernel's rib builder answers sensibly for one direction of a path only, so a line drawn the other
+    /// way used to give a sheet several times the size of the part, or an error from deep inside OpenCascade.
+    @Test(arguments: [(false, false), (true, false), (false, true), (true, true)])
+    func aRibIsTheSameWhicheverWayItsLineWasDrawn(reversed: Bool, mirrored: Bool) throws {
+        let side = mirrored ? -1.0 : 1.0
+        let plate = Self.box("plate", "40", "40", "5")
+        let wall = Self.box("wall", v: "\(17.5 * side)", "40", "5", "40", .join)
+        let before = try #require(try Self.regen([plate, wall]).body("plate")).volume
+        let rib = Self.sketch("ribsk", on: .yz) { s in
+            var a = SIMD2(15.0 * side, 25.0), b = SIMD2(-10.0 * side, 5.0)
+            if reversed { swap(&a, &b) }
+            let pa = s.addPoint(a.x, a.y), pb = s.addPoint(b.x, b.y)
+            s.constrain(.fix(pa, x: a.x, y: a.y)); s.constrain(.fix(pb, x: b.x, y: b.y))
+            s.addLine(pa, pb, id: "R")
+        }
+        let r = try Self.regen([plate, wall, rib,
+                                Feature(id: "rib", name: "rib", .rib(RibFeature(path: CurveRef(sketch: "ribsk", curves: ["R"]),
+                                                                                thickness: "3 mm")))])
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let body = try #require(r.body("plate"))
+        #expect(body.isValid)
+        #expect(Self.close(body.volume - before, 0.5 * 25 * 20 * 3, 0.1), "\(body.volume - before)")
+        let box = try #require(body.bounds)
+        #expect(box.max.z < 60 && box.max.x < 41 && box.min.x > -41, "the rib stays within the part: \(box)")
+    }
+
     @Test func holesCutTheBody() throws {
         let block = Self.box("blk", "40", "40", "10")
         var doc = CADDocument()
