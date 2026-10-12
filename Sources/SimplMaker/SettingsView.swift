@@ -142,15 +142,6 @@ struct SettingsView: View {
     @AppStorage(Preferences.accentSource) private var accentSource = Preferences.AccentSource.simplMaker
     @AppStorage(Preferences.sendUsageStatistics) private var sendUsageStatistics = true
     @ObservedObject private var updater = Updater.shared
-    /// The height the window had when it was last closed or resized. Read once, when the window opens: feeding it back
-    /// while the window is open would fight the user's drag.
-    @State private var openingHeight = Self.savedHeight
-
-    private static var savedHeight: CGFloat {
-        let h = UserDefaults.standard.double(forKey: Preferences.settingsHeight)
-        return h >= 360 ? CGFloat(h) : 560
-    }
-
     private enum Pane: String, CaseIterable, Identifiable {
         case general = "General", license = "License", navigation = "Navigation", viewport = "Viewport", shortcuts = "Shortcuts", ai = "AI"
         var id: String { rawValue }
@@ -213,10 +204,8 @@ struct SettingsView: View {
             }
         }
         .frame(width: 520)
-        .frame(minHeight: 360, idealHeight: openingHeight, maxHeight: .infinity)  // the height can be dragged, the width is fixed
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-            if height >= 360 { UserDefaults.standard.set(Double(height), forKey: Preferences.settingsHeight) }
-        }
+        .frame(minHeight: 360, idealHeight: 560, maxHeight: .infinity)  // the height can be dragged, the width is fixed
+        .background(SettingsHeightMemory())
         .navigationTitle(pane.rawValue)
     }
 
@@ -384,5 +373,44 @@ struct SettingsView: View {
 private extension Binding where Value == NavBindings {
     subscript(modifier: NavModifier) -> Binding<NavAction> {
         Binding<NavAction>(get: { wrappedValue[modifier] }, set: { wrappedValue[modifier] = $0 })
+    }
+}
+
+
+/// Put in the Settings window's content: opens the window at the height the user last dragged it to, and keeps that up
+/// to date. Done on the window itself because a content-sized window opens at the content's natural height, whatever
+/// ideal height the view asks for.
+private struct SettingsHeightMemory: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Tracker() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    final class Tracker: NSView {
+        private var observed = false
+
+        override func viewDidMoveToWindow() {
+            guard let window, !observed else { return }
+            observed = true
+            let saved = UserDefaults.standard.double(forKey: Preferences.settingsHeight)
+            if saved >= 360 {
+                // After SwiftUI has sized the window to its content, or it would size it back.
+                DispatchQueue.main.async { [weak window] in
+                    guard let window else { return }
+                    let visible = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? CGFloat(saved)
+                    let height = min(CGFloat(saved), visible - (window.frame.height - window.contentLayoutRect.height))
+                    var frame = window.frame
+                    let delta = height - window.contentLayoutRect.height
+                    frame.origin.y -= delta  // keep the top edge where it is
+                    frame.size.height += delta
+                    window.setFrame(frame, display: true)
+                }
+            }
+            NotificationCenter.default.addObserver(self, selector: #selector(resized),
+                                                   name: NSWindow.didEndLiveResizeNotification, object: window)
+        }
+
+        @objc private func resized() {
+            guard let window else { return }
+            UserDefaults.standard.set(Double(window.contentLayoutRect.height), forKey: Preferences.settingsHeight)
+        }
     }
 }
