@@ -72,6 +72,86 @@ import Testing
         #expect(t.model.documentRevision == revision && t.model.document.features.count == undoCount)
     }
 
+    // MARK: options
+
+    /// A hollow box with a lid-sized plate beside it, and a sketch used by an extrude (so it is hidden).
+    private func assembly() async throws -> (rig: AIServiceTests.Rig, id: String, model: DocumentModel) {
+        let rig = AIServiceTests.Rig()
+        let (id, model) = await rig.open(CADDocument())
+        let steps: [any AIOperation] = [
+            try AIOperationParser.parse(tool: "create_box", arguments: ["width": 40, "length": 40, "height": 30, "id": "tub"]),
+            try AIOperationParser.parse(tool: "create_box", arguments: ["width": 20, "length": 20, "height": 4, "u": 60, "id": "plate"]),
+            CreateSketchOperation(plane: "xy", name: nil, id: "ring_sk"),
+            EditSketchOperation(sketchID: "ring_sk", add: [.circle(id: "c", center: SketchPoint2(x: "-60 mm", y: "0 mm"), diameter: "20", radius: nil)]),
+        ]
+        _ = try await rig.service.batch(documentID: id, expectedRevision: nil, label: "Assembly", steps)
+        let top = try #require(try await rig.service.getBody(documentID: id, bodyID: "tub").faces.first { $0.facing == "+z" })
+        _ = try await rig.service.change(documentID: id, expectedRevision: nil, try AIOperationParser.parse(tool: "create_shell", arguments: ["body": "tub", "open_faces": [.string(top.id)], "thickness": 2]))
+        return (rig, id, model)
+    }
+
+    @Test func onlyShowsTheBodiesNamedAndHiddenOnesToo() async throws {
+        let t = try await assembly()
+        let both = try await t.rig.service.viewportImage(documentID: t.id, direction: .top, azimuth: nil, elevation: nil, width: 640, height: 480, axes: false)
+        let one = try await t.rig.service.viewportImage(documentID: t.id, direction: .top, azimuth: nil, elevation: nil, width: 640, height: 480, axes: false,
+                                                        options: SnapshotOptions(only: ["plate"]))
+        dump(one.image.png, "only-plate")
+        #expect(both.bodies == ["tub", "plate"] && one.bodies == ["plate"])
+        #expect(both.image.png != one.image.png)
+        // A hidden body can be looked at on its own.
+        _ = try await t.rig.service.change(documentID: t.id, expectedRevision: nil, try AIOperationParser.parse(tool: "set_body", arguments: ["body": "tub", "visible": false]))
+        let hidden = try await t.rig.service.viewportImage(documentID: t.id, direction: .iso, azimuth: nil, elevation: nil, width: 640, height: 480, axes: false,
+                                                           options: SnapshotOptions(only: ["tub"]))
+        let hiddenShare = share(try decode(hidden.image.png))
+        #expect(hidden.bodies == ["tub"] && hiddenShare > 0.05)
+        let ghost = await refusalOf { _ = try await t.rig.service.viewportImage(documentID: t.id, direction: .iso, azimuth: nil, elevation: nil, width: 640, height: 480,
+                                                                              axes: true, options: SnapshotOptions(only: ["ghost"])) }
+        #expect(ghost?.code == .featureNotFound)
+    }
+
+    @Test func aSectionOpensTheBoxAndSaysWhereItCut() async throws {
+        let t = try await assembly()
+        let whole = try await t.rig.service.viewportImage(documentID: t.id, direction: .iso, azimuth: nil, elevation: nil, width: 800, height: 600, axes: false,
+                                                          options: SnapshotOptions(only: ["tub"]))
+        let cut = try await t.rig.service.viewportImage(documentID: t.id, direction: .iso, azimuth: nil, elevation: nil, width: 800, height: 600, axes: false,
+                                                        options: SnapshotOptions(only: ["tub"], section: SnapshotSection(axis: 1, offset: 0, cutPositive: nil)))
+        dump(whole.image.png, "section-before")
+        dump(cut.image.png, "section-iso")
+        let note = try #require(cut.image.section)
+        #expect(note.contains("y = 0") && note.contains("cut away"), "\(note)")
+        #expect(whole.image.section == nil && cut.image.png != whole.image.png)
+        // The renderer is left as it was: a picture afterwards is not cut.
+        let after = try await t.rig.service.viewportImage(documentID: t.id, direction: .iso, azimuth: nil, elevation: nil, width: 800, height: 600, axes: false,
+                                                          options: SnapshotOptions(only: ["tub"]))
+        #expect(after.image.png == whole.image.png)
+        // From the front, cutting away the near half (negative y) shows the inside; from the top, cutting z shows the floor of the hollow.
+        let front = try await t.rig.service.viewportImage(documentID: t.id, direction: .front, azimuth: nil, elevation: nil, width: 800, height: 600, axes: false,
+                                                          options: SnapshotOptions(only: ["tub"], section: SnapshotSection(axis: 1, offset: nil, cutPositive: nil)))
+        dump(front.image.png, "section-front")
+        #expect(front.image.section?.contains("lower y side is cut away") == true, "\(front.image.section ?? "nil")")
+        let wrongSide = try await t.rig.service.viewportImage(documentID: t.id, direction: .front, azimuth: nil, elevation: nil, width: 800, height: 600, axes: false,
+                                                              options: SnapshotOptions(only: ["tub"], section: SnapshotSection(axis: 1, offset: nil, cutPositive: true)))
+        dump(wrongSide.image.png, "section-front-far-half-cut")
+        #expect(wrongSide.image.png != front.image.png)
+    }
+
+    @Test func aSketchCanBeDrawnEvenWhenItIsHidden() async throws {
+        let t = try await assembly()
+        let plain = try await t.rig.service.viewportImage(documentID: t.id, direction: .top, azimuth: nil, elevation: nil, width: 640, height: 480, axes: false)
+        let withSketch = try await t.rig.service.viewportImage(documentID: t.id, direction: .top, azimuth: nil, elevation: nil, width: 640, height: 480, axes: false,
+                                                               options: SnapshotOptions(sketches: ["ring_sk"]))
+        dump(withSketch.image.png, "with-sketch")
+        #expect(withSketch.sketches == ["ring_sk"] && withSketch.image.png != plain.image.png)
+        let ghost = await refusalOf { _ = try await t.rig.service.viewportImage(documentID: t.id, direction: .top, azimuth: nil, elevation: nil, width: 640, height: 480,
+                                                                              axes: true, options: SnapshotOptions(sketches: ["nope"])) }
+        #expect(ghost?.code == .featureNotFound)
+    }
+
+    private func refusalOf(_ body: () async throws -> Void) async -> AIError? {
+        do { try await body() } catch { return error as? AIError }
+        return nil
+    }
+
     @Test func nothingToShowAndBadSizesAreRefused() async throws {
         let rig = AIServiceTests.Rig()
         let (id, _) = await rig.open(CADDocument())

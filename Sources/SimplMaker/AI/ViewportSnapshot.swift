@@ -3,6 +3,8 @@
 // user's own view (camera, selection, hover) is not touched.
 // Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
+import CADCore
+import CADKernel
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -44,6 +46,28 @@ struct SnapshotImage: Sendable {
     var png: Data
     var width: Int
     var height: Int
+    /// For a section: where it cut and which side was cut away, in words.
+    var section: String?
+}
+
+/// A cut through the bodies, as the Section Analysis tool makes: everything on one side of a plane square to an axis is cut away.
+struct SnapshotSection: Sendable {
+    /// 0 = X, 1 = Y, 2 = Z.
+    var axis: Int
+    /// Where along the axis (mm); nil = the middle of what is shown.
+    var offset: Double?
+    /// Cut away the side with the higher values along the axis; nil = the side that faces the camera, so the cut face is seen.
+    var cutPositive: Bool?
+    static let axisNames = ["x", "y", "z"]
+}
+
+/// What to show besides the whole part.
+struct SnapshotOptions: Sendable {
+    /// Only these bodies (hidden ones too); nil = every visible body.
+    var only: [String]?
+    /// Finished sketches to draw as lines, hidden or not.
+    var sketches: [FeatureID] = []
+    var section: SnapshotSection?
 }
 
 @MainActor
@@ -62,12 +86,49 @@ enum ViewportSnapshot {
         if waiters.isEmpty { running = false } else { waiters.removeFirst().resume() }  // handed straight on: running stays true
     }
 
+    /// The corners of the box round some meshes and the points of some sketches, in the part's coordinates.
+    private static func bounds(of meshes: [BodyMesh], sketches: [SketchResult]) -> (min: SIMD3<Float>, max: SIMD3<Float>)? {
+        var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude), hi = -lo
+        var any = false
+        for m in meshes {
+            let p = m.mesh.positions
+            for i in stride(from: 0, to: p.count, by: 3) {
+                let v = SIMD3(p[i], p[i + 1], p[i + 2])
+                lo = simd_min(lo, v); hi = simd_max(hi, v); any = true
+            }
+        }
+        for r in sketches {
+            for point in r.solved.points {
+                let w = r.frame.origin + point.x * r.frame.xAxis + point.y * r.frame.yAxis
+                let v = SIMD3(Float(w.x), Float(w.y), Float(w.z))
+                lo = simd_min(lo, v); hi = simd_max(hi, v); any = true
+            }
+        }
+        return any ? (lo, hi) : nil
+    }
+
     static func render(_ model: DocumentModel, direction: SnapshotDirection, azimuth: Double? = nil, elevation: Double? = nil,
-                       width: Int = 1024, height: Int = 768, axes: Bool = true) async throws -> SnapshotImage {
+                       width: Int = 1024, height: Int = 768, axes: Bool = true, options: SnapshotOptions = SnapshotOptions()) async throws -> SnapshotImage {
         await acquire()
         defer { release() }
-        guard let bounds = model.sceneBounds, !model.visibleMeshes.isEmpty else {
-            throw AIError(.invalidArguments, "There is nothing to show: the part has no visible bodies.", reason: "Make a body first, or ask the user to show a hidden one.")
+        let meshes: [BodyMesh]
+        if let only = options.only {
+            meshes = model.meshes.filter { only.contains($0.id) }
+            if let missing = only.first(where: { id in !model.meshes.contains { $0.id == id } }) {
+                throw AIError(.featureNotFound, "only: \"\(missing)\" is not a body of the part.", reason: "The bodies are: \(model.meshes.map(\.id).joined(separator: ", ")).")
+            }
+        } else {
+            meshes = model.visibleMeshes
+        }
+        var sketchResults: [SketchResult] = []
+        for id in options.sketches {
+            guard let r = model.result?.sketches[id] else {
+                throw AIError(.featureNotFound, "sketches: \"\(id)\" is not a sketch that built.", reason: "Take sketch ids from get_document; get_feature shows whether one failed.")
+            }
+            sketchResults.append(r)
+        }
+        guard let bounds = bounds(of: meshes, sketches: sketchResults) else {
+            throw AIError(.invalidArguments, "There is nothing to show: the part has no visible bodies.", reason: "Make a body first, or ask the user to show a hidden one (set_body), or name it in only.")
         }
         guard let renderer = shared ?? Renderer() else {
             throw AIError(.invalidArguments, "A picture could not be made: this Mac has no usable graphics device.")
@@ -86,8 +147,10 @@ enum ViewportSnapshot {
         let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = view
 
-        renderer.setScene(model.visibleMeshes)
-        renderer.setOverlay(SketchOverlay())
+        renderer.setScene(meshes)
+        var overlay = SketchOverlay()
+        for (slot, r) in sketchResults.enumerated() { SketchOverlayBuilder.finished(r, slot: slot + 1, parameters: model.parameterValues, into: &overlay) }
+        renderer.setOverlay(overlay)
         renderer.palette = .make(dark: false, increaseContrast: false)
         let background = renderer.palette.background
         view.clearColor = MTLClearColor(red: Double(background.x), green: Double(background.y), blue: Double(background.z), alpha: 1)
@@ -96,10 +159,11 @@ enum ViewportSnapshot {
         renderer.visualStyle = .standard
         renderer.printPreview = false
         renderer.sectionPlane = nil
+        var sectionNote: String?
         renderer.hovered = 0
         renderer.selected = []
         renderer.wholeBodies = false
-        renderer.bodyColors = model.visibleMeshes.map { m in
+        renderer.bodyColors = meshes.map { m in
             model.displayColor(of: m.id).map { c -> SIMD4<Float> in
                 let (r, g, b) = c.components
                 return SIMD4(Float(r), Float(g), Float(b), 1)
@@ -112,7 +176,18 @@ enum ViewportSnapshot {
         camera.pitch = elevation.map { min(max(Float($0 * .pi / 180), -1.55), 1.55) } ?? angles.pitch
         camera.fit(min: bounds.min, max: bounds.max, aspect: Float(width) / Float(height))
         renderer.camera = camera
-        defer { renderer.setScene([]) }  // the GPU buffers are not kept between pictures
+        if let cut = options.section {
+            let lo = Double([bounds.min.x, bounds.min.y, bounds.min.z][cut.axis]), hi = Double([bounds.max.x, bounds.max.y, bounds.max.z][cut.axis])
+            let offset = cut.offset ?? (lo + hi) / 2
+            // The cut face is seen when the side cut away faces the viewer: the plane's normal points toward the camera.
+            let towardCamera = -[camera.forward.x, camera.forward.y, camera.forward.z][cut.axis]
+            let positive = cut.cutPositive ?? (towardCamera >= 0)
+            var normal = SIMD3<Float>(repeating: 0)
+            normal[cut.axis] = positive ? 1 : -1
+            renderer.sectionPlane = SIMD4(normal, Float(offset) * (positive ? 1 : -1))
+            sectionNote = "Cut at \(SnapshotSection.axisNames[cut.axis]) = \(AIValues.number(offset)) mm (the part runs \(AIValues.number(lo)) to \(AIValues.number(hi))); the \(positive ? "higher" : "lower") \(SnapshotSection.axisNames[cut.axis]) side is cut away."
+        }
+        defer { renderer.setScene([]); renderer.sectionPlane = nil }  // the GPU buffers are not kept between pictures
 
         // The first frames of a new view may still be settling: draw until two in a row agree.
         var previous: [UInt8] = []
@@ -141,7 +216,7 @@ enum ViewportSnapshot {
         guard let png = Self.png(bgra: pixels, width: size.width, height: size.height) else {
             throw AIError(.invalidArguments, "The picture could not be saved as an image.")
         }
-        return SnapshotImage(png: png, width: size.width, height: size.height)
+        return SnapshotImage(png: png, width: size.width, height: size.height, section: sectionNote)
     }
 
     /// Every pixel is the colour of the first one (nothing was drawn).

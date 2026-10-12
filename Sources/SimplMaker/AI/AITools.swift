@@ -1281,7 +1281,15 @@ enum AITools {
                 Arguments: document_id (optional, default the front window); view (optional: "iso" (default), "front", "back", "left", \
                 "right", "top", "bottom"); azimuth and elevation (optional, degrees: your own angle instead of view; azimuth turns about Z \
                 from the right side (+X), elevation tilts up from the XY plane); width, height (optional pixels, default 1024 × 768); axes \
-                (optional, default true). The picture shows visible bodies only; sketches are not drawn.
+                (optional, default true). The picture shows visible bodies only, unless you ask for more:
+                - only (optional): a list of body ids to show, and nothing else (hidden bodies too). Use it to look at one part of an \
+                assembly on its own, such as the lid without the box.
+                - section (optional): cuts the part open to show the inside, like Section Analysis: {axis ("x", "y" or "z"), offset (mm \
+                along that axis; default the middle of what is shown), cut_away ("positive" or "negative": which side to remove; default the \
+                side facing the camera, so you see the cut face)}. Use it to check wall thickness, internal cavities, a snap fit or a thread; \
+                the cut face is hatched. The picture is the same view otherwise: choose a view that looks along the cut.
+                - sketches (optional): a list of sketch ids to draw as thin lines, hidden ones too (a sketch is hidden once an extrude has \
+                used it). Use it to see where a path or a profile lies.
 
                 Read-only: does not change the part or the user's own view. Returns the image and {document_id, revision, view, width, \
                 height, orientation (which way X, Y and Z run in this picture), bodies}. Fails with INVALID_ARGUMENTS (nothing to show, bad \
@@ -1295,11 +1303,48 @@ enum AITools {
                     "width": ["type": "integer", "description": "Picture width in pixels (256–1600, default 1024)."],
                     "height": ["type": "integer", "description": "Picture height in pixels (192–1200, default 768)."],
                     "axes": ["type": "boolean", "description": "Draw the X, Y, Z axes (default true)."],
+                    "only": ["type": "array", "items": ["type": "string"], "description": "Show only these bodies (ids), hidden ones too."],
+                    "section": ["type": "object", "description": "Cut the part open.", "properties": [
+                        "axis": ["type": "string", "enum": ["x", "y", "z"]], "offset": ["type": "number", "description": "mm along the axis (default the middle)."],
+                        "cut_away": ["type": "string", "enum": ["positive", "negative"], "description": "Which side to remove (default: the side facing the camera)."]],
+                        "required": ["axis"]],
+                    "sketches": ["type": "array", "items": ["type": "string"], "description": "Sketch ids to draw as lines."],
                 ], []),
                 readOnly: true,
                 handler: { args in
                     let a = AIArguments(args)
-                    try a.rejectUnknown(["document_id", "view", "azimuth", "elevation", "width", "height", "axes"], in: "get_viewport_image")
+                    try a.rejectUnknown(["document_id", "view", "azimuth", "elevation", "width", "height", "axes", "only", "section", "sketches"], in: "get_viewport_image")
+                    var options = SnapshotOptions()
+                    if let only = try a.array("only") {
+                        options.only = try only.enumerated().map { index, item in
+                            guard let text = item.string else { throw AIError(.invalidArguments, "only[\(index)] must be a body id.") }
+                            return text
+                        }
+                        if options.only?.isEmpty == true { throw AIError(.invalidArguments, "only is empty.", reason: "Leave it out to show every visible body.") }
+                    }
+                    options.sketches = try (a.array("sketches") ?? []).enumerated().map { index, item in
+                        guard let text = item.string else { throw AIError(.invalidArguments, "sketches[\(index)] must be a sketch id.") }
+                        return text
+                    }
+                    if let cut = try a.object("section") {
+                        try AIArguments(.object(cut)).rejectUnknown(["axis", "offset", "cut_away"], in: "section")
+                        guard let axisText = cut["axis"]?.string, let axis = SnapshotSection.axisNames.firstIndex(of: axisText.lowercased()) else {
+                            throw AIError(.invalidArguments, "section.axis must be \"x\", \"y\" or \"z\".")
+                        }
+                        var offset: Double?
+                        if let v = cut["offset"], v != .null {
+                            guard let n = v.number, n.isFinite else { throw AIError(.invalidArguments, "section.offset must be a number of mm.") }
+                            offset = n
+                        }
+                        var positive: Bool?
+                        if let v = cut["cut_away"], v != .null {
+                            guard let text = v.string, text == "positive" || text == "negative" else {
+                                throw AIError(.invalidArguments, "section.cut_away must be \"positive\" or \"negative\".")
+                            }
+                            positive = text == "positive"
+                        }
+                        options.section = SnapshotSection(axis: axis, offset: offset, cutPositive: positive)
+                    }
                     let viewText = try a.string("view") ?? "iso"
                     guard let direction = SnapshotDirection(rawValue: viewText) else {
                         throw AIError(.invalidArguments, "view \"\(viewText)\" is not one of \(SnapshotDirection.allCases.map(\.rawValue).joined(separator: ", ")).")
@@ -1312,18 +1357,21 @@ enum AITools {
                     let azimuth = try number("azimuth"), elevation = try number("elevation")
                     let r = try await service.viewportImage(documentID: try a.string("document_id"), direction: direction, azimuth: azimuth,
                                                             elevation: elevation, width: try a.integer("width") ?? 1024,
-                                                            height: try a.integer("height") ?? 768, axes: try a.bool("axes") ?? true)
+                                                            height: try a.integer("height") ?? 768, axes: try a.bool("axes") ?? true, options: options)
                     let custom = azimuth != nil || elevation != nil
                     let orientation = custom
                         ? "Your own angle (azimuth \(azimuth.map { AIValues.number($0) } ?? "of the \(direction.rawValue) view"), elevation \(elevation.map { AIValues.number($0) } ?? "of the \(direction.rawValue) view") degrees). Axes: X red, Y green, Z blue."
                         : r.direction.orientation + " Axes: X red, Y green, Z blue."
-                    return [
+                    var answer: [String: JSONValue] = [
                         "success": true, "document_id": .string(r.documentID), "revision": .int(r.revision),
                         "view": .string(custom ? "custom" : r.direction.rawValue), "width": .int(r.image.width), "height": .int(r.image.height),
                         "orientation": .string(orientation),
                         "bodies": .array(r.bodies.map { .string($0) }),
                         "_images": [["data": .string(r.image.png.base64EncodedString()), "mime_type": "image/png"]],
                     ]
+                    if let section = r.image.section { answer["section"] = .string(section) }
+                    if !r.sketches.isEmpty { answer["sketches"] = .array(r.sketches.map { .string($0) }) }
+                    return .object(answer)
                 }),
 
             MCPTool(
