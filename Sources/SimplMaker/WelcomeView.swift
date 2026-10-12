@@ -39,11 +39,11 @@ struct WelcomeView: View {
             actions
                 .frame(width: 520)
                 .frame(maxHeight: .infinity)
-                .background(Color(nsColor: .windowBackgroundColor))
+                .background(DS.windowBackground)
             recentList
                 .frame(width: 300)
                 .frame(maxHeight: .infinity)
-                .background(Color(nsColor: .underPageBackgroundColor))
+                .background(DS.underPageBackground)
         }
         .frame(height: 580)
         .onAppear { AppWindows.openWindow = openWindow; reloadRecents() }

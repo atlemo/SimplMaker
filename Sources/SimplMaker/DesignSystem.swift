@@ -150,3 +150,19 @@ extension ToolbarContent {
         }
     }
 }
+
+extension DS {
+    /// The window and under-page greys as macOS 26 draws them for an app built for 26. A binary whose
+    /// deployment target is older gets the pre-26 values for the system's own colours even on 26
+    /// (light mode: window 236 instead of 255, under-page 159 instead of 246), so the welcome window
+    /// asks for the 26 values by hand there. Dark mode and older systems keep the system's colours.
+    static let windowBackground = lightOverride(white: 1.0, system: .windowBackgroundColor)
+    static let underPageBackground = lightOverride(white: 246 / 255, system: .underPageBackgroundColor)
+
+    private static func lightOverride(white: CGFloat, system: NSColor) -> Color {
+        guard #available(macOS 26.0, *) else { return Color(nsColor: system) }
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua ? NSColor(white: white, alpha: 1) : system
+        })
+    }
+}
