@@ -15,8 +15,8 @@ struct DesignTopic: Sendable {
 enum AIDesignGuide {
     static func topic(_ id: String) -> DesignTopic? { topics.first { $0.id == id.lowercased() } }
 
-    static let topics: [DesignTopic] = [workflow, parameters, printBasics, snapFitLid, roundedBox, nameTag, holesAndFasteners, threads,
-                                        featureOrder, facesAndEdges, textAndLabels, photoToPart, fixingErrors]
+    static let topics: [DesignTopic] = [workflow, parameters, printBasics, snapFitLid, roundedBox, nameTag, screwPostCase, hingesAndPrintInPlace,
+                                        multiPartPrint, holesAndFasteners, threads, featureOrder, facesAndEdges, textAndLabels, photoToPart, fixingErrors]
 
     // MARK: how to work
 
@@ -34,7 +34,8 @@ enum AIDesignGuide {
         Where a step needs a face or edge id you cannot know yet, build up to that point, read get_body, and finish in a second batch \
         (see "faces_and_edges").
         5. Look: get_viewport_image (iso, then another view). Numbers do not show an upside-down lid. If it does not look right, fix it \
-        before you report.
+        before you report. To see the inside of a box, a wall or a snap fit use its section option (an axis and an offset); to look at one \
+        body of several use only; to see where a path or profile lies use sketches.
         6. For anything meant to be printed, run check_design and deal with what it finds.
         7. Report briefly: what you made, the sizes, the assumptions, and which parameters change what ("wall" is the wall thickness, \
         "clr" the clearance of the lid). Mention what you could not do or are unsure of; never claim a fit works that you only calculated.
@@ -165,6 +166,98 @@ enum AIDesignGuide {
             """)
     }
 
+    static var screwPostCase: DesignTopic {
+        DesignTopic(
+            id: "screw_post_case", title: "A case with screw posts and a screwed-on lid (verified recipe)",
+            summary: "Enclosures for electronics: a box with four posts for M3 screws, and a flat lid held by them.",
+            body: """
+            Design: a rounded box hollowed from the top, four cylindrical posts standing on its floor in the corners, each with a pilot hole \
+            for a self-tapping M3 screw, and a flat lid that rests on the rim with a clearance hole over each post. The posts sit \
+            "post_off" in from the outside (their circle overlaps the walls a little, which fuses them to the wall as well as the floor). The \
+            lid sits at z = height on the rim; its holes use the same post_x / post_y, so a change to width or depth moves posts and holes \
+            together. Sizes here are an example (60 × 40 × 25); put the user's own in the first set_parameter steps.
+
+            Why it is built this way: the posts are circles in a sketch on a plane 0.4 mm below the floor's top, extruded up and joined to the \
+            case: the overlap fuses them with the floor (a join that only touches does not fuse). The pilot holes are circles on a plane at \
+            the posts' tops, cut downwards (direction "backward") "pilot_depth" deep; a hole in a post needs no face id read from the \
+            model. The lid's clearance holes are circles in the same sketch as its outline, extruded with profiles "solid" (the plate, not the \
+            fillings of the holes). The post's top stops 0.5 mm under the lid so the lid rests on the rim and the screws pull it down.
+
+            One batch (label "Screw case"):
+            [
+            \(AIRecipes.text(AIRecipes.screwPostCase))
+            ]
+
+            Numbers: pilot_d 2.6 for a self-tapping M3 (2.4–2.7 by printer), clear_d 3.4 for the screw to pass the lid; for a heat-set \
+            insert make pilot_d 4.2 and post_d 8; M2: pilot 1.7, clear 2.4, post_d 5.5. post_d should be about 2.5 × the screw diameter or \
+            more, and pilot_depth at least 6 mm (not past the floor: pilot_depth < post_h + wall). Keep posts clear of the rounded corners' \
+            curve if corner_r is large: raise post_off. The lid's holes here are plain clearance holes (a screw head sits on top of the lid).
+
+            Then look from above and in a section (get_viewport_image view top; and section {"axis": "y", "offset": 15} (the value of post_y) to see a post and \
+            its pilot hole cut open) and run check_design. Print the case upright and the lid flat. Add vent slots or a cable notch as cut \
+            extrudes of rectangles on the wall's plane (before any fillet on that wall).
+            """)
+    }
+
+    static var hingesAndPrintInPlace: DesignTopic {
+        DesignTopic(
+            id: "hinges_and_print_in_place", title: "Hinges and parts that print already assembled (verified recipe)",
+            summary: "A pin hinge that works straight off the printer, and what to know about print-in-place clearances and living hinges.",
+            body: """
+            Print-in-place means two or more bodies that are printed together in one go and move afterwards; they must never touch, so a \
+            gap is left everywhere they face each other. The gap is the number to tune: 0.3 for a good printer and a small part, 0.4 usual, \
+            0.5 for a rough or hot printer. Too small and the parts fuse; too big and they rattle. Always make the gap a parameter ("clr" round a pin or \
+            axis, "gap" between faces along it).
+
+            The recipe is a pin hinge with three knuckles along Y. Leaf A has the two outer knuckles and the pin through all three (the \
+            pin is fused to them); leaf B is the middle knuckle with a bore that clears the pin by "clr", and a gap of "gap" separates the \
+            knuckles. Both leaves lie flat (they print flat on the bed: knuckle axis horizontal, pin printing along the bed) and open flat. \
+            Everything is placed along the sketches' normal, so it works whichever way that points. One batch (label "Hinge"):
+            [
+            \(AIRecipes.text(AIRecipes.printInPlaceHinge))
+            ]
+            It makes two bodies, hinge_a and hinge_b. Check: measure hinge_a against hinge_b gives a shortest distance of about clr (0.4); \
+            check_design lists the clearance. The pin's end sits inside the third knuckle, which is what keeps the leaves together; a hinge \
+            with a pin that is only as long as the middle knuckle comes apart.
+
+            To hinge two real parts (a lid and a box): extend each leaf into its part so that it overlaps and joins it (leaf_w goes into the \
+            body, join with operation "join" and target), put the hinge axis just outside the edge the parts turn about, and make the parts \
+            themselves clear each other when open: leave a gap at least "clr" between them. To change where the hinge sits, move the whole hinge with create_move (rotate with rz to put it on another side).
+
+            Other things that print in place: a chain link (two rings, each through the other: clearance 0.5), a swivel (a ball in a socket with 0.4 \
+            clearance and a slot), a gear train on fixed pins (0.3–0.4 between the teeth and 0.4 on the pin), a captive nut (a hex pocket just \
+            larger than the nut, closed by a bridge that prints over it). A "living hinge" is a single thin strip (0.4–0.6 mm) joining two parts \
+            printed in PETG or TPU: it has to be printed so the layers run along the strip, not across it; it fails in PLA. Offer the pin hinge by default.
+
+            Do not combine (create_combine) the two leaves: they are meant to be separate bodies. Tell the user to print both together \
+            in the same file, flat, and to move them by hand after it is done.
+            """)
+    }
+
+    static let multiPartPrint = DesignTopic(
+        id: "multi_part_print", title: "Several parts, one print: splitting, laying flat, laying out the plate",
+        summary: "Cutting a big model into printable pieces, orienting each for printing, naming and colouring bodies.",
+        body: """
+        Too big for the bed (check_design says so): split it. create_split with a plane ("xz", "yz", "xy", or a plane at a height from \
+        create_plane) or the face of the model cuts the body into pieces; the first keeps the body's id and the others get ids you read from \
+        get_document. Choose the cut where it is flat and where the two halves can be glued or pinned: a plane through the middle of a \
+        symmetric model is best. Add alignment features (a pin on one half, a hole on the other with 0.2 mm clearance) as extrudes and cuts on \
+        each piece's cut face, after the split.
+        Orientation: print each piece on its flattest, biggest face, which avoids overhangs. create_lay_on_floor with that face (a flat \
+        face id from get_body, shape "plane") turns the body so that face sits on the floor (z = 0) and keeps its position sideways. Run \
+        check_design again afterwards: it measures overhangs in the orientation the part is in.
+        Laying out the plate: after laying pieces flat, space them with create_move (dx, dy) so that there are at least 5 mm \
+        between them (get_body bounds say how wide each is) and everything fits the bed (220 × 220 by default; check_design tells). Do the layout last, as \
+        the final features, so the model underneath stays editable: changing a part's size changes the move's values only if you change them \
+        (modify_feature on the Move).
+        Telling parts apart: set_body gives each body a name and a colour ("#E8812A"), and can hide a body used only as a tool. It changes \
+        how the part looks and what it is called, nothing else, and it undoes in one step.
+        To look at one piece alone use get_viewport_image with only: ["lid"]; to see how two pieces fit together open them with its section \
+        option, or show a hidden tool body by naming it in only.
+        Exporting for the printer: export_file with format "stl" (or "step") and bodies: the ones that should be printed together; one file per \
+        plate. Say which way up each piece goes if you did not lay it flat.
+        """)
+
     // MARK: parts
 
     static let holesAndFasteners = DesignTopic(
@@ -181,8 +274,7 @@ enum AIDesignGuide {
         Use create_hole on a flat face for these, with at = [x, y, z] (a point of the face) or none for the middle; several holes: one \
         create_hole each, or one hole and create_pattern of its body. Put holes in BEFORE rounding the edges they meet. A hole through a wall that is \
         2 mm thick needs no support if its axis is vertical; a horizontal hole over 6 mm should be a teardrop or have a chamfered top.
-        Screw posts for a case: after the shell, a circle sketch on the floor face (get_body gives its id), extruded and joined to the \
-        box, outside diameter 2 × the hole; then a hole in the post's top face.
+        Screw posts for a case: see the topic "screw_post_case" (a verified recipe: posts, pilot holes and a lid with matching holes).
         """)
 
     static let threads = DesignTopic(

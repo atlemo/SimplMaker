@@ -78,5 +78,74 @@ enum AIRecipes {
         step("create_extrude", ["sketch_id": "text_sk", "profiles": "solid", "distance": "text_t", "operation": "join", "target": "plate", "id": "lettering"]),
     ]
 
+    /// A box with four screw posts and a flat lid, its holes lined up with the posts: M3 screws into the posts (pilot holes for self-tapping)
+    /// and through the lid (clearance holes). Posts are made from circles on a plane just under the floor's top, so they overlap the floor
+    /// and fuse with it; the pilot holes are cut down from a plane at the posts' tops. Nothing in it needs a face or edge id read from the model.
+    static let screwPostCase: [JSONValue] = [
+        param("width", 60), param("depth", 40), param("height", 25), param("wall", 2), param("corner_r", 5), param("lid_t", 2.5),
+        param("post_d", 7), param("post_off", 5), param("pilot_d", 2.6), param("pilot_depth", 10), param("clear_d", 3.4),
+        param("post_x", "width / 2 - post_off"), param("post_y", "depth / 2 - post_off"), param("post_h", "height - wall - 0.5"),
+        step("create_sketch", ["plane": "xy", "id": "case_sk"]),
+        step("edit_sketch", ["sketch_id": "case_sk", "add": [rounded("outline", "width", "depth", "corner_r")]]),
+        step("create_extrude", ["sketch_id": "case_sk", "profiles": "solid", "distance": "height", "id": "case"]),
+        step("create_shell", ["body": "case", "open_faces": ["face:case/case.end"], "thickness": "wall", "id": "case_shell"]),
+        // the posts stand on the floor, 0.4 mm of them sunk into it, and touch the walls (the overlap fuses them)
+        step("create_plane", ["base": "xy", "offset": "wall - 0.4", "id": "post_plane"]),
+        step("create_sketch", ["plane": "plane:post_plane", "id": "post_sk"]),
+        step("edit_sketch", ["sketch_id": "post_sk", "add": .array(postCircles("post", "post_d"))]),
+        step("create_extrude", ["sketch_id": "post_sk", "profiles": "solid", "distance": "post_h + 0.4", "operation": "join", "target": "case", "id": "posts"]),
+        // pilot holes down the middle of each post, from the posts' tops
+        step("create_plane", ["base": "xy", "offset": "wall + post_h", "id": "post_top"]),
+        step("create_sketch", ["plane": "plane:post_top", "id": "pilot_sk"]),
+        step("edit_sketch", ["sketch_id": "pilot_sk", "add": .array(postCircles("pilot", "pilot_d"))]),
+        step("create_extrude", ["sketch_id": "pilot_sk", "profiles": "solid", "distance": "pilot_depth", "direction": "backward", "operation": "cut", "target": "case", "id": "pilots"]),
+        // the lid: a plate on the rim with a clearance hole over each post
+        step("create_plane", ["base": "xy", "offset": "height", "id": "lid_plane"]),
+        step("create_sketch", ["plane": "plane:lid_plane", "id": "lid_sk"]),
+        step("edit_sketch", ["sketch_id": "lid_sk", "add": .array([rounded("lid_outline", "width", "depth", "corner_r")] + postCircles("lid_hole", "clear_d"))]),
+        step("create_extrude", ["sketch_id": "lid_sk", "profiles": "solid", "distance": "lid_t", "id": "lid"]),
+    ]
+
+    /// Four circles at the corners, named "<prefix>_1" … "<prefix>_4", positions from the parameters post_x and post_y.
+    private static func postCircles(_ prefix: String, _ diameter: String) -> [JSONValue] {
+        [("1", "post_x", "post_y"), ("2", "-post_x", "post_y"), ("3", "-post_x", "-post_y"), ("4", "post_x", "-post_y")].map { n, x, y in
+            ["type": "circle", "id": .string("\(prefix)_\(n)"), "center": [.string(x), .string(y)], "diameter": .string(diameter)]
+        }
+    }
+
+    /// A pin hinge that prints in place: leaf A has the two outer knuckles and the pin through all three, leaf B the middle knuckle with a
+    /// hole that clears the pin by "clr" all round, and a gap of "gap" between the knuckles. Everything is measured along the hinge axis
+    /// from the plane the sketches are on (their normal), so the recipe does not depend on which way that points.
+    static let printInPlaceHinge: [JSONValue] = [
+        param("k", 10), param("gap", 0.4), param("hr", 4), param("pin_r", 1.5), param("clr", 0.4), param("leaf_w", 20), param("leaf_t", 2),
+        param("step_len", "k + gap"),
+        // leaf A: knuckle 1, the pin along the whole hinge, knuckle 3, and a plate behind each outer knuckle
+        step("create_sketch", ["plane": "xz", "id": "a1_sk"]),
+        step("edit_sketch", ["sketch_id": "a1_sk", "add": [
+            ["type": "circle", "id": "knuckle", "center": [0, "hr"], "diameter": "2 * hr"],
+            ["type": "circle", "id": "pin", "center": [0, "hr"], "diameter": "2 * pin_r"]]]),
+        // two nested circles are a ring: the pin is its own sketch, so the knuckle below is solid
+        step("create_extrude", ["sketch_id": "a1_sk", "profiles": [["at": ["hr - 0.5", "hr"]]], "distance": "k", "id": "hinge_a"]),
+        step("create_extrude", ["sketch_id": "a1_sk", "profiles": [["at": [0, "hr"]]], "distance": "3 * k + 2 * gap", "operation": "join", "target": "hinge_a", "id": "pin_rod"]),
+        step("create_plane", ["base": "xz", "offset": "2 * step_len", "id": "third"]),
+        step("create_sketch", ["plane": "plane:third", "id": "a3_sk"]),
+        step("edit_sketch", ["sketch_id": "a3_sk", "add": [["type": "circle", "id": "knuckle", "center": [0, "hr"], "diameter": "2 * hr"]]]),
+        step("create_extrude", ["sketch_id": "a3_sk", "profiles": "solid", "distance": "k", "operation": "join", "target": "hinge_a", "id": "knuckle_3"]),
+        step("create_sketch", ["plane": "xz", "id": "a_leaf1_sk"]),
+        step("edit_sketch", ["sketch_id": "a_leaf1_sk", "add": [["type": "rectangle", "id": "leaf", "corner": ["-leaf_w", 0], "width": "leaf_w", "height": "leaf_t"]]]),
+        step("create_extrude", ["sketch_id": "a_leaf1_sk", "profiles": "solid", "distance": "k", "operation": "join", "target": "hinge_a", "id": "leaf_a1"]),
+        step("create_sketch", ["plane": "plane:third", "id": "a_leaf3_sk"]),
+        step("edit_sketch", ["sketch_id": "a_leaf3_sk", "add": [["type": "rectangle", "id": "leaf", "corner": ["-leaf_w", 0], "width": "leaf_w", "height": "leaf_t"]]]),
+        step("create_extrude", ["sketch_id": "a_leaf3_sk", "profiles": "solid", "distance": "k", "operation": "join", "target": "hinge_a", "id": "leaf_a3"]),
+        // leaf B: the middle knuckle, a ring round the pin with clearance, and its plate on the other side
+        step("create_plane", ["base": "xz", "offset": "step_len", "id": "second"]),
+        step("create_sketch", ["plane": "plane:second", "id": "b_sk"]),
+        step("edit_sketch", ["sketch_id": "b_sk", "add": [
+            ["type": "circle", "id": "knuckle", "center": [0, "hr"], "diameter": "2 * hr"],
+            ["type": "circle", "id": "bore", "center": [0, "hr"], "diameter": "2 * (pin_r + clr)"],
+            ["type": "rectangle", "id": "leaf", "corner": [0, 0], "width": "leaf_w", "height": "leaf_t"]]]),
+        step("create_extrude", ["sketch_id": "b_sk", "profiles": "solid", "distance": "k", "id": "hinge_b"]),
+    ]
+
     static func text(_ steps: [JSONValue]) -> String { steps.map { "  " + $0.text() }.joined(separator: ",\n") }
 }

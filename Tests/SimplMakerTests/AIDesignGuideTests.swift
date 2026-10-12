@@ -95,6 +95,63 @@ import Testing
         #expect(body.volume > 60 * 25 * 3 * 0.7, "\(body.volume)")
     }
 
+    @Test func theScrewPostCaseHasFourPostsWithPilotHolesAndALidThatLinesUp() async throws {
+        let t = await open()
+        let r = try await batch(t, "Screw case", AIRecipes.screwPostCase)
+        #expect(r.success && t.model.result?.errors.isEmpty == true, "\(t.model.result?.errors ?? [:])")
+        #expect(r.bodies.map(\.id).sorted() == ["case", "lid"], "\(r.bodies.map(\.id))")
+        #expect(r.bodies.allSatisfy { $0.isValid })
+        // four pilot holes (radius 1.3) and four post surfaces (radius 3.5) in the case, all in the one body
+        let faces = try await t.service.getBody(documentID: t.id, bodyID: "case").faces.filter { $0.shape == "cylinder" }
+        #expect(faces.filter { abs(($0.radius ?? 0) - 1.3) < 0.01 }.count == 4, "pilot holes: \(faces.compactMap(\.radius))")
+        #expect(faces.filter { abs(($0.radius ?? 0) - 3.5) < 0.01 }.count == 4, "posts: \(faces.compactMap(\.radius))")
+        // the lid: a rounded plate less four holes, sitting on the rim
+        let lid = try #require(r.bodies.first { $0.id == "lid" })
+        let plate = (60 * 40 - (4 - Double.pi) * 25) * 2.5
+        #expect(abs(lid.volume - (plate - 4 * Double.pi * 1.7 * 1.7 * 2.5)) < 5, "\(lid.volume)")
+        #expect(abs(lid.boundsMin[2] - 25) < 0.05 && abs(lid.boundsMax[2] - 27.5) < 0.05)
+        // the holes line up: every lid hole's axis is a post's axis
+        let lidHoles = try await t.service.getBody(documentID: t.id, bodyID: "lid").faces.filter { $0.shape == "cylinder" && abs(($0.radius ?? 0) - 1.7) < 0.01 }
+        #expect(lidHoles.count == 4, "four clearance holes in the lid (the corners are cylinders too, of radius 5)")
+        let pilot = faces.filter { abs(($0.radius ?? 0) - 1.3) < 0.01 }
+        for hole in lidHoles {
+            #expect(pilot.contains { abs($0.center[0] - hole.center[0]) < 0.01 && abs($0.center[1] - hole.center[1]) < 0.01 }, "\(hole.center)")
+        }
+        // follows the parameters: a wider case moves the posts and the lid's holes together
+        _ = try await t.service.change(documentID: t.id, expectedRevision: nil, try AIOperationParser.parse(tool: "set_parameter", arguments: ["name": "width", "value": 80]))
+        #expect(t.model.result?.errors.isEmpty == true, "\(t.model.result?.errors ?? [:])")
+        let wider = try await t.service.getBody(documentID: t.id, bodyID: "case").faces.filter { $0.shape == "cylinder" && abs(($0.radius ?? 0) - 1.3) < 0.01 }
+        #expect(wider.allSatisfy { abs(abs($0.center[0]) - 35) < 0.01 }, "\(wider.map(\.center))")
+    }
+
+    @Test func thePrintInPlaceHingeMakesTwoBodiesThatDoNotTouch() async throws {
+        let t = await open()
+        let r = try await batch(t, "Hinge", AIRecipes.printInPlaceHinge)
+        #expect(r.success && t.model.result?.errors.isEmpty == true, "\(t.model.result?.errors ?? [:])")
+        #expect(r.bodies.map(\.id).sorted() == ["hinge_a", "hinge_b"], "\(r.bodies.map(\.id))")
+        #expect(r.bodies.allSatisfy { $0.isValid })
+        let a = try #require(r.bodies.first { $0.id == "hinge_a" }), b = try #require(r.bodies.first { $0.id == "hinge_b" })
+        // the hinge is 3 knuckles and 2 gaps long, along Y; B (the middle knuckle) is the shorter
+        #expect(abs((a.boundsMax[1] - a.boundsMin[1]) - 30.8) < 0.1 && abs((b.boundsMax[1] - b.boundsMin[1]) - 10) < 0.1, "\(a.boundsMin) \(a.boundsMax) | \(b.boundsMin) \(b.boundsMax)")
+        // each leaf reaches to its own side
+        #expect(a.boundsMin[0] < -19.9 && a.boundsMax[0] <= 4.05 && b.boundsMax[0] > 19.9 && b.boundsMin[0] >= -4.05, "\(a.boundsMin[0])…\(a.boundsMax[0]) | \(b.boundsMin[0])…\(b.boundsMax[0])")
+        // free to turn: the closest the two bodies come is the clearance round the pin or the gap between knuckles, never zero
+        let m = try await t.service.measure(documentID: t.id, a: "hinge_a", b: "hinge_b")
+        #expect((m.distance ?? 0) > 0.35 && (m.distance ?? 0) < 0.45, "\(m.distance ?? -1)")
+        // the clearance can be tuned afterwards
+        _ = try await t.service.change(documentID: t.id, expectedRevision: nil, try AIOperationParser.parse(tool: "set_parameter", arguments: ["name": "clr", "value": 0.3]))
+        _ = try await t.service.change(documentID: t.id, expectedRevision: nil, try AIOperationParser.parse(tool: "set_parameter", arguments: ["name": "gap", "value": 0.3]))
+        #expect(t.model.result?.errors.isEmpty == true, "\(t.model.result?.errors ?? [:])")
+        let tuned = try await t.service.measure(documentID: t.id, a: "hinge_a", b: "hinge_b")
+        #expect((tuned.distance ?? 0) > 0.25 && (tuned.distance ?? 0) < 0.35, "\(tuned.distance ?? -1)")
+        if let dir = ProcessInfo.processInfo.environment["SNAPSHOT_DUMP_DIR"] {
+            for view in [SnapshotDirection.iso, .front] {
+                let picture = try await t.service.viewportImage(documentID: t.id, direction: view, azimuth: nil, elevation: nil, width: 900, height: 600, axes: false)
+                try? picture.image.png.write(to: URL(fileURLWithPath: dir + "/hinge-\(view.rawValue).png"))
+            }
+        }
+    }
+
     // MARK: the guide
 
     @Test func everyTopicIsServedAndTheListNamesThemAll() async throws {
@@ -119,6 +176,10 @@ import Testing
         #expect(box.contains(AIRecipes.text(AIRecipes.roundedOpenBox)))
         let tag = try #require(try t.service.designGuide(topic: "name_tag")["guide"]?.string)
         #expect(tag.contains(AIRecipes.text(AIRecipes.nameTag)))
+        let posts = try #require(try t.service.designGuide(topic: "screw_post_case")["guide"]?.string)
+        #expect(posts.contains(AIRecipes.text(AIRecipes.screwPostCase)) && posts.contains("pilot_d"))
+        let hinge = try #require(try t.service.designGuide(topic: "hinges_and_print_in_place")["guide"]?.string)
+        #expect(hinge.contains(AIRecipes.text(AIRecipes.printInPlaceHinge)) && hinge.contains("clr"))
     }
 
     @Test func guideTopicsDoNotPromiseToolsThatDoNotExist() throws {
