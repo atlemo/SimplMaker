@@ -105,6 +105,9 @@ struct DocumentWindow: View {
     @State private var toolbarHovered = false
     @State private var toolbarHeight: CGFloat = 65
 
+    /// What the panel toggles draw in while the toolbar is tinted: black or white by contrast with the tint; nil off the tint.
+    private var panelToggleInk: Color? { sketchTint ? ContrastColor.ink(on: sketchPaper.toolbarNSColor) : nil }
+
     private var unlinkTitle: String {
         guard let p = model.unlinkPrompt else { return "" }
         return "Replace \(p.expression) with \(p.valueText)?"
@@ -267,14 +270,18 @@ struct DocumentWindow: View {
             // The tools sit in the middle of the toolbar, in Design and in Sketch mode. They are one item whose
             // content changes with the room, so the tools don't blink as the window is resized.
             toolsItem
+            // On the tinted sketch toolbar the system's glass behind these would pick its own brightness, whatever
+            // colour the symbol is given, so they are drawn like the tools: the contrast ink on the tint, no glass.
             ToolbarItem(placement: .navigation) {
-                Button { model.showSidebar.toggle() } label: { Label("Browser", systemImage: "sidebar.left") }
-                    .help(helpWithShortcut("Show or hide the browser", .browser))
+                PanelToggle(title: "Browser", systemImage: "sidebar.left", ink: panelToggleInk,
+                            help: helpWithShortcut("Show or hide the browser", .browser)) { model.showSidebar.toggle() }
             }
+            .sharedBackgroundVisibility(sketchTint ? .hidden : .automatic)
             ToolbarItemGroup(placement: .primaryAction) {
-                Button { model.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
-                    .help(helpWithShortcut("Show or hide the inspector", .inspector))
+                PanelToggle(title: "Inspector", systemImage: "sidebar.right", ink: panelToggleInk,
+                            help: helpWithShortcut("Show or hide the inspector", .inspector)) { model.showInspector.toggle() }
             }
+            .sharedBackgroundVisibility(sketchTint ? .hidden : .automatic)
         }
         .modifier(AccentScope(sketching: model.sketchSession != nil))
         .focusedSceneValue(\.documentModel, model)
@@ -840,6 +847,37 @@ struct BrowserList: View {
         } else if !ids.isEmpty {
             Button("Hide") { model.setHidden(Array(ids), true) }
             Button("Show") { model.setHidden(Array(ids), false) }
+        }
+    }
+}
+
+/// A toolbar button that shows or hides a panel. With an `ink` (on the tinted sketch toolbar) it draws its own symbol in that
+/// colour over a soft round fill of it; without, it is the system's glass button.
+struct PanelToggle: View {
+    let title: String
+    let systemImage: String
+    let ink: Color?
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        if let ink {
+            Button(action: action) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(ink)
+                    .frame(width: 34, height: 34)
+                    .background(ink.opacity(hovering ? 0.28 : 0.16), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(help)
+            .accessibilityLabel(title)
+        } else {
+            Button(action: action) { Label(title, systemImage: systemImage) }
+                .help(help)
         }
     }
 }
