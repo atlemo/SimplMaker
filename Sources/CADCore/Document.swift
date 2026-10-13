@@ -143,6 +143,10 @@ public struct ExtrudeFeature: Codable, Hashable, Sendable {
     public var operation: BodyOperation
     /// Body to join/cut/intersect. Nil = the most recently created body.
     public var target: FeatureID?
+    /// The bodies a Join, Cut or Intersect works on, picked in the Inspector; it wins over `target`. Nil = automatic:
+    /// a cut goes through every body it reaches, a join or intersect works on `target` or else the newest body.
+    /// A join with several bodies merges them into the first one.
+    public var targets: [FeatureID]?
     /// Extrude a flat face of a body instead of sketch profiles (press-pull); `sketch` is then empty.
     public var face: FaceRef?
     /// How far the sides lean as they leave the sketch plane, an angle expression: positive leans out (the

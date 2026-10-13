@@ -46,6 +46,7 @@ struct FeatureDescriber {
             if let start = f.start { out["start_face"] = faces([start]) }
             out["flipped"] = .flag(f.flipped)
             operation(f.operation); target(f.target)
+            if let targets = f.targets { out["targets"] = .list(targets) }
         case .fillet(let f), .chamfer(let f):
             out["size"] = length(f.size)
             if case .chamfer = feature.kind {

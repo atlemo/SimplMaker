@@ -297,6 +297,45 @@ struct ExtrudeInspector: View {
         return model.faceRef(pick)
     }
 
+    /// The bodies this extrude could work on: the ones that exist before it in the timeline.
+    private var candidateBodies: [BodyResult] {
+        let own = model.document.index(of: id) ?? Int.max
+        return model.bodies.filter { b in b.id != id && (model.document.index(of: b.id).map { $0 < own } ?? true) }
+    }
+
+    /// What the extrude works on right now: the bodies picked, or else what the automatic choice came to.
+    private var affectedIDs: [FeatureID] { extrude.targets ?? model.result?.affectedBodies[id] ?? [] }
+
+    /// The list of bodies a Join, Cut or Intersect works on, each one switched on or off.
+    @ViewBuilder private var affectedBodies: some View {
+        let candidates = candidateBodies
+        if !candidates.isEmpty {
+            let chosen = Set(affectedIDs)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Affected bodies").font(.caption).foregroundStyle(.secondary)
+                ForEach(candidates, id: \.id) { b in
+                    Toggle(b.name, isOn: Binding(get: { chosen.contains(b.id) }, set: { on in
+                        var next = chosen
+                        if on { next.insert(b.id) } else { next.remove(b.id) }
+                        update("Change Affected Bodies") { $0.targets = candidates.map(\.id).filter { next.contains($0) } }
+                    }))
+                    .toggleStyle(.checkbox)
+                }
+            }
+            if extrude.targets != nil {
+                Button("Choose Automatically") { update("Choose Bodies Automatically") { $0.targets = nil } }
+                    .help(extrude.operation == .cut ? "Cut every body the shape passes through" : "Work on the newest body")
+            } else {
+                Text(extrude.operation == .cut ? "Chosen automatically: every body the shape passes through. Tick bodies to choose."
+                                               : "Chosen automatically. Tick bodies to choose.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if extrude.operation == .join, chosen.count > 1 {
+                Text("The bodies ticked are joined into one.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     var body: some View {
         Section("Extrude") {
             Picker("Extent", selection: Binding(get: { extentKind }, set: { k in
@@ -370,6 +409,7 @@ struct ExtrudeInspector: View {
                                                    set: { op in update("Change Operation") { $0.operation = op } })) {
                 ForEach(BodyOperation.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
+            if extrude.operation != .newBody { affectedBodies }
             if extrude.extent.mode != .mirrored {  // a mirrored extrude reaches both ways alike
                 Toggle("Flip direction", isOn: Binding(get: { extrude.flipped },
                                                        set: { v in update("Flip") { $0.flipped = v } }))

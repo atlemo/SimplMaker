@@ -76,6 +76,9 @@ public struct RegenResult: Sendable {
     /// For extrudes that start on a face: how far that plane lies from the sketch plane along the sketch's normal,
     /// so the handle can sit on it (the face itself may be gone once the extrude has joined it).
     public var extrudeStarts: [FeatureID: Double] = [:]
+    /// For joins, cuts and intersects: the bodies the feature actually worked on (a cut skips bodies it doesn't reach),
+    /// so the Inspector can show what an automatic choice came to.
+    public var affectedBodies: [FeatureID: [FeatureID]] = [:]
     /// For projections: a point on the surface where the first profile landed and the way the surface faces
     /// there, for the height handle.
     public var projectionHandles: [FeatureID: (origin: SIMD3<Double>, normal: SIMD3<Double>)] = [:]
@@ -724,31 +727,61 @@ public enum Regenerator {
     /// Adds a feature's solid as a new body, or joins/cuts/intersects it with the target body.
     static func combine(_ tool: KBody, _ operation: BodyOperation, target: FeatureID?, _ feature: Feature,
                         _ r: inout RegenResult) throws {
+        // A target that is gone falls back to the newest body, as it always did.
+        var targets: [FeatureID]?
+        if let target {
+            targets = [r.bodies.contains { $0.id == target } ? target : r.bodies.last?.id ?? target]
+        }
+        try combine(tool, operation, targets: targets, feature, &r)
+    }
+
+    /// As above for a list of bodies to work on; nil = automatic (a cut goes through every body it reaches, a join
+    /// or intersect takes the newest body). A join with several bodies merges them, and the tool, into the first.
+    static func combine(_ tool: KBody, _ operation: BodyOperation, targets: [FeatureID]?, _ feature: Feature,
+                        _ r: inout RegenResult) throws {
         if operation == .newBody {
             r.bodies.append(BodyResult(id: feature.id, name: r.bodyNames[feature.id] ?? "Body\(r.bodies.count + 1)", body: tool))
             return
         }
-        if operation == .cut, target == nil {
-            // No body chosen: cut every body the tool passes through.
+        let verb = operation.rawValue.lowercased()
+        var chosen: [Int]
+        if let targets {
+            chosen = r.bodies.indices.filter { targets.contains(r.bodies[$0].id) }
+            guard !chosen.isEmpty else {
+                throw KernelError(message: targets.isEmpty ? "pick the bodies to \(verb)" : "the bodies to \(verb) are missing")
+            }
+        } else if operation == .cut {
             guard !r.bodies.isEmpty else { throw KernelError(message: "no body to cut") }
+            chosen = Array(r.bodies.indices)
+        } else {
+            guard !r.bodies.isEmpty else { throw KernelError(message: "no body to \(verb)") }
+            chosen = [r.bodies.count - 1]
+        }
+        switch operation {
+        case .cut:
             guard let tb = tool.bounds else { return }
-            for i in r.bodies.indices {
-                guard let b = r.bodies[i].body.bounds, overlaps(b, tb) else { continue }
+            chosen = chosen.filter { i in r.bodies[i].body.bounds.map { overlaps($0, tb) } ?? false }
+            for i in chosen {
                 let cut = try r.bodies[i].body.boolean(tool, SK_CUT)
                 if cut.volume <= 1e-9 { throw KernelError(message: "the cut removes all of \(r.bodies[i].name)") }
                 r.bodies[i].body = cut
             }
-            return
+            r.affectedBodies[feature.id] = chosen.map { r.bodies[$0].id }
+        case .intersect:
+            for i in chosen {
+                let common = try r.bodies[i].body.boolean(tool, SK_COMMON)
+                if common.volume <= 1e-9 { throw KernelError(message: "the new shape doesn't overlap \(r.bodies[i].name)") }
+                r.bodies[i].body = common
+            }
+            r.affectedBodies[feature.id] = chosen.map { r.bodies[$0].id }
+        default:
+            let first = chosen[0]
+            var joined = try r.bodies[first].body.boolean(tool, SK_FUSE)
+            for i in chosen.dropFirst() { joined = try joined.boolean(r.bodies[i].body, SK_FUSE) }
+            r.bodies[first].body = joined
+            r.affectedBodies[feature.id] = chosen.map { r.bodies[$0].id }
+            for i in chosen.dropFirst().reversed() { r.bodies.remove(at: i) }
         }
-        guard let index = target.flatMap({ t in r.bodies.firstIndex { $0.id == t } }) ?? (r.bodies.isEmpty ? nil : r.bodies.count - 1)
-        else { throw KernelError(message: "no body to \(operation.rawValue.lowercased())") }
-        let op: SKBooleanOp = operation == .join ? SK_FUSE : operation == .cut ? SK_CUT : SK_COMMON
-        let combined = try r.bodies[index].body.boolean(tool, op)
-        if operation != .join, combined.volume <= 1e-9 {
-            throw KernelError(message: operation == .cut ? "the cut removes all of \(r.bodies[index].name)"
-                                                         : "the new shape doesn't overlap \(r.bodies[index].name)")
-        }
-        r.bodies[index].body = combined
     }
 
     static func extrude(_ f: ExtrudeFeature, _ feature: Feature, _ r: inout RegenResult) throws {
@@ -811,7 +844,11 @@ public enum Regenerator {
         let taper = try f.taper.map { try p.value(of: $0, kind: .angle) } ?? 0
         guard abs(taper) < 89.0 * .pi / 180 else { throw KernelError(message: "the taper angle must be under 90°") }
         let tool = try KBody.extrude(profiles, direction: dir, distance: distance, back: back, taper: taper, startOffset: startOffset, featureID: feature.id)
-        try combine(tool, f.operation, target: f.target, feature, &r)
+        if let targets = f.targets {
+            try combine(tool, f.operation, targets: targets, feature, &r)
+        } else {
+            try combine(tool, f.operation, target: f.target, feature, &r)
+        }
     }
 
     /// The revolve axis in world space.
