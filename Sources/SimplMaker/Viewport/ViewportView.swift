@@ -148,7 +148,47 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     override var isFlipped: Bool { true }  // origin top-left, like the ID texture
 
     /// How much of the view the floating panels cover: left, right, and at the bottom (timeline, status).
-    var panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
+    /// A change glides (see `shownInsets`), so hiding a panel slides the picture to the middle of the new free space
+    /// along with the panel, instead of jumping.
+    var panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0) {
+        didSet {
+            guard panelInsets != oldValue else { return }
+            glideInsets(to: panelInsets)
+        }
+    }
+
+    /// The insets the camera is centred on right now: `panelInsets`, or on the way to them.
+    private var shownInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
+    private var insetAnimation: Task<Void, Never>?
+    /// Whether a frame has been drawn, so the first insets (the window opening) are taken at once.
+    private var hasDrawn = false
+
+    private func glideInsets(to goal: (left: CGFloat, right: CGFloat, bottom: CGFloat)) {
+        insetAnimation?.cancel()
+        insetAnimation = nil
+        let start = shownInsets
+        if !hasDrawn || window == nil || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            shownInsets = goal
+            needsDisplay = true
+            return
+        }
+        let began = Date()
+        let duration = DS.Duration.base
+        insetAnimation = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let t = CGFloat(min(Date().timeIntervalSince(began) / duration, 1))
+                let e = 1 - (1 - t) * (1 - t)  // ease out, like the panels
+                self.shownInsets = (start.left + (goal.left - start.left) * e,
+                                    start.right + (goal.right - start.right) * e,
+                                    start.bottom + (goal.bottom - start.bottom) * e)
+                self.needsDisplay = true
+                if t >= 1 { break }
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+            if !Task.isCancelled { self?.insetAnimation = nil }
+        }
+    }
 
     /// Points our window covers at the top (the toolbar, which the view extends under).
     private var topInset: CGFloat {
@@ -161,9 +201,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     func updateCameraInsets() {
         guard let renderer, bounds.width > 1, bounds.height > 1 else { return }
         let w = bounds.width, h = bounds.height
+        let top = min(topInset, h * 0.3)
+        // Where the picture is centred follows the gliding insets; how big a fit makes it uses the final ones.
+        let sl = min(shownInsets.left, w * 0.45), sr = min(shownInsets.right, w * 0.45), sb = min(shownInsets.bottom, h * 0.3)
+        renderer.camera.centerShift = SIMD2(Float((sl - sr) / w), Float((sb - top) / h))
         let left = min(panelInsets.left, w * 0.45), right = min(panelInsets.right, w * 0.45)
-        let top = min(topInset, h * 0.3), bottom = min(panelInsets.bottom, h * 0.3)
-        renderer.camera.centerShift = SIMD2(Float((left - right) / w), Float((bottom - top) / h))
+        let bottom = min(panelInsets.bottom, h * 0.3)
         renderer.camera.visibleFraction = SIMD2(Float((w - left - right) / w), Float((h - top - bottom) / h))
     }
 
@@ -174,6 +217,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         updateSketchGrid()
         syncSketchScale()
         renderer?.draw(in: self)
+        hasDrawn = true
         updateLabels()
         updateSketchRulers()
         layoutViewCube()
@@ -215,7 +259,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             viewCube = c
             return c
         }()
-        let right = min(panelInsets.right, bounds.width * 0.45)
+        let right = min(shownInsets.right, bounds.width * 0.45)
         cube.frame.origin = NSPoint(x: bounds.width - right - ViewCubeView.size.width - DS.Spacing.space4,
                                     y: topInset + DS.Spacing.space4)
         cube.offersTurning = model?.sketchSession != nil
