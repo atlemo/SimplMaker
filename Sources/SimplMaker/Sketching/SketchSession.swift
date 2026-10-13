@@ -9,7 +9,7 @@ import Observation
 
 /// The sketch tools that change existing geometry as a whole, each with a popover for its values.
 enum SketchTransformTool: String, CaseIterable, Identifiable {
-    case move = "Move", scale = "Scale", pattern = "Pattern"
+    case move = "Move", scale = "Scale", pattern = "Pattern", mirror = "Mirror"
     var id: String { rawValue }
 
     var symbol: String {
@@ -17,6 +17,7 @@ enum SketchTransformTool: String, CaseIterable, Identifiable {
         case .move: return "move"
         case .scale: return "scaling"
         case .pattern: return "pattern"
+        case .mirror: return "flip-horizontal-2"
         }
     }
 
@@ -25,6 +26,7 @@ enum SketchTransformTool: String, CaseIterable, Identifiable {
         case .move: return "Move or rotate the selected curves (or the whole sketch): drag the arrows, the square or the ring, or type a distance or an angle"
         case .scale: return "Make the selected curves (or the whole sketch) bigger or smaller"
         case .pattern: return "Copy the selected curves (or the whole sketch) in a grid or around a point: drag the arrows or the ring, or type the counts and spacing"
+        case .mirror: return "Mirror the selected curves (or the whole sketch) across a line, a construction line, a projected edge or an axis; the mirror image stays linked to what it copies"
         }
     }
 }
@@ -296,7 +298,7 @@ final class SketchSession {
     private(set) var tool: SketchTool = .select
 
     func setTool(_ t: SketchTool) {
-        if t != .select { stopManipulating(); cancelPattern(); cancelOffset() }
+        if t != .select { stopManipulating(); cancelPattern(); cancelMirror(); cancelOffset() }
         if t != .gear || tool != .gear { gearBackup = nil; gearActive = nil }  // what the fields did stays, with the next change
         tool = t
         if t.family.count > 1 { lastInFamily[t.family[0]] = t }
@@ -431,6 +433,18 @@ final class SketchSession {
     @ObservationIgnored private var tolerance = 0.5
     /// How far the cursor snaps, in mm at the current zoom (a few pixels).
     var snapTolerance: Double { tolerance }
+    /// How many mm one screen pixel is on the sketch plane at the current zoom; 0 until the viewport has said.
+    private(set) var mmPerPixel = 0.0
+
+    /// The viewport tells the zoom: sizes drawn at a fixed number of pixels, and what is too small to be worth
+    /// showing, follow it. True if it changed enough that the overlay should be made again.
+    @discardableResult
+    func setViewScale(mmPerPixel mm: Double) -> Bool {
+        guard mm.isFinite, mm > 0, abs(mm - mmPerPixel) > 0.02 * mm else { return false }
+        mmPerPixel = mm
+        tolerance = 8 * mm
+        return true
+    }
     @ObservationIgnored private var gridStep: Double?
     @ObservationIgnored private var snapping = true
     /// The latest snap, for the marker and the status bar.
@@ -455,6 +469,9 @@ final class SketchSession {
         patternSetup = nil
         patternBase = nil
         patternBackup = nil
+        mirrorSetup = nil
+        mirrorBase = nil
+        mirrorBackup = nil
         gearBackup = nil
         sketch = s
         self.parameters = parameters
@@ -468,7 +485,7 @@ final class SketchSession {
     /// Moves the sketch's projected model edges to where the model has them now, and re-solves, so
     /// what is tied to them follows. Not written to the document until the next edit.
     func followModel(_ r: RegenResult) {
-        guard !sketch.projections.isEmpty, patternBase == nil else { return }
+        guard !sketch.projections.isEmpty, patternBase == nil, mirrorBase == nil else { return }
         var next = sketch
         guard (try? Regenerator.followProjections(&next, frame: frame, r)) != nil, next != sketch else { return }
         sketch = next
@@ -483,7 +500,7 @@ final class SketchSession {
 
     /// Makes the pattern copies again after the originals changed.
     private func refreshCopies() {
-        if !sketch.patterns.isEmpty || !sketch.gears.isEmpty { sketch.refreshGenerated(parameters) }
+        if !sketch.patterns.isEmpty || !sketch.gears.isEmpty || !sketch.mirrors.isEmpty { sketch.refreshGenerated(parameters) }
     }
 
     private func resetToolState() {
@@ -671,6 +688,7 @@ final class SketchSession {
     private func mouseDown(_ m: SketchMouse) -> (handled: Bool, commit: String?) {
         message = nil
         if patternSetup != nil { return (patternClick(), nil) }
+        if mirrorSetup != nil { return (mirrorClick(), nil) }
         if offsetSetup != nil { return (hover != nil, nil) }  // the arrow and the field set it; clicks on curves are ignored
         switch tool {
         case .select:
@@ -679,7 +697,9 @@ final class SketchSession {
                 gearActive = gid
                 return (true, nil)
             }
-            if let h = hover, let pid = Sketch.pattern(ofGenerated: h) {  // a copy: change its pattern
+            // A pattern's copy: change its pattern. A mirror's image is picked like any curve (a double-click takes
+            // the whole outline); the Mirror button changes the mirror of the image that is selected.
+            if let h = hover, let pid = Sketch.pattern(ofGenerated: h), !sketch.mirrors.contains(where: { $0.id == pid }) {
                 beginPattern(editing: pid)
                 return (true, nil)
             }
@@ -697,7 +717,7 @@ final class SketchSession {
             } else if !selection.contains(h) {
                 selection = [h]
             }
-            if sketch.point(h)?.fixed != true {
+            if sketch.point(h)?.fixed != true, !Sketch.isGenerated(h) {  // generated copies and images are not dragged
                 dragEntity = h
                 if let uv = m.uv, case let (a, _)? = sketch.lineEnds(h) { dragOffset = uv - a }
                 else if let uv = m.uv, sketch.kind(of: h) == .bezier, let c = sketch.curve(h),
@@ -922,6 +942,7 @@ final class SketchSession {
         typed = [:]
         cancelGearEdit()
         if patternSetup != nil { cancelPattern() }
+        if mirrorSetup != nil { cancelMirror() }
         if offsetSetup != nil { cancelOffset() }
         if manipulating != nil { cancelManipulatorPreview() }
     }
@@ -1030,6 +1051,7 @@ final class SketchSession {
     /// Return in a field: place the next point from the typed values, as a click would.
     func commitTyped() -> String? {
         if patternSetup != nil { return commitPattern() }
+        if mirrorSetup != nil { return commitMirror() }
         if offsetSetup != nil { return commitOffset() }
         if manipulating != nil { return commitTypedTransform() }
         if tool == .gear {  // Return keeps what the fields did to the active gear; with none, the size is set and there is nothing to place yet
@@ -1097,9 +1119,11 @@ final class SketchSession {
         guard canTransform else { return }
         if tool == .scale { transformRequested = tool; return }
         if tool == .pattern { beginPattern(); return }
+        if tool == .mirror { beginMirror(); return }
         if manipulating == tool { stopManipulating(); return }
         setTool(.select)
         cancelPattern()
+        cancelMirror()
         manipulating = tool
         message = nil
         lastSnap = nil
@@ -1350,6 +1374,7 @@ final class SketchSession {
 
     private func startPattern(_ def: SketchPatternDef, isNew: Bool) {
         stopManipulating()
+        cancelMirror()
         setTool(.select)
         message = nil
         patternBackup = sketch
@@ -1485,6 +1510,148 @@ final class SketchSession {
         return finish("Delete Pattern")
     }
 
+    // MARK: mirror
+
+    /// The mirror being made or changed while the Mirror tool is on; its line is empty until one is chosen.
+    private(set) var mirrorSetup: SketchMirrorDef?
+    /// The sketch as it was before, to go back to; and without this mirror, to show it on.
+    @ObservationIgnored private var mirrorBackup: Sketch?
+    @ObservationIgnored private var mirrorBase: Sketch?
+    @ObservationIgnored private var mirrorSelection: [EntityID] = []
+    /// Whether the mirror is new (else an existing one is being changed).
+    private(set) var mirrorIsNew = true
+
+    var isMirroring: Bool { mirrorSetup != nil }
+    var canMirror: Bool { mirrorSetup != nil || selectedMirrorImage != nil || sketch.canMirror(selection) }
+
+    /// The Mirror button: starts a mirror of the selection (or the whole sketch), or ends it, pressed again.
+    /// When the selection holds exactly one construction line besides other curves, that line is the one to
+    /// mirror across and the rest is what is mirrored.
+    func beginMirror() {
+        if mirrorSetup != nil { cancelMirror(); return }
+        if let id = selectedMirrorImage { beginMirror(editing: id); return }
+        let guides = selection.filter { sketch.curve($0).map { c in c.construction && sketch.canMirror(across: c.id) } == true }
+        if guides.count == 1, selection.count > 1, sketch.canMirror(selection.filter { $0 != guides[0] }) {
+            var def = SketchMirrorDef(sources: sketch.mirrorSources(selection.filter { $0 != guides[0] }), line: guides[0])
+            def.sources.removeAll { $0 == guides[0] }
+            startMirror(def, isNew: true)
+            return
+        }
+        guard sketch.canMirror(selection) else { message = "Nothing to mirror"; return }
+        startMirror(SketchMirrorDef(sources: sketch.mirrorSources(selection)), isNew: true)
+    }
+
+    /// The mirror whose image is what is selected, if the selection is only that image.
+    var selectedMirrorImage: EntityID? {
+        let owners = Set(selection.map { Sketch.isGenerated($0) ? Sketch.pattern(ofGenerated: $0) : nil })
+        guard owners.count == 1, let owner = owners.first ?? nil, sketch.mirrors.contains(where: { $0.id == owner }) else { return nil }
+        return owner
+    }
+
+    /// Opens an existing mirror (its image is selected) to change it.
+    func beginMirror(editing id: EntityID) {
+        guard mirrorSetup == nil, let def = sketch.mirrors.first(where: { $0.id == id }) else { return }
+        startMirror(def, isNew: false)
+    }
+
+    private func startMirror(_ def: SketchMirrorDef, isNew: Bool) {
+        stopManipulating()
+        cancelPattern()
+        setTool(.select)
+        message = nil
+        mirrorBackup = sketch
+        mirrorSelection = selection
+        // The sketch as it is, every mirror in place: the one being changed keeps its turn, and mirrors that copy its
+        // image still find it.
+        mirrorBase = sketch
+        mirrorIsNew = isNew
+        mirrorSetup = def
+        selection = []
+        previewMirror()
+    }
+
+    /// Takes the changes back and leaves the sketch as it was.
+    func cancelMirror() {
+        guard mirrorSetup != nil else { return }
+        if let backup = mirrorBackup { sketch = backup; selection = mirrorSelection }
+        endMirror()
+    }
+
+    private func endMirror() {
+        mirrorSetup = nil
+        mirrorBackup = nil
+        mirrorBase = nil
+        message = nil
+    }
+
+    /// Chooses the line to mirror across: the id of a line of the sketch, or `SketchMirrorDef.xAxis` / `yAxis`.
+    func setMirrorLine(_ line: EntityID) {
+        guard var def = mirrorSetup, let base = mirrorBase else { return }
+        guard base.canMirror(across: line) else {
+            message = "Click a straight line, a construction line or a projected edge (or choose an axis)"
+            return
+        }
+        def.line = line
+        mirrorSetup = def
+        message = nil
+        previewMirror()
+    }
+
+    /// The line the mirror goes across, in words.
+    var mirrorLineName: String? {
+        guard let d = mirrorSetup, d.line != "" else { return nil }
+        return mirrorBase?.mirrorLineName(d.line)
+    }
+
+    /// Shows the mirror image, over the sketch without it.
+    private func previewMirror() {
+        guard let def = mirrorSetup, let base = mirrorBase else { return }
+        var shown = base
+        if let i = shown.mirrors.firstIndex(where: { $0.id == def.id }) { shown.mirrors[i] = def }
+        else if def.line != "" { shown.mirrors.append(def) }
+        shown.refreshGenerated(parameters)
+        sketch = shown
+        selection = def.line != "" && !SketchMirrorDef.isAxis(def.line) ? [def.line] : []
+    }
+
+    /// A click while Mirror is on: on a line, it is the line to mirror across.
+    private func mirrorClick() -> Bool {
+        guard let h = hover else { return false }
+        if let base = mirrorBase, base.curve(h) != nil, !Sketch.isGenerated(h) { setMirrorLine(h) }
+        return true
+    }
+
+    var mirrorHint: String {
+        guard mirrorSetup != nil else { return "" }
+        let tail = " · Return keeps the mirror · Esc cancels"
+        guard let name = mirrorLineName else { return "Click the line to mirror across, or choose the X or Y axis" + tail }
+        return "Mirrored across \(name) · click another line, or choose an axis, to change it" + tail
+    }
+
+    /// Return: keeps the mirror (one undo step). The image stays linked to what it copies.
+    func commitMirror() -> String? {
+        guard let d = mirrorSetup, var made = mirrorBase else { return nil }
+        guard d.line != "" else { message = "Click the line to mirror across first, or choose the X or Y axis."; return nil }
+        if let i = made.mirrors.firstIndex(where: { $0.id == d.id }) { made.mirrors[i] = d } else { made.mirrors.append(d) }
+        made.refreshGenerated(parameters)
+        let isNew = mirrorIsNew
+        endMirror()
+        sketch = made
+        selection = []
+        return finish(isNew ? "Mirror" : "Edit Mirror")
+    }
+
+    /// Deletes the mirror being changed: its image goes, the originals stay.
+    func deleteMirror() -> String? {
+        guard let d = mirrorSetup, !mirrorIsNew, var made = mirrorBase else { cancelMirror(); return nil }
+        made.mirrors.removeAll { $0.id == d.id }  // (a mirror of its image goes with it)
+        made.refreshGenerated(parameters)
+        endMirror()
+        sketch = made
+        selection = []
+        return finish("Delete Mirror")
+    }
+
     // MARK: offset
 
     /// Offset while it is open: the distance, as an expression (negative goes to the other side of the arrow).
@@ -1526,6 +1693,7 @@ final class SketchSession {
         guard !sources.isEmpty, let handle = sketch.offsetHandle(sources) else { message = "Select the curves to offset first"; return }
         stopManipulating()
         cancelPattern()
+        cancelMirror()
         setTool(.select)
         message = nil
         offsetBase = sketch
@@ -1880,6 +2048,7 @@ final class SketchSession {
         if editingDimension != nil { editingDimension = nil }
         else if !clicks.isEmpty || !dimensionPicks.isEmpty { resetToolState() }
         else if patternSetup != nil { cancelPattern() }
+        else if mirrorSetup != nil { cancelMirror() }
         else if gearBackup != nil { cancelGearEdit() }
         else if gearActive != nil { gearActive = nil }  // the next click places another gear
         else if offsetSetup != nil { cancelOffset() }
@@ -1893,7 +2062,14 @@ final class SketchSession {
         // With nothing selected, Delete takes the dimension line under the pointer.
         if selection.isEmpty, let d = hoverDimension { return deleteDimension(d) }
         guard !selection.isEmpty else { return nil }
-        sketch.delete(Set(selection))
+        // The selected image of a mirror: deleting it takes the mirror away. Copies of a pattern go with their pattern's own Delete.
+        let images = Set(selection.compactMap { Sketch.isGenerated($0) ? Sketch.pattern(ofGenerated: $0) : nil })
+        let removedMirrors = sketch.mirrors.filter { images.contains($0.id) }.map(\.id)
+        let drawn = selection.filter { !Sketch.isGenerated($0) }
+        guard !removedMirrors.isEmpty || !drawn.isEmpty else { return nil }
+        sketch.mirrors.removeAll { removedMirrors.contains($0.id) }
+        sketch.delete(Set(drawn))
+        sketch.refreshGenerated(parameters)
         selection = []
         return finish("Delete")
     }
@@ -2144,6 +2320,7 @@ final class SketchSession {
     var statusText: String {
         if let message { return message }
         if patternSetup != nil { return message ?? patternHint }
+        if mirrorSetup != nil { return message ?? mirrorHint }
         if offsetSetup != nil { return message ?? offsetHint }
         var s = manipulating == nil ? tool.hint : "Drag an arrow, the square or the ring to move or turn \(selection.isEmpty ? "the sketch" : "the selection") · or type the values · Esc to stop"
         if let snap = lastSnap { s = "Snap: \(snap.kind.rawValue)\(snap.kind == .grid ? " \(gridStep.map { formatDimension($0, kind: .length) } ?? "")" : "") · " + s }

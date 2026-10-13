@@ -55,6 +55,55 @@ enum SketchOverlayBuilder {
         }
     }
 
+    // MARK: what is worth showing at this zoom
+
+    /// The width a label of this text takes, in pixels (about; the real one is measured by the view).
+    static func labelWidth(_ text: String) -> Double { Double(text.count) * 7 + 16 }
+
+    /// Whether what a label or glyph annotates is long enough on screen to earn it: a size, a symbol, a value
+    /// squeezed onto a few pixels of line only buries the sketch. Without a span, or before the zoom is known, yes.
+    static func legible(span: Double?, mmPerPixel: Double, needing pixels: Double) -> Bool {
+        guard let span, mmPerPixel > 0 else { return true }
+        return span / mmPerPixel >= pixels
+    }
+
+    /// The length a dimension spans, in mm: its line, or for an angle the shorter of its two lines.
+    static func span(of d: SketchDimension, in s: Sketch, value: Double?) -> Double? {
+        if let line = s.dimensionLine(of: d) { return simdLength(line.p2 - line.p1) }
+        func length(_ id: EntityID) -> Double? { s.lineEnds(id).map { simdLength($0.1 - $0.0) } }
+        switch d.kind {
+        case .angle(let a, let b):
+            guard let la = length(a), let lb = length(b) else { return nil }
+            return min(la, lb)
+        case .lineAngle(let l): return length(l)
+        default: return d.unitKind == .length ? value.map(abs) : nil
+        }
+    }
+
+    /// The text of a dimension's label.
+    static func dimensionText(_ d: SketchDimension, _ session: SketchSession) -> String {
+        let value = session.values[d.id].map { d.unitKind.format(isLineAngle(d.kind) ? Sketch.foldedAngle($0) : $0) } ?? "?"
+        let isParametric = ((try? Expressions.parse(d.expression))?.references.isEmpty == false)
+        return prefix(d.kind) + (isParametric ? "\(d.expression) = \(value)" : value)
+    }
+
+    /// Whether a dimension (its label, and its line) is shown at this zoom. One being changed, picked or
+    /// selected always is.
+    static func shows(_ d: SketchDimension, _ session: SketchSession) -> Bool {
+        if session.editingDimension == d.id || session.dimensionPicks.contains(d.id) || session.selection.contains(d.id) { return true }
+        let span = span(of: d, in: session.sketch, value: session.values[d.id])
+        let width = labelWidth(dimensionText(d, session))
+        return legible(span: span, mmPerPixel: session.mmPerPixel, needing: max(60, 0.8 * width))
+    }
+
+    /// Whether a measured size (the light label of a line or circle without a dimension) is shown: it needs more
+    /// room than a dimension, as there is one for every curve.
+    static func shows(measured m: (curve: EntityID, kind: SketchDimension.Kind, value: Double), _ session: SketchSession) -> Bool {
+        if session.selection.contains(m.curve) { return true }
+        return legible(span: abs(m.value), mmPerPixel: session.mmPerPixel,
+                       needing: max(90, 1.6 * labelWidth(prefix(m.kind) + measured(m.value))))
+    }
+
     /// Glyphs for the sketch being edited, one per constrained curve (or point).
     static func glyphs(_ session: SketchSession) -> [ConstraintGlyph] {
         let s = session.sketch
@@ -80,6 +129,9 @@ enum SketchOverlayBuilder {
             }
             for e in on {
                 guard let a = anchor(e) else { continue }
+                // A symbol on a short line (as drawn on screen) is only in the way; a selected one stays.
+                if !selected.contains(c.id), lookup.curves[e] != nil,
+                   !legible(span: s.lineEnds(e).map { simdLength($0.1 - $0.0) }, mmPerPixel: session.mmPerPixel, needing: 36) { continue }
                 let n = perEntity[e, default: 0]
                 perEntity[e] = n + 1
                 out.append(ConstraintGlyph(id: "\(c.id)#\(e)", constraint: c.id, world: world(session.frame, a), stack: n,
@@ -168,7 +220,7 @@ enum SketchOverlayBuilder {
                 o.construction += segments([p - SIMD2(0, r), p + SIMD2(0, r)], frame: f, id: 0)
             }
         }
-        for d in s.dimensions {
+        for d in s.dimensions where shows(d, session) {
             if let arc = s.angleArc(of: d, size: session.snapTolerance) {
                 o.preview += angleSegments(arc, size: session.snapTolerance, frame: f)
             } else if let line = s.dimensionLine(of: d) {
@@ -261,18 +313,17 @@ enum SketchOverlayBuilder {
     static func labels(_ session: SketchSession) -> [DimensionLabel] {
         let s = session.sketch
         var out: [DimensionLabel] = s.dimensions.compactMap { d in
-            guard let anchor = s.dimensionLine(of: d).map(labelAnchor) ?? anchor(d.kind, s, size: session.snapTolerance) else { return nil }
-            let value = session.values[d.id].map { d.unitKind.format(isLineAngle(d.kind) ? Sketch.foldedAngle($0) : $0) } ?? "?"
-            let isParametric = ((try? Expressions.parse(d.expression))?.references.isEmpty == false)
+            guard shows(d, session),
+                  let anchor = s.dimensionLine(of: d).map(labelAnchor) ?? anchor(d.kind, s, size: session.snapTolerance) else { return nil }
             return DimensionLabel(id: d.id, world: world(session.frame, anchor),
-                                  text: prefix(d.kind) + (isParametric ? "\(d.expression) = \(value)" : value),
+                                  text: dimensionText(d, session),
                                   editing: session.editingDimension == d.id, isDimension: true,
                                   outward: s.dimensionLine(of: d) == nil ? outward(d.kind, session.frame) : nil)
         }
         // Every other line, circle and arc shows its measured size, lighter.
         let pending = session.pendingLineLength != nil ? session.dimensionPicks.first : nil
         let lookup = Lookup(s)
-        for m in session.referenceMeasurements where m.curve != pending {
+        for m in session.referenceMeasurements where m.curve != pending && shows(measured: m, session) {
             guard let anchor = anchor(m.kind, s, lookup: lookup) else { continue }
             out.append(DimensionLabel(id: DimensionLabel.referenceID(m.curve), world: world(session.frame, anchor),
                                       text: prefix(m.kind) + measured(m.value), editing: false, reference: true,

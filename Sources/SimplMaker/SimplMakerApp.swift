@@ -218,7 +218,7 @@ struct SimplMakerCommands: Commands {
                     .disabled(!(model?.sketchSession?.canOffset ?? false))
                 ForEach(SketchTransformTool.allCases) { tool in
                     Button(tool == .scale ? "Scale Selection…" : tool == .pattern ? "Pattern Selection" : "\(tool.rawValue) Selection") { model?.beginSketchTransform(tool) }
-                        .disabled(!((tool == .pattern ? model?.sketchSession?.canPattern : model?.sketchSession?.canTransform) ?? false))
+                        .disabled(!((tool == .pattern ? model?.sketchSession?.canPattern : tool == .mirror ? model?.sketchSession?.canMirror : model?.sketchSession?.canTransform) ?? false))
                 }
                 Divider()
                 Toggle("Slice View", isOn: Binding(get: { model?.sketchSlice ?? false }, set: { model?.sketchSlice = $0 }))
@@ -275,11 +275,19 @@ struct SimplMakerCommands: Commands {
 /// F round corner). Shortcuts with ⌘, ⌃ or ⌥ always run the command.
 @MainActor
 enum LetterShortcut {
+    /// True while a key is being handed back to the view that had it. If nobody there wants it (a letter the sketch
+    /// has no tool for, or a list that ignores it), it climbs to the window, which offers it to the menu again,
+    /// which hands it back again: for ever. So a key that comes round a second time is dropped.
+    static var handingBack = false
+
     static func perform(_ model: DocumentModel?, _ action: () -> Void) {
+        if handingBack { return }
         if let event = NSApp.currentEvent, event.type == .keyDown,
            event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
            let window = NSApp.keyWindow, let responder = window.firstResponder,
            responder is NSText || model?.sketchSession != nil || window.sheetParent != nil || window.attachedSheet != nil {
+            handingBack = true
+            defer { handingBack = false }
             responder.keyDown(with: event)
             return
         }

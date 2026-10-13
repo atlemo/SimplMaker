@@ -1,6 +1,6 @@
 ---
-title: Move, scale and pattern
-description: Move, turn, scale and repeat curves inside a sketch, or transform a whole sketch.
+title: Move, scale, pattern and mirror
+description: Move, turn, scale, repeat and mirror curves inside a sketch, or transform a whole sketch.
 ---
 
 The **Transform** group in the sketch toolbar works on the curves and points you have selected. With nothing selected, it works on the whole sketch. The same commands are in the **Sketch** menu.
@@ -49,6 +49,31 @@ Press [[Return]] or **OK** to keep the pattern as one undo step. [[Esc]] or **Ca
 Click one of its copies with the Select tool to change it. **Delete** (or [[⌫]]) in the panel removes the copies and leaves the originals.
 
 The copies are read-only: you can't draw to them, constrain them or drag them, but you can extrude their profiles like any other. A pattern makes at most 400 copies, and curves added to the sketch later are not part of it.
+
+## Mirror
+
+Press **Mirror** to copy the selected curves to the other side of a line. Like a pattern, the mirror image stays **linked**: it is rebuilt from the originals, so changing an original, a dimension or a parameter changes the image too.
+
+1. Select the curves to mirror, or select nothing to mirror the whole sketch.
+2. Press **Mirror**.
+3. Click the **line** to mirror across: a drawn line, a **construction line**, or a **projected edge** from the model. Or press **X Axis** or **Y Axis** in the bar at the bottom to mirror across the sketch's own axes.
+4. Press [[Return]] or **OK** to keep it. [[Esc]] or **Cancel** takes it back.
+
+Click another line, or an axis button, to change the line before you keep it.
+
+A shortcut: select the curves **and one construction line**, then press **Mirror**. The construction line is the line to mirror across, and the mirror is made at once, ready for [[Return]].
+
+Draw the construction line first, and a mirror is a quick way to draw one half of a part and get the other for free. A point that sits on the mirror line is shared by the shape and its image, so a half that touches the line and its image make **one closed outline**: it offsets, extrudes and selects (double-click) as a whole. The line itself is never copied. Text is not mirrored.
+
+### Change or remove a mirror
+
+The mirrored curves select like any others: click one, or double-click to select the whole outline. With a mirrored curve selected, press **Mirror** again to change the line it goes across. **Delete** (or [[⌫]]) removes the mirror image and leaves the originals, either in the bar or on a selected image.
+
+The image is read-only like a pattern's copies: you can't draw to it, constrain it or drag it, but you can extrude its profiles. A mirror copies what other mirrors and patterns made, so a shape you have mirrored once can be mirrored again, image and all, across a second line. Mirrors are made in order: change an earlier one and the later ones that copy its image follow. Curves added to the sketch later are not part of a mirror; press **Mirror** again for them.
+
+If you leave the sketch while the mirror bar is open and a line is chosen, the mirror is kept, as if you had pressed **OK**.
+
+Mirroring bodies, not sketches, is in [Mirror and pattern](doc:modify/mirror-pattern).
 
 ## Move and scale a whole sketch
 

@@ -359,6 +359,11 @@ extension Sketch {
             guard let c = curve(id), case .circle(let center, let r) = c.geometry else { continue }
             let nr = r + distance
             guard nr > 1e-6 else { continue }
+            if Sketch.isGenerated(id) {  // an image or a copy is made again at every change: its offset is a plain circle
+                let at = position(center) ?? .zero
+                created.append(addCircle(center: addPoint(at.x, at.y), radius: nr))
+                continue
+            }
             let nid = addCircle(center: center, radius: nr)
             dimension(.radialOffset(from: id, to: nid), expression)
             created.append(nid)
@@ -447,7 +452,15 @@ extension Sketch {
     /// Which way a positive offset distance goes from the left of a chain's travel direction: +1 (left),
     /// or −1 for a closed chain that runs counter-clockwise, where positive means outward.
     private func offsetSide(_ chain: (items: [(id: EntityID, reversed: Bool)], closed: Bool)) -> Double {
-        guard chain.closed else { return 1 }
+        guard chain.closed else {
+            // A mirror image runs the same way as its original but is the other way round, so its left is the
+            // original's right: flipped, the two offset to the same side of the shape. (A chain that joins the
+            // original and its image is one curve, offset to its left all along.)
+            let images = chain.items.allSatisfy { item in
+                Sketch.isGenerated(item.id) && Sketch.pattern(ofGenerated: item.id).map { id in mirrors.contains { $0.id == id } } == true
+            }
+            return images ? -1 : 1
+        }
         // Signed area of the chain walked along its curves, so two arcs or Béziers (whose ends alone
         // enclose nothing) still have a direction.
         var area = 0.0
@@ -579,6 +592,7 @@ extension Sketch {
             switch original.geometry {
             case .line:
                 let nid = addLine(a, b)
+                if Sketch.isGenerated(item.id) { created.append(nid); continue }  // no ties to what is made again at every change
                 constrain(.parallel(item.id, nid))
                 dimension(.pointLineDistance(point: a, line: item.id), expression)
                 // The dimension is drawn from the new line's start, which is a corner: its label would sit on the
@@ -586,6 +600,11 @@ extension Sketch {
                 if let ends = lineEnds(item.id) { dimensions[dimensions.count - 1].offset = vlen(ends.1 - ends.0) / 2 }
                 created.append(nid)
             case .arc(let center, _, _):
+                if Sketch.isGenerated(item.id) {
+                    let at = position(center) ?? .zero
+                    created.append(addArc(center: addPoint(at.x, at.y), start: a, end: b))
+                    continue
+                }
                 let nid = addArc(center: center, start: a, end: b)
                 dimension(.radialOffset(from: item.id, to: nid), expression)
                 created.append(nid)

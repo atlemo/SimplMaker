@@ -579,6 +579,57 @@ struct SketchPatternHUD: View {
     }
 }
 
+/// The sketch Mirror tool's choices: the line is clicked in the sketch, or an axis is chosen here.
+struct SketchMirrorBar: View {
+    let model: DocumentModel
+
+    var body: some View {
+        if let session = model.sketchSession, let setup = session.mirrorSetup {
+            HStack(spacing: DS.Spacing.space3) {
+                if let problem = session.message {
+                    Text(problem)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .errorWrap(problem, width: 320)
+                } else {
+                    Text(session.mirrorLineName.map { "Mirror across \($0)" } ?? "Click the line to mirror across")
+                        .font(.callout.weight(.medium))
+                }
+                axisButton("X Axis", SketchMirrorDef.xAxis, setup, session, help: "Mirror across the sketch's x axis (up and down swap)")
+                axisButton("Y Axis", SketchMirrorDef.yAxis, setup, session, help: "Mirror across the sketch's y axis (left and right swap)")
+                if !session.mirrorIsNew {
+                    Button("Delete") { model.commitSketch(session.deleteMirror()); model.overlayRevision += 1 }
+                        .help("Remove the mirror image (⌫)")
+                }
+                Button("Cancel") {
+                    session.cancelMirror()
+                    model.overlayRevision += 1
+                }
+                .help("Take the mirror back (Esc)")
+                Button("OK") { model.commitSketchTyped() }
+                    .disabled(setup.line == "")
+                    .help("Keep the mirror (Return)")
+            }
+            .controlSize(.small)
+            .padding(.horizontal, DS.Spacing.space4)
+            .padding(.vertical, DS.Spacing.space2)
+            .glassEffect(.regular, in: .capsule)
+            .fixedSize()
+            .transition(.opacity)
+        }
+    }
+
+    private func axisButton(_ title: String, _ axis: EntityID, _ setup: SketchMirrorDef, _ session: SketchSession, help: String) -> some View {
+        Button(title) {
+            session.setMirrorLine(axis)
+            model.overlayRevision += 1
+        }
+        .buttonStyle(.bordered)
+        .tint(setup.line == axis ? .accentColor : nil)
+        .help(help)
+    }
+}
+
 /// OK and Cancel for a feature with no drag handle to carry them (see DocumentModel.featureWithoutHandle).
 struct FeatureDoneBar: View {
     let model: DocumentModel

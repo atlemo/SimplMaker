@@ -177,7 +177,7 @@ extension Sketch {
     @discardableResult
     public mutating func refreshGenerated(_ parameters: ParameterValues) -> [EntityID: String] {
         _ = takeGenerated()
-        guard !patterns.isEmpty || !gears.isEmpty else { return [:] }
+        guard !patterns.isEmpty || !gears.isEmpty || !mirrors.isEmpty else { return [:] }
         for i in patterns.indices { patterns[i].sources = patterns[i].sources.filter { point($0) != nil || curve($0) != nil } }
         patterns.removeAll { $0.sources.isEmpty }
         var problems: [EntityID: String] = [:]
@@ -191,6 +191,7 @@ extension Sketch {
             }
         }
         for (id, problem) in refreshGears(parameters) { problems[id] = problem }
+        for (id, problem) in refreshMirrors() { problems[id] = problem }
         return problems
     }
 
@@ -204,24 +205,44 @@ extension Sketch {
             case .scale(let f, let c): return c + (p - c) * f
             }
         }
-        func id(_ source: EntityID) -> EntityID { prefix + source }
-        for p in points where parts.points.contains(p.id) {
+        var turn = 0.0
+        if case .rotate(let a, _) = t { turn = a }
+        copyGeometry(parts, prefix: prefix, map: map, reversed: false, textTurn: turn)
+    }
+
+    /// Adds a copy of `parts` with every position sent through `map`, as fixed points and curves whose ids
+    /// are the originals' behind `prefix`. `reversed` is for a map that flips left and right (a reflection),
+    /// which swaps an arc's ends so it still runs counter-clockwise. Texts come along turned by `textTurn`;
+    /// nil leaves them out.
+    /// `shared` are points the copy uses as they are instead of making its own (the ones a mirror leaves in place,
+    /// on its line): copies of curves that end there join the originals. A line or circle that would then lie
+    /// exactly on its original is left out.
+    mutating func copyGeometry(_ parts: (curves: [SketchCurve], points: Set<EntityID>), prefix: String,
+                               map: (SIMD2<Double>) -> SIMD2<Double>, reversed: Bool, textTurn: Double?,
+                               shared: Set<EntityID> = []) {
+        func id(_ source: EntityID) -> EntityID { shared.contains(source) ? source : prefix + source }
+        for p in points where parts.points.contains(p.id) && !shared.contains(p.id) {
             let q = map(p.position)
             points.append(SketchPoint(id: id(p.id), x: q.x, y: q.y, fixed: true))
         }
         for c in parts.curves {
             let geometry: SketchCurve.Geometry
             switch c.geometry {
-            case .line(let a, let b): geometry = .line(start: id(a), end: id(b))
-            case .circle(let m, let r): geometry = .circle(center: id(m), radius: r)
-            case .arc(let m, let a, let b): geometry = .arc(center: id(m), start: id(a), end: id(b))
+            case .line(let a, let b):
+                if shared.contains(a), shared.contains(b) { continue }  // on the line itself: its own image
+                geometry = .line(start: id(a), end: id(b))
+            case .circle(let m, let r):
+                if shared.contains(m) { continue }
+                geometry = .circle(center: id(m), radius: r)
+            case .arc(let m, let a, let b): geometry = reversed ? .arc(center: id(m), start: id(b), end: id(a)) : .arc(center: id(m), start: id(a), end: id(b))
             case .bezier(let a, let c1, let c2, let b): geometry = .bezier(start: id(a), control1: id(c1), control2: id(c2), end: id(b))
             }
             curves.append(SketchCurve(id: id(c.id), geometry, construction: c.construction))
         }
+        guard let turn = textTurn else { return }
         for text in texts where parts.points.contains(text.position) && !Sketch.isGenerated(text.id) {
             var copy = SketchText(id: id(text.id), text: text.text, position: id(text.position), height: text.height, font: text.font, angle: text.angle)
-            if case .rotate(let a, _) = t { copy.angle += a }
+            copy.angle += turn
             texts.append(copy)
         }
     }

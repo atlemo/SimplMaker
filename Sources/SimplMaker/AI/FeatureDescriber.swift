@@ -137,7 +137,14 @@ struct FeatureDescriber {
             out["base"] = plane(f.base); out["offset"] = length(f.offset); out["angle"] = angle(f.angle)
             out["axis"] = .text(f.axis.rawValue.lowercased())
         case .mirror(let f):
-            out["bodies"] = .list(f.bodies); out["plane"] = plane(f.plane); operation(f.operation)
+            out["bodies"] = .list(f.bodies); operation(f.operation)
+            switch f.line {
+            case nil: out["plane"] = plane(f.plane)
+            case .x?: out["line"] = .text("x")
+            case .y?: out["line"] = .text("y")
+            case .z?: out["line"] = .text("z")
+            case .edge(let e)?: out["line"] = .text(AIEntityRef.edge(e).string)
+            }
         case .pattern(let f):
             out["kind"] = .text(f.kind.rawValue.lowercased()); out["bodies"] = .list(f.bodies)
             switch f.axis {

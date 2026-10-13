@@ -170,7 +170,7 @@ extension DocumentModel {
     /// value that comes from a parameter asks before it is replaced by a number.
     func endManipulatorDrag() {
         if let session = sketchSession {
-            if session.isPatterning || session.isOffsetting { overlayRevision += 1; return }  // stays open for more changes
+            if session.isPatterning || session.isMirroring || session.isOffsetting { overlayRevision += 1; return }  // stays open for more changes
             sketchCommand { $0.endManipulatorDrag() }
             return
         }

@@ -52,6 +52,51 @@ import simd
         #expect(abs(box.min.x + 30) < 1e-6 && abs(box.max.x - 30) < 1e-6)
     }
 
+    @Test func mirrorAlongAnAxisUsesThePlaneThroughItSquareToTheFloor() throws {
+        // The block runs x 10…30, y 0…10, z 0…5.
+        let x = try run(try block(extra: [Feature(id: "m", name: "Mirror1", .mirror(MirrorFeature(bodies: ["e"], line: .x)))]))
+        let bx = try #require(x.body("e"))
+        #expect(abs(bx.volume - 2000) < 1e-6, "mirrored across the XZ plane, the copy meets the block along y = 0")
+        let boxX = try #require(bx.bounds)
+        #expect(abs(boxX.min.y + 10) < 1e-6 && abs(boxX.max.y - 10) < 1e-6 && abs(boxX.min.x - 10) < 1e-6)
+
+        for axis in [PatternAxis.y, .z] {
+            let r = try run(try block(extra: [Feature(id: "m", name: "Mirror1", .mirror(MirrorFeature(bodies: ["e"], line: axis)))]))
+            let box = try #require(r.body("e")?.bounds)
+            #expect(abs(box.min.x + 30) < 1e-6 && abs(box.max.x - 30) < 1e-6, "left and right swap, as with the YZ plane")
+        }
+        let frame = try Regenerator.mirrorPlane(along: .x, RegenResult())
+        #expect(abs(abs(frame.normal.y) - 1) < 1e-9 && simd_length(frame.origin) < 1e-9)
+    }
+
+    @Test func mirrorAlongAStraightEdgeMakesATrueMirrorImage() throws {
+        var doc = try block()  // (its curve ids are made afresh each time, so the edge name belongs to this document)
+        let base = try run(doc)
+        let body = try #require(base.body("e"))
+        let edge = try #require(try body.faceEdges("e.start").first { (try? body.edgeLine($0).direction).map { abs($0.x) > 0.99 } == true })
+        let ref = EdgeRef(body: "e", edge: edge)
+        doc.features.append(Feature(id: "m", name: "Mirror1", .mirror(MirrorFeature(bodies: ["e"], line: .edge(ref)))))
+        let along = try run(doc)
+        let result = try #require(along.body("e"))
+        #expect(abs(result.volume - 2000) < 1e-6, "the copy lies against the block, in the plane through the edge")
+        let plane = try Regenerator.mirrorPlane(along: .edge(ref), base)
+        let direction = try body.edgeLine(edge).direction
+        #expect(abs(simd_dot(plane.normal, simd_normalize(direction))) < 1e-9, "the edge lies in the mirror plane")
+        // Square to the face the edge borders: the plane's normal lies in that face's plane.
+        let faceNormals = try body.edgeFaces(edge).compactMap { try? body.faceFrame($0).normal }
+        #expect(faceNormals.contains { abs(simd_dot($0, plane.normal)) < 1e-9 })
+    }
+
+    @Test func mirrorAlongAnEdgeKeepsWorkingWhenSavedAndReloaded() throws {
+        let m = MirrorFeature(bodies: ["e"], line: .edge(EdgeRef(body: "e", edge: "a|b")))
+        let back = try JSONDecoder().decode(MirrorFeature.self, from: JSONEncoder().encode(m))
+        #expect(back == m)
+        let plain = MirrorFeature(bodies: ["e"], plane: .yz)
+        let text = String(decoding: try JSONEncoder().encode(plain), as: UTF8.self)
+        #expect(!text.contains("line"), "a mirror across a plane is saved as before")
+        #expect(try JSONDecoder().decode(MirrorFeature.self, from: Data(text.utf8)) == plain, "and an older file has no line")
+    }
+
     @Test func linearCircularAndEdgePatterns() throws {
         let linear = try block(extra: [Feature(id: "p", name: "Pattern1", .pattern(PatternFeature(
             kind: .linear, bodies: ["e"], axis: .y, count: "3", spacing: "15 mm")))])
@@ -173,5 +218,26 @@ import simd
     @Test func aStartFaceMustBeParallel() throws {
         let r = Regenerator.regenerate(fromFace(FaceRef(body: "b", face: "b.front"), extent: .distance("5 mm")))
         #expect(r.errors["e"]?.contains("parallel") == true, "\(r.errors)")
+    }
+}
+
+/// A sketch mirrored across a line it touches is one profile with its image.
+@Suite struct SketchMirrorProfileTests {
+    @Test func theHalfAndItsImageExtrudeAsOneBody() throws {
+        var s = Sketch()
+        let a = s.addPoint(0, 0), b = s.addPoint(10, 0), c = s.addPoint(8, 5), d = s.addPoint(2, 5)
+        let base = s.addLine(a, b, construction: true)
+        let lines = [s.addLine(b, c), s.addLine(c, d), s.addLine(d, a)]
+        s.mirrors = [SketchMirrorDef(id: "m", sources: lines, line: base)]
+        var doc = CADDocument()
+        doc.features = [
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s))),
+            Feature(id: "e", name: "Extrude1", .extrude(ExtrudeFeature(sketch: "sk", profiles: [ProfileRef(curves: [], hintU: 5, hintV: 0)],
+                                                                          extent: .distance("3 mm")))),
+        ]
+        let r = Regenerator.regenerate(doc)
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let body = try #require(r.body("e"))
+        #expect(abs(body.volume - 2 * 40 * 3) < 1e-6, "one profile of both halves, 80 mm² (got \(body.volume / 3))")
     }
 }

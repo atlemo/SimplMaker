@@ -145,6 +145,21 @@ import Testing
         #expect(abs(twin.boundsMin[0] + 50) < 0.01 && abs(twin.boundsMax[0] + 10) < 0.01)
     }
 
+    @Test func mirroringAlongAnAxisOrAnEdgeNeedsExactlyOneOfPlaneAndLine() async throws {
+        let t = await open()
+        try await box(t, "40", "20", "10", u: "30")  // x 10…50, y -10…10 (centred), so the copy across the x axis touches it
+        let neither = await refusal { _ = try await t.service.change(documentID: t.id, expectedRevision: nil, try op("create_mirror", ["bodies": ["base"]])) }
+        #expect(neither?.code == .invalidArguments)
+        let both = await refusal { _ = try await t.service.change(documentID: t.id, expectedRevision: nil, try op("create_mirror", ["bodies": ["base"], "plane": "yz", "line": "x"])) }
+        #expect(both?.code == .invalidArguments)
+        let bad = await refusal { _ = try await t.service.change(documentID: t.id, expectedRevision: nil, try op("create_mirror", ["bodies": ["base"], "line": "diagonal"])) }
+        #expect(bad?.code == .invalidArguments)
+        let r = try await t.service.change(documentID: t.id, expectedRevision: nil, try op("create_mirror", ["bodies": ["base"], "line": "x", "operation": "new_body", "id": "twin"]))
+        #expect(r.message.contains("along x") && r.bodies.contains { $0.id == "twin" })
+        guard case .mirror(let m)? = t.model.document.features.last?.kind else { Issue.record("expected a mirror"); return }
+        #expect(m.line == .x)
+    }
+
     @Test func aLinearPatternOfPegsJoinsToTheBase() async throws {
         let t = await open()
         try await box(t, id: "base", "100", "20", "5")

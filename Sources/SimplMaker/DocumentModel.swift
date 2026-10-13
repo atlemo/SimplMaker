@@ -1181,6 +1181,10 @@ final class DocumentModel {
     /// (extrude and the like): that stays where it is, so the picture doesn't jump.
     func finishSketch(keepingView: Bool = false) {
         if let session = sketchSession, let action = session.keepGearEdit() { commitSketch(action) }
+        // A mirror that has its line is kept, as Return would (without one there is nothing to keep).
+        if let session = sketchSession, session.isMirroring {
+            if session.mirrorSetup?.line == "" { session.cancelMirror() } else { commitSketch(session.commitMirror()) }
+        }
         sketchClosedKeepingView = keepingView
         sketchSession = nil
         overlayRevision += 1
@@ -1236,6 +1240,7 @@ final class DocumentModel {
         guard let session = sketchSession else { return }
         if let action = session.keepGearEdit() { commitSketch(action) }  // a gear the fields were changing is kept
         session.cancelPattern()  // a command works on the sketch as it is, not with the pattern's copies shown
+        session.cancelMirror()
         session.cancelOffset()   // nor with an offset's preview
         commitSketch(command(session))
     }

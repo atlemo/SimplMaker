@@ -133,7 +133,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .split: return "divide bodies into new bodies along a plane, a face or a sketch profile"
         case .layOnFloor: return "click a flat face and the body turns and drops to the floor, that face down and flush"
         case .plane: return "a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
-        case .mirror: return "copy bodies across a plane"
+        case .mirror: return "copy bodies across a plane, or along an axis or a straight edge"
         case .pattern: return "copy bodies in a row or around an axis"
         case .shell: return "hollow a body, leaving the picked faces open"
         case .draft: return "lean the picked faces over by a draft angle, so a mould can let go of the part"
@@ -306,7 +306,8 @@ extension DocumentModel {
         case .plane: return "Click an origin plane, a construction plane or a flat face to start the new plane from"
         case .canvas: return "Click a plane or flat face to place the image on, then choose the image"
         case .mirror:
-            return pickedBodies.isEmpty ? "Click the bodies to mirror" : "Click more bodies, or the plane to mirror across (\(pickedBodies.count) picked)"
+            return pickedBodies.isEmpty ? "Click the bodies to mirror"
+                : "Click more bodies, then the plane to mirror across, or a straight edge to mirror along (\(pickedBodies.count) picked)"
         case .pattern:
             let n = faceBodies.count
             return n == 0 ? "Click the bodies to copy" : "Click more bodies, or a straight edge for the direction · Return makes the pattern (\(n) picked)"
@@ -427,6 +428,11 @@ extension DocumentModel {
             guard selection.count == 1, let pick = selection.first else { return false }
             return place(tool, on: pick)
         case .mirror:
+            // With a body picked by a face, a straight edge is the line to mirror along.
+            if !faceBodies.isEmpty, let edge = selection.lazy.compactMap({ self.straightEdgeRef($0) }).first {
+                add(Feature(name: document.nextName("Mirror"), .mirror(MirrorFeature(bodies: faceBodies, line: .edge(edge)))))
+                return true
+            }
             // Bodies from face and edge picks; the plane from a plane pick.
             let bodies = pickedBodies
             guard !bodies.isEmpty, let plane = selection.lazy.filter({ $0.kind == .plane }).compactMap({ self.planeRef(of: $0) }).first
@@ -822,6 +828,13 @@ extension DocumentModel {
             if let id = meshes[safe: pick.body]?.id, !bodies.contains(id) { bodies.append(id) }
         }
         return bodies
+    }
+
+    /// The picked edge as a reference, if it is straight (a line to mirror or pattern along).
+    func straightEdgeRef(_ pick: PickID) -> EdgeRef? {
+        guard pick.isEdge, let m = meshes[safe: pick.body], let name = self.name(of: pick),
+              let body = result?.body(m.id), (try? body.edgeLine(name)) != nil else { return nil }
+        return EdgeRef(body: m.id, edge: name)
     }
 
     /// Bodies with a picked face or edge, in the order they were picked.

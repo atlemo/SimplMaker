@@ -426,14 +426,19 @@ public struct PlaneFeature: Codable, Hashable, Sendable {
     }
 }
 
-/// Mirrors bodies across a plane. Join adds each mirrored copy to its body; New Body keeps the
-/// copies as a body of their own.
+/// Mirrors bodies across a plane, or along a line: an origin axis or a straight edge. Along a line, the
+/// mirror plane contains the line and stands square to the plane the line lies in (for an edge, its first
+/// flat face; for the X and Y axes the floor; for the Z axis the XZ plane), so the copy is a true mirror
+/// image. When `line` is set, `plane` is not used. Join adds each mirrored copy to its body; New Body keeps
+/// the copies as a body of their own.
 public struct MirrorFeature: Codable, Hashable, Sendable {
     public var bodies: [FeatureID]
     public var plane: PlaneRef
     public var operation: BodyOperation
-    public init(bodies: [FeatureID], plane: PlaneRef, operation: BodyOperation = .join) {
-        self.bodies = bodies; self.plane = plane; self.operation = operation
+    /// The axis or edge to mirror along instead of across `plane`.
+    public var line: PatternAxis?
+    public init(bodies: [FeatureID], plane: PlaneRef = .yz, operation: BodyOperation = .join, line: PatternAxis? = nil) {
+        self.bodies = bodies; self.plane = plane; self.operation = operation; self.line = line
     }
 }
 

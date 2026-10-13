@@ -332,8 +332,37 @@ public enum Regenerator {
         }
     }
 
+    /// The plane a mirror along a line uses: it contains the line and stands square to the plane the line lies in.
+    /// The X axis lies in the floor (so the plane is XZ, which swaps front and back), the Y axis too (YZ, left
+    /// and right), the Z axis in the XZ plane (so YZ); an edge lies in its first flat face, or else the floor
+    /// (or, for an upright edge, the XZ plane).
+    public static func mirrorPlane(along line: PatternAxis, _ r: RegenResult) throws -> Frame {
+        func plane(through origin: SIMD3<Double>, direction: SIMD3<Double>, lyingIn n: SIMD3<Double>) -> Frame {
+            let normal = simd_normalize(simd_cross(simd_normalize(direction), simd_normalize(n)))
+            return Frame(origin: origin, normal: normal, xAxis: simd_normalize(direction))
+        }
+        switch line {
+        case .x: return plane(through: .zero, direction: SIMD3(1, 0, 0), lyingIn: SIMD3(0, 0, 1))
+        case .y: return plane(through: .zero, direction: SIMD3(0, 1, 0), lyingIn: SIMD3(0, 0, 1))
+        case .z: return plane(through: .zero, direction: SIMD3(0, 0, 1), lyingIn: SIMD3(0, 1, 0))
+        case .edge(let e):
+            guard let body = r.body(e.body) else { throw KernelError(message: "the body with the mirror edge is missing") }
+            let l = try body.edgeLine(e.edge)
+            let direction = simd_normalize(l.direction)
+            var reference: SIMD3<Double>?
+            for face in (try? body.edgeFaces(e.edge)) ?? [] {
+                if let frame = try? body.faceFrame(face), abs(simd_dot(simd_normalize(frame.normal), direction)) < 0.999 {
+                    reference = frame.normal
+                    break
+                }
+            }
+            let floor = abs(direction.z) < 0.999 ? SIMD3<Double>(0, 0, 1) : SIMD3<Double>(0, 1, 0)
+            return plane(through: l.origin, direction: direction, lyingIn: reference ?? floor)
+        }
+    }
+
     static func mirror(_ f: MirrorFeature, _ feature: Feature, _ r: inout RegenResult) throws {
-        let frame = try resolvePlane(f.plane, r)
+        let frame = try f.line.map { try mirrorPlane(along: $0, r) } ?? resolvePlane(f.plane, r)
         let indices = try transformInputs(f.bodies, feature, &r)
         let copies = try indices.map { i in
             (i, try r.bodies[i].body.mirroredCopy(through: frame.origin, normal: frame.normal, prefix: "\(feature.id)."))

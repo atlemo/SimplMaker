@@ -415,7 +415,8 @@ extension Sketch {
         curves.removeAll { gone.contains($0.id) }
         // Points that only belonged to removed curves.
         texts.removeAll { gone.contains($0.id) || gone.contains($0.position) }  // a text goes with its anchor
-        let stillUsed = Set(curves.flatMap { pointIDs(of: $0) } + texts.map(\.position))
+        // (Images that a mirror makes may share a point; they don't keep it alive, they are made again from what is left.)
+        let stillUsed = Set(curves.filter { !Sketch.isGenerated($0.id) }.flatMap { pointIDs(of: $0) } + texts.map(\.position))
         for c in removedCurves {
             for p in pointIDs(of: c) where p != "origin" && !stillUsed.contains(p) { gone.insert(p) }
         }
@@ -423,6 +424,8 @@ extension Sketch {
         dropBrokenProjections()
         for i in patterns.indices { patterns[i].sources.removeAll { gone.contains($0) } }
         patterns.removeAll { $0.sources.isEmpty }
+        for i in mirrors.indices { mirrors[i].sources.removeAll { gone.contains($0) } }
+        mirrors.removeAll { $0.sources.isEmpty || gone.contains($0.line) }
         constraints.removeAll { gone.contains($0.id) || Sketch.references($0.kind).contains(where: gone.contains) }
         dimensions.removeAll { gone.contains($0.id) || Sketch.references($0.kind).contains(where: gone.contains) }
     }

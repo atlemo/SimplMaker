@@ -554,11 +554,13 @@ enum AITools {
             MCPTool(
                 name: "create_mirror", title: "Mirror bodies",
                 description: """
-                Mirrors bodies across a plane, like the Mirror tool. Use it for symmetric parts: model one half, mirror it, and the two \
-                halves are joined into one body.
+                Mirrors bodies across a plane, or along an axis or a straight edge, like the Mirror tool. Use it for symmetric parts: \
+                model one half, mirror it, and the two halves are joined into one body.
 
-                Arguments: document_id; bodies (required: body ids); plane (required: "xy", "xz", "yz", a construction plane as \
-                "plane:<id>", or a flat face id); operation (optional: "join" (default) adds each mirrored copy to its own body; \
+                Arguments: document_id; bodies (required: body ids); plane ("xy", "xz", "yz", a construction plane as \
+                "plane:<id>", or a flat face id) or line ("x", "y", "z" or a straight edge id): give one of the two. A line mirrors \
+                with the plane that holds the line and stands square to the plane the line lies in (for an edge, its first flat face; \
+                for "x" and "y" the floor, so "x" swaps front and back and "y" left and right; for "z" the XZ plane, so left and right). operation (optional: "join" (default) adds each mirrored copy to its own body; \
                 "new_body" keeps all the copies together as a new body with the id of this feature); name, id, expected_revision. The \
                 origin planes pass through the origin: "yz" mirrors left/right (x → -x), "xz" front/back, "xy" top/bottom.
 
@@ -569,11 +571,12 @@ enum AITools {
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
                     "bodies": ["type": "array", "items": ["type": "string"], "description": "The bodies to mirror, from get_document."],
                     "plane": ["type": "string", "description": "xy, xz, yz, plane:<id> or a flat face id."],
+                    "line": ["type": "string", "description": "x, y, z or a straight edge id: mirror along it instead of across a plane."],
                     "operation": ["type": "string", "enum": ["join", "new_body"], "description": "Join the copy to its body (default) or keep it as a new body."],
                     "name": ["type": "string", "description": "A name for the feature (default Mirror1…)."],
                     "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
                     "expected_revision": expectedRevision,
-                ], ["document_id", "bodies", "plane"]),
+                ], ["document_id", "bodies"]),
                 readOnly: false, destructive: false, idempotent: false,
                 handler: { args in try await changeTool("create_mirror", service: service, args) }),
 

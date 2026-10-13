@@ -252,6 +252,14 @@ struct DocumentWindow: View {
                 .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset) + DS.ControlHeight.large + Panel.inset)
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.featureWithoutHandle)
+        // The sketch Mirror tool's choices (the axes, Delete, Cancel and OK) float in the same place.
+        .overlay(alignment: .bottom) {
+            SketchMirrorBar(model: model)
+                .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
+                .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
+                .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset) + DS.ControlHeight.large + Panel.inset)
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.sketchSession?.isMirroring == true)
         // Past the trial, the part can be looked at and exported, not edited.
         .overlay(alignment: .top) {
             LockedBanner(license: .shared)
@@ -1786,8 +1794,8 @@ struct SketchToolbar: View {
     private func transform(_ tool: SketchTransformTool) -> GroupTool {
         // Move shows the manipulator to drag (or type into); Scale asks for a factor.
         GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool.symbol, help: tool.help,
-                  active: session.manipulating == tool || (tool == .pattern && session.isPatterning),
-                  enabled: tool == .pattern ? session.canPattern : session.canTransform,
+                  active: session.manipulating == tool || (tool == .pattern && session.isPatterning) || (tool == .mirror && session.isMirroring),
+                  enabled: tool == .pattern ? session.canPattern : tool == .mirror ? session.canMirror : session.canTransform,
                   popover: tool != .scale ? nil : ToolPopover(isPresented: Binding(get: { session.transformRequested == tool },
                                                             set: { if $0 { session.transformRequested = tool } else if session.transformRequested == tool { session.transformRequested = nil } }),
                                        content: AnyView(TransformPopover(model: model, session: session, tool: tool)))) {

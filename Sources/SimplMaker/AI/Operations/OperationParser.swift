@@ -158,8 +158,12 @@ enum AIOperationParser {
                                         inside: try a.bool("inside") ?? true, name: try a.string("name"), id: try a.string("id"))
 
         case "create_mirror":
-            try a.rejectUnknown(["document_id", "bodies", "plane", "operation", "name", "id", "expected_revision"], in: tool)
-            return CreateMirrorOperation(bodies: try ids(a, "bodies"), plane: try a.requiredString("plane", hint: "\"xy\", \"xz\", \"yz\", \"plane:<id>\" or a flat face id."),
+            try a.rejectUnknown(["document_id", "bodies", "plane", "line", "operation", "name", "id", "expected_revision"], in: tool)
+            let mirrorPlane = try a.string("plane"), mirrorLine = try a.string("line")
+            if mirrorPlane == nil, mirrorLine == nil {
+                throw AIError(.invalidArguments, "Give plane (to mirror across) or line (to mirror along).", reason: "plane: \"xy\", \"xz\", \"yz\", \"plane:<id>\" or a flat face id. line: \"x\", \"y\", \"z\" or a straight edge id.")
+            }
+            return CreateMirrorOperation(bodies: try ids(a, "bodies"), plane: mirrorPlane, line: mirrorLine,
                                          operation: try bodyOperation(a, allowed: [.join, .newBody], default: .join), name: try a.string("name"), id: try a.string("id"))
 
         case "create_pattern":

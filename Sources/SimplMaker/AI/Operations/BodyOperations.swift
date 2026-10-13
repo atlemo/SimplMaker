@@ -193,7 +193,10 @@ struct CreateShellOperation: AIOperation {
 
 struct CreateMirrorOperation: AIOperation {
     let bodies: [String]
-    let plane: String
+    /// Exactly one of `plane` and `line`.
+    let plane: String?
+    /// "x", "y", "z" or a straight edge id: mirror along it.
+    var line: String?
     let operation: BodyOperation
     let name: String?
     let id: String?
@@ -204,6 +207,30 @@ struct CreateMirrorOperation: AIOperation {
     func apply(to doc: inout CADDocument, context: OperationContext) throws -> OperationOutcome {
         try CADService.refuseRolledBack(doc)
         try AIChecks.bodies(bodies, field: "bodies", context)
+        if let line {
+            guard plane == nil else { throw AIError(.invalidArguments, "Give plane or line, not both.", reason: "A plane mirrors across it; a line (an axis or a straight edge) mirrors along it.") }
+            let lineAxis: PatternAxis
+            switch line.lowercased() {
+            case "x": lineAxis = .x
+            case "y": lineAxis = .y
+            case "z": lineAxis = .z
+            default:
+                guard case .edge(let ref)? = AIEntityRef(line) else {
+                    throw AIError(.invalidArguments, "line \"\(line)\" is not \"x\", \"y\", \"z\" or an edge id.", reason: "An edge id looks like \"edge:<body>/<name>\" and must be a straight edge.")
+                }
+                let body = try AIChecks.body(ref.body, field: "line", context)
+                guard body.hasEdge(ref.edge), (try? body.edgeLine(ref.edge)) != nil else {
+                    throw AIError(.invalidArguments, "\"\(line)\" is not a straight edge of \(ref.body).", reason: "Take a line-shaped edge from get_body, or use \"x\", \"y\" or \"z\".")
+                }
+                lineAxis = .edge(ref)
+            }
+            let featureID = try AIValues.newFeatureID(id, in: doc)
+            let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("Mirror")
+            doc.addFeature(Feature(id: featureID, name: featureName, .mirror(MirrorFeature(bodies: bodies, operation: operation, line: lineAxis))))
+            let result = operation == .newBody ? "the copy is a new body with the id \(featureID)" : "the copy is joined to \(bodies.count == 1 ? bodies[0] : "its body")"
+            return OperationOutcome(featureID: featureID, message: "Created \(featureName): mirrored \(bodies.joined(separator: ", ")) along \(line); \(result).")
+        }
+        guard let plane else { throw AIError(.invalidArguments, "Give a plane to mirror across, or a line to mirror along.", reason: "plane is \"xy\", \"xz\", \"yz\", a construction plane or a flat face; line is \"x\", \"y\", \"z\" or a straight edge.") }
         let planeRef = try AIValues.plane(plane, in: doc)
         if case .face(let face) = planeRef {
             guard let body = context.built.body(face.body), (try? body.faceFrame(face.face)) != nil else {

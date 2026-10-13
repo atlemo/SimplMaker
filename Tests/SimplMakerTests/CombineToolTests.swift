@@ -204,6 +204,49 @@ import simd
         #expect(sf.plane == .plane(id) && abs((model.sketchSession?.frame.origin.z ?? 0) - 25) < 1e-9)
     }
 
+    /// The edge of body 0 that runs along `axis` (0, 1 or 2) at the lowest position in the other two.
+    private func straightEdge(_ model: DocumentModel, along axis: Int) throws -> PickID {
+        let body = try #require(model.result?.body("b"))
+        let names = try #require(model.meshes.first).mesh.edgeNames
+        let i = try #require(names.firstIndex { n in
+            guard let d = try? body.edgeLine(n).direction else { return false }
+            return abs(d[axis]) > 0.99
+        })
+        return PickID(body: 0, edge: i)
+    }
+
+    @Test func aBodyMirrorsAlongAStraightEdgeAfterItsFaceIsPicked() async throws {
+        let model = try await boxModel()
+        let one = try #require(model.result?.body("b")).volume
+        model.run(.mirror)
+        #expect(model.toolPrompt?.contains("straight edge") == false, "asks for the bodies first")
+        model.toolClick(.mirror, try face(model, "b.top"))
+        #expect(model.pendingTool == .mirror && model.toolPrompt?.contains("straight edge") == true)
+        model.toolClick(.mirror, try straightEdge(model, along: 1))
+        guard case .mirror(let m)? = model.document.features.last?.kind, case .edge(let ref)? = m.line else {
+            Issue.record("expected a mirror along an edge"); return
+        }
+        #expect(m.bodies == ["b"] && ref.body == "b" && model.pendingTool == nil)
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        #expect(abs((model.result?.body("b")?.volume ?? 0) - 2 * one) < 1e-6, "the copy lies against the box")
+        guard case .mirror(let shown)? = model.document.features.last?.kind else { return }
+        let describer = FeatureDescriber(values: model.parameterValues)
+        #expect(describer.fields(of: Feature(id: "m", name: "Mirror1", .mirror(shown)))["line"] != nil)
+    }
+
+    @Test func aFirstEdgeStillPicksItsBodyAndACurvedEdgeIsNotALine() async throws {
+        let model = try await boxModel()
+        model.run(.mirror)
+        model.toolClick(.mirror, try straightEdge(model, along: 0))
+        #expect(model.pendingTool == .mirror, "an edge as the first pick is a body, as before")
+        #expect(model.pickedBodies == ["b"])
+        model.toolClick(.mirror, OriginPlane.yz.pickID)
+        guard case .mirror(let m)? = model.document.features.last?.kind else { Issue.record("expected a mirror"); return }
+        #expect(m.line == nil && m.plane == .yz)
+        try await settle(model)
+    }
+
     @Test func mirrorPatternAndShell() async throws {
         let model = try await boxModel()
         let one = try #require(model.result?.body("b")).volume

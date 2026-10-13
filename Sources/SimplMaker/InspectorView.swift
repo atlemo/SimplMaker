@@ -1141,9 +1141,48 @@ struct MirrorInspector: View {
         FeatureEdit(model: model, id: id, get: { if case .mirror(let m) = $0 { m } else { nil } }, wrap: { .mirror($0) })
     }
 
+    /// The plane it was made with, an axis, or the picked edge.
+    private var acrossChoice: Binding<String> {
+        Binding(get: {
+            switch mirror.line {
+            case nil: return "Plane"
+            case .x?: return "X"
+            case .y?: return "Y"
+            case .z?: return "Z"
+            case .edge?: return "Edge"
+            }
+        }, set: { v in
+            edit.update("Change Mirror") { m in
+                switch v {
+                case "Plane": m.line = nil
+                case "X": m.line = .x
+                case "Y": m.line = .y
+                case "Z": m.line = .z
+                default: break
+                }
+            }
+        })
+    }
+
     var body: some View {
         Section("Mirror") {
-            LabeledContent("Across", value: model.planeName(mirror.plane))
+            Picker("Across", selection: acrossChoice) {
+                Text(model.planeName(mirror.plane)).tag("Plane")
+                Text("Along the X axis").tag("X")
+                Text("Along the Y axis").tag("Y")
+                Text("Along the Z axis").tag("Z")
+                if case .edge(let e)? = mirror.line { Text("Along edge \(e.edge)").tag("Edge") }
+            }
+            if model.selectedEdgeCount == 1, let pick = model.selection.first(where: \.isEdge), let edge = model.straightEdgeRef(pick) {
+                Button("Mirror Along the Selected Edge") {
+                    edit.update("Change Mirror") { $0.line = .edge(edge) }
+                    model.clearSelection()
+                }
+            }
+            if mirror.line != nil {
+                Text("The mirror plane holds the line and stands square to the face the edge borders (the floor for an axis).")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             CopyOperationPicker(value: mirror.operation) { op in edit.update("Change Operation") { $0.operation = op } }
             BodiesRow(model: model, ids: mirror.bodies)
         }

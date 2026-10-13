@@ -54,7 +54,7 @@ Standard **Undo** ([[⌘Z]]), **Redo** ([[⇧⌘Z]]), **Cut**, **Copy**, **Paste
 | **New Sketch…** | Starts a sketch: pick a plane or face |
 | **New Sketch On** | **XY Plane**, **XZ Plane**, **YZ Plane** or **Selected Face** |
 
-While you are editing a sketch, the menu also lists the sketch tools, **Offset Selection…**, **Move Selection**, **Scale Selection…**, **Pattern Selection** and **Finish Sketch**.
+While you are editing a sketch, the menu also lists the sketch tools, **Offset Selection…**, **Move Selection**, **Scale Selection…**, **Pattern Selection**, **Mirror Selection** and **Finish Sketch**.
 
 ## Create
 

@@ -172,6 +172,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     override func draw(_ dirtyRect: NSRect) {
         updateCameraInsets()
         updateSketchGrid()
+        syncSketchScale()
         renderer?.draw(in: self)
         updateLabels()
         updateSketchRulers()
@@ -260,6 +261,16 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     // MARK: sketch grid and rulers
+
+    /// Tells the sketch session the zoom, so what is too small to be worth showing goes away (and comes back
+    /// when zoomed in), and sizes drawn in pixels follow.
+    private func syncSketchScale() {
+        guard let session = model?.sketchSession else { return }
+        let c = NSPoint(x: bounds.midX, y: bounds.midY)
+        guard let a = sketchUV(c), let b = sketchUV(NSPoint(x: c.x + 1, y: c.y)),
+              session.setViewScale(mmPerPixel: simdLength(b - a)) else { return }
+        DispatchQueue.main.async { [weak self] in self?.refreshOverlay() }
+    }
 
     /// Rulers along the sketch axes (keyed "u:25", "v:-50") and the origin marker.
     var gridSetting = ""
@@ -909,12 +920,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             case 53: session.escape(); refreshOverlay(); return                                      // Esc
             case 51, 117:                                                                             // ⌫ ⌦
                 if session.isPatterning { model.commitSketch(session.deletePattern()) }
+                else if session.isMirroring { model.commitSketch(session.deleteMirror()) }
                 else if session.isOffsetting { session.cancelOffset() }  // takes the offset back, rather than deleting what it came from
                 else { model.sketchCommand { $0.deleteSelection() } }
                 refreshOverlay()
                 return
             case 36, 76:                                                                              // Return
-                if session.typed.isEmpty, !session.isPatterning, !session.isOffsetting { model.finishSketch() } else { model.commitSketchTyped(); refreshOverlay() }
+                if session.typed.isEmpty, !session.isPatterning, !session.isMirroring, !session.isOffsetting { model.finishSketch() } else { model.commitSketchTyped(); refreshOverlay() }
                 return
             case 125 where session.tool == .polygon, 126 where session.tool == .polygon:             // ↓ ↑: fewer or more sides
                 session.adjustSides(by: event.keyCode == 126 ? 1 : -1)

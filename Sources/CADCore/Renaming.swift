@@ -174,7 +174,9 @@ extension Feature {
             }
         case .layOnFloor(let f): add(f.face.body)
         case .plane(let f): add(f.base.feature)
-        case .mirror(let f): f.bodies.forEach { add($0) }; add(f.plane.feature)
+        case .mirror(let f):
+            f.bodies.forEach { add($0) }
+            if case .edge(let e)? = f.line { add(e.body) } else if f.line == nil { add(f.plane.feature) }
         case .pattern(let f):
             f.bodies.forEach { add($0) }
             if case .edge(let e) = f.axis { add(e.body) }
