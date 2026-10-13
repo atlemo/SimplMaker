@@ -697,13 +697,17 @@ struct ParametersList: View {
     /// The parameter whose name is being edited in place.
     @State private var renaming: String?
     @State private var selection: String?
+    /// The parameter whose value field has the keyboard.
+    @State private var focused: String?
 
     var body: some View {
         List(selection: $selection) {
             ForEach(model.document.parameters) { p in
-                ParameterRow(model: model, parameter: p, renaming: renamingBinding(p.name))
+                ParameterRow(model: model, parameter: p, renaming: renamingBinding(p.name),
+                             valueFocused: focusBinding(p.name), tabbed: { moveFocus(from: p.name, backwards: $0) })
                     .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
                     .tag(p.name)
+                    .listRowBackground(SelectedRowBackground(on: selection == p.name))
             }
         }
         .listStyle(.sidebar)
@@ -717,6 +721,18 @@ struct ParametersList: View {
 
     private func renamingBinding(_ name: String) -> Binding<Bool> {
         Binding(get: { renaming == name }, set: { if !$0, renaming == name { renaming = nil } else if $0 { renaming = name } })
+    }
+
+    private func focusBinding(_ name: String) -> Binding<Bool> {
+        Binding(get: { focused == name },
+                set: { if $0 { focused = name; selection = name } else if focused == name { focused = nil } })
+    }
+
+    /// Tab goes to the next parameter's value, Shift-Tab to the previous one; past either end it wraps around.
+    private func moveFocus(from name: String, backwards: Bool) {
+        let names = model.document.parameters.map(\.name)
+        guard let i = names.firstIndex(of: name), names.count > 1 else { return }
+        focused = names[(i + (backwards ? names.count - 1 : 1)) % names.count]
     }
 }
 
@@ -784,7 +800,8 @@ struct BrowserList: View {
             DisclosureGroup(isExpanded: $bodiesOpen) {
                 ForEach(model.document.subfolders(of: nil)) { folder in
                     BrowserFolderNode(model: model, folder: folder, closed: $closedFolders, renaming: $renaming,
-                                      row: { AnyView(row($0)) }, drop: drop, itemIDs: model.bodies.map(\.id))
+                                      row: { AnyView(row($0)) }, drop: drop, itemIDs: model.bodies.map(\.id),
+                                      selection: listSelection.wrappedValue)
                 }
                 ForEach(looseBodies, id: \.self) { row($0) }
             } label: {
@@ -839,7 +856,7 @@ struct BrowserList: View {
                 Image(systemName: "cylinder")
             }
             .tag(Self.bodyTag + b.id)
-            .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(b.id) && model.selectedBody != b.id))
+            .listRowBackground(SelectedRowBackground(on: listSelection.wrappedValue == Self.bodyTag + b.id, highlighted: model.browserHighlights.contains(b.id)))
             .draggable(BrowserDrag(items: [b.id]))
         } else if let f = model.document.features.first(where: { $0.id == id }) {
             switch f.kind {
@@ -853,7 +870,7 @@ struct BrowserList: View {
                                failed: model.result?.errors[f.id] != nil)
                 }
                 .tag(f.id)
-                .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(f.id)))
+                .listRowBackground(SelectedRowBackground(on: listSelection.wrappedValue == f.id, highlighted: model.browserHighlights.contains(f.id)))
             case .plane:
                 BrowserRow(name: f.name, hidden: model.isHidden(f.id),
                            toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
@@ -861,6 +878,7 @@ struct BrowserList: View {
                     Icon("plane", size: 14)
                 }
                 .tag(f.id)
+                .listRowBackground(SelectedRowBackground(on: listSelection.wrappedValue == f.id))
             case .image:
                 BrowserRow(name: f.name, hidden: model.isHidden(f.id),
                            toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
@@ -868,6 +886,7 @@ struct BrowserList: View {
                     Icon("image", size: 14)
                 }
                 .tag(f.id)
+                .listRowBackground(SelectedRowBackground(on: listSelection.wrappedValue == f.id))
             default:
                 EmptyView()
             }
@@ -1017,6 +1036,8 @@ struct BrowserFolderNode: View {
     let drop: ([BrowserDrag], String?) -> Bool
     /// Every item the browser lists, in its order (a folder's items follow it).
     let itemIDs: [FeatureID]
+    /// The tag of the selected browser row, which may be this folder's.
+    let selection: FeatureID?
 
     private var expanded: Binding<Bool> {
         Binding(get: { !closed.contains(folder.id) },
@@ -1027,7 +1048,7 @@ struct BrowserFolderNode: View {
         DisclosureGroup(isExpanded: expanded) {
             ForEach(model.document.subfolders(of: folder.id)) { child in
                 BrowserFolderNode(model: model, folder: child, closed: $closed, renaming: $renaming,
-                                  row: row, drop: drop, itemIDs: itemIDs)
+                                  row: row, drop: drop, itemIDs: itemIDs, selection: selection)
             }
             ForEach(itemIDs.filter { model.document.folder(of: $0) == folder.id }, id: \.self) { row($0) }
         } label: {
@@ -1055,6 +1076,7 @@ struct BrowserFolderNode: View {
             .dropDestination(for: BrowserDrag.self) { drops, _ in drop(drops, folder.id) }
         }
         .tag("folder:" + folder.id)
+        .listRowBackground(SelectedRowBackground(on: selection == "folder:" + folder.id))
     }
 }
 
@@ -1279,15 +1301,18 @@ struct InlineNameField: View {
     }
 }
 
-/// The browser row of a body or sketch that owns something selected in the viewport.
-struct BrowserHighlight: View {
+/// A list row's background in the app's accent colour: solid when the row is selected (a sidebar list draws its own
+/// selection in the system's colour), or a soft tint when it is only `highlighted`, as for the browser row of a body
+/// or sketch that owns something selected in the viewport.
+struct SelectedRowBackground: View {
     @Environment(\.accent) private var accent
     let on: Bool
+    var highlighted = false
 
     var body: some View {
-        if on {
+        if on || highlighted {
             RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous)
-                .fill(accent.opacity(0.18))
+                .fill(on ? accent : accent.opacity(0.18))
                 .padding(.horizontal, DS.Spacing.space2)
         }
     }
@@ -1374,6 +1399,10 @@ struct ParameterRow: View {
     let model: DocumentModel
     let parameter: Parameter
     @Binding var renaming: Bool
+    /// Whether the value field has the keyboard; setting it true moves the keyboard there.
+    @Binding var valueFocused: Bool
+    /// Tab or Shift-Tab pressed in the value field.
+    let tabbed: (Bool) -> Void
     /// Why the last rename was refused (a taken or invalid name).
     @State private var renameError: String?
     /// The drag on the name that is changing the value: nil when none is going on.
@@ -1474,7 +1503,8 @@ struct ParameterRow: View {
             if let renameError {
                 Text(renameError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
-            ExpressionField(text: scrub?.expression ?? parameter.expression, excluding: parameter.name, inSelectableRow: true, nudges: true) { model.setParameter(parameter.name, expression: $0) }
+            ExpressionField(text: scrub?.expression ?? parameter.expression, excluding: parameter.name, inSelectableRow: true, nudges: true,
+                            focusRequest: $valueFocused, tabbed: tabbed) { model.setParameter(parameter.name, expression: $0) }
             let users = model.document.features(using: parameter.name).map(\.name)
             Text(users.isEmpty ? "Not used yet · type \(parameter.name) in any size field" : "Used by \(users.joined(separator: ", "))")
                 .font(.caption)
@@ -1556,19 +1586,26 @@ struct ExpressionField: View {
     var inSelectableRow = false
     /// ↑ ↓ move a plain number in the field by one (Shift: ten, Option: a tenth) and commit it.
     var nudges = false
+    /// Lets the list around the field take the keyboard to this field, and learn when it has it.
+    var focusRequest: Binding<Bool>?
+    /// Tab (false) or Shift-Tab (true) pressed with no completion on offer: the list moves to its next field.
+    var tabbed: ((_ backwards: Bool) -> Void)?
     @Environment(\.completionModel) private var completionModel
     @State private var draft = ""
     @State private var edited = false
     @FocusState private var focused: Bool
 
     init(text: String, monospaced: Bool = true, completes: Bool = true, excluding: String? = nil,
-         inSelectableRow: Bool = false, nudges: Bool = false, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
+         inSelectableRow: Bool = false, nudges: Bool = false, focusRequest: Binding<Bool>? = nil,
+         tabbed: ((Bool) -> Void)? = nil, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
         self.text = text
         self.monospaced = monospaced
         self.completes = completes
         self.excluding = excluding
         self.inSelectableRow = inSelectableRow
         self.nudges = nudges
+        self.focusRequest = focusRequest
+        self.tabbed = tabbed
         self.preview = preview
         self.commit = commit
     }
@@ -1589,13 +1626,29 @@ struct ExpressionField: View {
                 commit(next)
                 return .handled
             }
+            .onKeyPress(keys: [.tab], phases: [.down]) { press in
+                guard let tabbed else { return .ignored }
+                if draft != text { edited = false; commit(draft) }
+                tabbed(press.modifiers.contains(.shift))
+                return .handled
+            }
+            // Shift-Tab reaches the text editor as a command of its own, not as a key press.
+            .onCommand(#selector(NSResponder.insertBacktab(_:))) {
+                guard let tabbed else { return }
+                if draft != text { edited = false; commit(draft) }
+                tabbed(true)
+            }
             .onSubmit {
                 if ParameterCompleter.shared.complete(&draft) { focused = true; return }
                 edited = false; commit(draft)
             }
             .onAppear { draft = text }
             .onChange(of: text) { draft = text; edited = false }
-            .onChange(of: focused) { if !focused, draft != text { edited = false; commit(draft) } }
+            .onChange(of: focused) {
+                focusRequest?.wrappedValue = focused
+                if !focused, draft != text { edited = false; commit(draft) }
+            }
+            .onChange(of: focusRequest?.wrappedValue ?? false) { if focusRequest?.wrappedValue == true { focused = true } }
             .onChange(of: draft) { if focused { edited = true } }
             .task(id: draft) {
                 guard edited, let preview else { return }
