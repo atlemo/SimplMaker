@@ -96,6 +96,34 @@ enum SketchOverlayBuilder {
         return legible(span: span, mmPerPixel: session.mmPerPixel, needing: max(60, 0.8 * width))
     }
 
+    /// Offsets whose dimension is too short on screen for its label (an 8 mm wall seen from afar): they would vanish, and
+    /// with them any sign that the outline is an offset. They stay as the bare dimension line between the two edges, and
+    /// one value label per offset (the run of offset dimensions made together, on its longest edge) says what it is.
+    static func offsetMarks(_ session: SketchSession) -> (lines: Set<EntityID>, labelled: Set<EntityID>) {
+        let s = session.sketch
+        var lines = Set<EntityID>(), labelled = Set<EntityID>()
+        var run: [(id: EntityID, edge: Double)] = []
+        var runExpression: String?
+        func close() {
+            if let best = run.max(by: { $0.edge < $1.edge }) { labelled.insert(best.id) }
+            run = []
+        }
+        for d in s.dimensions {
+            var isOffset = false
+            switch d.kind { case .pointLineDistance, .radialOffset: isOffset = true; default: break }
+            let span = isOffset && !shows(d, session) ? span(of: d, in: s, value: session.values[d.id]) : nil
+            guard isOffset, let span, legible(span: span, mmPerPixel: session.mmPerPixel, needing: 6) else {
+                if !isOffset || shows(d, session) { close(); runExpression = nil }
+                continue
+            }
+            if runExpression != d.expression { close(); runExpression = d.expression }
+            lines.insert(d.id)
+            run.append((d.id, s.dimensionLine(of: d).map { abs($0.offset) } ?? 0))
+        }
+        close()
+        return (lines, labelled)
+    }
+
     /// Whether a measured size (the light label of a line or circle without a dimension) is shown: it needs more
     /// room than a dimension, as there is one for every curve.
     static func shows(measured m: (curve: EntityID, kind: SketchDimension.Kind, value: Double), _ session: SketchSession) -> Bool {
@@ -220,7 +248,8 @@ enum SketchOverlayBuilder {
                 o.construction += segments([p - SIMD2(0, r), p + SIMD2(0, r)], frame: f, id: 0)
             }
         }
-        for d in s.dimensions where shows(d, session) {
+        let marks = offsetMarks(session)
+        for d in s.dimensions where shows(d, session) || marks.lines.contains(d.id) {
             if let arc = s.angleArc(of: d, size: session.snapTolerance) {
                 o.preview += angleSegments(arc, size: session.snapTolerance, frame: f)
             } else if let line = s.dimensionLine(of: d) {
@@ -312,8 +341,9 @@ enum SketchOverlayBuilder {
     /// Value labels for the dimensions of the sketch being edited.
     static func labels(_ session: SketchSession) -> [DimensionLabel] {
         let s = session.sketch
+        let marks = offsetMarks(session)
         var out: [DimensionLabel] = s.dimensions.compactMap { d in
-            guard shows(d, session),
+            guard shows(d, session) || marks.labelled.contains(d.id),
                   let anchor = s.dimensionLine(of: d).map(labelAnchor) ?? anchor(d.kind, s, size: session.snapTolerance) else { return nil }
             return DimensionLabel(id: d.id, world: world(session.frame, anchor),
                                   text: dimensionText(d, session),

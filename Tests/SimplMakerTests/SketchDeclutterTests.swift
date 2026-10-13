@@ -100,4 +100,41 @@ import Testing
         #expect(session.mmPerPixel == 0.1)
         try await settle(model)
     }
+
+    /// A 60 x 40 rectangle with an 8 mm offset inside it: four lines, four offset dimensions.
+    private func offsetEditing() async throws -> (DocumentModel, SketchSession, offsets: [EntityID]) {
+        var s = Sketch()
+        let (a, b, c, d) = (s.addPoint(0, 0), s.addPoint(60, 0), s.addPoint(60, 40), s.addPoint(0, 40))
+        let lines = [s.addLine(a, b), s.addLine(b, c), s.addLine(c, d), s.addLine(d, a)]
+        _ = s.offset(lines, distance: -8, expression: "8 mm")
+        let offsets = s.dimensions.map(\.id)
+        #expect(offsets.count == 4)
+        var doc = CADDocument()
+        doc.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s)))]
+        let model = DocumentModel(document: doc)
+        try await settle(model)
+        model.editSketch("sk")
+        return (model, try #require(model.sketchSession), offsets)
+    }
+
+    @Test func anOffsetTooShortForItsLabelStaysAsOneLabelAndFourLines() async throws {
+        let (model, session, offsets) = try await offsetEditing()
+        // 0.5 mm a pixel: the 8 mm offset is 16 px, under the 60 a dimension needs, but enough to draw.
+        session.setViewScale(mmPerPixel: 0.5)
+        #expect(offsets.allSatisfy { d in session.sketch.dimensions.first { $0.id == d }.map { !SketchOverlayBuilder.shows($0, session) } == true })
+        let marks = SketchOverlayBuilder.offsetMarks(session)
+        #expect(marks.lines == Set(offsets))
+        #expect(marks.labelled.count == 1 && marks.labelled.isSubset(of: marks.lines))
+        let labelled = ids(session).intersection(offsets)
+        #expect(labelled == marks.labelled, "\(labelled)")
+        // 2 mm a pixel: 4 px, nothing to see.
+        session.setViewScale(mmPerPixel: 2)
+        #expect(SketchOverlayBuilder.offsetMarks(session).lines.isEmpty)
+        #expect(ids(session).intersection(offsets).isEmpty)
+        // Zoomed in, every offset shows in full and the marks give way.
+        session.setViewScale(mmPerPixel: 0.02)
+        #expect(SketchOverlayBuilder.offsetMarks(session).lines.isEmpty)
+        #expect(ids(session).isSuperset(of: Set(offsets)))
+        try await settle(model)
+    }
 }
