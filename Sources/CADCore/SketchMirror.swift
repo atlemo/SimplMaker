@@ -90,6 +90,35 @@ extension Sketch {
         return !parts.curves.isEmpty || !parts.points.isEmpty
     }
 
+    /// A shape and its image are one outline where the shape meets the line, but only while its points stay exactly on
+    /// the line (they are shared with the image only then). So every point of the mirror's sources that lies on a line of
+    /// the sketch is held on it: otherwise the first thing that nudges the line, or the point, opens the outline by a
+    /// hair and the profile is lost. A point that only comes within `snap` of the line (an end drawn a pixel or two
+    /// short of it) is taken to be meant to touch it: it is moved onto the line first, as a snap would have put it.
+    /// (Not for the axes, which have no curve to hold a point on.)
+    public mutating func holdPointsOnMirrorLine(_ def: SketchMirrorDef, snap: Double = 0) {
+        guard !SketchMirrorDef.isAxis(def.line), let axis = mirrorAxis(def.line),
+              case .line(let a, let b)? = curve(def.line)?.geometry else { return }
+        let present = def.sources.filter { $0 != def.line && (point($0) != nil || curve($0) != nil) }
+        guard !present.isEmpty else { return }
+        let normal = SIMD2(-axis.direction.y, axis.direction.x)
+        for id in mirrorParts(present).points where id != a && id != b && !Sketch.isGenerated(id) {
+            guard let k = points.firstIndex(where: { $0.id == id }) else { continue }
+            let p = points[k].position
+            let away = vdot(p - axis.origin, normal)  // signed distance from the line
+            guard abs(away) <= max(1e-7 * max(1, vlen(p)), snap) else { continue }
+            if abs(away) > 1e-9, !points[k].fixed {
+                points[k].x -= normal.x * away
+                points[k].y -= normal.y * away
+            }
+            let held = constraints.contains { c in
+                if case .pointOnCurve(let q, let l) = c.kind { return q == id && l == def.line }
+                return false
+            }
+            if !held { constrain(.pointOnCurve(point: id, curve: def.line)) }
+        }
+    }
+
     /// Makes the images of every mirror again, from the originals as they are now. Mirrors go in the order they were
     /// made, so one can copy the image of an earlier one. A mirror whose originals or line are gone is dropped.
     /// Returns what is wrong with a mirror that can't be made, by id; a mirror that has no line yet makes nothing

@@ -368,10 +368,35 @@ extension Sketch {
             dimension(.radialOffset(from: id, to: nid), expression)
             created.append(nid)
         }
+        var madeFrom: [EntityID: [EntityID]] = [:]
         for chain in chains(chainable) {
-            created += offsetChain(chain, distance: distance, expression: expression)
+            created += offsetChain(chain, distance: distance, expression: expression, madeFrom: &madeFrom)
         }
+        adoptImageOffsets(madeFrom, created: &created)
         return created
+    }
+
+    /// A mirror's image offset together with its original is not a copy of its own: the copy would be made once and
+    /// never follow the original's offset when that changes. The copies are dropped instead, the original's offset
+    /// joins what the mirror copies (so its image is the offset of the image), and a corner that lies on the mirror
+    /// line, where the two offsets meet, is kept on it. Only for a mirror across a line of the sketch.
+    private mutating func adoptImageOffsets(_ madeFrom: [EntityID: [EntityID]], created: inout [EntityID]) {
+        for mi in mirrors.indices {
+            let def = mirrors[mi]
+            guard !SketchMirrorDef.isAxis(def.line), let axis = mirrorAxis(def.line) else { continue }
+            var own: [EntityID] = [], copies = Set<EntityID>()
+            for source in def.sources where !Sketch.isGenerated(source) {
+                guard let mine = madeFrom[source], let image = madeFrom["\(def.id)~\(source)"], !mine.isEmpty, !image.isEmpty else { continue }
+                own += mine
+                copies.formUnion(image)
+            }
+            guard !copies.isEmpty else { continue }
+            delete(copies)
+            created.removeAll { copies.contains($0) }
+            guard let k = mirrors.firstIndex(where: { $0.id == def.id }) else { continue }
+            mirrors[k].sources += own.filter { !mirrors[k].sources.contains($0) }
+            holdPointsOnMirrorLine(mirrors[k])  // a corner on the line is shared with its image: it has to stay there
+        }
     }
 
     /// Orders curves into connected chains; each entry is (curve id, reversed?) in travel order.
@@ -514,7 +539,7 @@ extension Sketch {
     }
 
     private mutating func offsetChain(_ chain: (items: [(id: EntityID, reversed: Bool)], closed: Bool),
-                                      distance: Double, expression: String) -> [EntityID] {
+                                      distance: Double, expression: String, madeFrom: inout [EntityID: [EntityID]]) -> [EntityID] {
         // Offset geometry of each piece, to the left of the travel direction.
         let left = distance * offsetSide(chain)
         var pieces: [CurveGeometry] = []
@@ -592,6 +617,7 @@ extension Sketch {
             switch original.geometry {
             case .line:
                 let nid = addLine(a, b)
+                madeFrom[item.id, default: []].append(nid)
                 if Sketch.isGenerated(item.id) { created.append(nid); continue }  // no ties to what is made again at every change
                 constrain(.parallel(item.id, nid))
                 dimension(.pointLineDistance(point: a, line: item.id), expression)
@@ -602,10 +628,13 @@ extension Sketch {
             case .arc(let center, _, _):
                 if Sketch.isGenerated(item.id) {
                     let at = position(center) ?? .zero
-                    created.append(addArc(center: addPoint(at.x, at.y), start: a, end: b))
+                    let nid = addArc(center: addPoint(at.x, at.y), start: a, end: b)
+                    madeFrom[item.id, default: []].append(nid)
+                    created.append(nid)
                     continue
                 }
                 let nid = addArc(center: center, start: a, end: b)
+                madeFrom[item.id, default: []].append(nid)
                 dimension(.radialOffset(from: item.id, to: nid), expression)
                 created.append(nid)
             case .bezier:
@@ -620,7 +649,9 @@ extension Sketch {
                 for (j, c) in run.enumerated() {
                     let to = j == k ? b : addPoint(c[3].x, c[3].y)
                     let c1 = addPoint(c[1].x, c[1].y), c2 = addPoint(c[2].x, c[2].y)
-                    created.append(addBezier(start: from, control1: c1, control2: c2, end: to))
+                    let nid = addBezier(start: from, control1: c1, control2: c2, end: to)
+                    madeFrom[item.id, default: []].append(nid)
+                    created.append(nid)
                     from = to
                 }
             case .circle:

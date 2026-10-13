@@ -217,16 +217,96 @@ import Testing
     }
 
     @Test func offsettingTheWholeOutlineGivesOneClosedLoop() throws {
-        var (s, lines, _, _) = halfAndBase()
+        var (s, lines, base, _) = halfAndBase()
         let all = lines + s.curves.filter { Sketch.isGenerated($0.id) }.map(\.id)
         let made = s.offset(all, distance: 1, expression: "1 mm")
-        #expect(made.count == 6)
-        let chain = s.chains(made)
-        #expect(chain.count == 1 && chain[0].closed, "the offset is joined at the line too")
+        #expect(made.count == 3, "the half's offset; the other half is its image")
         #expect(SketchSolver.solve(&s, dimensionValues: s.dimensionValues(none)).status == .solved)
+        s.refreshGenerated(none)
+        let loop = made + s.curves.filter { Sketch.isGenerated($0.id) && !all.contains($0.id) }.map(\.id)
+        let chain = s.chains(loop)
+        #expect(loop.count == 6 && chain.count == 1 && chain[0].closed, "the offset is joined at the line too")
         // Outward: it is wider and taller than the outline (x 0…10 and y -5…5 become -1…11 and -6…6, near enough).
-        let ys = made.compactMap { s.curve($0) }.flatMap { s.pointIDs(of: $0) }.compactMap { s.position($0) }.map(\.y)
+        let ys = loop.compactMap { s.curve($0) }.flatMap { s.pointIDs(of: $0) }.compactMap { s.position($0) }.map(\.y)
         #expect((ys.max() ?? 0) > 5.5 && (ys.min() ?? 0) < -5.5)
+        // Where the offset meets the line it is held on it.
+        #expect(s.constraints.contains { if case .pointOnCurve(_, let c) = $0.kind { return c == base } else { return false } })
+    }
+
+    /// The whole outline offset, then a corner of the offset dragged: the mirrored half of the offset moves with it.
+    @Test func theOffsetOfAMirroredShapeKeepsBeingItsImage() throws {
+        var s = Sketch()
+        let l = s.addPoint(-48, 0), tl = s.addPoint(-5, 98), tr = s.addPoint(53, 98), m1 = s.addPoint(103, 58)
+        let m2 = s.addPoint(155, 58), r = s.addPoint(190, 0)
+        let (b0, b1) = (s.addPoint(-60, 0), s.addPoint(200, 0))
+        let base = s.addLine(b0, b1, construction: true)
+        s.constrain(.horizontal(base))  // the line itself is free to move up and down, as a drawn one is
+        let lines = [s.addLine(l, tl), s.addLine(tl, tr), s.addLine(tr, m1), s.addLine(m1, m2), s.addLine(m2, r)]
+        s.mirrors = [SketchMirrorDef(id: "m", sources: lines, line: base)]
+        s.holdPointsOnMirrorLine(s.mirrors[0])  // what the Mirror tool does when it is kept
+        s.refreshGenerated(none)
+        let made = s.offset(lines + s.curves.filter { Sketch.isGenerated($0.id) }.map(\.id), distance: -8, expression: "8 mm")
+        #expect(made.count == 5)
+        _ = SketchSolver.solve(&s, dimensionValues: s.dimensionValues(none))
+        s.refreshGenerated(none)
+        let corner = try #require(made.compactMap { s.curve($0) }.flatMap { s.pointIDs(of: $0) }
+            .compactMap { id in s.points.first { $0.id == id } }.min { vlen($0.position - SIMD2(95, 50)) < vlen($1.position - SIMD2(95, 50)) })
+        let values = s.dimensionValues(none)
+        let moved = s.drag(corner.id, to: SIMD2(70, 40), grabOffset: .zero, values: values)
+        #expect(moved)
+        let solved = SketchSolver.solve(&s, dimensionValues: values)
+        #expect(solved.status != .failed)
+        s.refreshGenerated(none)
+        // Every offset curve in the upper half has its mirror image in the lower, wherever the drag left it.
+        for id in made {
+            guard case .line(let a, let b)? = s.curve(id)?.geometry, case .line(let ia, let ib)? = s.curve("m~" + id)?.geometry,
+                  let pa = s.position(a), let pb = s.position(b), let qa = s.position(ia), let qb = s.position(ib) else {
+                Issue.record("\(id) has no image"); continue
+            }
+            let y0 = s.position(b0)?.y ?? 0  // the line has moved as the drag settled
+            #expect(vlen(SIMD2(pa.x, 2 * y0 - pa.y) - qa) < 1e-6 && vlen(SIMD2(pb.x, 2 * y0 - pb.y) - qb) < 1e-6)
+        }
+        // The originals' ends are on the line, so they are still shared with the images, and so are the offset's.
+        for id in made + lines {
+            guard let c = s.curve(id) else { continue }
+            for p in s.pointIDs(of: c) {
+                guard let at = s.position(p), abs(at.y - (s.position(b0)?.y ?? 0)) < 1 else { continue }
+                #expect(s.curves.contains { Sketch.isGenerated($0.id) && s.pointIDs(of: $0).contains(p) }, "\(p) at y = \(at.y) is shared with its image")
+            }
+        }
+        // And the outline stays in one piece: the offset's corners on the line are still on it.
+        for id in made {
+            guard let c = s.curve(id) else { continue }
+            for p in s.pointIDs(of: c) {
+                guard let at = s.position(p), abs(at.y - (s.position(b0)?.y ?? 0)) < 1 else { continue }
+                #expect(abs(at.y - (s.position(b0)?.y ?? 0)) < 1e-6, "a corner on the line stays on it (y = \(at.y))")
+            }
+        }
+    }
+
+    @Test func anEndDrawnJustShortOfTheLineIsBroughtOntoItSoTheOutlineClosesAndStaysClosed() throws {
+        var s = Sketch()
+        let l = s.addPoint(-50, 0), top = s.addPoint(50, 100), r = s.addPoint(250, 0)
+        let base = s.addLine(s.addPoint(40, -0.6), s.addPoint(90, -0.6), construction: true)  // the line is 0.6 below the ends
+        let lines = [s.addLine(l, top), s.addLine(top, r)]
+        s.mirrors = [SketchMirrorDef(id: "m", sources: lines, line: base)]
+        // Out of reach of a snap: the ends have their own images, and the outline is open at both.
+        s.holdPointsOnMirrorLine(s.mirrors[0], snap: 0.1)
+        s.refreshGenerated(none)
+        #expect(s.points.filter { Sketch.isGenerated($0.id) }.count == 3)
+        // Within reach: the ends go onto the line and are shared.
+        s.holdPointsOnMirrorLine(s.mirrors[0], snap: 1)
+        s.refreshGenerated(none)
+        #expect(s.points.filter { Sketch.isGenerated($0.id) }.count == 1, "only the top has an image of its own")
+        for id in [l, r] { #expect(abs((s.position(id)?.y ?? 0) + 0.6) < 1e-9) }
+        let all = s.curves.filter { !$0.construction }.map(\.id)
+        #expect(s.chains(all).count == 1 && s.chains(all)[0].closed)
+        // The ends stay on the line when it is moved.
+        let k = s.points.firstIndex { $0.id == (s.curve(base).flatMap { c -> EntityID? in if case .line(let a, _) = c.geometry { return a } else { return nil } }) }!
+        s.points[k].y += 3
+        _ = SketchSolver.solve(&s, dimensionValues: s.dimensionValues(none))
+        s.refreshGenerated(none)
+        #expect(s.points.filter { Sketch.isGenerated($0.id) }.count == 1, "still joined after the line moved")
     }
 
     @Test func aPointThatReachesTheLineStopsHavingItsOwnImage() throws {

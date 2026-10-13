@@ -1609,6 +1609,7 @@ final class SketchSession {
         var shown = base
         if let i = shown.mirrors.firstIndex(where: { $0.id == def.id }) { shown.mirrors[i] = def }
         else if def.line != "" { shown.mirrors.append(def) }
+        shown.holdPointsOnMirrorLine(def, snap: snapTolerance)  // so the preview joins where the kept mirror will
         shown.refreshGenerated(parameters)
         sketch = shown
         selection = def.line != "" && !SketchMirrorDef.isAxis(def.line) ? [def.line] : []
@@ -1633,6 +1634,7 @@ final class SketchSession {
         guard let d = mirrorSetup, var made = mirrorBase else { return nil }
         guard d.line != "" else { message = "Click the line to mirror across first, or choose the X or Y axis."; return nil }
         if let i = made.mirrors.firstIndex(where: { $0.id == d.id }) { made.mirrors[i] = d } else { made.mirrors.append(d) }
+        made.holdPointsOnMirrorLine(d, snap: snapTolerance)
         made.refreshGenerated(parameters)
         let isNew = mirrorIsNew
         endMirror()
