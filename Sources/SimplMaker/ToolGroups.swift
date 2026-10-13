@@ -59,6 +59,9 @@ struct ToolGroup: View {
     private let defaults: [String]
     @AppStorage private var stored: String?
     @State private var listOpen = false
+    /// How many of the pinned buttons the window has no room for, taken from the end. The group keeps
+    /// at least one; the tools taken out are in the group's list, like any tool that isn't pinned.
+    @Environment(\.toolTrim) private var trim
 
     init(_ title: String, id: String, defaults: [String], tools: [GroupTool]) {
         self.title = title
@@ -73,8 +76,9 @@ struct ToolGroup: View {
 
     var body: some View {
         let pins = pins
-        let shown = tools.filter { pins.contains($0.id) }
-        let hidden = tools.filter { !pins.contains($0.id) }
+        let pinned = tools.filter { pins.contains($0.id) }
+        let shown = Array(pinned.dropLast(min(trim, max(pinned.count - 1, 0))))
+        let hidden = tools.filter { tool in !shown.contains { $0.id == tool.id } }
         VStack(spacing: 0) {
             HStack(spacing: DS.Spacing.space1) {
                 ForEach(shown) { tool in
@@ -140,10 +144,19 @@ struct ToolGroupSpec: Identifiable {
     let tools: [GroupTool]
 }
 
-/// How much room the toolbar's tools take, widest first: the groups with their pinned tools, one
-/// menu per group, and last of all one menu holding everything.
-enum ToolbarLayout: String {
-    case full, groups, single
+/// How much room the toolbar's tools take, widest first: the groups with their pinned tools, then
+/// with one pinned tool fewer in each group at a time (down to one in each), and last of all one menu
+/// holding everything.
+enum ToolbarLayout: Hashable {
+    case trimmed(Int)
+    case single
+
+    static let full = ToolbarLayout.trimmed(0)
+}
+
+extension EnvironmentValues {
+    /// How many pinned tools each toolbar group leaves out for want of room.
+    @Entry var toolTrim = 0
 }
 
 /// The rows of a tool menu: every tool, pinned or not. A tool with several ways of working
@@ -188,46 +201,7 @@ private extension View {
     }
 }
 
-/// A group as one menu with all its tools, for a window too narrow for the pinned tools.
-struct ToolGroupMenu: View {
-    let group: ToolGroupSpec
-    @Environment(\.toolsOnTint) private var onTint
-    @Environment(\.toolsInk) private var toolsInk
-
-    var body: some View {
-        Menu(group.title) { ToolMenuRows(tools: group.tools) }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.visible)
-            .tint(onTint ? toolsInk : Color.primary)  // not the accent colour
-            .fixedSize()
-            .toolPopovers(group.tools)
-            .help("All \(group.title) tools")
-            .accessibilityLabel("\(group.title) tools")
-    }
-}
-
-/// A tool that stands alone, as a text button next to the group menus.
-struct SoloToolButton: View {
-    let tool: GroupTool
-    @Environment(\.toolsOnTint) private var onTint
-    @Environment(\.toolsInk) private var toolsInk
-    @Environment(\.accent) private var accent
-
-    var body: some View {
-        Button(action: tool.action) {
-            Text(tool.title).font(.system(size: 13))
-                .foregroundStyle(tool.active && !onTint ? accent : onTint ? toolsInk : Color.primary)
-                .padding(.horizontal, DS.Spacing.space3)
-                .frame(minHeight: 28)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!tool.enabled)
-        .help(tool.help)
-    }
-}
-
-/// The whole toolbar as one menu, for a window too narrow even for the group menus: every tool of
+/// The whole toolbar as one menu, for a window too narrow even for one tool in each group: every tool of
 /// every group. A tool that asks for a popover gets it on the menu's button.
 struct ToolsMenu: View {
     let solo: GroupTool

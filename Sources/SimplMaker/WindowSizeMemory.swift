@@ -1,4 +1,4 @@
-// Remembers the size of the document window between launches.
+// Remembers the size of the document window between launches, and sets how document windows tab.
 // Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import SwiftUI
@@ -38,6 +38,16 @@ struct WindowSizeMemory: NSViewRepresentable {
                 window.setFrame(frame, display: true)
             }
             observed = true
+            // Parts open as tabs of one window, with the tab bar showing even for one part, and the document's name
+            // is in its tab rather than the toolbar.
+            window.tabbingMode = .preferred
+            window.titleVisibility = .hidden
+            for delay in [0.0, 0.3] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak window] in
+                    guard let window, let group = window.tabGroup, !group.isTabBarVisible else { return }
+                    window.toggleTabBar(nil)
+                }
+            }
             NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
                                                    name: NSWindow.didEndLiveResizeNotification, object: window)
         }
