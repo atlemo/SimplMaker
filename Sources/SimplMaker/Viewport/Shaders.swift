@@ -17,7 +17,7 @@ enum Shaders {
         float4 faceSelectedColor;
         float4 regionColor;     // rgb + base alpha
         uint wholeBodies;       // a tool is picking bodies: hover and selection cover the whole body
-        uint pad0;
+        uint evenLight;         // sketching: lit evenly from the camera's side, with no glare moving over the faces
         float printLayer;       // print preview: layer height in mm
         float printNozzle;      // print preview: nozzle width in mm
         float4 clipPlane;       // section analysis: xyz = unit normal, w = distance; the side where dot(p, n) > w is cut away
@@ -156,6 +156,7 @@ enum Shaders {
                              constant Uniforms& u, constant uint* sel, constant DrawParams& p) {
         float3 n = normalize(normal);
         float3 v = normalize(u.eye.xyz - world);
+        if (u.evenLight != 0) v = -normalize(u.viewDir.xyz);  // the same for every pixel: a flat face is one shade
         if (dot(n, v) < 0.0) n = -n;
         float groove = 1.0;
         if (print) groove = printLook(n, world, max(u.printLayer, 0.01), max(u.printNozzle, 0.05), ring);
@@ -163,6 +164,7 @@ enum Shaders {
         float diffuse = max(dot(n, key), 0.0);
         float spec = print ? pow(max(dot(reflect(-key, n), v), 0.0), 14.0) * 0.07
                            : pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
+        if (u.evenLight != 0) spec = 0.0;
         // The body's colour (its own from the Appearance panel, or the palette's), with hover and
         // selection colours made from it (see Renderer.tint).
         float3 base = p.color.rgb;

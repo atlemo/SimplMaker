@@ -138,7 +138,7 @@ struct DocumentWindow: View {
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
                          visualStyle: model.visualStyle, printPreview: model.printPreview,
                          printLayer: model.printLayer, printNozzle: model.printNozzle,
-                         sectionPlane: model.sectionClip,
+                         sectionPlane: model.sectionClip, sketchSlice: model.sketchSlicePlane,
                          showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
@@ -780,13 +780,13 @@ struct BrowserList: View {
                 }
                 ForEach(looseBodies, id: \.self) { row($0) }
             } label: {
-                FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model)
+                FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model, lockable: true)
                     .dropDestination(for: BrowserDrag.self) { drops, _ in drop(drops, into: nil) }
             }
             DisclosureGroup(isExpanded: $sketchesOpen) {
                 ForEach(model.sketches) { row($0.id) }
             } label: {
-                FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model)
+                FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model, lockable: true)
             }
             if !model.planeFeatures.isEmpty {
                 DisclosureGroup(isExpanded: $planesOpen) {
@@ -826,6 +826,7 @@ struct BrowserList: View {
         if let b = model.bodies.first(where: { $0.id == id }) {
             BrowserRow(name: b.name, hidden: model.isHidden(b.id),
                        toggle: { model.setHidden([b.id], !model.isHidden(b.id)) },
+                       locked: model.isLocked(b.id), toggleLock: { model.setLocked([b.id], !model.isLocked(b.id)) },
                        renaming: renamingBinding(b.id), rename: { model.renameBody(b.id, to: $0) }) {
                 Image(systemName: "cylinder")
             }
@@ -837,6 +838,7 @@ struct BrowserList: View {
             case .sketch:
                 BrowserRow(name: f.name, hidden: model.isHidden(f.id),
                            toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
+                           locked: model.isLocked(f.id), toggleLock: { model.setLocked([f.id], !model.isLocked(f.id)) },
                            renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
                     SketchIcon(editing: model.sketchSession?.featureID == f.id,
                                locked: model.result?.sketches[f.id]?.solve.degreesOfFreedom == 0,
@@ -956,8 +958,9 @@ struct BrowserList: View {
                     if model.sketchSession?.featureID == id { model.finishSketch() } else { model.editSketch(id) }
                 }
                 Button(model.isHidden(id) ? "Show Sketch" : "Hide Sketch") { model.setHidden([id], !model.isHidden(id)) }
-                Button("Move or Rotate Sketch") { model.move(sketches: [id]) }
-                Button("Scale Sketch") { model.scale(sketches: [id]) }
+                Button(model.isLocked(id) ? "Unlock Sketch" : "Lock Sketch") { model.setLocked([id], !model.isLocked(id)) }
+                Button("Move or Rotate Sketch") { model.move(sketches: [id]) }.disabled(model.isLocked(id))
+                Button("Scale Sketch") { model.scale(sketches: [id]) }.disabled(model.isLocked(id))
                 Button("Rename Sketch") { renaming = id }
             } else if case .plane = f.kind {
                 Button("New Sketch on Plane") { model.beginSketch(on: .plane(id)) }
@@ -969,8 +972,9 @@ struct BrowserList: View {
                 Button("Rename Canvas") { renaming = id }
             } else if model.bodies.contains(where: { $0.id == id }) {
                 Button(model.isHidden(id) ? "Show Body" : "Hide Body") { model.setHidden([id], !model.isHidden(id)) }
-                Button("Move or Rotate Body") { model.move(bodies: [id]) }
-                Button("Scale Body") { model.scale(bodies: [id]) }
+                Button(model.isLocked(id) ? "Unlock Body" : "Lock Body") { model.setLocked([id], !model.isLocked(id)) }
+                Button("Move or Rotate Body") { model.move(bodies: [id]) }.disabled(model.isLocked(id))
+                Button("Scale Body") { model.scale(bodies: [id]) }.disabled(model.isLocked(id))
                 Button("Rename Body") { renaming = id }
                 Button("Appearance…") { model.openAppearance(for: id) }
                 moveMenu(id)
@@ -983,10 +987,14 @@ struct BrowserList: View {
             Button(f.suppressed ? "Unsuppress" : "Suppress") {
                 model.updateFeature(id, f.suppressed ? "Unsuppress" : "Suppress") { $0.suppressed.toggle() }
             }
+            .disabled(model.isLocked(id))
             Button("Delete \(f.name)", role: .destructive) { model.deleteFeature(id) }
+                .disabled(model.isLocked(id))
         } else if !ids.isEmpty {
             Button("Hide") { model.setHidden(Array(ids), true) }
             Button("Show") { model.setHidden(Array(ids), false) }
+            Button("Lock") { model.setLocked(Array(ids), true) }
+            Button("Unlock") { model.setLocked(Array(ids), false) }
         }
     }
 }
@@ -1027,6 +1035,10 @@ struct BrowserFolderNode: View {
                     Text(folder.name)
                 }
                 Spacer(minLength: DS.Spacing.labelGap)
+                let lockable = inside.filter(model.isLockable)
+                let allLocked = !lockable.isEmpty && lockable.allSatisfy { model.isLocked($0) }
+                LockButton(locked: allLocked) { model.setLocked(lockable, !allLocked) }
+                    .disabled(lockable.isEmpty)
                 EyeButton(hidden: allHidden) { model.setHidden(inside, !allHidden) }
                     .disabled(inside.isEmpty)
             }
@@ -1102,6 +1114,9 @@ struct BrowserRow<Icon: View>: View {
     let name: String
     let hidden: Bool
     let toggle: () -> Void
+    /// Whether it is locked, and the padlock's action; nil for what can't be locked (planes, canvases).
+    var locked: Bool?
+    var toggleLock: (() -> Void)?
     @Binding var renaming: Bool
     let rename: (String) -> Void
     @ViewBuilder let icon: () -> Icon
@@ -1115,6 +1130,7 @@ struct BrowserRow<Icon: View>: View {
                 Text(name)
             }
             Spacer(minLength: DS.Spacing.labelGap)
+            if let locked, let toggleLock { LockButton(locked: locked, toggle: toggleLock) }
             EyeButton(hidden: hidden, toggle: toggle)
         }
         .foregroundStyle(hidden ? .secondary : .primary)
@@ -1274,13 +1290,18 @@ struct FolderRow: View {
     let title: String
     let ids: [FeatureID]
     let model: DocumentModel
+    /// Whether it holds bodies or sketches, which a padlock can lock (not planes or canvases).
+    var lockable = false
 
     var body: some View {
         let allHidden = !ids.isEmpty && ids.allSatisfy { model.isHidden($0) }
+        let lockIDs = ids.filter(model.isLockable)
+        let allLocked = !lockIDs.isEmpty && lockIDs.allSatisfy { model.isLocked($0) }
         HStack(spacing: DS.Spacing.labelGap) {
             Image(systemName: "folder").frame(width: 18)
             Text(title)
             Spacer(minLength: DS.Spacing.labelGap)
+            if lockable { LockButton(locked: allLocked) { model.setLocked(lockIDs, !allLocked) }.disabled(lockIDs.isEmpty) }
             EyeButton(hidden: allHidden) { model.setHidden(ids, !allHidden) }
                 .disabled(ids.isEmpty)
         }
@@ -1300,6 +1321,23 @@ struct EyeButton: View {
         .foregroundStyle(.secondary)
         .help(hidden ? "Show" : "Hide")
         .accessibilityLabel(hidden ? "Show" : "Hide")  // the eye symbol's own name is always "Show"
+    }
+}
+
+/// The padlock next to a row's eye: locked bodies and sketches are drawn but can't be picked or edited.
+struct LockButton: View {
+    let locked: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            Image(systemName: locked ? "lock.fill" : "lock.open")
+                .frame(width: 18)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help(locked ? "Unlock" : "Lock")
+        .accessibilityLabel(locked ? "Unlock" : "Lock")
     }
 }
 

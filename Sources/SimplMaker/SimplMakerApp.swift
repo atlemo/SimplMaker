@@ -221,6 +221,7 @@ struct SimplMakerCommands: Commands {
                         .disabled(!((tool == .pattern ? model?.sketchSession?.canPattern : model?.sketchSession?.canTransform) ?? false))
                 }
                 Divider()
+                Toggle("Slice View", isOn: Binding(get: { model?.sketchSlice ?? false }, set: { model?.sketchSlice = $0 }))
                 Button("Finish Sketch") { model?.finishSketch() }
             }
         }

@@ -158,6 +158,15 @@ final class DocumentModel {
     /// Section analysis (Inspect ▸ Section Analysis): the plane the bodies are cut by, and whether the cut shows. Not saved.
     var section: SectionCut?
     var sectionOn = true
+    /// Sketching: everything between the sketch's plane and the camera is cut away, to reach a sketch that lies
+    /// between walls. A view setting: not saved, no undo step.
+    var sketchSlice = false
+    /// The sketch plane the renderer slices at, while sketching with the slice on.
+    var sketchSlicePlane: (origin: SIMD3<Float>, normal: SIMD3<Float>)? {
+        guard sketchSlice, let f = sketchSession?.frame else { return nil }
+        let o = f.origin, n = simd_normalize(f.normal)
+        return (SIMD3(Float(o.x), Float(o.y), Float(o.z)), SIMD3(Float(n.x), Float(n.y), Float(n.z)))
+    }
     /// The cutting plane's arrow being dragged: the offset it started from, and where along the arrow the grab was.
     @ObservationIgnored var sectionDrag: (offset: Double, base: SIMD3<Double>, direction: SIMD3<Double>, grab: Double)?
 
@@ -291,6 +300,52 @@ final class DocumentModel {
         if hidden { selection.removeAll { $0.isFace || $0.isEdge ? ids.contains(meshes[safe: $0.body]?.id ?? "") : false } }
     }
 
+    // MARK: locking
+
+    func isLocked(_ id: FeatureID) -> Bool { document.locked.contains(id) }
+
+    /// Whether a body or sketch can be locked (planes and canvases can't).
+    func isLockable(_ id: FeatureID) -> Bool {
+        isSketch(id) || bodies.contains { $0.id == id }
+    }
+
+    /// Locks or unlocks bodies and sketches (by the id of the feature that made them), as one undo step.
+    /// A locked one is still drawn, but can't be picked, selected or edited until it is unlocked.
+    func setLocked(_ ids: [FeatureID], _ locked: Bool) {
+        let ids = ids.filter(isLockable)
+        guard !ids.isEmpty else { return }
+        let noun = ids.count == 1 ? (isSketch(ids[0]) ? "Sketch" : "Body") : "Items"
+        mutate(locked ? "Lock \(noun)" : "Unlock \(noun)") { doc in
+            if locked { doc.locked.formUnion(ids) } else { doc.locked.subtract(ids) }
+        }
+        if locked {
+            selection.removeAll { isLockedPick($0) }
+            if let f = selectedFeature, ids.contains(f) { selectedFeature = nil }
+        }
+    }
+
+    private func isSketch(_ id: FeatureID) -> Bool {
+        if case .sketch? = document.features.first(where: { $0.id == id })?.kind { return true }
+        return false
+    }
+
+    /// The body, or the sketch, a pick in the viewport belongs to.
+    func owner(of pick: PickID) -> FeatureID? {
+        switch pick.kind {
+        case .face, .edge: return meshes[safe: pick.body]?.id
+        case .region: return profile(of: pick)?.sketch
+        case .sketchCurve: return curve(of: pick)?.sketch
+        default: return nil
+        }
+    }
+
+    /// Whether a pick belongs to something locked. A sketch being edited keeps its own picks (it has no
+    /// pick slot of a finished sketch), and snapping to a locked body's edges goes by geometry, not picks.
+    func isLockedPick(_ pick: PickID) -> Bool {
+        guard !document.locked.isEmpty, let id = owner(of: pick) else { return false }
+        return document.locked.contains(id)
+    }
+
     /// Bodies and sketches that own what's selected in the viewport: highlighted in the browser.
     /// The body selected as a whole (from the browser), if that's what's selected.
     var selectedBody: FeatureID? {
@@ -302,7 +357,7 @@ final class DocumentModel {
     /// in the viewport would. While a tool waits for bodies, it picks the body for the tool instead.
     /// `additive` (⇧-click) adds the body to the selection, or takes it out again.
     func selectBody(_ id: FeatureID, additive: Bool = false) {
-        guard let index = meshes.firstIndex(where: { $0.id == id }) else { return }
+        guard !isLocked(id), let index = meshes.firstIndex(where: { $0.id == id }) else { return }
         let pick = PickID(wholeBody: index)
         if let tool = pendingTool {
             if tool.accepts(.face) { toolClick(tool, pick) }
@@ -577,6 +632,7 @@ final class DocumentModel {
     }
 
     func deleteFeature(_ id: FeatureID) {
+        guard !isLocked(id) else { return }
         if sketchSession?.featureID == id { sketchSession = nil }
         mutate("Delete Feature") { doc in
             guard let i = doc.index(of: id) else { return }
@@ -892,9 +948,10 @@ final class DocumentModel {
         return pick.element < names.count ? names[pick.element] : nil
     }
 
-    func hover(_ pick: PickID?) { hovered = pick }
+    func hover(_ pick: PickID?) { hovered = pick.flatMap { isLockedPick($0) ? nil : $0 } }
 
     func click(_ pick: PickID?, additive: Bool) {
+        let pick = pick.flatMap { isLockedPick($0) ? nil : $0 }  // a locked body or sketch is not there to click
         if isPickingSketchPlane {
             // Only a plane or a face answers the question; anything else keeps asking.
             guard let pick else { return }
@@ -1023,6 +1080,7 @@ final class DocumentModel {
             doc.hidden.remove(feature.id)
         }
         lookAt(frame)
+        startSketchSlice(frame)
     }
 
     /// Turns a sketch from before upright axes to them: everything in it turns with its axes, so
@@ -1037,7 +1095,7 @@ final class DocumentModel {
     }
 
     func editSketch(_ id: FeatureID) {
-        guard let f = document.features.first(where: { $0.id == id }), case .sketch(let sf) = f.kind else { return }
+        guard !isLocked(id), let f = document.features.first(where: { $0.id == id }), case .sketch(let sf) = f.kind else { return }
         if let i = document.index(of: id), i >= markerPosition {
             // The marker has rolled the sketch back, so its face may not exist yet: build it again (the marker moves to
             // just after it, as for any feature picked for editing), then edit it.
@@ -1064,6 +1122,7 @@ final class DocumentModel {
         selectedFeature = id
         regenerate()
         lookAt(frame)
+        startSketchSlice(frame)
     }
 
     /// Body edges and corners that lie in the sketch plane, for the sketch to snap to.

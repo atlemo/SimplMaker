@@ -202,7 +202,7 @@ extension DocumentModel {
     /// Opens a feature for editing: a sketch goes into sketch mode; anything else is selected with
     /// its drag handle and size field ready for typing.
     func editFeature(_ id: FeatureID) {
-        guard let f = document.features.first(where: { $0.id == id }) else { return }
+        guard !isLocked(id), let f = document.features.first(where: { $0.id == id }) else { return }
         if case .sketch = f.kind { editSketch(id); return }
         // A failed extrude, revolve or sweep usually lost a profile: pick its profiles again.
         if result?.errors[id] != nil, profileSource(id) != nil { reselectProfiles(id); return }
@@ -219,7 +219,7 @@ extension DocumentModel {
     /// or profile; on an edge, select the loop of edges it's part of. `viewDirection` (where the
     /// camera looks) decides which of an edge's two faces' loops: the face turned toward you.
     func doubleClick(_ pick: PickID?, viewDirection: SIMD3<Double> = SIMD3(0, 0, -1), additive: Bool = false) {
-        guard sketchSession == nil, let pick else { return }
+        guard sketchSession == nil, let pick, !isLockedPick(pick) else { return }
         if pick.kind == .edge {
             selectEdgeLoop(pick, viewDirection: viewDirection, additive: additive)
             return

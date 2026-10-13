@@ -471,7 +471,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     private func applyPick(_ result: UInt32) {
-        let raw = hoveredPlaneLabel?.pickID.raw ?? result
+        var raw = hoveredPlaneLabel?.pickID.raw ?? result
+        if raw != 0, model?.isLockedPick(PickID(raw: raw)) == true { raw = 0 }  // a locked body or sketch is not there to hover
         guard let renderer, renderer.hovered != raw else { return }
         renderer.hovered = raw
         model?.hover(raw == 0 ? nil : PickID(raw: raw))
@@ -1825,6 +1826,8 @@ struct ViewportView: NSViewRepresentable {
     var printNozzle = 0.4
     /// Section analysis: the cutting plane (see Renderer.sectionPlane).
     var sectionPlane: SIMD4<Float>?
+    /// Sketching with the slice on: the sketch plane (see Renderer.sketchSlice).
+    var sketchSlice: (origin: SIMD3<Float>, normal: SIMD3<Float>)?
     let showGrid: Bool
     /// Grid square and unit setting, so a change in Settings redraws the sketch grid.
     var gridSetting = ""
@@ -1888,6 +1891,7 @@ struct ViewportView: NSViewRepresentable {
         renderer.printLayer = Float(printLayer)
         renderer.printNozzle = Float(printNozzle)
         renderer.sectionPlane = sectionPlane
+        renderer.sketchSlice = sketchSlice
         renderer.showGrid = showGrid
         renderer.showAxes = showAxes
         if view.gridSetting != gridSetting {

@@ -151,7 +151,8 @@ struct Uniforms {
     var faceSelectedColor: SIMD4<Float>
     var regionColor: SIMD4<Float>
     var wholeBodies: UInt32 = 0
-    var pad0: UInt32 = 0
+    /// Sketching: faces are lit evenly from the camera's side (see shadeFace), so no glare sweeps over them.
+    var evenLight: UInt32 = 0
     /// The print preview's layer height and nozzle width, in mm (see printLook in the shader).
     var printLayer: Float = 0.2
     var printNozzle: Float = 0.4
@@ -474,6 +475,8 @@ final class Renderer {
     /// Section analysis: the plane the bodies are cut by, as its unit normal and its distance from the origin along
     /// it; what lies on the side the normal points to is cut away. Nil: not cutting.
     var sectionPlane: SIMD4<Float>?
+    /// Sketching with the slice on: the sketch plane, which everything between it and the camera is cut away at.
+    var sketchSlice: (origin: SIMD3<Float>, normal: SIMD3<Float>)?
     var hovered: UInt32 = 0
     /// A tool is picking bodies: hovering and selecting a face lights up its whole body.
     var wholeBodies = false
@@ -922,13 +925,20 @@ final class Renderer {
                                 faceSelectedColor: palette.faceSelected, regionColor: palette.region,
                                 wholeBodies: wholeBodies ? 1 : 0,
                                 printLayer: printLayer, printNozzle: printNozzle)
-        let sectioning = sectionPlane != nil
+        uniforms.evenLight = sketchGrid != nil ? 1 : 0
+        let forward = camera.forward
+        uniforms.viewDir = SIMD4(forward.x, forward.y, forward.z, camera.orthographic ? 1 : 0)
+        var cutPlane = sectionPlane
+        if cutPlane == nil, let s = sketchSlice {
+            // The side of the sketch plane the camera is on goes; a hair of room keeps a face lying in the plane.
+            let n = simd_dot(camera.eye - s.origin, s.normal) < 0 ? -s.normal : s.normal
+            cutPlane = SIMD4(n.x, n.y, n.z, simd_dot(n, s.origin) + 0.01)
+        }
+        let sectioning = cutPlane != nil
         let cuttingShaded = sectioning && (printing || visualStyle.isShaded)
-        if let plane = sectionPlane {
+        if let plane = cutPlane {
             uniforms.clipPlane = plane
             uniforms.clipOn = 1
-            let f = camera.forward
-            uniforms.viewDir = SIMD4(f.x, f.y, f.z, camera.orthographic ? 1 : 0)
         }
         let clipStyle: UInt32 = sectioning ? DrawStyle.clipped : 0
         var sel = Array(selected.prefix(256))

@@ -123,6 +123,8 @@ struct SketchInspector: View {
                 Button("Edit Sketch") { model.editSketch(id) }
             } else {
                 Button("Finish Sketch") { model.finishSketch() }
+                Toggle("Slice View", isOn: Bindable(model).sketchSlice)
+                    .help("Hide everything between this sketch's plane and the camera, to reach a sketch that lies between walls")
             }
             LabeledContent("Plane", value: planeName)
             if sketch.uprightAxes != true, session == nil, sketch.plane.isFaceOrPlane {

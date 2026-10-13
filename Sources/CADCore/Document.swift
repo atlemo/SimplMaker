@@ -870,6 +870,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
     public var rollback: Int?
     /// Bodies and sketches hidden in the viewport, by the id of the feature that made them.
     public var hidden: Set<FeatureID> = []
+    /// Bodies and sketches locked against picking and editing, by the id of the feature that made them.
+    public var locked: Set<FeatureID> = []
     /// Names given to bodies, by the id of the feature that made them (others are "Body1", "Body2"…).
     public var bodyNames: [FeatureID: String] = [:]
     /// Colours given to bodies, by the id of the feature that made them (others use the default).
@@ -884,7 +886,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, bodyNames, bodyColors, folders, folderOf }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, folders, folderOf }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -893,6 +895,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         features = try c.decodeIfPresent([Feature].self, forKey: .features) ?? []
         rollback = try c.decodeIfPresent(Int.self, forKey: .rollback)
         hidden = try c.decodeIfPresent(Set<FeatureID>.self, forKey: .hidden) ?? []  // older files have none
+        locked = try c.decodeIfPresent(Set<FeatureID>.self, forKey: .locked) ?? []
         bodyNames = try c.decodeIfPresent([FeatureID: String].self, forKey: .bodyNames) ?? [:]
         bodyColors = try c.decodeIfPresent([FeatureID: BodyColor].self, forKey: .bodyColors) ?? [:]
         folders = try c.decodeIfPresent([BrowserFolder].self, forKey: .folders) ?? []
@@ -906,6 +909,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         try c.encode(features, forKey: .features)
         try c.encodeIfPresent(rollback, forKey: .rollback)
         if !hidden.isEmpty { try c.encode(hidden.sorted(), forKey: .hidden) }  // sorted: stable files
+        if !locked.isEmpty { try c.encode(locked.sorted(), forKey: .locked) }
         if !bodyNames.isEmpty { try c.encode(bodyNames, forKey: .bodyNames) }  // sorted keys when encoded()
         if !bodyColors.isEmpty { try c.encode(bodyColors, forKey: .bodyColors) }
         if !folders.isEmpty { try c.encode(folders, forKey: .folders) }
@@ -916,6 +920,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
     public var ignoringPresentation: CADDocument {
         var d = self
         d.hidden = []
+        d.locked = []
         d.bodyNames = [:]
         d.bodyColors = [:]
         d.folders = []
