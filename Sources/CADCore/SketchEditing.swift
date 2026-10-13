@@ -733,6 +733,19 @@ extension Sketch {
     }
 }
 
+/// A plain number in a field (`68`, `12.5 mm`, `-3 deg`) moved by `delta`, keeping what follows the number
+/// (its unit) as typed. Nil when the text is anything else (an expression, a parameter's name), which an
+/// arrow key leaves alone.
+public func nudgedExpression(_ text: String, by delta: Double) -> String? {
+    let t = text.trimmingCharacters(in: .whitespaces)
+    guard let m = t.wholeMatch(of: /(-?(?:\d+\.?\d*|\.\d+))(\s*[a-zA-Z°"']*)/), let v = Double(m.1) else { return nil }
+    var s = String(format: "%.6f", ((v + delta) * 1e6).rounded() / 1e6)
+    while s.hasSuffix("0") { s.removeLast() }
+    if s.hasSuffix(".") { s.removeLast() }
+    if s == "-0" { s = "0" }
+    return s + m.2
+}
+
 /// Formats a measured value as an expression, e.g. "23.45 mm" or "30 deg".
 public func formatDimension(_ value: Double, kind: UnitKind) -> String {
     let v = kind == .angle ? value * 180 / .pi : value

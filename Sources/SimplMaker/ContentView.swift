@@ -1201,7 +1201,7 @@ struct ParameterRow: View {
             if let renameError {
                 Text(renameError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
-            ExpressionField(text: scrub?.expression ?? parameter.expression, excluding: parameter.name, inSelectableRow: true) { model.setParameter(parameter.name, expression: $0) }
+            ExpressionField(text: scrub?.expression ?? parameter.expression, excluding: parameter.name, inSelectableRow: true, nudges: true) { model.setParameter(parameter.name, expression: $0) }
             let users = model.document.features(using: parameter.name).map(\.name)
             Text(users.isEmpty ? "Not used yet · type \(parameter.name) in any size field" : "Used by \(users.joined(separator: ", "))")
                 .font(.caption)
@@ -1287,7 +1287,7 @@ struct ExpressionField: View {
     @FocusState private var focused: Bool
 
     init(text: String, monospaced: Bool = true, completes: Bool = true, excluding: String? = nil,
-         inSelectableRow: Bool = false, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
+         inSelectableRow: Bool = false, nudges: Bool = false, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
         self.text = text
         self.monospaced = monospaced
         self.completes = completes
@@ -1508,6 +1508,8 @@ struct SketchToolbar: View {
     private func transform(_ tool: SketchTransformTool) -> GroupTool {
         // Move shows the manipulator to drag (or type into); Scale asks for a factor.
         GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool.symbol, help: tool.help,
+    /// ↑ ↓ move a plain number in the field by one (Shift: ten, Option: a tenth) and commit it.
+    var nudges = false
                   active: session.manipulating == tool || (tool == .pattern && session.isPatterning),
                   enabled: tool == .pattern ? session.canPattern : session.canTransform,
                   popover: tool != .scale ? nil : ToolPopover(isPresented: Binding(get: { session.transformRequested == tool },
@@ -1520,6 +1522,7 @@ struct SketchToolbar: View {
     private var canvas: GroupTool {
         GroupTool(id: "Canvas", title: "Canvas", icon: DesignTool.canvas.symbol,
                   help: "Canvas: place a reference image on the sketch's plane, to trace over") {
+        self.nudges = nudges
             model.insertImageInSketch()
         }
     }
@@ -1531,6 +1534,15 @@ struct SketchToolbar: View {
             model.beginSketchOffset()
         }
     }
+            .onKeyPress(phases: [.down, .repeat]) { press in
+                guard nudges, press.key == .upArrow || press.key == .downArrow else { return .ignored }
+                let size = press.modifiers.contains(.shift) ? 10.0 : press.modifiers.contains(.option) ? 0.1 : 1.0
+                guard let next = nudgedExpression(draft, by: press.key == .upArrow ? size : -size) else { return .ignored }
+                draft = next
+                edited = false
+                commit(next)
+                return .handled
+            }
 
     private var constrain: GroupTool {
         GroupTool(id: "Constrain", title: "Constrain", icon: "link", help: "Constrain the selected sketch entities",
