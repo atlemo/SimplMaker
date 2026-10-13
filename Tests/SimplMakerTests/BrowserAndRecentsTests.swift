@@ -182,3 +182,60 @@ import Testing
         #expect(m.bodies == ["b"])
     }
 }
+
+/// Browser folders: what they hold, what their eye does, and what exporting one writes.
+@Suite @MainActor struct BrowserFolderModelTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    private func twoBoxes() -> CADDocument {
+        var d = CADDocument()
+        d.features = [Feature(id: "a", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy))),
+                      Feature(id: "b", name: "Box2", .primitive(PrimitiveFeature(kind: .box, plane: .xy, operation: .newBody)))]
+        return d
+    }
+
+    @Test func aFolderHoldsSeveralBodiesAndAnotherFolder() async throws {
+        let model = DocumentModel(document: twoBoxes())
+        try await settle(model)
+        let outer = model.newFolder()
+        let inner = model.newFolder(in: outer, holding: ["b"])
+        model.move(items: ["a"], toFolder: outer)
+        #expect(Set(model.bodies(inFolder: outer).map(\.id)) == ["a", "b"], "a folder's bodies include its folders'")
+        #expect(model.bodies(inFolder: inner).map(\.id) == ["b"])
+        model.setHidden(model.items(inFolder: outer), true)
+        #expect(model.isHidden("a") && model.isHidden("b"))
+        model.deleteFolder(outer)
+        #expect(model.document.folder(of: "a") == nil, "what was directly in the deleted folder is loose again")
+        #expect(model.document.folder(of: "b") == inner)
+        #expect(model.document.folder(inner)?.parent == nil, "the folder inside moves up")
+    }
+
+    @Test func aFolderExportsAsOneFile() async throws {
+        let model = DocumentModel(document: twoBoxes())
+        try await settle(model)
+        let folder = model.newFolder(holding: ["a", "b"])
+        let bodies = model.bodies(inFolder: folder).map(\.body)
+        #expect(bodies.count == 2)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for (stl, name) in [(true, "f.stl"), (false, "f.step")] {
+            let url = dir.appendingPathComponent(name)
+            #expect(model.write(bodies, stl: stl, to: url))
+            #expect((try? Data(contentsOf: url).count) ?? 0 > 100)
+        }
+    }
+
+    @Test func movingChangesNothingToRebuild() async throws {
+        let model = DocumentModel(document: twoBoxes())
+        try await settle(model)
+        let before = model.result?.duration
+        let f = model.newFolder(holding: ["a"])
+        model.renameFolder(f, to: "Lid")
+        #expect(!model.isRegenerating && model.result?.duration == before)
+        #expect(model.document.folder(f)?.name == "Lid")
+    }
+}

@@ -849,6 +849,18 @@ public struct BodyColor: Codable, Hashable, Sendable {
     }
 }
 
+/// A folder in the browser. Folders hold bodies, sketches, planes and canvases, and other folders.
+public struct BrowserFolder: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    /// The folder this one is in; nil at the top of the browser.
+    public var parent: String?
+
+    public init(id: String = UUID().uuidString, name: String, parent: String? = nil) {
+        self.id = id; self.name = name; self.parent = parent
+    }
+}
+
 public struct CADDocument: Codable, Hashable, Sendable {
     public static let formatVersion = 1
     public var version: Int = CADDocument.formatVersion
@@ -862,12 +874,17 @@ public struct CADDocument: Codable, Hashable, Sendable {
     public var bodyNames: [FeatureID: String] = [:]
     /// Colours given to bodies, by the id of the feature that made them (others use the default).
     public var bodyColors: [FeatureID: BodyColor] = [:]
+    /// Folders the user made in the browser, with their sub-folders (a folder lists its parent).
+    public var folders: [BrowserFolder] = []
+    /// The folder each body, sketch, plane or canvas sits in, by the id of the feature that made it. Anything
+    /// not listed (or listed under a folder that no longer exists) stays in its usual group.
+    public var folderOf: [FeatureID: String] = [:]
 
     public init(parameters: [Parameter] = [], features: [Feature] = []) {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, bodyNames, bodyColors }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, bodyNames, bodyColors, folders, folderOf }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -878,6 +895,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
         hidden = try c.decodeIfPresent(Set<FeatureID>.self, forKey: .hidden) ?? []  // older files have none
         bodyNames = try c.decodeIfPresent([FeatureID: String].self, forKey: .bodyNames) ?? [:]
         bodyColors = try c.decodeIfPresent([FeatureID: BodyColor].self, forKey: .bodyColors) ?? [:]
+        folders = try c.decodeIfPresent([BrowserFolder].self, forKey: .folders) ?? []
+        folderOf = try c.decodeIfPresent([FeatureID: String].self, forKey: .folderOf) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -889,6 +908,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
         if !hidden.isEmpty { try c.encode(hidden.sorted(), forKey: .hidden) }  // sorted: stable files
         if !bodyNames.isEmpty { try c.encode(bodyNames, forKey: .bodyNames) }  // sorted keys when encoded()
         if !bodyColors.isEmpty { try c.encode(bodyColors, forKey: .bodyColors) }
+        if !folders.isEmpty { try c.encode(folders, forKey: .folders) }
+        if !folderOf.isEmpty { try c.encode(folderOf, forKey: .folderOf) }
     }
 
     /// The same design with visibility, names and colours ignored: changing those needs no rebuild.
@@ -897,6 +918,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
         d.hidden = []
         d.bodyNames = [:]
         d.bodyColors = [:]
+        d.folders = []
+        d.folderOf = [:]
         for i in d.features.indices {
             d.features[i].name = ""
             if case .image(var f) = d.features[i].kind { f.opacity = 1; d.features[i].kind = .image(f) }
@@ -1008,5 +1031,85 @@ extension CADDocument {
 
         doc.features = [base, plate, pinSketch, pin, corners, chamfer]
         return doc
+    }
+}
+
+// MARK: browser folders
+
+extension CADDocument {
+    /// The folders directly inside `parent` (nil: at the top), in the order they were made.
+    public func subfolders(of parent: String?) -> [BrowserFolder] {
+        folders.filter { $0.parent == parent }
+    }
+
+    public func folder(_ id: String) -> BrowserFolder? { folders.first { $0.id == id } }
+
+    /// The folder an item sits in, if it has one that still exists.
+    public func folder(of item: FeatureID) -> String? {
+        guard let f = folderOf[item], folders.contains(where: { $0.id == f }) else { return nil }
+        return f
+    }
+
+    /// The folder and every folder inside it, however deep.
+    public func folderTree(_ id: String) -> Set<String> {
+        var found: Set<String> = [id]
+        var queue = [id]
+        while let next = queue.popLast() {
+            for child in folders where child.parent == next && found.insert(child.id).inserted { queue.append(child.id) }
+        }
+        return found
+    }
+
+    /// The items in the folder and in every folder inside it.
+    public func items(inTree id: String) -> [FeatureID] {
+        let tree = folderTree(id)
+        return folderOf.filter { tree.contains($0.value) }.map(\.key).sorted()
+    }
+
+    /// How many folders deep this one is (0 at the top).
+    public func depth(of id: String) -> Int {
+        var n = 0, at = folder(id)?.parent
+        while let p = at, n < folders.count { n += 1; at = folder(p)?.parent }
+        return n
+    }
+
+    /// Next free "Folder", "Folder 2", ... name.
+    public func nextFolderName() -> String {
+        var n = 1
+        func name(_ n: Int) -> String { n == 1 ? "Folder" : "Folder \(n)" }
+        while folders.contains(where: { $0.name == name(n) }) { n += 1 }
+        return name(n)
+    }
+
+    /// Makes a folder inside `parent` (nil: at the top) and returns its id.
+    @discardableResult
+    public mutating func addFolder(named name: String? = nil, in parent: String? = nil) -> String {
+        let f = BrowserFolder(name: name ?? nextFolderName(), parent: parent.flatMap { folder($0) == nil ? nil : $0 })
+        folders.append(f)
+        return f.id
+    }
+
+    /// Puts items into a folder (nil: back in their usual group).
+    public mutating func move(_ items: [FeatureID], toFolder id: String?) {
+        for item in items {
+            if let id, folder(id) != nil { folderOf[item] = id } else { folderOf[item] = nil }
+        }
+    }
+
+    /// Puts a folder inside another (nil: at the top). Refused, with false, into itself or one of its own folders.
+    @discardableResult
+    public mutating func moveFolder(_ id: String, into parent: String?) -> Bool {
+        guard let i = folders.firstIndex(where: { $0.id == id }) else { return false }
+        if let parent, folder(parent) == nil || folderTree(id).contains(parent) { return false }
+        folders[i].parent = parent
+        return true
+    }
+
+    /// Removes a folder. What it held (items and folders) moves up into the folder it was in.
+    public mutating func removeFolder(_ id: String) {
+        guard let f = folder(id) else { return }
+        for i in folders.indices where folders[i].parent == id { folders[i].parent = f.parent }
+        for (item, home) in folderOf where home == id { folderOf[item] = f.parent }
+        folders.removeAll { $0.id == id }
     }
 }

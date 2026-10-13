@@ -65,6 +65,7 @@ The browser lists what is in the part.
 
 - **Bodies**, **Sketches**, **Planes** and **Canvases** are folders. Planes and Canvases appear once you have some.
 - The eye beside a row shows or hides it. The eye on a folder shows or hides everything in it.
+- Make your own folders inside **Bodies** with the folder button in the browser header, or right-click **Bodies** and choose **New Folder**. A body's right-click menu has **Move to Folder**. Drag bodies onto a folder to fill it.
 - Click a body to select it. **Double-click** to edit the feature that made it. Double-click a sketch to edit the sketch.
 - Right-click a row for more: rename, hide, suppress, move, appearance, export and delete.
 - Below the folders are the **Parameters**. See [Parameters and expressions](doc:concepts/parameters).

@@ -16,11 +16,12 @@ The numbers in the file are **millimetres**, which is what slicers expect. Your 
 | **File → Export STL…** | Every body in the part, in one `.stl` file. Hidden bodies are included. |
 | **File → Export STEP…** | Every body in the part, in one `.step` file |
 | Right-click a body in the browser → **Export Body → STL…** or **STEP…** | Just that body |
+| Right-click a folder in the browser → **Export Folder → STL…** or **STEP…** | Every body in the folder and in the folders inside it, in one file |
 
 The STL is written with a fine surface tolerance (0.02 mm), so curves print smooth.
 
 :::tip
-Making several parts in one file? Give each its own body, and use **Export Body** to write them one at a time. That keeps every STL ready to print.
+Making several parts in one file? Give each its own body, and use **Export Body** to write them one at a time. That keeps every STL ready to print. To write a group of bodies as one file, put them in a folder and use **Export Folder**.
 :::
 
 ## Export a STEP

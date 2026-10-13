@@ -23,6 +23,11 @@
 			<key>UTTypeTagSpecification</key>
 			<dict><key>public.filename-extension</key><array><string>simplmaker</string></array></dict>
 		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.simplmaker.browser-item</string>
+			<key>UTTypeDescription</key><string>SimplMaker Browser Item</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+		</dict>
 	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>

@@ -457,6 +457,53 @@ final class DocumentModel {
         mutate("Rename Body") { doc in doc.bodyNames[id] = n.isEmpty ? nil : n }
     }
 
+    // MARK: browser folders
+
+    /// A folder just made from the browser's header, for the list to start naming.
+    var pendingFolderRename: String?
+
+    /// Makes a folder (inside `parent`, or at the top), with these items in it, and returns its id.
+    @discardableResult
+    func newFolder(in parent: String? = nil, holding items: [FeatureID] = []) -> String {
+        var id = ""
+        mutate(items.isEmpty ? "New Folder" : "New Folder with Items") { doc in
+            id = doc.addFolder(in: parent)
+            doc.move(items, toFolder: id)
+        }
+        return id
+    }
+
+    func renameFolder(_ id: String, to name: String) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        mutate("Rename Folder") { doc in
+            if let i = doc.folders.firstIndex(where: { $0.id == id }) { doc.folders[i].name = n }
+        }
+    }
+
+    /// Deletes a folder, keeping what is in it: that moves up a level.
+    func deleteFolder(_ id: String) {
+        mutate("Delete Folder") { $0.removeFolder(id) }
+    }
+
+    /// Puts bodies, sketches, planes and canvases in a folder (nil: back in their usual group).
+    func move(items: [FeatureID], toFolder id: String?) {
+        mutate("Move to Folder") { $0.move(items, toFolder: id) }
+    }
+
+    func move(folder id: String, into parent: String?) {
+        mutate("Move Folder") { $0.moveFolder(id, into: parent) }
+    }
+
+    /// Everything in a folder and the folders inside it: what its eye shows and hides.
+    func items(inFolder id: String) -> [FeatureID] { document.items(inTree: id) }
+
+    /// The bodies in a folder and the folders inside it, in the browser's order.
+    func bodies(inFolder id: String) -> [BodyResult] {
+        let inside = Set(document.items(inTree: id))
+        return bodies.filter { inside.contains($0.id) }
+    }
+
     // MARK: appearance
 
     /// Bodies the Appearance panel colours: those selected whole, or owning a selected face or edge.
@@ -2362,21 +2409,30 @@ final class DocumentModel {
         return true
     }
 
-    /// Exports the bodies, or just the ones with these ids, to an STL or STEP file the user picks.
-    func export(bodies ids: [FeatureID]? = nil, stl: Bool) {
+    /// Exports the bodies, or just the ones with these ids, to an STL or STEP file the user picks. `name` is the
+    /// file name offered when the ids are a group (a folder) rather than one body.
+    func export(bodies ids: [FeatureID]? = nil, name: String? = nil, stl: Bool) {
         let wanted = result?.bodies.filter { ids?.contains($0.id) ?? true } ?? []
         guard !wanted.isEmpty else {
-            alert = AlertInfo(title: "There's nothing to export", message: "Create a body first, for example by extruding a sketch.")
+            alert = name.map { AlertInfo(title: "There's nothing to export", message: "\($0) has no bodies in it.") }
+                ?? AlertInfo(title: "There's nothing to export", message: "Create a body first, for example by extruding a sketch.")
             return
         }
         let panel = NSSavePanel()
         let ext = stl ? "stl" : "step"
         if let type = UTType(filenameExtension: ext) { panel.allowedContentTypes = [type] }
-        let base = ids == nil ? (fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled")
-            : (wanted.count == 1 ? bodies.first { $0.id == wanted[0].id }?.name : nil) ?? fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled"
+        let partName = fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled"
+        let base = name ?? (ids == nil ? partName
+            : (wanted.count == 1 ? bodies.first { $0.id == wanted[0].id }?.name : nil) ?? partName)
         panel.nameFieldStringValue = "\(base).\(ext)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         write(wanted.map(\.body), stl: stl, to: url)
+    }
+
+    /// Exports every body in a folder (and in the folders inside it) as one STL or STEP file.
+    func export(folder id: String, stl: Bool) {
+        guard let folder = document.folder(id) else { return }
+        export(bodies: bodies(inFolder: id).map(\.id), name: folder.name, stl: stl)
     }
 
     /// Writes bodies to a file, alerting if that fails. False if it did.

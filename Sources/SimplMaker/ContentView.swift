@@ -4,6 +4,7 @@ import AppKit
 import CADCore
 import CADKernel
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// One document window.
 struct ContentView: View {
@@ -259,8 +260,8 @@ struct DocumentWindow: View {
         // The cursor's prompt goes above everything, panels included.
         .overlay { CursorPrompt(model: model) }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
         .toolbar(removing: .title)  // the document's name is in its tab
+        .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
         .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .task(id: toolRowSignature) { toolRowWidths = measureToolRows() }
@@ -586,7 +587,12 @@ struct Sidebar: View {
         GeometryReader { geo in
             let h = Self.heights(total: geo.size.height, browserOpen: model.browserOpen, parametersOpen: model.parametersOpen, split: split)
             VStack(spacing: 0) {
-                SidebarPanel(title: "Browser", open: $model.browserOpen, accessory: { EmptyView() }) {
+                SidebarPanel(title: "Browser", open: $model.browserOpen, accessory: {
+                    HeaderIconButton(systemImage: "folder.badge.plus", help: "Add a folder") {
+                        model.browserOpen = true
+                        model.pendingFolderRename = model.newFolder()
+                    }
+                }) {
                     BrowserList(model: model)
                 }
                 .frame(height: h.browser)
@@ -706,97 +712,170 @@ struct ParametersList: View {
     }
 }
 
-/// The browser's list: bodies, sketches, planes and canvases, in folders.
+/// What is dragged between rows of the browser: ids of bodies, or one folder.
+struct BrowserDrag: Codable, Transferable {
+    var items: [FeatureID] = []
+    var folder: String?
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .simplMakerBrowserItem)
+    }
+}
+
+extension UTType {
+    static let simplMakerBrowserItem = UTType(exportedAs: "com.simplmaker.browser-item")
+}
+
+/// The browser's list: bodies, sketches, planes and canvases, in groups by kind and in folders of the user's own.
 struct BrowserList: View {
     @Bindable var model: DocumentModel
     @State private var bodiesOpen = true
     @State private var sketchesOpen = true
     @State private var planesOpen = true
     @State private var imagesOpen = true
-    /// The body or sketch whose name is being edited in place.
+    /// Folders the user has closed (new ones start open).
+    @State private var closedFolders: Set<String> = []
+    /// The body, sketch or folder whose name is being edited in place.
     @State private var renaming: FeatureID?
+    /// The folder selected in the list (the model has no such selection).
+    @State private var selectedFolder: String?
 
     /// Body rows are tagged apart from features ("body:<id>"): a click selects the body, not the
-    /// feature that made it (that one opens on double-click).
+    /// feature that made it (that one opens on double-click). Folder rows are "folder:<id>".
     private static let bodyTag = "body:"
+    private static let folderTag = "folder:"
     private var listSelection: Binding<FeatureID?> {
-        Binding(get: { model.selectedBody.map { Self.bodyTag + $0 } ?? model.selectedFeature },
+        Binding(get: {
+                    if let f = selectedFolder, model.selectedBody == nil, model.selectedFeature == nil { return Self.folderTag + f }
+                    return model.selectedBody.map { Self.bodyTag + $0 } ?? model.selectedFeature
+                },
                 set: { tag in
-                    if let tag, tag.hasPrefix(Self.bodyTag) { model.selectBody(String(tag.dropFirst(Self.bodyTag.count))) }
-                    else { model.selectedFeature = tag }
+                    if let tag, tag.hasPrefix(Self.folderTag) {
+                        selectedFolder = String(tag.dropFirst(Self.folderTag.count))
+                        model.clearSelection()
+                        model.selectedFeature = nil
+                    } else {
+                        selectedFolder = nil
+                        if let tag, tag.hasPrefix(Self.bodyTag) { model.selectBody(String(tag.dropFirst(Self.bodyTag.count))) }
+                        else { model.selectedFeature = tag }
+                    }
                 })
     }
     private func featureID(_ tag: FeatureID) -> FeatureID {
         tag.hasPrefix(Self.bodyTag) ? String(tag.dropFirst(Self.bodyTag.count)) : tag
     }
+    private func folderID(_ tag: FeatureID) -> String? {
+        tag.hasPrefix(Self.folderTag) ? String(tag.dropFirst(Self.folderTag.count)) : nil
+    }
+
+    /// Bodies not in a folder of the user's: what the Bodies group lists directly.
+    private var looseBodies: [FeatureID] { model.bodies.map(\.id).filter { model.document.folder(of: $0) == nil } }
 
     var body: some View {
         List(selection: listSelection) {
             DisclosureGroup(isExpanded: $bodiesOpen) {
-                ForEach(model.bodies) { b in
-                    BrowserRow(name: b.name, hidden: model.isHidden(b.id),
-                               toggle: { model.setHidden([b.id], !model.isHidden(b.id)) },
-                               renaming: renamingBinding(b.id), rename: { model.renameBody(b.id, to: $0) }) {
-                        Image(systemName: "cylinder")
-                    }
-                    .tag(Self.bodyTag + b.id)
-                    .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(b.id) && model.selectedBody != b.id))
+                ForEach(model.document.subfolders(of: nil)) { folder in
+                    BrowserFolderNode(model: model, folder: folder, closed: $closedFolders, renaming: $renaming,
+                                      row: { AnyView(row($0)) }, drop: drop, itemIDs: model.bodies.map(\.id))
                 }
+                ForEach(looseBodies, id: \.self) { row($0) }
             } label: {
                 FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model)
+                    .dropDestination(for: BrowserDrag.self) { drops, _ in drop(drops, into: nil) }
             }
             DisclosureGroup(isExpanded: $sketchesOpen) {
-                ForEach(model.sketches) { f in
-                    BrowserRow(name: f.name, hidden: model.isHidden(f.id),
-                               toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
-                               renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
-                        SketchIcon(editing: model.sketchSession?.featureID == f.id,
-                                   locked: model.result?.sketches[f.id]?.solve.degreesOfFreedom == 0,
-                                   failed: model.result?.errors[f.id] != nil)
-                    }
-                    .tag(f.id)
-                    .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(f.id)))
-                }
+                ForEach(model.sketches) { row($0.id) }
             } label: {
                 FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model)
             }
             if !model.planeFeatures.isEmpty {
                 DisclosureGroup(isExpanded: $planesOpen) {
-                    ForEach(model.planeFeatures) { f in
-                        BrowserRow(name: f.name, hidden: model.isHidden(f.id),
-                                   toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
-                                   renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
-                            Icon("plane", size: 14)
-                        }
-                        .tag(f.id)
-                    }
+                    ForEach(model.planeFeatures) { row($0.id) }
                 } label: {
                     FolderRow(title: "Planes", ids: model.planeFeatures.map(\.id), model: model)
                 }
             }
             if !model.imageFeatures.isEmpty {
                 DisclosureGroup(isExpanded: $imagesOpen) {
-                    ForEach(model.imageFeatures) { f in
-                        BrowserRow(name: f.name, hidden: model.isHidden(f.id),
-                                   toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
-                                   renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
-                            Icon("image", size: 14)
-                        }
-                        .tag(f.id)
-                    }
+                    ForEach(model.imageFeatures) { row($0.id) }
                 } label: {
                     FolderRow(title: "Canvases", ids: model.imageFeatures.map(\.id), model: model)
                 }
             }
         }
         .listStyle(.sidebar)
+        .onChange(of: model.pendingFolderRename) {
+            if let id = model.pendingFolderRename { renaming = id; model.pendingFolderRename = nil }
+        }
         .contextMenu(forSelectionType: FeatureID.self) { ids in
             menu(for: ids)
         } primaryAction: { ids in
             // Double-click to edit: a sketch opens in sketch mode, other features (and the one that
-            // made a body) show their handle.
-            if ids.count == 1, let id = ids.first { model.editFeature(featureID(id)) }
+            // made a body) show their handle. A folder opens or closes.
+            guard ids.count == 1, let id = ids.first else { return }
+            if let f = folderID(id) {
+                if closedFolders.remove(f) == nil { closedFolders.insert(f) }
+            } else {
+                model.editFeature(featureID(id))
+            }
         }
+    }
+
+    /// The row of a body, sketch, plane or canvas, wherever it is listed.
+    @ViewBuilder private func row(_ id: FeatureID) -> some View {
+        if let b = model.bodies.first(where: { $0.id == id }) {
+            BrowserRow(name: b.name, hidden: model.isHidden(b.id),
+                       toggle: { model.setHidden([b.id], !model.isHidden(b.id)) },
+                       renaming: renamingBinding(b.id), rename: { model.renameBody(b.id, to: $0) }) {
+                Image(systemName: "cylinder")
+            }
+            .tag(Self.bodyTag + b.id)
+            .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(b.id) && model.selectedBody != b.id))
+            .draggable(BrowserDrag(items: [b.id]))
+        } else if let f = model.document.features.first(where: { $0.id == id }) {
+            switch f.kind {
+            case .sketch:
+                BrowserRow(name: f.name, hidden: model.isHidden(f.id),
+                           toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
+                           renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
+                    SketchIcon(editing: model.sketchSession?.featureID == f.id,
+                               locked: model.result?.sketches[f.id]?.solve.degreesOfFreedom == 0,
+                               failed: model.result?.errors[f.id] != nil)
+                }
+                .tag(f.id)
+                .listRowBackground(BrowserHighlight(on: model.browserHighlights.contains(f.id)))
+            case .plane:
+                BrowserRow(name: f.name, hidden: model.isHidden(f.id),
+                           toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
+                           renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
+                    Icon("plane", size: 14)
+                }
+                .tag(f.id)
+            case .image:
+                BrowserRow(name: f.name, hidden: model.isHidden(f.id),
+                           toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
+                           renaming: renamingBinding(f.id), rename: { model.renameFeature(f.id, to: $0) }) {
+                    Icon("image", size: 14)
+                }
+                .tag(f.id)
+            default:
+                EmptyView()
+            }
+        }
+    }
+
+    /// Items or a folder dropped on a folder (nil: on a group at the top, which takes them out of any folder).
+    private func drop(_ drops: [BrowserDrag], into folder: String?) -> Bool {
+        var moved = false
+        for d in drops {
+            if let f = d.folder {
+                if model.document.folder(f) != nil, f != folder { model.move(folder: f, into: folder); moved = true }
+            } else {
+                let bodies = d.items.filter { id in model.bodies.contains { $0.id == id } }
+                if !bodies.isEmpty { model.move(items: bodies, toFolder: folder); moved = true }
+            }
+        }
+        return moved
     }
 
     /// Whether a row is being renamed; ending the edit clears it.
@@ -809,7 +888,67 @@ struct BrowserList: View {
         return false
     }
 
+    /// Makes a folder and starts naming it.
+    private func makeFolder(in parent: String? = nil, holding items: [FeatureID] = []) {
+        let id = model.newFolder(in: parent, holding: items)
+        if let parent { closedFolders.remove(parent) }
+        bodiesOpen = true
+        renaming = id
+    }
+
+    /// "Move to Folder": every folder, indented by how deep it is, a new one, and out of the folder it is in.
+    @ViewBuilder private func moveMenu(_ id: FeatureID) -> some View {
+        Menu("Move to Folder") {
+            ForEach(folderList(), id: \.folder.id) { entry in
+                Button(String(repeating: "    ", count: entry.depth) + entry.folder.name) {
+                    model.move(items: [id], toFolder: entry.folder.id)
+                }
+                .disabled(model.document.folder(of: id) == entry.folder.id)
+            }
+            if !model.document.folders.isEmpty { Divider() }
+            Button("New Folder") { makeFolder(holding: [id]) }
+            if model.document.folder(of: id) != nil {
+                Button("Out of the Folder") { model.move(items: [id], toFolder: nil) }
+            }
+        }
+    }
+
+    /// Folders in the order the browser shows them, with how deep each is.
+    private func folderList(under parent: String? = nil, depth: Int = 0) -> [(folder: BrowserFolder, depth: Int)] {
+        model.document.subfolders(of: parent).flatMap { [($0, depth)] + folderList(under: $0.id, depth: depth + 1) }
+    }
+
+    @ViewBuilder private func folderMenu(_ f: BrowserFolder) -> some View {
+        let inside = model.items(inFolder: f.id)
+        let allHidden = !inside.isEmpty && inside.allSatisfy { model.isHidden($0) }
+        Button("New Folder Inside") { makeFolder(in: f.id) }
+        Button("Rename Folder") { renaming = f.id }
+        if !inside.isEmpty {
+            Button(allHidden ? "Show All" : "Hide All") { model.setHidden(inside, !allHidden) }
+        }
+        Menu("Export Folder") {
+            Button("STEP…") { model.export(folder: f.id, stl: false) }
+            Button("STL…") { model.export(folder: f.id, stl: true) }
+        }
+        .disabled(model.bodies(inFolder: f.id).isEmpty)
+        if f.parent != nil {
+            Button("Out of the Folder") { model.move(folder: f.id, into: model.document.folder(f.parent ?? "")?.parent) }
+        }
+        Divider()
+        Button("Delete Folder", role: .destructive) { model.deleteFolder(f.id) }
+    }
+
     @ViewBuilder private func menu(for tags: Set<FeatureID>) -> some View {
+        if tags.isEmpty {  // the Bodies group and the empty space: where folders are made
+            Button("New Folder") { makeFolder() }
+        } else if tags.count == 1, let tag = tags.first, let fid = folderID(tag), let folder = model.document.folder(fid) {
+            folderMenu(folder)
+        } else {
+            itemMenu(for: tags)
+        }
+    }
+
+    @ViewBuilder private func itemMenu(for tags: Set<FeatureID>) -> some View {
         let ids = Set(tags.map(featureID))
         if ids.count == 1, let id = ids.first, let f = model.document.features.first(where: { $0.id == id }) {
             if isSketch(id) {
@@ -834,6 +973,7 @@ struct BrowserList: View {
                 Button("Scale Body") { model.scale(bodies: [id]) }
                 Button("Rename Body") { renaming = id }
                 Button("Appearance…") { model.openAppearance(for: id) }
+                moveMenu(id)
                 Menu("Export Body") {
                     Button("STEP…") { model.export(bodies: [id], stl: false) }
                     Button("STL…") { model.export(bodies: [id], stl: true) }
@@ -848,6 +988,53 @@ struct BrowserList: View {
             Button("Hide") { model.setHidden(Array(ids), true) }
             Button("Show") { model.setHidden(Array(ids), false) }
         }
+    }
+}
+
+/// A folder of the user's in the browser, with the folders and items inside it.
+struct BrowserFolderNode: View {
+    let model: DocumentModel
+    let folder: BrowserFolder
+    @Binding var closed: Set<String>
+    @Binding var renaming: FeatureID?
+    let row: (FeatureID) -> AnyView
+    let drop: ([BrowserDrag], String?) -> Bool
+    /// Every item the browser lists, in its order (a folder's items follow it).
+    let itemIDs: [FeatureID]
+
+    private var expanded: Binding<Bool> {
+        Binding(get: { !closed.contains(folder.id) },
+                set: { if $0 { closed.remove(folder.id) } else { closed.insert(folder.id) } })
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: expanded) {
+            ForEach(model.document.subfolders(of: folder.id)) { child in
+                BrowserFolderNode(model: model, folder: child, closed: $closed, renaming: $renaming,
+                                  row: row, drop: drop, itemIDs: itemIDs)
+            }
+            ForEach(itemIDs.filter { model.document.folder(of: $0) == folder.id }, id: \.self) { row($0) }
+        } label: {
+            let inside = model.items(inFolder: folder.id)
+            let allHidden = !inside.isEmpty && inside.allSatisfy { model.isHidden($0) }
+            HStack(spacing: DS.Spacing.labelGap) {
+                Image(systemName: "folder").frame(width: 18)
+                if renaming == folder.id {
+                    InlineNameField(name: folder.name,
+                                    commit: { model.renameFolder(folder.id, to: $0); renaming = nil },
+                                    cancel: { renaming = nil })
+                } else {
+                    Text(folder.name)
+                }
+                Spacer(minLength: DS.Spacing.labelGap)
+                EyeButton(hidden: allHidden) { model.setHidden(inside, !allHidden) }
+                    .disabled(inside.isEmpty)
+            }
+            .foregroundStyle(allHidden ? .secondary : .primary)
+            .draggable(BrowserDrag(folder: folder.id))
+            .dropDestination(for: BrowserDrag.self) { drops, _ in drop(drops, folder.id) }
+        }
+        .tag("folder:" + folder.id)
     }
 }
 
@@ -921,13 +1108,14 @@ struct BrowserRow<Icon: View>: View {
 
     var body: some View {
         HStack(spacing: DS.Spacing.labelGap) {
-            EyeButton(hidden: hidden, toggle: toggle)
             icon().frame(width: 18)
             if renaming {
                 InlineNameField(name: name, commit: { rename($0); renaming = false }, cancel: { renaming = false })
             } else {
                 Text(name)
             }
+            Spacer(minLength: DS.Spacing.labelGap)
+            EyeButton(hidden: hidden, toggle: toggle)
         }
         .foregroundStyle(hidden ? .secondary : .primary)
     }
@@ -1090,10 +1278,11 @@ struct FolderRow: View {
     var body: some View {
         let allHidden = !ids.isEmpty && ids.allSatisfy { model.isHidden($0) }
         HStack(spacing: DS.Spacing.labelGap) {
-            EyeButton(hidden: allHidden) { model.setHidden(ids, !allHidden) }
-                .disabled(ids.isEmpty)
             Image(systemName: "folder").frame(width: 18)
             Text(title)
+            Spacer(minLength: DS.Spacing.labelGap)
+            EyeButton(hidden: allHidden) { model.setHidden(ids, !allHidden) }
+                .disabled(ids.isEmpty)
         }
     }
 }
@@ -1319,6 +1508,8 @@ struct ExpressionField: View {
     /// The field sits in a list row that can be selected (the Parameters list), so it takes
     /// `rowFieldStyle`'s explicit per-state colours instead of the stock bordered field's.
     var inSelectableRow = false
+    /// ↑ ↓ move a plain number in the field by one (Shift: ten, Option: a tenth) and commit it.
+    var nudges = false
     @Environment(\.completionModel) private var completionModel
     @State private var draft = ""
     @State private var edited = false
@@ -1331,6 +1522,7 @@ struct ExpressionField: View {
         self.completes = completes
         self.excluding = excluding
         self.inSelectableRow = inSelectableRow
+        self.nudges = nudges
         self.preview = preview
         self.commit = commit
     }
@@ -1342,6 +1534,15 @@ struct ExpressionField: View {
             .fieldAppearance(inSelectableRow: inSelectableRow, focused: focused)
             .focused($focused)
             .completesParameters(completes ? completionModel : nil, excluding: excluding, focused: focused)
+            .onKeyPress(phases: [.down, .repeat]) { press in
+                guard nudges, press.key == .upArrow || press.key == .downArrow else { return .ignored }
+                let size = press.modifiers.contains(.shift) ? 10.0 : press.modifiers.contains(.option) ? 0.1 : 1.0
+                guard let next = nudgedExpression(draft, by: press.key == .upArrow ? size : -size) else { return .ignored }
+                draft = next
+                edited = false
+                commit(next)
+                return .handled
+            }
             .onSubmit {
                 if ParameterCompleter.shared.complete(&draft) { focused = true; return }
                 edited = false; commit(draft)
@@ -1522,6 +1723,7 @@ struct SketchToolbar: View {
                     ToolDivider()
                     finishButton
                 }
+                .environment(\.toolTrim, trim)
             }
         }
         // Sketch mode tints the tools' glass while the window is active.
@@ -1546,8 +1748,6 @@ struct SketchToolbar: View {
     private func transform(_ tool: SketchTransformTool) -> GroupTool {
         // Move shows the manipulator to drag (or type into); Scale asks for a factor.
         GroupTool(id: tool.rawValue, title: tool.rawValue, icon: tool.symbol, help: tool.help,
-    /// ↑ ↓ move a plain number in the field by one (Shift: ten, Option: a tenth) and commit it.
-    var nudges = false
                   active: session.manipulating == tool || (tool == .pattern && session.isPatterning),
                   enabled: tool == .pattern ? session.canPattern : session.canTransform,
                   popover: tool != .scale ? nil : ToolPopover(isPresented: Binding(get: { session.transformRequested == tool },
@@ -1560,7 +1760,6 @@ struct SketchToolbar: View {
     private var canvas: GroupTool {
         GroupTool(id: "Canvas", title: "Canvas", icon: DesignTool.canvas.symbol,
                   help: "Canvas: place a reference image on the sketch's plane, to trace over") {
-        self.nudges = nudges
             model.insertImageInSketch()
         }
     }
@@ -1572,15 +1771,6 @@ struct SketchToolbar: View {
             model.beginSketchOffset()
         }
     }
-            .onKeyPress(phases: [.down, .repeat]) { press in
-                guard nudges, press.key == .upArrow || press.key == .downArrow else { return .ignored }
-                let size = press.modifiers.contains(.shift) ? 10.0 : press.modifiers.contains(.option) ? 0.1 : 1.0
-                guard let next = nudgedExpression(draft, by: press.key == .upArrow ? size : -size) else { return .ignored }
-                draft = next
-                edited = false
-                commit(next)
-                return .handled
-            }
 
     private var constrain: GroupTool {
         GroupTool(id: "Constrain", title: "Constrain", icon: "link", help: "Constrain the selected sketch entities",
@@ -1658,6 +1848,7 @@ struct DesignToolbar: View {
                         ToolGroup(group)
                     }
                 }
+                .environment(\.toolTrim, trim)
             }
         }
         .toolsPanel()
@@ -1718,7 +1909,6 @@ struct DimensionEditor: View {
                 })) {
                     ForEach(SketchSession.DistanceDirection.allCases) { Text($0.rawValue).tag($0) }
                 }
-                .environment(\.toolTrim, trim)
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .help("Straight between the points, or only the horizontal or vertical part of it")
@@ -1813,4 +2003,3 @@ struct TransformPopover: View {
     }
 }
 
-                .environment(\.toolTrim, trim)
