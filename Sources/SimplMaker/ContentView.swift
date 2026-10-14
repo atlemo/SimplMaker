@@ -173,7 +173,7 @@ struct DocumentWindow: View {
         // An empty part says how to begin, in the middle of the free space.
         .overlay {
             if model.document.features.isEmpty, model.sketchSession == nil, model.pendingTool == nil,
-               !model.isPickingSketchPlane, !guide.isActive {
+               !model.isPickingSketchPlane, !guide.isActive, !model.isImporting {
                 StartCard(model: model, guide: guide)
                     .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
                     .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
@@ -189,7 +189,17 @@ struct DocumentWindow: View {
                     .transition(.opacity)
             }
         }
+        // A big mesh being reduced and turned into a solid says so the same way.
+        .overlay {
+            if let progress = model.importProgress {
+                LoadingCard(title: progress.title, fraction: progress.fraction, detail: progress.detail)
+                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
+                    .transition(.opacity)
+            }
+        }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.regenProgress != nil)
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.importProgress != nil)
         // The tutorial's card floats at the bottom of the free space, above the status bar and the OK bar, where it
         // stays clear of what is built at the middle of the view and of the size fields that appear beside it.
         .overlay(alignment: .bottom) {
@@ -443,20 +453,39 @@ struct StartCard: View {
     }
 }
 
-/// Shown while a part opens slowly: a bar for how many features are built, and the one being built.
+/// Shown while something takes a while before the model can be shown: a bar for how far it has got (a bar that
+/// just moves if that can't be told), and what it is on.
 struct LoadingCard: View {
-    let progress: RegenProgress
+    let title: String
+    let fraction: Double?
+    let detail: String
+
+    /// A part that opens slowly: how many features are built, and the one being built.
+    init(progress: RegenProgress) {
+        self.init(title: "Building the model…", fraction: Double(progress.done) / Double(max(progress.total, 1)),
+                  detail: "\(progress.feature) · \(progress.done + 1) of \(progress.total)")
+    }
+
+    init(title: String, fraction: Double?, detail: String) {
+        self.title = title
+        self.fraction = fraction
+        self.detail = detail
+    }
 
     var body: some View {
         VStack(spacing: DS.Spacing.space4) {
-            Text("Building the model…").font(.headline)
-            ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
-                .frame(width: 220)
-            Text("\(progress.feature) · \(progress.done + 1) of \(progress.total)")
+            Text(title).font(.headline)
+            Group {
+                if let fraction { ProgressView(value: min(max(fraction, 0), 1)) } else { ProgressView() }
+            }
+            .progressViewStyle(.linear)
+            .frame(width: 220)
+            Text(detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(width: 220)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(width: 240)
         }
         .padding(DS.Spacing.space8)
         .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.window))
@@ -504,7 +533,7 @@ struct StatusBar: View {
             Group {
                 if !model.selection.isEmpty { Text("\(model.selection.count) selected") }
                 if let ai = model.aiActivity { Label("AI is editing the model · \(ai)", systemImage: "sparkles").foregroundStyle(.tint) }
-                if model.isImporting { Text("Reading the file…").foregroundStyle(.secondary) }
+                if model.isImporting { Text(model.importProgress?.title ?? "Reading the file…").foregroundStyle(.secondary) }
                 if let step = model.regenProgress {
                     Text("Building \(step.feature) · \(step.done + 1) of \(step.total)").foregroundStyle(.secondary)
                 }

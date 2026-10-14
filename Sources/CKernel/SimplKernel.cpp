@@ -2,8 +2,10 @@
 // Copyright © 2026 Atle Mo. All rights reserved.
 
 #include "SimplKernel.h"
+#include "MeshSimplify.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <map>
 #include <typeinfo>
@@ -3433,10 +3435,10 @@ SKHandle sk_import_stl(const char *data, size_t size, const char *featureId) {
     setError("this isn't an STL file SimplMaker can read");
     return 0;
   }
-  constexpr int maxTriangles = 60000;  // sewing every triangle gets slow beyond this
-  if (mesh->NbTriangles() > maxTriangles) {
+  // Sewing every triangle takes about a quarter of a millisecond, and the shape is slow to work with after.
+  if (mesh->NbTriangles() > SK_STL_MAX_TRIANGLES) {
     setError("the mesh is too detailed (" + std::to_string(mesh->NbTriangles()) + " triangles, the limit is " +
-             std::to_string(maxTriangles) + "); simplify it first");
+             std::to_string(SK_STL_MAX_TRIANGLES) + "); reduce it to fewer triangles first");
     return 0;
   }
 
@@ -3484,6 +3486,95 @@ SKHandle sk_import_stl(const char *data, size_t size, const char *featureId) {
   return storeImported(solids, feat);
   SK_CATCH(0)
 }
+
+/// Reads an STL file (binary or ASCII) as a welded triangle mesh, ready for simplifying.
+static bool readWeldedMesh(const char *data, size_t size, simpl::TriMesh &out) {
+  std::istringstream in(std::string(data, size));
+  // The merge angle is the widest there is: the reader would otherwise keep two copies of a corner on a sharp edge.
+  const occ::handle<Poly_Triangulation> mesh = RWStl::ReadStream(in, M_PI);
+  if (mesh.IsNull() || mesh->NbTriangles() == 0) {
+    setError("this isn't an STL file SimplMaker can read");
+    return false;
+  }
+  Bnd_Box box;
+  out.points.reserve(mesh->NbNodes());
+  for (int i = 1; i <= mesh->NbNodes(); ++i) {
+    const gp_Pnt p = mesh->Node(i);
+    box.Add(p);
+    out.points.push_back({p.X(), p.Y(), p.Z()});
+  }
+  out.triangles.reserve(mesh->NbTriangles());
+  for (int t = 1; t <= mesh->NbTriangles(); ++t) {
+    int a, b, c;
+    mesh->Triangle(t).Get(a, b, c);
+    out.triangles.push_back({a - 1, b - 1, c - 1});
+  }
+  simpl::weld(out, std::max(std::sqrt(box.SquareExtent()) * 1e-6, 1e-6));  // as close as the importer sews
+  return true;
+}
+
+long sk_stl_triangle_count(const char *data, size_t size) {
+  SK_TRY
+  if (!data || size == 0) return -1;
+  if (size >= 84) {  // binary STL: the count is at byte 80 and the length has to match
+    uint32_t n;
+    std::memcpy(&n, data + 80, 4);
+    if (size == 84 + 50 * size_t(n)) return long(n);
+  }
+  std::istringstream in(std::string(data, size));
+  const occ::handle<Poly_Triangulation> mesh = RWStl::ReadStream(in);
+  return mesh.IsNull() ? -1 : long(mesh->NbTriangles());
+  SK_CATCH(-1)
+}
+
+static std::atomic<double> g_simplifyProgress{0};
+
+double sk_stl_simplify_progress(void) { return g_simplifyProgress.load(); }
+
+char *sk_stl_simplify(const char *data, size_t size, int target, size_t *outSize) {
+  SK_TRY
+  if (outSize) *outSize = 0;
+  if (!data || size == 0) {
+    setError("the STL file is empty");
+    return nullptr;
+  }
+  simpl::TriMesh mesh;
+  if (!readWeldedMesh(data, size, mesh)) return nullptr;
+  g_simplifyProgress.store(0);
+  simpl::simplify(mesh, size_t(std::max(target, 1)), &g_simplifyProgress);
+  simpl::fillHoles(mesh);  // a mesh that is nearly closed becomes closed, so it can be made a solid
+
+  const size_t n = mesh.triangles.size();
+  const size_t bytes = 84 + 50 * n;
+  char *out = static_cast<char *>(std::calloc(bytes, 1));
+  if (!out) {
+    setError("out of memory");
+    return nullptr;
+  }
+  std::memcpy(out, "SimplMaker reduced mesh", 23);
+  const uint32_t count = uint32_t(n);
+  std::memcpy(out + 80, &count, 4);
+  char *at = out + 84;
+  for (const auto &t : mesh.triangles) {
+    const auto &a = mesh.points[t[0]], &b = mesh.points[t[1]], &c = mesh.points[t[2]];
+    const gp_Vec normal = gp_Vec(gp_Pnt(a[0], a[1], a[2]), gp_Pnt(b[0], b[1], b[2]))
+                              .Crossed(gp_Vec(gp_Pnt(a[0], a[1], a[2]), gp_Pnt(c[0], c[1], c[2])));
+    float f[12] = {0, 0, 0, float(a[0]), float(a[1]), float(a[2]), float(b[0]), float(b[1]), float(b[2]),
+                   float(c[0]), float(c[1]), float(c[2])};
+    if (normal.Magnitude() > 1e-300) {
+      f[0] = float(normal.X() / normal.Magnitude());
+      f[1] = float(normal.Y() / normal.Magnitude());
+      f[2] = float(normal.Z() / normal.Magnitude());
+    }
+    std::memcpy(at, f, 48);
+    at += 50;
+  }
+  if (outSize) *outSize = bytes;
+  return out;
+  SK_CATCH(nullptr)
+}
+
+void sk_buffer_free(char *buffer) { std::free(buffer); }
 
 // ------------------------------------------------------------------ export ---
 

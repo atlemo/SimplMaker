@@ -43,6 +43,13 @@ final class MeshCache: @unchecked Sendable {
     }
 }
 
+/// A big STL import under way: what it is doing, and how far it has got (nil if that can't be told).
+struct ImportProgress: Equatable {
+    var title: String
+    var detail: String
+    var fraction: Double?
+}
+
 /// A rebuild under way: the feature it is on, and how many of those it has to build are done.
 struct RegenProgress: Equatable {
     var done: Int
@@ -71,6 +78,10 @@ final class DocumentModel {
     private var highlightPendingRebuild: [UInt32] = []
     /// A STEP or STL file is being read (see importSTEP).
     private(set) var isImporting = false
+    /// What a big import is doing, for a card over the view and the status bar. Nil while a file is only being read.
+    private(set) var importProgress: ImportProgress?
+    /// What to do with an STL that has a lot of triangles: asks the user by default. Tests put their own answer here.
+    @ObservationIgnored var meshReduction: @MainActor (String, Int) -> MeshReduction = DocumentModel.askAboutMeshReduction
 
     var selection: [PickID] = []
     private(set) var hovered: PickID?
@@ -2315,14 +2326,25 @@ final class DocumentModel {
 
     // MARK: files
 
+    /// One import at a time: while a file is being read, reduced or built, says so (the others would be working on
+    /// the same part and the same progress) and returns true, so the caller leaves the new import alone.
+    private func importInProgress() -> Bool {
+        guard isImporting else { return false }
+        alert = AlertInfo(title: "An import is already in progress",
+                          message: "Wait for it to finish, then import the next file.")
+        return true
+    }
+
     /// Asks for a STEP file and adds it to the timeline as a body of its own.
     func importSTEP() {
+        guard !importInProgress() else { return }
         guard let url = Self.chooseModel("Import", extensions: ["step", "stp"], message: "Choose a STEP file (.step or .stp).") else { return }
         Task { await importSTEP(from: url) }
     }
 
     /// Asks for an STL file and adds it to the timeline as a body of its own.
     func importSTL() {
+        guard !importInProgress() else { return }
         guard let url = Self.chooseModel("Import", extensions: ["stl"], message: "Choose an STL file. It must be watertight, and is read in millimetres.") else { return }
         Task { await importSTEP(from: url) }
     }
@@ -2331,6 +2353,7 @@ final class DocumentModel {
     /// named after the file. False if it can't be read (an alert says why).
     @discardableResult
     func importSTEP(from url: URL) async -> Bool {
+        guard !importInProgress() else { return false }
         let id = IDs.make()
         guard let data = await loadSTEP(url, featureID: id) else { return false }
         if sketchSession != nil { finishSketch() }
@@ -2350,6 +2373,7 @@ final class DocumentModel {
     /// Asks for a new version of an imported file. Its faces keep their names as long as the
     /// file lists them in the same order, so features after the import usually hold on.
     func replaceImport(_ id: FeatureID) {
+        guard !importInProgress() else { return }
         guard let url = Self.chooseModel("Replace", extensions: ["step", "stp", "stl"],
                                          message: "Choose a STEP (.step, .stp) or STL (.stl) file.") else { return }
         Task { await replaceImport(id, from: url) }
@@ -2357,6 +2381,7 @@ final class DocumentModel {
 
     @discardableResult
     func replaceImport(_ id: FeatureID, from url: URL) async -> Bool {
+        guard !importInProgress() else { return false }
         guard let data = await loadSTEP(url, featureID: id) else { return false }
         updateFeature(id, "Replace \(url.lastPathComponent)") { f in
             guard case .importBody(var i) = f.kind else { return }
@@ -2375,22 +2400,105 @@ final class DocumentModel {
         return panel.runModal() == .OK ? panel.url : nil
     }
 
-    /// Reads a STEP or STL file and checks that the kernel can make a body of it, off the main thread.
-    /// The body is kept for the rebuild that follows, so the file is read only once.
+    /// STL meshes with more triangles than this are slow to import and to work with: the import offers to reduce them.
+    static let comfortableSTLTriangles = 30_000
+    /// The sizes a mesh can be reduced to, from finest to coarsest.
+    static let reducedMeshSizes: [(name: String, triangles: Int)] = [("Fine", 60_000), ("Medium", 30_000), ("Coarse", 10_000)]
+
+    /// A count with its thousands separated: 1,423,178.
+    private static func grouped(_ n: Int) -> String {
+        let number = NumberFormatter()
+        number.numberStyle = .decimal
+        return number.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+
+    /// What to do with a big STL mesh.
+    enum MeshReduction: Equatable {
+        case reduce(to: Int)
+        case importAsIs
+        case cancel
+    }
+
+    /// The sizes offered for a mesh of `count` triangles, and the one chosen at first (the largest of 30 000 or fewer).
+    static func meshReductionChoices(for count: Int) -> (sizes: [(name: String, triangles: Int)], first: Int) {
+        let sizes = reducedMeshSizes.filter { $0.triangles < count }
+        return (sizes, sizes.firstIndex { $0.triangles <= comfortableSTLTriangles } ?? 0)
+    }
+
+    /// Asks whether to reduce a big mesh before importing it. A mesh over the importer's limit can't go in as it is.
+    private static func askAboutMeshReduction(fileName: String, count: Int) -> MeshReduction {
+        let (sizes, first) = meshReductionChoices(for: count)
+        guard !sizes.isEmpty else { return .importAsIs }
+        let format = grouped
+        let tooMany = count > KBody.maxSTLTriangles
+
+        let alert = NSAlert()
+        alert.messageText = "\(fileName) has \(format(count)) triangles"
+        alert.informativeText = (tooMany
+            ? "SimplMaker imports meshes of up to \(format(KBody.maxSTLTriangles)) triangles. "
+            : "A mesh this size takes a while to import and is slow to work with. ")
+            + "It can reduce the mesh first: flat faces and sharp edges stay as they are, and curved surfaces get a little coarser."
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        popup.addItems(withTitles: sizes.map { "\($0.name) · \(format($0.triangles)) triangles" })
+        popup.selectItem(at: first)
+        let label = NSTextField(labelWithString: "Reduce to")
+        let row = NSStackView(views: [label, popup])
+        row.spacing = 8
+        row.frame = NSRect(origin: .zero, size: row.fittingSize)
+        alert.accessoryView = row
+        alert.addButton(withTitle: "Reduce and Import")
+        if !tooMany { alert.addButton(withTitle: "Import As Is") }
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return .reduce(to: sizes[popup.indexOfSelectedItem].triangles)
+        case .alertSecondButtonReturn where !tooMany: return .importAsIs
+        default: return .cancel
+        }
+    }
+
+    /// Reads a STEP or STL file and checks that the kernel can make a body of it, off the main thread. A big STL
+    /// mesh is reduced first, if the user agrees; what comes back is then the reduced file. The body is kept for
+    /// the rebuild that follows, so the file is read only once.
     private func loadSTEP(_ url: URL, featureID: FeatureID) async -> Data? {
         isImporting = true
-        defer { isImporting = false }
-        let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Data, any Error> in
-            Result {
+        defer { isImporting = false; importProgress = nil }
+        do {
+            let (original, triangles) = try await Task.detached(priority: .userInitiated) { () -> (Data, Int?) in
                 let data = try Data(contentsOf: url)
-                _ = try Regenerator.importedBody(data, featureID: featureID)
-                return data
+                return (data, KBody.looksLikeSTL(data) ? KBody.stlTriangleCount(data) : nil)
+            }.value
+
+            var reduceTo: Int?
+            if let triangles, triangles > Self.comfortableSTLTriangles {
+                switch meshReduction(url.lastPathComponent, triangles) {
+                case .reduce(let n): reduceTo = n
+                case .importAsIs: break
+                case .cancel: return nil
+                }
             }
-        }.value
-        switch outcome {
-        case .success(let data):
-            return data
-        case .failure(let error):
+            let name = url.lastPathComponent
+            var data = original
+            if let reduceTo, let triangles {
+                importProgress = ImportProgress(title: "Reducing the mesh…", detail: "\(name)\n\(Self.grouped(triangles)) → \(Self.grouped(reduceTo)) triangles", fraction: 0)
+                let reducing = Task.detached(priority: .userInitiated) { try KBody.simplifySTL(original, toTriangles: reduceTo) }
+                let watching = Task { @MainActor in
+                    while !Task.isCancelled {
+                        importProgress?.fraction = KBody.simplifyProgress
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                }
+                defer { watching.cancel() }
+                data = try await reducing.value
+            }
+            if let triangles {  // a big mesh takes a while to turn into a solid, too
+                importProgress = ImportProgress(title: "Building the solid…", detail: "\(name)\n\(Self.grouped(reduceTo ?? triangles)) triangles", fraction: nil)
+            }
+            let ready = data
+            return try await Task.detached(priority: .userInitiated) { () -> Data in
+                _ = try Regenerator.importedBody(ready, featureID: featureID)
+                return ready
+            }.value
+        } catch {
             // Kernel errors read "STEP import: the file has no solids"; make that a sentence.
             var reason = error.localizedDescription
             if let e = error as? KernelError {
@@ -2405,6 +2513,7 @@ final class DocumentModel {
 
     /// Asks for an SVG file and puts its shapes in a sketch.
     func importSVG() {
+        guard !importInProgress() else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.svg]
         panel.prompt = "Import"
@@ -2418,6 +2527,7 @@ final class DocumentModel {
     /// origin. False if it can't be read (an alert says why).
     @discardableResult
     func importSVG(from url: URL) async -> Bool {
+        guard !importInProgress() else { return false }
         isImporting = true
         let outcome = await Task.detached(priority: .userInitiated) { () -> Swift.Result<SVGImport.Result, any Error> in
             Swift.Result { try SVGImport.sketch(from: Data(contentsOf: url)) }

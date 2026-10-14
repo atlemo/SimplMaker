@@ -28,7 +28,7 @@ SimplMaker saves your work automatically and keeps earlier versions. Choose **Fi
 | Command | What it does |
 |---|---|
 | **File → Import → STEP…** ([[⇧⌘I]]) | Adds a `.step` or `.stp` file as an **Import** feature: one body with every solid in the file, named after the file, in millimetres whatever unit the file uses. You can then fillet, cut, shell, move or rotate it like any other body. |
-| **File → Import → STL…** | Adds a `.stl` mesh (binary or ASCII) the same way, read in millimetres. The mesh must be watertight. Its triangles are sewn into a solid and the ones in the same plane are merged into single faces, so a box has six faces. Curved shapes stay faceted. Meshes of more than 60,000 triangles are refused; simplify them first. |
+| **File → Import → STL…** | Adds a `.stl` mesh (binary or ASCII) the same way, read in millimetres. The mesh must be watertight. Its triangles are sewn into a solid and the ones in the same plane are merged into single faces, so a box has six faces. Curved shapes stay faceted. Meshes of more than 30,000 triangles are slow to import, so SimplMaker offers to **reduce** them first (Fine, Medium or Coarse): flat faces and sharp edges stay as they are and curved surfaces get a little coarser. Meshes of more than 100,000 triangles can only be imported reduced. The part keeps the reduced mesh, not the original file. |
 | **File → Import → SVG as Sketch…** | Turns an SVG drawing into a sketch. See [Importing SVG](doc:sketch/import-svg). |
 | **Create → Canvas (Reference Image)…** | Places a picture to trace over. See [Canvas](doc:create/canvas). |
 

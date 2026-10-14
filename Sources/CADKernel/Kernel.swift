@@ -629,6 +629,33 @@ public final class KBody: @unchecked Sendable {
         }
     }
 
+    /// The most triangles an STL import takes; see `simplifySTL` for bringing a bigger mesh down to it.
+    public static let maxSTLTriangles = Int(SK_STL_MAX_TRIANGLES)
+
+    /// How many triangles an STL file (binary or ASCII) holds, or nil if these bytes aren't one.
+    public static func stlTriangleCount(_ data: Data) -> Int? {
+        let n = data.withUnsafeBytes { buf in
+            sk_stl_triangle_count(buf.baseAddress?.assumingMemoryBound(to: CChar.self), buf.count)
+        }
+        return n < 0 ? nil : n
+    }
+
+    /// An STL file with about `triangles` triangles in place of its own, as a binary STL. Flat areas and sharp
+    /// edges stay as they were; curved surfaces get coarser. It can end up with more than asked for if the mesh
+    /// can't be reduced further without folding it over.
+    public static func simplifySTL(_ data: Data, toTriangles triangles: Int) throws -> Data {
+        var size = 0
+        let out = data.withUnsafeBytes { buf in
+            sk_stl_simplify(buf.baseAddress?.assumingMemoryBound(to: CChar.self), buf.count, Int32(clamping: triangles), &size)
+        }
+        guard let out else { throw KernelError.last("STL simplify") }
+        defer { sk_buffer_free(out) }
+        return Data(bytes: out, count: size)
+    }
+
+    /// How far `simplifySTL` has got, 0 to 1; read from another thread while it runs.
+    public static var simplifyProgress: Double { sk_stl_simplify_progress() }
+
     /// Whether these bytes are an STL file rather than a STEP file: binary STL has its triangle count at byte 80 and
     /// a length to match, ASCII STL starts with "solid".
     public static func looksLikeSTL(_ data: Data) -> Bool {

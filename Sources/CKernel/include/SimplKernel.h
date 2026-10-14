@@ -285,6 +285,21 @@ SKHandle sk_import_step(const char *data, size_t size, const char *featureId);
 /// "<featureId>.face<n>" like a STEP import's.
 SKHandle sk_import_stl(const char *data, size_t size, const char *featureId);
 
+/// The most triangles sk_import_stl accepts. Sewing each one takes a while, and the body is slow to work with after.
+enum { SK_STL_MAX_TRIANGLES = 100000 };
+
+/// How many triangles an STL file (binary or ASCII) holds, or -1 if it can't be read as one.
+long sk_stl_triangle_count(const char *data, size_t size);
+
+/// Reduces an STL file to about `target` triangles (flat areas and sharp edges are kept, curves get coarser) and
+/// returns the result as a binary STL, `*outSize` bytes, to be freed with sk_buffer_free. NULL if the file can't be
+/// read. More triangles than asked for are left if the mesh can't be reduced further without folding it over. Small holes
+/// in the mesh are filled, so a mesh that is nearly closed comes out closed.
+char *sk_stl_simplify(const char *data, size_t size, int target, size_t *outSize);
+/// How far the reduction under way (or the last one) has got, from 0 to 1. For showing a progress bar from another thread.
+double sk_stl_simplify_progress(void);
+void sk_buffer_free(char *buffer);
+
 // ------------------------------------------------------------------ export ---
 bool sk_export_step(const SKHandle *bodies, int count, const char *path);
 bool sk_export_stl(const SKHandle *bodies, int count, const char *path, double linearDeflection);
