@@ -3,7 +3,7 @@ title: The interface
 description: Where everything is: the toolbar, browser, parameters, viewport, inspector and timeline.
 ---
 
-Each part opens in its own window with five areas.
+Each part opens as a tab, with five areas.
 
 ![The SimplMaker window: toolbar on top, browser on the left, viewport in the middle, inspector on the right, timeline along the bottom.](shot:interface-overview)
 
@@ -32,7 +32,7 @@ You start in design mode. The tools sit in groups, with the group's name underne
 | **Sketch** | Starts a sketch |
 | **Create** | [Extrude](doc:create/extrude), [Revolve](doc:create/revolve), [Sweep](doc:create/sweep), [Loft](doc:create/loft), [Rib](doc:create/rib), [Pipe](doc:create/pipe) |
 | **Shapes** | [Box, Cylinder, Sphere, Torus, Coil](doc:create/primitives) |
-| **Modify** | [Fillet and Chamfer](doc:modify/fillet-chamfer), [Hole](doc:modify/hole), [Thread](doc:modify/thread), [Shell](doc:modify/shell), [Draft](doc:modify/draft), [Project](doc:modify/project), [Move and Scale](doc:modify/move-scale), [Combine](doc:modify/combine) |
+| **Modify** | [Fillet and Chamfer](doc:modify/fillet-chamfer), [Hole](doc:modify/hole), [Thread](doc:modify/thread), [Shell](doc:modify/shell), [Draft](doc:modify/draft), [Project](doc:modify/project), [Move and Scale](doc:modify/move-scale), [Lay on Floor](doc:modify/lay-on-floor), [Combine](doc:modify/combine), [Split Body](doc:modify/split) |
 | **Construct** | [Plane](doc:create/plane), [Mirror and Pattern](doc:modify/mirror-pattern), [Canvas](doc:create/canvas) |
 | **Inspect** | [Measure](doc:modify/measure), [Section Analysis](doc:modify/section-analysis) |
 
@@ -52,7 +52,7 @@ Press **Sketch** and pick a plane or a face to enter sketch mode. The toolbar ch
 |---|---|
 | **Draw** | Line, Rectangle, Circle, Polygon, Arc, Spline, Gear, Point, Text |
 | **Modify** | Round Corner, Trim, Extend, Offset |
-| **Transform** | Move, Scale, Pattern |
+| **Transform** | Move, Scale, Pattern, Mirror |
 | **Constraints** | Dimension, Distance, Constrain, Construction |
 
 **Select** stands apart at the left. Press **Finish Sketch** at the right end to leave. See [Sketching](doc:sketch/start).
@@ -66,8 +66,10 @@ The browser lists what is in the part.
 - **Bodies**, **Sketches**, **Planes** and **Canvases** are folders. Planes and Canvases appear once you have some.
 - The eye beside a row shows or hides it. The eye on a folder shows or hides everything in it.
 - Make your own folders inside **Bodies** with the folder button in the browser header, or right-click **Bodies** and choose **New Folder**. A body's right-click menu has **Move to Folder**. Drag bodies onto a folder to fill it.
+- The **padlock** beside the eye locks a body or a sketch, so it cannot be picked or changed by accident. See [Lock bodies and sketches](doc:concepts/selecting).
 - Click a body to select it. **Double-click** to edit the feature that made it. Double-click a sketch to edit the sketch.
-- Right-click a row for more: rename, hide, suppress, move, appearance, export and delete.
+- Right-click a row for more: rename, hide, lock, suppress, move, appearance, export and delete.
+- The browser and the parameters are two separate panels. Each can be collapsed, and the divider between them can be dragged.
 - Below the folders are the **Parameters**. See [Parameters and expressions](doc:concepts/parameters).
 
 ## The viewport

@@ -42,7 +42,7 @@ The last two show an arrow and a size field for each value. [[Tab]] moves betwee
 
 ## When it fails
 
-A fillet or chamfer that is too big for its neighbouring faces shows an error. Make it smaller. A fillet can also fail if a later edit moves the edge it was attached to. See [Troubleshooting](doc:reference/troubleshooting).
+A fillet or chamfer that is too big for its neighbouring faces shows an error. Make it smaller. SimplMaker refuses a round it cannot build correctly, such as a chamfer as big as the radius of a rounded corner, or a fillet wider than its face, instead of showing a wrong shape. A fillet can also fail if a later edit moves the edge it was attached to. See [Troubleshooting](doc:reference/troubleshooting).
 
 ## Tips
 

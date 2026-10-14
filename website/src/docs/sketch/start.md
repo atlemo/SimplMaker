@@ -32,7 +32,17 @@ While you sketch:
 - The status bar says how many **degrees of freedom** the sketch has left. See [Constraints](doc:sketch/constraints).
 - The inspector shows the sketch's plane, its status, its curves, constraints and dimensions.
 
-Orbiting works as usual: drag on empty space to turn the view.
+Orbiting works as usual: drag on empty space to turn the view. Hold [[⌥]] while you drag to **roll** the picture round on the paper instead.
+
+Faces are lit evenly while you sketch, so no glare sweeps over a flat wall as you turn the view.
+
+### Slice View
+
+Sometimes the plane you sketch on is hidden behind the rest of the part, for example when you sketch between two walls. **Slice View** cuts away everything that stands between the sketch plane and the camera, so you can reach it.
+
+![A sketch between two walls, with Slice View on.](shot:sketch-slice-view)
+
+It switches on by itself when the plane is hidden, and SimplMaker tells you why the first time. Turn it on or off with **Sketch → Slice View**, or with the **Slice View** switch in the sketch's inspector. It only changes what you see. It does not change the part.
 
 ## Finish a sketch
 

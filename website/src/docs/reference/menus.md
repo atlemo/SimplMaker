@@ -10,7 +10,7 @@ description: What is in each menu, and where to find every command.
 | **About SimplMaker** | Version, credits and open-source licences |
 | **Check for Updates…** | Looks for a new version |
 | **License…** | Enter or manage your licence key. Also **Buy SimplMaker…** during the trial. |
-| **Settings…** ([[⌘,]]) | The settings window. See [Settings](doc:reference/settings). |
+| **Settings…** ([[⌘,]]) | The settings window, including the AI connection. See [Settings](doc:reference/settings) and [Work with an AI assistant](doc:ai/assistant). |
 
 ## File
 
@@ -31,6 +31,8 @@ description: What is in each menu, and where to find every command.
 
 Standard **Undo** ([[⌘Z]]), **Redo** ([[⇧⌘Z]]), **Cut**, **Copy**, **Paste**, **Delete** and **Select All**.
 
+**Copy** and **Paste** also work on bodies: copy a body and paste it into the same part, another part or another window. It comes in as an imported body. See [Files](doc:concepts/files).
+
 ## View
 
 | Item | Does |
@@ -39,6 +41,7 @@ Standard **Undo** ([[⌘Z]]), **Redo** ([[⇧⌘Z]]), **Cut**, **Copy**, **Paste
 | **Standard Views** | Top, Front, Right and Home |
 | **Orthographic Projection** | Switches between perspective and orthographic |
 | **Visual Style** | Shaded, wireframe and hidden-edge styles |
+| **FDM 3D Print Preview** | Draw the bodies like a printed part, with layer lines. Shaded styles only. See [3D Print Preview](doc:print/print-preview). |
 | **Section Analysis** | Turn the cut through the bodies on or off (see [Section Analysis](doc:modify/section-analysis)) |
 | **Show Grid**, **Show Axes** | Toggle the reference lines |
 | **Show Constraints** | Show or hide sketch constraint symbols |
@@ -54,7 +57,7 @@ Standard **Undo** ([[⌘Z]]), **Redo** ([[⇧⌘Z]]), **Cut**, **Copy**, **Paste
 | **New Sketch…** | Starts a sketch: pick a plane or face |
 | **New Sketch On** | **XY Plane**, **XZ Plane**, **YZ Plane** or **Selected Face** |
 
-While you are editing a sketch, the menu also lists the sketch tools, **Offset Selection…**, **Move Selection**, **Scale Selection…**, **Pattern Selection**, **Mirror Selection** and **Finish Sketch**.
+While you are editing a sketch, the menu also lists the sketch tools, **Offset Selection…**, **Move Selection**, **Scale Selection…**, **Pattern Selection**, **Mirror Selection**, **Slice View** (see [Starting a sketch](doc:sketch/start)) and **Finish Sketch**.
 
 ## Create
 
@@ -70,7 +73,7 @@ While you are editing a sketch, the menu also lists the sketch tools, **Offset S
 
 ## Window
 
-Standard window commands, plus **Welcome to SimplMaker** ([[⇧⌘1]]), and the licence window.
+Standard window commands, including **Move Tab to New Window** and **Merge All Windows** (parts open as tabs), plus **Welcome to SimplMaker** ([[⇧⌘1]]), and the licence window.
 
 ## Help
 

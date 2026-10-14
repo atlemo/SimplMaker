@@ -44,3 +44,16 @@ Open curves and lines are picked directly as **curves**. Rib, Pipe and Sweep tak
 ## Picking again later
 
 Features built from profiles have a **Reselect…** button in the inspector. It shows the sketch again so you can click different profiles, then press [[Return]] to keep them or [[Esc]] to leave things as they were.
+
+## Lock bodies and sketches
+
+Lock a body or a sketch when it is finished and you do not want to nudge it by accident while you work on something nearby.
+
+- Click the **padlock** beside the eye of a body or a sketch in the [browser](doc:start/interface). The padlock on a folder, or on the **Bodies** and **Sketches** rows, locks everything inside. You can also right-click a row and choose **Lock Body**, **Lock Sketch** or **Unlock**.
+- A locked body or sketch is still drawn, but it cannot be hovered, picked, selected, edited, suppressed, moved or deleted.
+- Locking does not change the shape, so nothing rebuilds. It is saved with the part, and it is one step in **Undo**.
+- Click the padlock again to unlock.
+
+![The browser with a locked body and a locked sketch.](shot:browser-lock)
+
+Only bodies and sketches can be locked. Planes and canvases cannot.

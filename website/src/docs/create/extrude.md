@@ -49,6 +49,18 @@ A curved line with a **dot** hangs above the arrow. Drag the dot round the line 
 
 With Two Directions or Mirrored, the sides lean away from the sketch plane on both sides, so the shape has a ridge there. A taper that would close the shape up before it reaches the end fails with a message, and the last good shape stays on screen.
 
+## Choose which bodies it affects
+
+When the **Operation** is **Join**, **Cut** or **Intersect**, the inspector lists the bodies that exist before the extrude under **Affected bodies**. Tick the ones it should work on.
+
+- **Automatic** is the start. A **Cut** removes material from every body the shape passes through. A **Join** or **Intersect** works on the newest body.
+- **Join** with more than one body ticked merges them all into one.
+- **Cut** skips a ticked body the shape does not reach.
+- Untick everything and the extrude has nothing to work on, so it shows an error.
+- **Choose Automatically** goes back to the automatic choice.
+
+![Affected bodies in the extrude inspector.](shot:inspector-extrude-targets)
+
 ## Extrude a face
 
 Select a **flat face** of a body and press [[E]] to pull it out. A negative distance pushes it in. Only flat faces can be extruded.
@@ -64,6 +76,7 @@ Select a **flat face** of a body and press [[E]] to pull it out. A negative dist
 | **Distance** | How far. It takes expressions. |
 | **Taper** | The angle the sides lean, in degrees. Negative narrows, positive widens. It takes expressions. |
 | **Operation** | New Body, Join, Cut or Intersect |
+| **Affected bodies** | For Join, Cut and Intersect: which bodies the extrude works on. See above. |
 | **Flip direction** | Extrudes the other way |
 | **Profiles** | How many profiles are used. **Reselect…** lets you pick them again. |
 

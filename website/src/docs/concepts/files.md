@@ -5,7 +5,9 @@ description: How parts are saved, autosave and versions, opening and importing f
 
 ## Parts are documents
 
-SimplMaker is a normal Mac document app. Each part opens in its own window, with **New** ([[⌘N]]), **Open** ([[⌘O]]), **Open Recent**, **Save** ([[⌘S]]), **Duplicate** and **Revert To**. Macs can also group windows as tabs: **Window → Merge All Windows**.
+SimplMaker is a normal Mac document app. Each part opens as a **tab** in the same window, and the tab bar shows even when only one part is open. The part's name is in its tab. Use **New** ([[⌘N]]), **Open** ([[⌘O]]), **Open Recent**, **Save** ([[⌘S]]), **Duplicate** and **Revert To** as in any Mac app. The **+** at the right end of the tab bar starts a new part.
+
+To give a part a window of its own, drag its tab out of the tab bar, or choose **Window → Move Tab to New Window**. **Window → Merge All Windows** brings separate windows back together as tabs.
 
 Parts are saved as `.simplmaker` files.
 
@@ -22,6 +24,14 @@ SimplMaker saves your work automatically and keeps earlier versions. Choose **Fi
 ## Open example parts
 
 **File → Open Example Parts** opens one of the built-in examples as a new untitled part. See [Examples and the tutorial](doc:start/examples-and-tutorial).
+
+## Copy and paste bodies
+
+Select a body and choose **Edit → Copy** ([[⌘C]]). Then **Edit → Paste** ([[⌘V]]) into the same part, into another part, or into a window of another document. The body travels as a STEP file on the clipboard.
+
+A pasted body arrives as an **Import** body, like any [imported](doc:concepts/files#import) part: its history stays behind, so you can fillet, cut or move it, but you cannot go back into the sketches that made it. The **Move** tool opens at once, so you can slide the copy off the original.
+
+To make a copy that keeps its history, use [Pattern](doc:modify/mirror-pattern) or **File → Duplicate** for the whole part.
 
 ## Import
 

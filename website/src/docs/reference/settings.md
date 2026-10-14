@@ -22,10 +22,15 @@ Open **SimplMaker → Settings…** ([[⌘,]]). The panes are along the top.
 
 | Setting | What it does |
 |---|---|
-| **Two-finger scroll** | **Pan** (like Apple's 3D viewers) or **Orbit** (like many CAD apps). Hold [[⇧]] while scrolling to do the other one. |
-| **Invert mouse-wheel zoom** | Reverses the wheel |
+| **Navigate like** | A ready-made set of controls: **SimplMaker**, **Blender**, **Fusion**, **Onshape** or **SolidWorks**. Shows **Custom** once you change a control by hand. |
+| **Mouse** | What the left, right and middle buttons and the wheel do, with and without [[⇧]], [[⌃]] or [[⌥]]: **Orbit**, **Pan**, **Zoom** or **Off** |
+| **Trackpad** | What two-finger scroll does (**Pan** like Apple's 3D viewers, or **Orbit** like many CAD apps), and whether the rotate gesture spins the view |
+| **Invert** | Orbit up and down, orbit left and right, pan up and down, pan left and right, and zoom (wheel, scroll and drag) |
+| **Orbit speed**, **Zoom speed** | How fast the view turns and zooms |
+| **Reset Navigation** | Back to the SimplMaker controls |
 
-Pinch zooms, rotate spins the view, and dragging on empty space orbits.
+The details are in [Navigating the view](doc:start/navigation#make-navigation-your-own).
+
 
 ## Viewport
 
@@ -40,6 +45,10 @@ Pinch zooms, rotate spins the view, and dragging on empty space orbits.
 | **Antialiasing** | Smooths jagged edges: **Off**, **2×**, **4×** or **8×**. Takes effect the next time SimplMaker starts. 4× is hardly noticeable on Apple silicon. |
 | **Show axes** | Shows the coordinate axes |
 | **Show sketch constraints** | Shows the constraint symbols |
+
+## AI
+
+Appears in the settings window when this version of SimplMaker includes the AI connection. It connects an AI assistant such as Claude to SimplMaker. See [Work with an AI assistant](doc:ai/assistant).
 
 ## Shortcuts
 

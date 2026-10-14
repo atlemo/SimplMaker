@@ -13,7 +13,9 @@ Parameters live below the folders in the browser.
 
 - Press **+** to add one. It starts as `p1` with the value `10 mm`.
 - **Double-click** the name to rename it. Every expression that uses it follows.
-- Click the value to edit it. Press [[Return]] and the model rebuilds.
+- Click the value to edit it. Press [[Return]] and the model rebuilds. [[Tab]] moves to the next parameter's value, and [[⇧]][[Tab]] to the previous one. When the value is a plain number, [[↑]] and [[↓]] nudge it up and down.
+- **Drag a parameter's name** left or right to change its value without typing. It moves in whole units. Hold [[⇧]] to move in tens, or [[⌥]] to move in tenths.
+- **Right-click** a parameter to rename or delete it.
 - Under each parameter, SimplMaker lists which features **use** it, so you can see what a change will touch. It says *Not used yet* until you use it.
 - The small unit menu on the right of a parameter (`mm`) says what kind of value it is: **Length (mm)**, **Angle (deg)** or **Number**. The calculated value is shown beside it.
 

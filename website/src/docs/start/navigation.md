@@ -13,7 +13,7 @@ description: Orbit, pan and zoom with a trackpad or mouse, the view cube, standa
 | Rotate with two fingers | **Spin** the view around the line of sight |
 | Drag on empty space | **Orbit** |
 
-If you would rather have scrolling orbit, and [[⇧]]-scrolling pan, change it in **Settings → Navigation**.
+These are the defaults. Choose another way of navigating, or change what each input does, in **Settings → Navigation**. See [Make navigation your own](doc:start/navigation#make-navigation-your-own) below.
 
 ## Mouse
 
@@ -23,7 +23,18 @@ If you would rather have scrolling orbit, and [[⇧]]-scrolling pan, change it i
 | Right-drag or middle-drag | **Pan** |
 | Scroll wheel | **Zoom** |
 
-**Settings → Navigation → Invert mouse-wheel zoom** reverses the wheel.
+While you sketch, hold [[⌥]] and drag on empty space to **roll** the view round on the paper.
+
+## Make navigation your own
+
+**Settings → Navigation** sets what the mouse, the wheel and the trackpad do.
+
+- **Navigate like** picks a ready-made set of controls that copies another 3D app: **SimplMaker**, **Blender**, **Fusion**, **Onshape** or **SolidWorks**. Your direction and speed choices stay as they are. Once you change any single control by hand, the list shows **Custom**.
+- **Mouse** and **Trackpad** list what each input does: the left, right and middle buttons, the wheel, and the trackpad's scroll. For each one you choose **Orbit**, **Pan**, **Zoom** or **Off**, separately for plain, [[⇧]], [[⌃]] and [[⌥]]. (**Roll**, for sketches, is also on the list.) The left button only navigates on empty space. On a face, an edge or a handle it picks or drags that instead.
+- **Rotate gesture spins the view** turns the trackpad's two-finger rotate on or off.
+- **Invert** switches reverse orbit up and down, orbit left and right, pan up and down, pan left and right, and zoom.
+- **Orbit speed** and **Zoom speed** are sliders.
+- **Reset Navigation** goes back to the SimplMaker controls.
 
 ## The view cube
 

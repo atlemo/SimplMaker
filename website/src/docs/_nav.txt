@@ -50,7 +50,11 @@ modify/appearance
 
 ## For 3D printing
 print/export
+print/print-preview
 print/design-tips
+
+## Work with AI
+ai/assistant
 
 ## Reference
 reference/shortcuts
