@@ -7,6 +7,8 @@ SimplMaker can let an AI assistant work on your part. Connected to **Claude Desk
 
 This is a beta feature, and it is off until you turn it on in **Settings → AI**. SimplMaker does not listen for assistants until you do.
 
+![Claude Desktop beside SimplMaker. The assistant built a bridge as separate bodies, with its sizes as parameters you can change yourself.](shot:ai-assistant)
+
 ## What you need
 
 - A running [trial](doc:reference/license) or a valid licence. The connection checks this on every request. Without one, the AI pane says *Waiting for a license* and starts by itself once the licence is valid.
@@ -27,8 +29,6 @@ Press **Connect**. SimplMaker adds itself to Claude Desktop's list of tools. If 
 Press **Copy Command** and paste it into a terminal once. It adds SimplMaker for every folder you use Claude Code in. The row says **Added**, and then **Connected** after Claude Code first reaches SimplMaker.
 
 If you have moved or reinstalled SimplMaker, the row says it was set up for another copy. Copy the command again to update it.
-
-![Settings, AI pane: the switch, the Connect buttons and what the assistant did.](shot:settings-ai)
 
 ## Ask for something
 

@@ -59,3 +59,88 @@
     Object.keys(map).forEach(function (id) { var el = document.getElementById(id); if (el) io.observe(el); });
   }
 })();
+
+// Zoom for the screenshots: a magnifier on hover and a lightbox. Click the picture or the magnifier to open it; click outside it,
+// press Esc or use the X to close.
+(function () {
+  'use strict';
+  var shots = document.querySelectorAll('.shot:not(.missing) img');
+  if (!shots.length) return;
+  var ICONS = {
+    zoom: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6"/></svg>',
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg>'
+  };
+  var box = null, img = null, caption = null, closeButton = null, opener = null;
+
+  function build() {
+    box = document.createElement('div');
+    box.className = 'lightbox';
+    box.hidden = true;
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-label', 'Screenshot');
+    var figure = document.createElement('figure');
+    figure.className = 'lightbox-figure';
+    img = document.createElement('img');
+    caption = document.createElement('figcaption');
+    figure.appendChild(img);
+    figure.appendChild(caption);
+    closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'lightbox-close';
+    closeButton.setAttribute('aria-label', 'Close');
+    closeButton.innerHTML = ICONS.close;
+    box.appendChild(figure);
+    box.appendChild(closeButton);
+    document.body.appendChild(box);
+    closeButton.addEventListener('click', close);
+    // A click on the dark area (not on the picture or its caption) closes it.
+    box.addEventListener('click', function (e) { if (e.target === box || e.target === figure) close(); });
+  }
+
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'Tab') { e.preventDefault(); closeButton.focus(); }  // the X is the only thing to reach
+  }
+
+  function open(source, trigger) {
+    if (!box) build();
+    img.src = source.currentSrc || source.src;
+    img.alt = source.alt;
+    var figcaption = source.closest('figure') && source.closest('figure').querySelector('figcaption');
+    caption.textContent = figcaption ? figcaption.textContent : '';
+    caption.hidden = !caption.textContent;
+    opener = trigger;
+    box.hidden = false;
+    document.documentElement.classList.add('lightbox-open');
+    document.addEventListener('keydown', onKey);
+    closeButton.focus();
+  }
+
+  function close() {
+    if (!box || box.hidden) return;
+    box.hidden = true;
+    img.removeAttribute('src');
+    document.documentElement.classList.remove('lightbox-open');
+    document.removeEventListener('keydown', onKey);
+    if (opener && document.contains(opener)) opener.focus();
+    opener = null;
+  }
+
+  shots.forEach(function (shot) {
+    var frame = document.createElement('span');
+    frame.className = 'shot-frame';
+    frame.style.maxWidth = shot.style.maxWidth;  // the picture is shown at half its size; the frame follows
+    shot.parentNode.insertBefore(frame, shot);
+    frame.appendChild(shot);
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'shot-zoom';
+    button.setAttribute('aria-label', 'Enlarge the screenshot');
+    button.title = 'Enlarge';
+    button.innerHTML = ICONS.zoom;
+    frame.appendChild(button);
+    button.addEventListener('click', function () { open(shot, button); });
+    shot.addEventListener('click', function () { open(shot, button); });
+  });
+})();

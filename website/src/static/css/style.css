@@ -539,6 +539,41 @@ kbd {
 .shot img { width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--line); background: var(--dark); }
 .shot figcaption { margin-top: 10px; font-size: 0.88rem; color: var(--ink-2); max-width: 66ch; }
 .shot.small img { max-width: 420px; }
+
+/* Zoom: a magnifier on hover (always there on touch screens), and the lightbox it opens (see docs.js). */
+.shot-frame { position: relative; display: block; width: 100%; }
+.js .shot-frame img { cursor: zoom-in; }
+.shot-zoom {
+  position: absolute; top: 10px; right: 10px; width: 36px; height: 36px; padding: 0;
+  display: grid; place-items: center; border: 1px solid var(--line-dark); border-radius: 50%;
+  background: rgba(11, 12, 16, 0.78); color: var(--on-dark); cursor: zoom-in;
+  opacity: 0; transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+.shot-zoom svg { width: 18px; height: 18px; }
+.shot-frame:hover .shot-zoom, .shot-zoom:focus-visible { opacity: 1; }
+.shot-zoom:hover { background: var(--accent); border-color: var(--accent); color: var(--ink); }
+@media (hover: none) { .shot-zoom { opacity: 0.9; } }
+
+.lightbox {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 3vh 3vw;
+  background: rgba(8, 9, 12, 0.94); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); cursor: zoom-out; animation: lightbox-in 0.15s ease;
+}
+.lightbox[hidden] { display: none; }
+.lightbox-figure { margin: 0; max-width: 100%; max-height: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; cursor: default; }
+.lightbox-figure img {
+  display: block; width: auto; height: auto; max-width: 94vw; max-height: 82vh; object-fit: contain;
+  border-radius: 6px; border: 1px solid var(--line-dark); background: var(--dark); cursor: default;
+}
+.lightbox-figure figcaption { max-width: 70ch; text-align: center; font-size: 0.9rem; color: var(--on-dark-2); }
+.lightbox-close {
+  position: fixed; top: 16px; right: 16px; width: 44px; height: 44px; padding: 0; display: grid; place-items: center;
+  border: 1px solid var(--line-dark); border-radius: 50%; background: rgba(21, 23, 30, 0.9); color: var(--on-dark); cursor: pointer;
+}
+.lightbox-close:hover { background: var(--accent); border-color: var(--accent); color: var(--ink); }
+.lightbox-close svg { width: 20px; height: 20px; }
+.lightbox-open { overflow: hidden; }
+@keyframes lightbox-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .lightbox { animation: none; } .shot-zoom { transition: none; } }
 .shot-missing { display: grid; place-items: center; text-align: center; min-height: 220px; padding: 20px; color: rgba(166, 168, 179, 0.9); border-radius: 6px; background-color: var(--dark);
   background-image: linear-gradient(rgba(235, 87, 41, 0.16) 1px, transparent 1px), linear-gradient(90deg, rgba(235, 87, 41, 0.16) 1px, transparent 1px);
   background-size: 48px 48px; }
