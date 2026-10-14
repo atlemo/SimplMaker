@@ -396,6 +396,62 @@ std::string cornerMessage(Body &b, const std::vector<TopoDS_Edge> &edges, const 
   return buf;
 }
 
+/// True when every edge of `edges` is a convex edge of `shape`. Rounding only convex edges takes material away, so
+/// a rounded body that is bigger than before is wrong; rounding a concave edge fills the corner and does add some.
+/// An edge that is concave, tangent or not shared by exactly two faces counts as not convex.
+bool allConvex(const TopoDS_Shape &shape, const std::vector<TopoDS_Edge> &edges) {
+  try {
+    ShapeToShapes edgeFaces;
+    TopExp::MapShapesAndUniqueAncestors(shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    // The outward normal of `f` where `e` meets it, and the direction along `e` the way `f`'s outline runs.
+    auto frame = [](const TopoDS_Edge &e, const TopoDS_Face &f, gp_Vec &n, gp_Vec &t) {
+      double f0, l0;
+      Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(e, f, f0, l0);
+      if (pc.IsNull()) return false;
+      const gp_Pnt2d uv = pc->Value(0.5 * (f0 + l0));
+      BRepAdaptor_Surface surf(f);
+      gp_Pnt p;
+      gp_Vec du, dv;
+      surf.D1(uv.X(), uv.Y(), p, du, dv);
+      n = du.Crossed(dv);
+      if (n.Magnitude() < Precision::Confusion()) return false;
+      n.Normalize();
+      if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
+      int seen = 0;
+      TopAbs_Orientation o = TopAbs_FORWARD;
+      for (TopExp_Explorer ex(f, TopAbs_EDGE); ex.More(); ex.Next())
+        if (ex.Current().IsSame(e)) {
+          o = ex.Current().Orientation();
+          ++seen;
+        }
+      if (seen != 1) return false;  // a seam runs both ways
+      BRepAdaptor_Curve c(e);
+      gp_Pnt at;
+      c.D1(0.5 * (c.FirstParameter() + c.LastParameter()), at, t);
+      if (t.Magnitude() < Precision::Confusion()) return false;
+      t.Normalize();
+      if (o == TopAbs_REVERSED) t.Reverse();
+      return true;
+    };
+    for (const TopoDS_Edge &e : edges) {
+      if (!edgeFaces.Contains(e)) return false;
+      const ShapeList &fl = edgeFaces.FindFromKey(e);
+      if (fl.Size() != 2) return false;
+      std::vector<TopoDS_Face> fs;
+      for (const TopoDS_Shape &x : fl) fs.push_back(TopoDS::Face(x));
+      gp_Vec n1, t1, n2, t2;
+      if (!frame(e, fs[0], n1, t1) || !frame(e, fs[1], n2, t2)) return false;
+      // From the edge into face 1 (left of its outline seen from outside) the other face's plane is left behind
+      // on a convex edge and crossed to its outside on a concave one.
+      const gp_Vec into1 = n1.Crossed(t1);
+      if (n2.Dot(into1) > -1e-6) return false;
+    }
+    return true;
+  } catch (Standard_Failure &) {
+    return false;
+  }
+}
+
 template <class Maker, class AddFn>
 SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, const std::string &feat,
                             const char *kind, AddFn add, double size = 0) {
@@ -420,6 +476,15 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
   }
   std::vector<TopoDS_Edge> picked;
   for (auto &u : used) picked.push_back(TopoDS::Edge(u.first));
+  // A chamfer as big as the radius of a rounded corner it runs round is refused here, not left to OCCT: it
+  // sometimes fails, but it also returns bodies that pass BRepCheck and still have the wrong shape.
+  if (std::strcmp(kind, "chamfer") == 0) {
+    std::string why = cornerMessage(*b, picked, kind, size);
+    if (!why.empty()) {
+      setError(why);
+      return 0;
+    }
+  }
   mk.Build();
   if (!mk.IsDone()) {
     std::string why = cornerMessage(*b, picked, kind, size);
@@ -441,6 +506,17 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
     for (const TopoDS_Shape &g : mk.Generated(e))
       if (g.ShapeType() == TopAbs_FACE) names.push_back({g, feat + "." + kind + "." + en});
   Body out = makeBody(mk.Shape(), names, feat + "." + kind);
+  // OCCT can return a body that is valid, or repairable into a valid one, and still wrong when a round is too big
+  // for its faces: bigger than before although only convex edges were rounded (see allConvex).
+  auto grew = [&](const TopoDS_Shape &result) {
+    std::vector<TopoDS_Edge> all;
+    for (auto &c : chain) all.push_back(TopoDS::Edge(c.first));
+    GProp_GProps before, after;
+    BRepGProp::VolumeProperties(b->shape, before);
+    BRepGProp::VolumeProperties(result, after);
+    return after.Mass() > before.Mass() * (1 + 1e-6) + 1e-9 && allConvex(b->shape, all);
+  };
+  const std::string tooBig = std::string(kind) + " failed (size too large for the adjacent faces?)";
   BRepCheck_Analyzer check(out.shape);
   if (!check.IsValid()) {
     // OCCT sometimes returns a fillet's result with a shell that is not quite closed or with edge tolerances
@@ -448,12 +524,20 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
     ShapeFix_Shape fix(mk.Shape());
     fix.Perform();
     if (BRepCheck_Analyzer(fix.Shape()).IsValid()) {
+      if (grew(fix.Shape())) {
+        setError(tooBig);
+        return 0;
+      }
       std::vector<Named> fixedNames;
       for (const Named &n : names) fixedNames.push_back({fix.Context()->Apply(n.shape), n.name});
       return store(makeBody(fix.Shape(), fixedNames, feat + "." + kind));
     }
     std::string why = cornerMessage(*b, picked, kind, size);
     setError(why.empty() ? std::string(kind) + " produced an invalid solid" : why);
+    return 0;
+  }
+  if (grew(out.shape)) {
+    setError(tooBig);
     return 0;
   }
   return store(std::move(out));
