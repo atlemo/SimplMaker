@@ -12,6 +12,8 @@ description: Lean the sides of a body over by a small angle, so a mould or a sta
 3. Press [[Return]]. A dial with a dot appears on the first face, with a field for the angle.
 4. Drag the dot round the arc, or click it and type an angle, then press [[Return]].
 
+![Draft: the dial on the drafted face, with the angle field, Cancel and OK. The inspector shows the angle, the faces and the face that stays put.](shot:draft-angle)
+
 ## The face that stays put
 
 The faces pivot about a **flat face of the same body** that does not move: the bottom of a mould. Each drafted face keeps the line where it meets that face and leans away from it, so the body gets narrower the further it goes from it.

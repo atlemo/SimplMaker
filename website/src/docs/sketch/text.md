@@ -25,6 +25,8 @@ Select the sketch and look under **Text** in the inspector:
 
 Fonts offered: Helvetica Bold, Helvetica, Avenir Next, Futura Bold, Arial Rounded, Menlo Bold and Georgia Bold. For 3D printing, bold and rounded faces hold up best at small sizes.
 
+![Text in a sketch on the face of a body. The Text, Height and Font fields are in the inspector.](shot:sketch-text)
+
 ## Move, scale and turn text
 
 Text moves, scales and turns with the rest of the sketch. See [Move, scale and pattern](doc:sketch/transform). A turned copy of text turns with it.
