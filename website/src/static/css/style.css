@@ -283,18 +283,6 @@ main { padding-top: 64px; }
   .price-strip .figure, .price-strip .copy { grid-column: 1 / -1; }
 }
 
-/* ---------- Home: compare names ---------- */
-.names { border-top: 1px solid var(--line); }
-.names a {
-  display: flex; justify-content: space-between; align-items: baseline; gap: 20px;
-  padding-block: clamp(14px, 2vw, 26px); border-bottom: 1px solid var(--line);
-  font-size: clamp(2rem, 6.4vw, 6.4rem); font-weight: 600; letter-spacing: -0.05em; line-height: 1;
-  transition: padding-left 0.3s var(--ease), color 0.2s;
-}
-.names a span { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; color: var(--ink-2); text-align: right; }
-.names a:hover { padding-left: clamp(8px, 1.6vw, 28px); color: var(--accent); }
-.names a.self { color: var(--accent); }
-
 /* ---------- Final CTA ---------- */
 .final .big { margin-bottom: clamp(28px, 4vw, 56px); }
 .final.dark { padding-bottom: clamp(56px, 8vw, 110px); }
@@ -329,7 +317,7 @@ main { padding-top: 64px; }
 /* ---------- Pricing ---------- */
 .price-hero { padding-top: clamp(24px, 4vw, 56px); display: grid; grid-template-columns: repeat(12, 1fr); column-gap: clamp(16px, 2vw, 32px); row-gap: 40px; align-items: end; }
 .price-hero .figure { grid-column: 1 / span 7; }
-.price-hero .num { display: block; font-size: clamp(9rem, 34vw, 38rem); font-weight: 600; line-height: 0.76; letter-spacing: -0.085em; margin-left: -0.05em; }
+.price-hero .num { display: block; font-size: clamp(9rem, 27vw, 30rem); font-weight: 600; line-height: 0.76; letter-spacing: -0.085em; margin-left: -0.05em; }
 .price-hero .buy { grid-column: 8 / span 5; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; padding-bottom: 1.5vw; }
 @media (max-width: 860px) { .price-hero .figure, .price-hero .buy { grid-column: 1 / -1; } }
 
