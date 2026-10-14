@@ -53,6 +53,43 @@ import Testing
         #expect(DocumentModel.snap(SIMD2(10, 12), to: c, tolerance: 1) == SIMD2(10, 12))
     }
 
+    /// A box whose front wall is two collinear segments, with a rounded corner: cutting a hole in the first segment
+    /// merges the two coplanar wall faces, so the face the hole was placed on has no name on the finished body.
+    private func splitWall() throws -> (CADDocument, HoleFeature) {
+        var s = Sketch()
+        let p0 = s.addPoint(0, 0), p1 = s.addPoint(40, 0), p2 = s.addPoint(100, 0), p3 = s.addPoint(100, 50), p4 = s.addPoint(0, 50)
+        let a = s.addLine(p0, p1, id: "A"), b = s.addLine(p1, p2, id: "B"), c = s.addLine(p2, p3, id: "C"),
+            d = s.addLine(p3, p4, id: "D"), e = s.addLine(p4, p0, id: "E")
+        var doc = CADDocument()
+        doc.features = [
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s))),
+            Feature(id: "ex", name: "Extrude1", .extrude(ExtrudeFeature(
+                sketch: "sk", profiles: [ProfileRef(curves: [a, b, c, d, e])], extent: .distance("20 mm")))),
+            Feature(id: "fi", name: "Fillet1", .fillet(EdgeFeature(
+                edges: [EdgeRef(body: "ex", edge: "ex.side.C|ex.side.D")], size: "5 mm"))),
+        ]
+        let before = try #require(Regenerator.regenerate(doc).body("ex"))
+        let wall = "ex.side.B"
+        let frame = try before.faceFrame(wall)
+        let from = try before.faceCenter(wall) - frame.origin
+        let hole = HoleFeature(face: FaceRef(body: "ex", face: wall), u: "\((from * frame.xAxis).sum())", v: "\((from * frame.yAxis).sum())",
+                               diameter: "6", depth: "10 mm")
+        doc.features.append(Feature(id: "h", name: "Hole1", .hole(hole)))
+        return (doc, hole)
+    }
+
+    @Test func aHoleKeepsItsArrowsAndMoveDotWhenTheCutMergesItsFaceWithANeighbour() async throws {
+        let (doc, hole) = try splitWall()
+        let model = try await loaded(doc)
+        #expect(model.result?.errors.isEmpty == true, "the part builds: \(model.result?.errors ?? [:])")
+        let finished = try #require(model.result?.body("ex"))
+        #expect(!finished.faceNames.contains(hole.face.face), "the setup: the cut renames the wall face (\(finished.faceNames))")
+        model.selectedFeature = "h"
+        #expect(model.dragHandles.count == 2, "a depth arrow and a diameter arrow")
+        #expect(model.holeMoveDot != nil, "the dot that moves the hole")
+        #expect(model.featureWithoutHandle == nil)
+    }
+
     @Test func aHoleHasADepthArrowAndADiameterArrow() async throws {
         let model = try await loaded(plate())
         try placeHole(model, x: 30, y: 20)

@@ -928,8 +928,12 @@ public enum Regenerator {
     }
 
     /// Where a hole's top centre is: (u, v) in its face's frame, drilling against the face normal.
-    public static func holeFrame(_ f: HoleFeature, _ r: RegenResult) throws -> Frame {
-        guard let body = r.body(f.face.body) else { throw KernelError(message: "the body with the hole's face is missing") }
+    /// On a finished build pass the hole's feature id: its face is then taken as it was before the cut, because the
+    /// cut can merge it with a coplanar neighbour and leave the finished body without a face of that name.
+    public static func holeFrame(_ f: HoleFeature, _ r: RegenResult, before id: FeatureID? = nil) throws -> Frame {
+        guard let body = id.flatMap({ r.featureInputs[$0]?[f.face.body] }) ?? r.body(f.face.body) else {
+            throw KernelError(message: "the body with the hole's face is missing")
+        }
         let face = try body.faceFrame(f.face.face)
         let u = try r.parameters.value(of: f.u, kind: .length), v = try r.parameters.value(of: f.v, kind: .length)
         return Frame(origin: face.point(u, v), normal: face.normal, xAxis: face.xAxis)

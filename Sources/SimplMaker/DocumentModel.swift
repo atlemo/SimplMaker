@@ -1711,7 +1711,7 @@ final class DocumentModel {
                 return handle("Pitch", frame.origin, frame.normal, pf.pitch, per: turns)  // the arrow spans the coil
             }
         case .hole(let hf):
-            guard let frame = try? Regenerator.holeFrame(hf, result) else { return nil }
+            guard let frame = try? Regenerator.holeFrame(hf, result, before: id) else { return nil }
             // Down into the material for the depth (unless the hole goes right through), and out along the face for
             // the diameter: the arrow spans the radius.
             if let depth = hf.depth, slot == 0 { return handle("Depth", frame.origin, -frame.normal, depth) }
@@ -1844,7 +1844,7 @@ final class DocumentModel {
     var holeMoveDot: SIMD3<Double>? {
         guard let (id, hole) = selectedHole, let face = holeFace(id, hole) else { return nil }
         if let uv = holeMovePreview { return face.point(uv.x, uv.y) }
-        guard let result, let frame = try? Regenerator.holeFrame(hole, result) else { return nil }
+        guard let result, let frame = try? Regenerator.holeFrame(hole, result, before: id) else { return nil }
         return frame.origin
     }
 
