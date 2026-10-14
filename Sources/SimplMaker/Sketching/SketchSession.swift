@@ -557,8 +557,16 @@ final class SketchSession {
     /// when exactly under the cursor) and become coincident / point-on-curve constraints.
     func snap(_ uv: SIMD2<Double>, excluding: EntityID? = nil) -> SketchSnap {
         let result = findSnap(uv, excluding: excluding)
-        lastSnap = result.kind.map { ($0, result.snap.position) }
+        setLastSnap(result.kind.map { ($0, result.snap.position) })
         return result.snap
+    }
+
+    /// Records the latest snap, only when it differs. The viewport's update asks for the rubber-band preview, which
+    /// snaps; assigning the same value again still notifies whoever read `lastSnap` (the overlay does, in the same
+    /// update), so every update would start another one and the viewport would redraw without end.
+    private func setLastSnap(_ new: (kind: SnapKind, position: SIMD2<Double>)?) {
+        guard lastSnap?.kind != new?.kind || lastSnap?.position != new?.position else { return }
+        lastSnap = new
     }
 
     private func findSnap(_ uv: SIMD2<Double>, excluding: EntityID?) -> (snap: SketchSnap, kind: SnapKind?) {
@@ -654,7 +662,7 @@ final class SketchSession {
         }
         gridStep = m.gridStep
         snapping = m.snapping
-        if let uv = m.uv, curveDown == nil, tool != .select || dragEntity != nil { _ = snap(uv, excluding: dragEntity) } else { lastSnap = nil }
+        if let uv = m.uv, curveDown == nil, tool != .select || dragEntity != nil { _ = snap(uv, excluding: dragEntity) } else { setLastSnap(nil) }
         if let uv = m.uv { cursor = uv }
         switch m.phase {
         case .moved: return (false, nil)
@@ -1126,7 +1134,7 @@ final class SketchSession {
         cancelMirror()
         manipulating = tool
         message = nil
-        lastSnap = nil
+        setLastSnap(nil)
     }
 
     func stopManipulating() {
