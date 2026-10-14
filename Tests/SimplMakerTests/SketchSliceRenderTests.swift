@@ -106,12 +106,13 @@ import simd
         #expect(model.sketchSlicePlane == nil, "only while sketching")
     }
 
-    /// The spread of brightness over the middle of the picture.
+    /// The spread of brightness over a patch of the picture just right of its middle: the middle column is where the
+    /// sketch's own axis line is drawn, and that line is not the lighting.
     private func spread(_ bytes: [UInt8], width: Int = 1600) -> Int {
         let height = bytes.count / 4 / width
         var lo = 255, hi = 0
         for y in (height / 2 - 100)..<(height / 2 + 100) {
-            for x in (width / 2 - 100)..<(width / 2 + 100) {
+            for x in (width / 2 + 20)..<(width / 2 + 220) {
                 let i = (y * width + x) * 4
                 let l = (Int(bytes[i]) + Int(bytes[i + 1]) + Int(bytes[i + 2])) / 3
                 lo = min(lo, l); hi = max(hi, l)

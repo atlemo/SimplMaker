@@ -212,12 +212,14 @@ import UniformTypeIdentifiers
         model.setImageOpacity(id, 0.5)
         renderer.setOverlay(model.sketchOverlay())
         let half = try await screenColor(view, renderer, SIMD3(10, 10, 0))
-        #expect(half.0 > 128 && half.1 > 20 && half.2 > 20 && half.1 < 220, "half: red mixed with the background, got \(half)")
 
         model.setImageOpacity(id, 0)
         renderer.setOverlay(model.sketchOverlay())
         let none = try await screenColor(view, renderer, SIMD3(10, 10, 0))
         #expect(abs(none.0 - none.1) < 20 && abs(none.1 - none.2) < 20, "fully see-through: just the background, got \(none)")
+        // Half way between the picture and the background, whichever the background is (it follows light/dark mode).
+        #expect(abs(half.0 - (solid.0 + none.0) / 2) < 12 && abs(half.1 - (solid.1 + none.1) / 2) < 12
+                && abs(half.2 - (solid.2 + none.2) / 2) < 12, "half: red mixed with the background \(none), got \(half)")
 
         // Outside the picture there's only the background.
         model.setImageOpacity(id, 1)
