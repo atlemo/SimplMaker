@@ -1,25 +1,22 @@
-// The build-time switch for the AI mode: what turns it on, and that without it nothing starts or is written.
+// The build-time switch for the AI mode: every build has it unless the bundle says no, and without it nothing starts or is written.
 // Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 import Testing
 @testable import SimplMaker
 
 @Suite @MainActor struct AIFeatureTests {
-    @Test func theBundleDecidesAndWithoutAnAnswerTheBuildTypeDoes() {
-        // A key in the bundle wins, in either direction.
-        #expect(AIFeature.resolve(plistValue: true, debugBuild: false))
-        #expect(!AIFeature.resolve(plistValue: false, debugBuild: true))
-        for on in ["true", "TRUE", "yes", "1", " true "] { #expect(AIFeature.resolve(plistValue: on, debugBuild: false), "\(on)") }
-        for off in ["false", "no", "0", ""] { #expect(!AIFeature.resolve(plistValue: off, debugBuild: true), "\(off)") }
-        #expect(AIFeature.resolve(plistValue: NSNumber(value: 1), debugBuild: false))
-        #expect(!AIFeature.resolve(plistValue: NSNumber(value: 0), debugBuild: true))
-        // No key: debug builds have it, release builds don't.
-        #expect(AIFeature.resolve(plistValue: nil, debugBuild: true))
-        #expect(!AIFeature.resolve(plistValue: nil, debugBuild: false))
-        // Something unreadable is not an answer.
-        #expect(AIFeature.resolve(plistValue: "maybe", debugBuild: true))
-        #expect(!AIFeature.resolve(plistValue: "maybe", debugBuild: false))
-        #expect(!AIFeature.resolve(plistValue: ["x"], debugBuild: false))
+    @Test func everyBuildHasTheModeUnlessTheBundleSaysNo() {
+        #expect(AIFeature.resolve(plistValue: true))
+        #expect(!AIFeature.resolve(plistValue: false))
+        for on in ["true", "TRUE", "yes", "1", " true "] { #expect(AIFeature.resolve(plistValue: on), "\(on)") }
+        for off in ["false", "FALSE", "no", "0", " false "] { #expect(!AIFeature.resolve(plistValue: off), "\(off)") }
+        #expect(AIFeature.resolve(plistValue: NSNumber(value: 1)))
+        #expect(!AIFeature.resolve(plistValue: NSNumber(value: 0)))
+        // No key, or something unreadable: the mode is there (it is still off until the user turns it on).
+        #expect(AIFeature.resolve(plistValue: nil))
+        #expect(AIFeature.resolve(plistValue: ""))
+        #expect(AIFeature.resolve(plistValue: "maybe"))
+        #expect(AIFeature.resolve(plistValue: ["x"]))
     }
 
     @Test func aBuildWithoutTheModeNeverListensWritesOrAcceptsTheSwitch() async throws {
@@ -39,9 +36,13 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: s.directory.path))
     }
 
-    @Test func withoutABundleKeyTheBuildTypeDecides() {
-        // `swift test` runs without an app bundle, so the mode follows the build type (on in debug builds).
+    @Test func withoutABundleKeyTheModeIsAvailableButOffUntilTheUserTurnsItOn() {
+        // `swift test` runs without an app bundle.
         #expect(Bundle.main.object(forInfoDictionaryKey: AIFeature.infoKey) == nil)
-        #expect(AIFeature.isAvailable == AIFeature.isDebugBuild)
+        #expect(AIFeature.isAvailable)
+        let s = AIConnectionTests.Setup(); defer { s.cleanUp() }
+        let ai = AIConnection(defaults: s.defaults, file: s.file, service: CADService(registry: s.rig.registry, licensed: { true }),
+                              licensed: { true }, version: "t", available: AIFeature.isAvailable)
+        #expect(ai.isAvailable && !ai.isEnabled, "off by default")
     }
 }

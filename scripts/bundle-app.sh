@@ -6,10 +6,10 @@
 #   add --licensed to make a debug build ask for a license too (see Licensing below); without it a development
 #   build never does, so your own copy does not lock after 14 days
 #   add --open to launch it afterwards
-#   add --with-ai to put the AI mode in a release build. It is in debug builds (and left out of release builds), because it is
-#   an unfinished feature: the AI interface (a local MCP server, Settings > AI, the stdio relay in Contents/Helpers) is switched
-#   by the Info.plist key SCAIEnabled, which this script writes. Without the mode, a build neither contains the relay nor can
-#   be made to start the server (see Sources/SimplMaker/AI/AIFeature.swift).
+#   add --without-ai to leave the AI mode out. Every build has it by default (the AI interface: a local MCP server, Settings > AI,
+#   the stdio relay in Contents/Helpers); it is off until the user turns it on. The Info.plist key SCAIEnabled, which this script
+#   writes, says which. Without the mode, a build neither contains the relay nor can be made to start the server
+#   (see Sources/SimplMaker/AI/AIFeature.swift).
 # The bundle's Info.plist declares the .simplmaker document type, which the document features
 # (Open Recent, autosave, versions) rely on; prefer this (or Xcode) over `swift run`.
 #
@@ -40,7 +40,7 @@ cd "$ROOT"
 CONFIG=release
 OPEN=0
 RELEASE=0
-WITH_AI="${WITH_AI:-0}"
+WITHOUT_AI="${WITHOUT_AI:-0}"
 ENFORCE="${LICENSE:-0}"
 for arg in "$@"; do
   case "$arg" in
@@ -48,13 +48,13 @@ for arg in "$@"; do
     --release) RELEASE=1 ;;
     --licensed) ENFORCE=1 ;;
     --open) OPEN=1 ;;
-    --with-ai) WITH_AI=1 ;;
+    --without-ai) WITHOUT_AI=1 ;;
     *) echo "unknown option $arg" >&2; exit 2 ;;
   esac
 done
-# The AI mode: on in debug builds, off in release builds unless asked for.
-AI_ENABLED=0
-{ [ "$CONFIG" = debug ] || [ "$WITH_AI" = 1 ]; } && AI_ENABLED=1
+# The AI mode: in every build unless left out.
+AI_ENABLED=1
+[ "$WITHOUT_AI" != 1 ] || AI_ENABLED=0
 swift build -c "$CONFIG" --product SimplMaker
 [ "$AI_ENABLED" != 1 ] || swift build -c "$CONFIG" --product simplmaker-mcp
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
@@ -79,10 +79,9 @@ plist_set CFBundleVersion "${BUILD_NUMBER:-$(git rev-list --count HEAD)}"
 /usr/libexec/PlistBuddy -c "Delete :SCAIEnabled" "$PLIST" 2>/dev/null || true
 if [ "$AI_ENABLED" = 1 ]; then
   /usr/libexec/PlistBuddy -c "Add :SCAIEnabled bool true" "$PLIST"
-  echo "note: this build has the AI mode (SCAIEnabled)"
-  [ "$RELEASE" != 1 ] || echo "WARNING: this is a --release build WITH the AI mode (--with-ai); a normal release leaves it out" >&2
 else
   /usr/libexec/PlistBuddy -c "Add :SCAIEnabled bool false" "$PLIST"
+  echo "note: this build has no AI mode (--without-ai)"
 fi
 
 # Licensing configuration.

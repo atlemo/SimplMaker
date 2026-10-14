@@ -48,7 +48,7 @@ The details are in [Navigating the view](doc:start/navigation#make-navigation-yo
 
 ## AI
 
-Appears in the settings window when this version of SimplMaker includes the AI connection. It connects an AI assistant such as Claude to SimplMaker. See [Work with an AI assistant](doc:ai/assistant).
+Connects an AI assistant such as Claude to SimplMaker. It is off until you switch it on. See [Work with an AI assistant](doc:ai/assistant).
 
 ## Shortcuts
 

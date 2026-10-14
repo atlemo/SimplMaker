@@ -5,11 +5,10 @@ description: Connect Claude to SimplMaker in one click, then let it build, chang
 
 SimplMaker can let an AI assistant work on your part. Connected to **Claude Desktop** or **Claude Code**, the assistant can see the parts you have open and change them while you watch. You ask in plain words, for example *"Make a key ring with my name on it, about 35 mm long and 3 mm thick"*, and the features appear on the [timeline](doc:concepts/timeline) one after another, with the sizes as [parameters](doc:concepts/parameters) you can change yourself afterwards.
 
-This is a beta feature. It is off until you turn it on.
+This is a beta feature, and it is off until you turn it on in **Settings → AI**. SimplMaker does not listen for assistants until you do.
 
 ## What you need
 
-- A copy of SimplMaker with the AI connection included. If **Settings** has no **AI** pane, your version does not have it.
 - A running [trial](doc:reference/license) or a valid licence. The connection checks this on every request. Without one, the AI pane says *Waiting for a license* and starts by itself once the licence is valid.
 - Claude Desktop or Claude Code on the same Mac. [Get Claude](https://claude.ai/download) if you have neither.
 
