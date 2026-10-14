@@ -383,7 +383,7 @@ extension Sketch {
     private mutating func adoptImageOffsets(_ madeFrom: [EntityID: [EntityID]], created: inout [EntityID]) {
         for mi in mirrors.indices {
             let def = mirrors[mi]
-            guard !SketchMirrorDef.isAxis(def.line), let axis = mirrorAxis(def.line) else { continue }
+            guard !SketchMirrorDef.isAxis(def.line), mirrorAxis(def.line) != nil else { continue }
             var own: [EntityID] = [], copies = Set<EntityID>()
             for source in def.sources where !Sketch.isGenerated(source) {
                 guard let mine = madeFrom[source], let image = madeFrom["\(def.id)~\(source)"], !mine.isEmpty, !image.isEmpty else { continue }
