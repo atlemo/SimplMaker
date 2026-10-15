@@ -59,6 +59,50 @@ struct WindowSizeMemory: NSViewRepresentable {
     }
 }
 
+/// Put in a document window's content: shows `content` in a strip of the window's titlebar, under the toolbar and
+/// over the tab bar. On macOS 15 the toolbar is too short for the tools with their names, and it doesn't grow for
+/// what is put in it, but a titlebar accessory adds its own height, so the tools still read as part of the toolbar.
+struct TitlebarToolStrip<Content: View>: NSViewRepresentable {
+    let height: CGFloat
+    @ViewBuilder let content: Content
+
+    @MainActor final class Coordinator {
+        let host: NSHostingView<Content>
+        let accessory = NSTitlebarAccessoryViewController()
+        weak var window: NSWindow?
+
+        init(content: Content) {
+            host = NSHostingView(rootView: content)
+            host.sizingOptions = []  // the strip's height is set here, not taken from the row
+            accessory.layoutAttribute = .bottom
+            accessory.view = host
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(content: content) }
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.host.rootView = content
+        coordinator.host.frame.size.height = height
+        // The window isn't known until the view is in it, so add the strip on the next turn of the run loop.
+        DispatchQueue.main.async { [weak view] in
+            guard let window = view?.window else { return }
+            if coordinator.window !== window {
+                coordinator.accessory.removeFromParent()
+                window.addTitlebarAccessoryViewController(coordinator.accessory)
+                coordinator.window = window
+            }
+        }
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.accessory.removeFromParent()
+    }
+}
+
 /// Put in a document window's content: while the toolbar is filled with `tint` (Sketch mode's colour),
 /// the titlebar (the document title and the toolbar buttons) draws in whichever appearance contrasts
 /// with it, white symbols on a deep tint and black on a pale one. The content below keeps the system

@@ -613,7 +613,7 @@ struct SketchMirrorBar: View {
             .controlSize(.small)
             .padding(.horizontal, DS.Spacing.space4)
             .padding(.vertical, DS.Spacing.space2)
-            .glassEffect(.regular, in: .capsule)
+            .panelGlass(in: Capsule())
             .fixedSize()
             .transition(.opacity)
         }

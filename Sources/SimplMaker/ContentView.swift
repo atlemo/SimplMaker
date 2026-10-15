@@ -109,10 +109,6 @@ struct DocumentWindow: View {
     /// What the panel toggles draw in while the toolbar is tinted: black or white by contrast with the tint; nil off the tint.
     private var panelToggleInk: Color? { sketchTint ? ContrastColor.ink(on: sketchPaper.toolbarNSColor) : nil }
 
-    private var unlinkTitle: String {
-        guard let p = model.unlinkPrompt else { return "" }
-        return "Replace \(p.expression) with \(p.valueText)?"
-    }
 
     /// A toolbar button's tooltip with its shortcut: "Show or hide the browser (⌃⌘S)".
     private func helpWithShortcut(_ text: String, _ command: ShortcutCommand) -> String {
@@ -128,7 +124,95 @@ struct DocumentWindow: View {
             .withoutSharedBackground()  // the tools sit on the toolbar itself, with no glass of their own
     }
 
+    /// Whether the tools sit in the native toolbar. On macOS 15 that toolbar is too short for the tools with their
+    /// names, so there they sit in a strip of the titlebar under it, over the tab bar.
+    private var toolsInNativeToolbar: Bool {
+        #if DEBUG
+        // SIMPLMAKER_TOOL_STRIP=1 shows macOS 15's strip on a newer Mac, to check it without a macOS 15 machine.
+        if ProcessInfo.processInfo.environment["SIMPLMAKER_TOOL_STRIP"] == "1" { return false }
+        #endif
+        if #available(macOS 26.0, *) { return true }
+        return false
+    }
+
+    /// The tools in the titlebar strip on macOS 15. The row is hosted apart from this view, so the accent and the
+    /// tutorial's spotlight are handed on to it here.
+    @ViewBuilder private var toolStrip: some View {
+        if !toolsInNativeToolbar {
+            TitlebarToolStrip(height: Self.toolStripHeight) {
+                toolRow(toolbarLayout)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Tools")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .modifier(AccentScope(sketching: model.sketchSession != nil))
+                    .environment(\.tutorialSpotlight, guide.spotlight)
+            }
+        }
+    }
+
+    /// The strip's height: the same as macOS 26's toolbar, so the tools have the room they have there.
+    static let toolStripHeight: CGFloat = 52
+
     var body: some View {
+        documentContent
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .toolbar(removing: .title)  // the document's name is in its tab
+        .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
+        .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
+        .background(toolStrip)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
+        .task(id: toolRowSignature) { toolRowWidths = measureToolRows() }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in defaultsTick += 1 }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
+        .toolbar {
+            // The tools sit in the middle of the toolbar, in Design and in Sketch mode. They are one item whose
+            // content changes with the room, so the tools don't blink as the window is resized.
+            if toolsInNativeToolbar {
+                toolsItem
+            } else {
+                // On macOS 15 the tools are in the titlebar strip. An empty middle item keeps the toolbar laid out as it
+                // is with them, so the inspector button stays at the far right rather than packing up to the left.
+                ToolbarItem(placement: .principal) {
+                    Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+                }
+            }
+            // On the tinted sketch toolbar the system's glass behind these would pick its own brightness, whatever
+            // colour the symbol is given, so they are drawn like the tools: the contrast ink on the tint, no glass.
+            ToolbarItem(placement: .navigation) {
+                PanelToggle(title: "Browser", systemImage: "sidebar.left", ink: panelToggleInk,
+                            help: helpWithShortcut("Show or hide the browser", .browser)) { model.showSidebar.toggle() }
+            }
+            .sharedBackgroundHidden(sketchTint)
+            ToolbarItemGroup(placement: .primaryAction) {
+                PanelToggle(title: "Inspector", systemImage: "sidebar.right", ink: panelToggleInk,
+                            help: helpWithShortcut("Show or hide the inspector", .inspector)) { model.showInspector.toggle() }
+            }
+            .sharedBackgroundHidden(sketchTint)
+        }
+        .modifier(AccentScope(sketching: model.sketchSession != nil))
+        .focusedSceneValue(\.documentModel, model)
+        .focusedSceneValue(\.tutorialGuide, guide)
+        .environment(\.tutorialSpotlight, guide.spotlight)
+        .environment(\.completionModel, model)
+        .onAppear {
+            model.undoManager = undoManager
+            model.fileURL = fileURL
+            if AIFeature.isAvailable, activeState == .key { DocumentRegistry.shared.activate(model) }
+            if let fileURL { RecentParts.note(fileURL) }
+            AppWindows.openWindow = openWindow
+            dismissWindow(id: AppWindows.welcomeID)  // a part is open; the welcome window has done its job
+        }
+        .onChange(of: undoManager) { model.undoManager = undoManager }
+        .onChange(of: activeState) { if AIFeature.isAvailable, activeState == .key { DocumentRegistry.shared.activate(model) } }
+        .onChange(of: fileURL) {
+            model.fileURL = fileURL
+            if let fileURL { RecentParts.note(fileURL) }  // saved for the first time, or saved as
+        }
+        .modifier(DocumentDialogs(model: model))
+    }
+
+    /// The window's content and its floating panels. The toolbar and the dialogs are added in `body`.
+    private var documentContent: some View {
         // The viewport fills the window, under the toolbar too; the browser and the inspector float
         // over it as glass panels, like the sidebars of current macOS apps. The toolbar has no
         // background until the pointer is over it, when one fades in.
@@ -144,8 +228,9 @@ struct DocumentWindow: View {
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                        Panel.bottomInset(timeline: model.showTimeline)))
                 .ignoresSafeArea()
+            // The toolbar lights up under the pointer only on macOS 26 and later; macOS 15's toolbar and strip don't need it.
             ToolbarFade(tint: sketchTint ? sketchPaper.toolbarTint : Color(nsColor: .windowBackgroundColor),
-                        height: toolbarHeight, visible: toolbarHovered || sketchTint)
+                        height: toolbarHeight, visible: sketchTint || (toolbarHovered && toolsInNativeToolbar))
             VStack(spacing: Panel.inset) {
             HStack(alignment: .top, spacing: 0) {
                 if model.showSidebar {
@@ -277,64 +362,6 @@ struct DocumentWindow: View {
         }
         // The cursor's prompt goes above everything, panels included.
         .overlay { CursorPrompt(model: model) }
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .toolbar(removing: .title)  // the document's name is in its tab
-        .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
-        .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
-        .task(id: toolRowSignature) { toolRowWidths = measureToolRows() }
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in defaultsTick += 1 }
-        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
-        .toolbar {
-            // The tools sit in the middle of the toolbar, in Design and in Sketch mode. They are one item whose
-            // content changes with the room, so the tools don't blink as the window is resized.
-            toolsItem
-            // On the tinted sketch toolbar the system's glass behind these would pick its own brightness, whatever
-            // colour the symbol is given, so they are drawn like the tools: the contrast ink on the tint, no glass.
-            ToolbarItem(placement: .navigation) {
-                PanelToggle(title: "Browser", systemImage: "sidebar.left", ink: panelToggleInk,
-                            help: helpWithShortcut("Show or hide the browser", .browser)) { model.showSidebar.toggle() }
-            }
-            .sharedBackgroundVisibility(sketchTint ? .hidden : .automatic)
-            ToolbarItemGroup(placement: .primaryAction) {
-                PanelToggle(title: "Inspector", systemImage: "sidebar.right", ink: panelToggleInk,
-                            help: helpWithShortcut("Show or hide the inspector", .inspector)) { model.showInspector.toggle() }
-            }
-            .sharedBackgroundVisibility(sketchTint ? .hidden : .automatic)
-        }
-        .modifier(AccentScope(sketching: model.sketchSession != nil))
-        .focusedSceneValue(\.documentModel, model)
-        .focusedSceneValue(\.tutorialGuide, guide)
-        .environment(\.tutorialSpotlight, guide.spotlight)
-        .environment(\.completionModel, model)
-        .onAppear {
-            model.undoManager = undoManager
-            model.fileURL = fileURL
-            if AIFeature.isAvailable, activeState == .key { DocumentRegistry.shared.activate(model) }
-            if let fileURL { RecentParts.note(fileURL) }
-            AppWindows.openWindow = openWindow
-            dismissWindow(id: AppWindows.welcomeID)  // a part is open; the welcome window has done its job
-        }
-        .onChange(of: undoManager) { model.undoManager = undoManager }
-        .onChange(of: activeState) { if AIFeature.isAvailable, activeState == .key { DocumentRegistry.shared.activate(model) } }
-        .onChange(of: fileURL) {
-            model.fileURL = fileURL
-            if let fileURL { RecentParts.note(fileURL) }  // saved for the first time, or saved as
-        }
-        .confirmationDialog(unlinkTitle, isPresented: Binding(get: { model.unlinkPrompt != nil },
-                                                             set: { if !$0 { model.resolveUnlink(useValue: false) } }),
-                            presenting: model.unlinkPrompt) { p in
-            Button("Use \(p.valueText)") { model.resolveUnlink(useValue: true) }
-            Button("Keep \(p.expression)", role: .cancel) { model.resolveUnlink(useValue: false) }
-        } message: { p in
-            Text("This size comes from the expression “\(p.expression)”. Using the dragged value replaces it with a fixed number, so it will no longer follow your parameters.")
-        }
-        .alert(model.alert?.title ?? "", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } }),
-               presenting: model.alert) { _ in
-            Button("OK") { model.alert = nil }
-        } message: { info in
-            Text(info.message)
-        }
     }
 }
 
@@ -875,7 +902,7 @@ struct BrowserList: View {
                 ForEach(looseBodies, id: \.self) { row($0) }
             } label: {
                 FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model, lockable: true)
-                    .dropDestination(for: BrowserDrag.self) { drops, _ in _ = drop(drops, into: nil) }
+                    .browserDropDestination { drop($0, into: nil) }
             }
             DisclosureGroup(isExpanded: $sketchesOpen) {
                 ForEach(model.sketches) { row($0.id) }
@@ -1142,7 +1169,7 @@ struct BrowserFolderNode: View {
             }
             .foregroundStyle(allHidden ? .secondary : .primary)
             .draggable(BrowserDrag(folder: folder.id))
-            .dropDestination(for: BrowserDrag.self) { drops, _ in _ = drop(drops, folder.id) }
+            .browserDropDestination { drop($0, folder.id) }
         }
         .tag("folder:" + folder.id)
         .listRowBackground(SelectedRowBackground(on: selection == "folder:" + folder.id))
@@ -2186,3 +2213,38 @@ struct TransformPopover: View {
     }
 }
 
+
+/// The unlink prompt and the alert of a document window. Kept apart from the window's body, whose modifier
+/// chain is too long for the compiler to type-check in one piece.
+private struct DocumentDialogs: ViewModifier {
+    let model: DocumentModel
+
+    private var unlinkTitle: String {
+        guard let p = model.unlinkPrompt else { return "" }
+        return "Replace \(p.expression) with \(p.valueText)?"
+    }
+
+    /// Dismissing the unlink prompt keeps the expression.
+    private var unlinkShown: Binding<Bool> {
+        Binding(get: { model.unlinkPrompt != nil }, set: { if !$0 { model.resolveUnlink(useValue: false) } })
+    }
+
+    private var alertShown: Binding<Bool> {
+        Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } })
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog(unlinkTitle, isPresented: unlinkShown, presenting: model.unlinkPrompt) { p in
+                Button("Use \(p.valueText)") { model.resolveUnlink(useValue: true) }
+                Button("Keep \(p.expression)", role: .cancel) { model.resolveUnlink(useValue: false) }
+            } message: { p in
+                Text("This size comes from the expression “\(p.expression)”. Using the dragged value replaces it with a fixed number, so it will no longer follow your parameters.")
+            }
+            .alert(model.alert?.title ?? "", isPresented: alertShown, presenting: model.alert) { _ in
+                Button("OK") { model.alert = nil }
+            } message: { info in
+                Text(info.message)
+            }
+    }
+}

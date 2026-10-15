@@ -55,8 +55,14 @@ done
 # The AI mode: in every build unless left out.
 AI_ENABLED=1
 [ "$WITHOUT_AI" != 1 ] || AI_ENABLED=0
-swift build -c "$CONFIG" --product SimplMaker
-[ "$AI_ENABLED" != 1 ] || swift build -c "$CONFIG" --product simplmaker-mcp
+# SwiftPM writes the deployment target into the binary as its SDK version too, and macOS draws an app that says it
+# was built with the macOS 15 SDK the old way on every system: the short pre-26 toolbar, the old window greys.
+# Record the SDK actually used, so macOS 26 and later draw it as a current app; the deployment target stays as it is.
+MIN_MACOS="$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$ROOT/Packaging/Info.plist")"
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+LINK_SDK=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xlinker "$SDK_VERSION")
+swift build -c "$CONFIG" --product SimplMaker "${LINK_SDK[@]}"
+[ "$AI_ENABLED" != 1 ] || swift build -c "$CONFIG" --product simplmaker-mcp "${LINK_SDK[@]}"
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 BIN="$BIN_DIR/SimplMaker"
 APP="$ROOT/dist/SimplMaker.app"

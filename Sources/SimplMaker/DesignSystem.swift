@@ -4,6 +4,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Design-system tokens. Native SwiftUI/AppKit controls already draw with the real system colors,
 /// materials and fonts, so this only covers the numeric scale (spacing, radii, control heights,
@@ -139,12 +140,57 @@ extension View {
     }
 }
 
+extension View {
+    /// Takes browser drags. macOS 26 has the `dropDestination` modifier; older systems get the same drops
+    /// through `onDrop`, loading each item from its provider first.
+    @ViewBuilder
+    func browserDropDestination(_ action: @escaping ([BrowserDrag]) -> Bool) -> some View {
+        if #available(macOS 26.0, *) {
+            self.dropDestination(for: BrowserDrag.self) { drops, _ in _ = action(drops) }
+        } else {
+            self.onDrop(of: [.simplMakerBrowserItem], isTargeted: nil) { providers in
+                Task { @MainActor in
+                    var drops: [BrowserDrag] = []
+                    for provider in providers {
+                        if let drag = await BrowserDrag.load(from: provider) { drops.append(drag) }
+                    }
+                    _ = action(drops)
+                }
+                return true
+            }
+        }
+    }
+}
+
+extension BrowserDrag {
+    /// The drag in an item provider, read as the JSON that `CodableRepresentation` writes. Used on macOS 15,
+    /// where the async `loadTransferable` is not available.
+    @MainActor
+    static func load(from provider: NSItemProvider) async -> BrowserDrag? {
+        await withCheckedContinuation { continuation in
+            _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.simplMakerBrowserItem.identifier) { data, _ in
+                continuation.resume(returning: data.flatMap { try? JSONDecoder().decode(BrowserDrag.self, from: $0) })
+            }
+        }
+    }
+}
+
 extension ToolbarContent {
     /// Drops the glass pill macOS 26 draws behind a toolbar item; older systems draw none.
     @ToolbarContentBuilder
     func withoutSharedBackground() -> some ToolbarContent {
         if #available(macOS 26.0, *) {
             self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
+    }
+
+    /// Hides the glass pill behind a toolbar item while `hidden` is set; older systems draw none anyway.
+    @ToolbarContentBuilder
+    func sharedBackgroundHidden(_ hidden: Bool) -> some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            self.sharedBackgroundVisibility(hidden ? .hidden : .automatic)
         } else {
             self
         }
