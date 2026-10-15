@@ -835,7 +835,7 @@ struct BrowserList: View {
                 ForEach(looseBodies, id: \.self) { row($0) }
             } label: {
                 FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model, lockable: true)
-                    .dropDestination(for: BrowserDrag.self) { drops, _ in drop(drops, into: nil) }
+                    .dropDestination(for: BrowserDrag.self) { drops, _ in _ = drop(drops, into: nil) }
             }
             DisclosureGroup(isExpanded: $sketchesOpen) {
                 ForEach(model.sketches) { row($0.id) }
@@ -1102,7 +1102,7 @@ struct BrowserFolderNode: View {
             }
             .foregroundStyle(allHidden ? .secondary : .primary)
             .draggable(BrowserDrag(folder: folder.id))
-            .dropDestination(for: BrowserDrag.self) { drops, _ in drop(drops, folder.id) }
+            .dropDestination(for: BrowserDrag.self) { drops, _ in _ = drop(drops, folder.id) }
         }
         .tag("folder:" + folder.id)
         .listRowBackground(SelectedRowBackground(on: selection == "folder:" + folder.id))
