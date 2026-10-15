@@ -592,6 +592,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let p = location(event)
         lastPoint = p
         requestPick(at: p)
+        updatePrompt()  // the prompt drops out once the pointer moves onto the toolbar
         if manipulatorDrag == nil {
             let over = manipulatorLayout?.hit(p)
             if over != manipulatorHover {
@@ -614,6 +615,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     override func mouseExited(with event: NSEvent) {
         mouseInside = false
         pickResult(0, at: nil)
+        updatePrompt()
         needsDisplay = true  // hides the cursor prompt
     }
 
@@ -1625,8 +1627,16 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// Tells the model where the cursor is while a prompt is due; the window draws it (CursorPrompt),
     /// so it lies over the floating panels too.
     private func updatePrompt() {
-        let at: CGPoint? = model?.cursorPrompt != nil && mouseInside ? lastPoint : nil
+        let at: CGPoint? = model?.cursorPrompt != nil && mouseInside && pointerOverViewport ? lastPoint : nil
         if model?.cursorPromptAt != at { model?.cursorPromptAt = at }
+    }
+
+    /// Whether the pointer is over the viewport itself, not the toolbar or a side panel laid over it. The prompt
+    /// would otherwise sit under their buttons and tooltips, so it hides there.
+    private var pointerOverViewport: Bool {
+        guard let window, let p = lastPoint, !isOnToolbar(p) else { return false }
+        let hit = window.contentView?.superview?.hitTest(convert(p, to: nil))
+        return hit?.isDescendant(of: self) == true
     }
 
     /// Places the constraint glyphs; true if a new glyph view was added (above everything, labels included).
