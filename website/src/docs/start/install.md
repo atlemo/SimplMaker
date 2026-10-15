@@ -6,7 +6,7 @@ description: What you need, how to install SimplMaker, how the 14-day trial work
 ## What you need
 
 - A Mac with **Apple silicon** (M1 or later)
-- **macOS 26** or later
+- **macOS 15** or later
 - A trackpad or a mouse. A trackpad is nicer for orbiting.
 
 SimplMaker works offline. It needs the internet only to activate a licence key, to check that key about once a week, to look for updates, and to send anonymous usage statistics (which you can turn off in **Settings → General**).

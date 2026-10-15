@@ -251,14 +251,33 @@ main { padding-top: 64px; }
 .hero-meta .lead { grid-column: 1 / span 6; }
 .hero-meta .hero-cta { grid-column: 8 / span 5; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
 .hero-fine { color: var(--ink-2); }
-.hero-media { margin-inline: var(--gutter); }
+/* The orange panel behind the clip: 40px around the video. The pattern is a separate layer at 15% opacity,
+   so the accent stays full strength. pattern.png is a 2x export (224 px wide), drawn at half that size. */
+.hero-media {
+  position: relative; isolation: isolate;
+  margin-inline: var(--gutter);
+  padding: 60px;
+  border-radius: 24px;
+  background-color: var(--ink);
+}
+.hero-media::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background-image: url("/img/pattern.png");
+  background-size: 112px auto;
+  background-repeat: repeat;
+  opacity: 0.15;
+}
 .hero-media .clip { border-radius: 16px; }
+.hero-caption { margin-inline: var(--gutter); }
 .caption { display: flex; justify-content: space-between; gap: 16px; padding-top: 12px; color: var(--ink-2); }
 
 @media (max-width: 860px) {
   .hero-meta .lead, .hero-meta .hero-cta { grid-column: 1 / -1; }
   .hero-top { grid-template-columns: 1fr; }
   .hero-model { display: none; }
+  /* On phones there is no panel and no pattern; the video keeps the side gutter so it is not against the edges. */
+  .hero-media { padding: 0; background: none; border-radius: 0; }
+  .hero-media::before { display: none; }
 }
 
 /* ---------- Home: teaser tiles ---------- */

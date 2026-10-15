@@ -39,7 +39,7 @@ conf = read_conf(REPO / "Packaging" / "licensing.conf")
 VARS = {
     "price": "49",                      # keep in step with the Polar product
     "trial_days": "14",
-    "min_os": "macOS 26",
+    "min_os": "macOS 15",
     "version": (REPO / "VERSION").read_text().strip(),
     "buy_url": conf.get("BUY_URL", "#"),
     "support_email": "support@simplmaker.com",

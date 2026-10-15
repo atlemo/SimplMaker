@@ -24,7 +24,7 @@ git clone --depth 1 --branch V8_0_1 https://github.com/Open-Cascade-SAS/OCCT.git
 cmake -S occt-src -B occt-build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/occt-install \
   -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_LIBRARY_TYPE=Static \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
   -DBUILD_MODULE_FoundationClasses=ON -DBUILD_MODULE_ModelingData=ON \
   -DBUILD_MODULE_ModelingAlgorithms=ON -DBUILD_MODULE_Visualization=ON \
   -DBUILD_MODULE_ApplicationFramework=ON -DBUILD_MODULE_DataExchange=ON \
@@ -42,7 +42,7 @@ That makes one static archive per OCCT toolkit. SimplMaker merges them into one 
 
 ```
 libtool -static -o libSimplOCCT.a $(find occt-install -name 'libTK*.a')
-clang++ -dynamiclib -arch arm64 -mmacosx-version-min=26.0 -o libSimplOCCT.dylib \
+clang++ -dynamiclib -arch arm64 -mmacosx-version-min=15.0 -o libSimplOCCT.dylib \
   -install_name @rpath/libSimplOCCT.dylib -Wl,-force_load,libSimplOCCT.a \
   -framework Foundation -framework AppKit -framework IOKit -lc++
 ```
