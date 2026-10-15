@@ -168,16 +168,17 @@ import UniformTypeIdentifiers
         let scale = view.window?.backingScaleFactor ?? 2
         let p = try #require(renderer.camera.project(world, viewSize: view.bounds.size))
         // The GPU finishes after draw returns (and slower when tests run side by side): read until it settles.
-        var last: [UInt8] = []
+        var last: [UInt8]?
         var pixel = [UInt8](repeating: 0, count: 4)
         for _ in 0..<40 {
             view.draw(view.bounds)
             try await Task.sleep(for: .milliseconds(100))
-            let texture = try #require(view.currentDrawable?.texture)
+            guard let texture = view.fullSizeTexture else { continue }
             texture.getBytes(&pixel, bytesPerRow: 4, from: MTLRegionMake2D(Int(p.x * scale), Int(p.y * scale), 1, 1), mipmapLevel: 0)
             if pixel == last { break }
             last = pixel
         }
+        try #require(last != nil, "no frame came at the view's full size")
         return (Int(pixel[2]), Int(pixel[1]), Int(pixel[0]))  // BGRA
     }
 

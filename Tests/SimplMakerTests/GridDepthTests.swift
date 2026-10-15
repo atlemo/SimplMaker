@@ -7,7 +7,7 @@ import Testing
 @testable import SimplMaker
 
 @Suite(.serialized) @MainActor struct GridDepthTests {
-    private func rgba(_ png: Data) throws -> (width: Int, height: Int, rgba: [UInt8]) {
+    nonisolated private static func rgba(_ png: Data) throws -> (width: Int, height: Int, rgba: [UInt8]) {
         let rep = try #require(NSBitmapImageRep(data: png))
         let image = try #require(rep.cgImage)
         var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
@@ -29,10 +29,17 @@ import Testing
         if let dir = ProcessInfo.processInfo.environment["SNAPSHOT_DUMP_DIR"] {
             try? gridded.png.write(to: URL(fileURLWithPath: dir + "/grid-\(perspective ? "p" : "o")\(size)-\(Int(elevation))-\(Int(azimuth)).png"))
         }
-        let a = try rgba(plain.png), b = try rgba(gridded.png)
+        return try await Self.gridOverBody(plain.png, gridded.png)
+    }
+
+    /// Counted away from the main actor: it takes a second or more per picture in a debug build, and the tests running
+    /// alongside (camera animations, timings) need the main actor meanwhile.
+    @concurrent nonisolated private static func gridOverBody(_ plain: Data, _ gridded: Data) async throws -> Int {
+        let a = try rgba(plain), b = try rgba(gridded)
+        try #require(a.width == b.width && a.height == b.height, "the two pictures are the same size: \(a.width) × \(a.height) and \(b.width) × \(b.height)")
         let bg = Array(a.rgba[0..<4])
-        func isBody(_ x: Int, _ y: Int) -> Bool {
-            let i = (y * a.width + x) * 4
+        let isBody = (0..<(a.width * a.height)).map { p in
+            let i = p * 4
             return abs(Int(a.rgba[i]) - Int(bg[0])) + abs(Int(a.rgba[i + 1]) - Int(bg[1])) + abs(Int(a.rgba[i + 2]) - Int(bg[2])) > 60
         }
         // Only pixels well inside the body count: along its outline a pixel is part body, part background, and the grid
@@ -41,7 +48,7 @@ import Testing
         var count = 0
         for y in margin..<(a.height - margin) { for x in margin..<(a.width - margin) {
             var inside = true
-            scan: for dy in -margin...margin { for dx in -margin...margin where !isBody(x + dx, y + dy) { inside = false; break scan } }
+            scan: for dy in -margin...margin { for dx in -margin...margin where !isBody[(y + dy) * a.width + x + dx] { inside = false; break scan } }
             guard inside else { continue }
             let i = (y * a.width + x) * 4
             let diff = abs(Int(a.rgba[i]) - Int(b.rgba[i])) + abs(Int(a.rgba[i + 1]) - Int(b.rgba[i + 1])) + abs(Int(a.rgba[i + 2]) - Int(b.rgba[i + 2]))

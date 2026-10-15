@@ -81,13 +81,14 @@ import simd
         for _ in 0..<40 {
             view.draw(view.bounds)
             try await Task.sleep(for: .milliseconds(100))
-            let texture = try #require(view.currentDrawable?.texture)
+            guard let texture = view.fullSizeTexture else { continue }
             var bytes = [UInt8](repeating: 0, count: texture.width * texture.height * 4)
             texture.getBytes(&bytes, bytesPerRow: texture.width * 4, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
             picture = Picture(width: texture.width, height: texture.height, bgra: bytes)
             if bytes == last { break }
             last = bytes
         }
+        try #require(picture.width > 0, "no frame came at the view's full size")
         if let dir = ProcessInfo.processInfo.environment["SECTION_DUMP_DIR"] { try dump(picture, to: dir + "/\(name).png") }
         withExtendedLifetime(window) {}
         return (picture, renderer, view)

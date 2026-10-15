@@ -81,7 +81,8 @@ import Testing
     }
 
     /// A sphere of 20 mm across written as a fine STL mesh, with more triangles than the importer is comfortable with.
-    private func bigSTL() throws -> (url: URL, triangles: Int) {
+    /// Made away from the main actor: the export takes about a second, and the tests running alongside need the main actor.
+    @concurrent nonisolated private func bigSTL() async throws -> (url: URL, triangles: Int) {
         let sphere = try KBody.primitive(.sphere(diameter: 20), on: .xy, featureID: "s")
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -93,7 +94,7 @@ import Testing
     @Test func aBigMeshCanBeReducedOnImport() async throws {
         let model = DocumentModel()
         try await settle(model)
-        let (url, triangles) = try bigSTL()
+        let (url, triangles) = try await bigSTL()
         #expect(triangles > DocumentModel.comfortableSTLTriangles, "\(triangles) triangles")
         var asked: (String, Int)?
         model.meshReduction = { name, count in asked = (name, count); return .reduce(to: 4_000) }
@@ -115,7 +116,7 @@ import Testing
     @Test func cancellingTheQuestionImportsNothing() async throws {
         let model = DocumentModel()
         try await settle(model)
-        let (url, _) = try bigSTL()
+        let (url, _) = try await bigSTL()
         model.meshReduction = { _, _ in .cancel }
         #expect(!(await model.importSTEP(from: url)))
         #expect(model.document.features.isEmpty)
@@ -146,7 +147,7 @@ import Testing
     @Test func reducingAMeshShowsProgressInsteadOfTheStartCard() async throws {
         let model = DocumentModel()
         try await settle(model)
-        let (url, _) = try bigSTL()
+        let (url, _) = try await bigSTL()
         model.meshReduction = { _, _ in .reduce(to: 4_000) }
         var seen: [String] = []
         var fractions: [Double] = []
@@ -172,7 +173,7 @@ import Testing
     @Test func aSecondImportWaitsUntilTheFirstIsDone() async throws {
         let model = DocumentModel()
         try await settle(model)
-        let (big, _) = try bigSTL()
+        let (big, _) = try await bigSTL()
         model.meshReduction = { _, _ in .reduce(to: 4_000) }
         let first = Task { await model.importSTEP(from: big) }
         while !model.isImporting { try await Task.sleep(for: .milliseconds(2)) }
