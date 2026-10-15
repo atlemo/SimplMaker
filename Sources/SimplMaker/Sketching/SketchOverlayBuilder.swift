@@ -459,10 +459,16 @@ extension SketchOverlayBuilder {
                      into o: inout SketchOverlay) {
         func f(_ p: SIMD3<Double>) -> SIMD3<Float> { SIMD3(Float(p.x), Float(p.y), Float(p.z)) }
         func at(_ a: Double) -> SIMD3<Double> { center + dial.radius * (cos(a) * axis + sin(a) * dial.side) }
-        let limit = DocumentModel.DragHandle.Dial.limit, steps = 40
+        let limit = DocumentModel.DragHandle.Dial.limit, steps = 72
+        // Opaque around the middle (zero angle), fading to nothing at either end of the arc.
+        func fade(_ t: Double) -> UInt32 {
+            let e = min(max((1 - abs(2 * t - 1)) / 0.6, 0), 1)
+            return UInt32((e * e * (3 - 2 * e) * 65535).rounded())
+        }
         for i in 0..<steps {
-            let a = f(at(-limit + 2 * limit * Double(i) / Double(steps))), b = f(at(-limit + 2 * limit * Double(i + 1) / Double(steps)))
-            o.measure.append(SegmentInstance(ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z, id: 0))
+            let t0 = Double(i) / Double(steps), t1 = Double(i + 1) / Double(steps)
+            let a = f(at(-limit + 2 * limit * t0)), b = f(at(-limit + 2 * limit * t1))
+            o.dialArc.append(SegmentInstance(ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z, id: fade(t0) | fade(t1) << 16))
         }
         let dot = f(at(angle))
         o.dialDot.append(SegmentInstance(ax: dot.x, ay: dot.y, az: dot.z, bx: dot.x, by: dot.y, bz: dot.z, id: PickID.dialHandle.raw))

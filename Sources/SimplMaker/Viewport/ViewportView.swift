@@ -1284,6 +1284,19 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let moveDotZone: NSRect? = model.holeMoveDot.flatMap {
             renderer.camera.project(SIMD3(Float($0.x), Float($0.y), Float($0.z)), viewSize: bounds.size)
         }.map { NSRect(x: $0.x - 22, y: $0.y - 22, width: 44, height: 44) }
+        // The room the taper dial's arc takes on screen: no arrow's field or the options panel sits on it.
+        let dialZone: NSRect? = model.dragHandles.lazy.compactMap { h -> NSRect? in
+            guard let dial = h.dial else { return nil }
+            let limit = DocumentModel.DragHandle.Dial.limit
+            let points = (0...16).compactMap { i -> CGPoint? in
+                let a = -limit + 2 * limit * Double(i) / 16
+                let q = h.base + dial.radius * (cos(a) * h.direction + sin(a) * dial.side)
+                return renderer.camera.project(SIMD3(Float(q.x), Float(q.y), Float(q.z)), viewSize: self.bounds.size)
+            }
+            guard let minX = points.map(\.x).min(), let maxX = points.map(\.x).max(),
+                  let minY = points.map(\.y).min(), let maxY = points.map(\.y).max() else { return nil }
+            return NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).insetBy(dx: -10, dy: -10)
+        }.first
         for h in handles {
             guard let field = handleFields[h.slot], let text = model.handleFieldText(for: h.slot) else { continue }
             field.toolTip = "\(h.label): type a size or an expression, then press Return · Tab for the next · Esc cancels"
@@ -1317,6 +1330,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             if let dot = moveDotZone, dot.intersects(NSRect(origin: NSPoint(x: x, y: y), size: size)) {
                 x = dot.maxX <= maxX ? dot.maxX : max(dot.minX - size.width, 0)
             }
+            // An arrow's field stays off the dial's arc: it moves out to the side of it.
+            if h.dial == nil, let zone = dialZone, zone.intersects(NSRect(origin: NSPoint(x: x, y: y), size: size)) {
+                x = zone.maxX + 6 <= maxX ? zone.maxX + 6 : max(zone.minX - size.width - 6, 0)
+            }
             // Two arrows can end close together: the later field steps down out of the earlier one's way.
             for _ in 0..<4 where placed.contains(where: { $0.insetBy(dx: -2, dy: -2).intersects(NSRect(origin: NSPoint(x: x, y: y), size: size)) }) {
                 y = min(y + size.height + 4, max(bounds.height - size.height, 0))
@@ -1327,8 +1344,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if let hud = featureHUD, let first = placed.first {  // the options panel sits just below the first field
             let s = hud.fittingSize
             let below = placed.map(\.maxY).max() ?? first.maxY
-            hud.frame = NSRect(x: min(max(first.minX, 0), max(bounds.width - s.width, 0)),
+            var frame = NSRect(x: min(max(first.minX, 0), max(bounds.width - s.width, 0)),
                                y: min(below + 6, max(bounds.height - s.height, 0)), width: s.width, height: s.height)
+            if let zone = dialZone, zone.intersects(frame) {  // under the dial's arc, or above it when there's no room
+                frame.origin.y = zone.maxY + 6 + s.height <= bounds.height ? zone.maxY + 6 : max(zone.minY - s.height - 6, 0)
+            }
+            hud.frame = frame
         }
         if model.handleFocusRequest != seenHandleFocusRequest {
             // A new feature: select its size so typing replaces it (outside drawing, to be safe).

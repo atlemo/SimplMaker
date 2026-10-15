@@ -59,6 +59,7 @@ enum Shaders {
         float2 dir [[flat]];   // the line's direction on screen, in framebuffer pixels (y down), for dashes
         float2 tip [[flat]];   // an arrowhead's tip, or a dashed line's start, in framebuffer pixels
         uint id [[flat]];
+        float fade;            // opacity of a fading line (style 512), 1 otherwise; 0 to 1 along a line fading in (style 1024)
     };
     struct FragOut {
         float4 color [[color(0)]];
@@ -413,6 +414,7 @@ enum Shaders {
                 gone.dir = float2(0.0);
                 gone.tip = float2(0.0);
                 gone.id = 0;
+                gone.fade = 1.0;
                 return gone;
             }
             float t = da / (da - db);
@@ -446,6 +448,7 @@ enum Shaders {
                 gone.dir = float2(0.0);
                 gone.tip = float2(0.0);
                 gone.id = 0;
+                gone.fade = 1.0;
                 return gone;
             }
             float4 ta = mix(ca, cb, t0), tb = mix(ca, cb, t1);
@@ -466,7 +469,8 @@ enum Shaders {
         bool atB = vid >= 2;
         float side = (vid % 2 == 0) ? -1.0 : 1.0;
         float4 c = atB ? cb : ca;
-        float2 offset = (nrm * side + d * (atB ? 1.0 : -1.0)) * thickness * 0.5;
+        bool fading = (p.style & 512u) != 0;
+        float2 offset = (nrm * side + d * (fading ? 0.0 : (atB ? 1.0 : -1.0))) * thickness * 0.5;
         if ((p.style & 8u) != 0) {
             // An arrowhead: a triangle pointing along a to b. `thickness` is its width on screen, and it is a
             // little longer than wide. It stands mostly past b, so the tip is well beyond where the shaft
@@ -499,6 +503,8 @@ enum Shaders {
         float2 anchor = (p.style & 8u) != 0 ? tipClip : sa;
         o.tip = float2(anchor.x + halfSize.x, halfSize.y - anchor.y);
         o.id = s.id;
+        o.fade = fading ? float(atB ? (s.id >> 16) : (s.id & 0xFFFFu)) / 65535.0
+                        : ((p.style & 1024u) != 0 ? (atB ? 1.0 : 0.0) : 1.0);
         return o;
     }
 
@@ -569,7 +575,8 @@ enum Shaders {
             if (isSelected(in.id, sel, u.selectedCount) || edgeSelected(in.id, sel, u.selectedCount)) c = p.selectColor;
         }
         FragOut o;
-        o.color = float4(c.rgb, c.a * coverage);
+        float fade = (p.style & 1024u) != 0 ? smoothstep(0.0, 0.8, in.fade) : in.fade;
+        o.color = float4(c.rgb, c.a * coverage * fade);
         o.id = p.pickable != 0 ? in.id : 0;
         return o;
     }

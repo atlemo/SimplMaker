@@ -132,6 +132,7 @@ struct SketchOverlay {
     var handle: [SegmentInstance] = []     // drag handle: shaft + tip (zero-length)
     var moveHandle: [SegmentInstance] = [] // a hole's move dot (zero-length)
     var dialDot: [SegmentInstance] = []    // the dot on an extrude's taper dial (zero-length)
+    var dialArc: [SegmentInstance] = []    // the dial's arc, faded out toward its ends (the id carries the fade, see DrawStyle.fade)
     var snap: [SegmentInstance] = []       // where the cursor snapped: a zero-length marker
     var measure: [SegmentInstance] = []    // the Measure tool's line between two pieces, drawn over the bodies
     var measurePoints: [SegmentInstance] = []  // and its ends (zero-length)
@@ -329,6 +330,11 @@ enum DrawStyle {
     static let clipped: UInt32 = 128
     /// A face drawn only where the section analysis shows the cut face (see sectionFace in the shader), not elsewhere.
     static let capsOnly: UInt32 = 256
+    /// A line whose opacity runs from the start's to the end's along each segment: the segment's id holds both, as
+    /// 16-bit fractions (start in the low half, end in the high half). Its ends are cut square so neighbours don't overlap.
+    static let fade: UInt32 = 512
+    /// A line that fades in along each segment, from nothing at its start to full strength toward its end (an arrow's shaft).
+    static let fadeAlong: UInt32 = 1024
 }
 
 /// How bodies are drawn (View ▸ Visual Style), as in Fusion.
@@ -374,6 +380,11 @@ final class Renderer {
     /// by alpha-to-coverage, which needs multisampling (without it they have hard edges).
     private let shapePipeline: MTLRenderPipelineState
     private let shapeDecorationPipeline: MTLRenderPipelineState
+    /// For lines that fade out (the taper dial's arc): blended, so a translucent line shows what is behind it.
+    private let fadePipeline: MTLRenderPipelineState
+    /// The same for an arrow's shaft, which can also be picked (`Shape`: its dashes are antialiased by the blending).
+    private let fadeShapePipeline: MTLRenderPipelineState
+    private let fadeShapeDecorationPipeline: MTLRenderPipelineState
     /// Reads a pixel of the multisampled ID buffer.
     private var pickSamplePipeline: MTLComputePipelineState?
     /// Samples per pixel (View ▸ Settings ▸ Viewport ▸ Antialiasing), fixed at launch.
@@ -447,6 +458,7 @@ final class Renderer {
         var handle: MTLBuffer?, handleCount = 0
         var moveHandle: MTLBuffer?, moveHandleCount = 0
         var dialDot: MTLBuffer?, dialDotCount = 0
+        var dialArc: MTLBuffer?, dialArcCount = 0
         var snap: MTLBuffer?, snapCount = 0
         var measure: MTLBuffer?, measureCount = 0
         var measurePoints: MTLBuffer?, measurePointCount = 0
@@ -546,6 +558,9 @@ final class Renderer {
             decorationPipeline = try pipeline("segmentVertex", "segmentFragment", writesID: false)
             shapePipeline = try pipeline("segmentVertex", "segmentFragment", alphaToCoverage: true)
             shapeDecorationPipeline = try pipeline("segmentVertex", "segmentFragment", writesID: false, alphaToCoverage: true)
+            fadePipeline = try pipeline("segmentVertex", "segmentFragment", blend: true, writesID: false)
+            fadeShapePipeline = try pipeline("segmentVertex", "segmentFragment", blend: true)
+            fadeShapeDecorationPipeline = try pipeline("segmentVertex", "segmentFragment", blend: true, writesID: false)
             if samples > 1, let kernel = library.makeFunction(name: "pickSample") {
                 pickSamplePipeline = try device.makeComputePipelineState(function: kernel)
             }
@@ -648,6 +663,7 @@ final class Renderer {
         g.handle = makeBuffer(o.handle); g.handleCount = o.handle.count
         g.moveHandle = makeBuffer(o.moveHandle); g.moveHandleCount = o.moveHandle.count
         g.dialDot = makeBuffer(o.dialDot); g.dialDotCount = o.dialDot.count
+        g.dialArc = makeBuffer(o.dialArc); g.dialArcCount = o.dialArc.count
         g.snap = makeBuffer(o.snap); g.snapCount = o.snap.count
         g.section = makeBuffer(o.section); g.sectionCount = o.section.count
         g.measure = makeBuffer(o.measure); g.measureCount = o.measure.count
@@ -1211,6 +1227,10 @@ final class Renderer {
         let handleColor = overlay.handleInvalid ? p.invalid : p.handle
         segments(overlay.measure, overlay.measureCount,
                  DrawParams(color: p.handle, hoverColor: p.handle, selectColor: p.handle, thickness: 2 * scale, depthBias: 0, pickable: 0))
+        segments(overlay.dialArc, overlay.dialArcCount,
+                 DrawParams(color: handleColor, hoverColor: handleColor, selectColor: handleColor, thickness: 3 * scale,
+                            depthBias: 0, pickable: 0, style: DrawStyle.fade),
+                 pipeline: fadePipeline)
         segments(overlay.measurePoints, overlay.measurePointCount,
                  DrawParams(color: p.handle, hoverColor: p.handle, selectColor: p.handle, thickness: 9 * scale, depthBias: 0, pickable: 0))
         // The arrows (a shaft and a rounded head) are drawn in three layers, so their outline is one shape:
@@ -1226,12 +1246,21 @@ final class Renderer {
             let grow = Float(layer) * ring, solid = layer == 0
             let hoverTint = solid ? (overlay.handleInvalid ? p.invalid : hover) : color
             let selectTint = solid ? p.selection : color
-            segments(overlay.handle, overlay.handleCount,
-                     DrawParams(color: color, hoverColor: hoverTint, selectColor: selectTint,
-                                thickness: 3 * scale + 2 * grow, depthBias: 0, pickable: solid ? 1 : 0,
-                                style: DrawStyle.dashedRound, grow: grow, radius: 1.5 * scale, minLength: tailLength,
-                                dashPitch: 9 * scale, dashLength: 5 * scale),
-                     pipeline: solid ? shapePipeline : shapeDecorationPipeline)
+            if let handle = overlay.handle, overlay.handleCount > 0 {
+                // The shaft fades in from its start. Each arrow's first segment is drawn here (blended, so once only);
+                // its second is the same line again, kept for the head.
+                var shaft = DrawParams(color: color, hoverColor: hoverTint, selectColor: selectTint,
+                                       thickness: 3 * scale + 2 * grow, depthBias: 0, pickable: solid ? 1 : 0,
+                                       style: DrawStyle.dashedRound | DrawStyle.fadeAlong, grow: grow, radius: 1.5 * scale,
+                                       minLength: tailLength, dashPitch: 9 * scale, dashLength: 5 * scale)
+                enc.setRenderPipelineState(solid ? fadeShapePipeline : fadeShapeDecorationPipeline)
+                enc.setVertexBytes(&shaft, length: MemoryLayout<DrawParams>.stride, index: 3)
+                enc.setFragmentBytes(&shaft, length: MemoryLayout<DrawParams>.stride, index: 3)
+                for first in stride(from: 0, to: overlay.handleCount, by: 2) {
+                    enc.setVertexBuffer(handle, offset: MemoryLayout<SegmentInstance>.stride * first, index: 0)
+                    enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: 1)
+                }
+            }
             if let handle = overlay.handle, overlay.handleCount > 1 {
                 var tip = DrawParams(color: color, hoverColor: hoverTint, selectColor: selectTint,
                                      thickness: headWidth, depthBias: 0, pickable: solid ? 1 : 0,
