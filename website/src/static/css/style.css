@@ -283,6 +283,60 @@ main { padding-top: 64px; }
   .price-strip .figure, .price-strip .copy { grid-column: 1 / -1; }
 }
 
+/* ---------- Home: tool wall (accent, full bleed) ---------- */
+.toolwall { background: var(--accent); color: var(--ink); padding-bottom: 0; }
+.toolwall-head { display: grid; grid-template-columns: repeat(12, 1fr); column-gap: clamp(16px, 2vw, 32px); align-items: end; row-gap: 32px; margin-bottom: clamp(40px, 6vw, 96px); }
+.toolwall-head .big { grid-column: 1 / span 8; }
+.toolwall-side { grid-column: 9 / span 4; padding-bottom: 0.8vw; }
+.toolwall-side .lead { margin-bottom: 28px; }
+.toolwall .btn-ink:hover { background: var(--ink); color: var(--accent); }
+@media (max-width: 860px) { .toolwall-head .big, .toolwall-side { grid-column: 1 / -1; } }
+
+.toolwall-grid { display: grid; grid-template-columns: repeat(8, 1fr); border-top: 2px solid var(--ink); }
+.toolwall-grid li { position: relative; aspect-ratio: 1 / 1; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
+.toolwall-grid li:nth-child(8n) { border-right: 0; }
+.toolwall-grid a {
+  position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between;
+  padding: clamp(8px, 1vw, 14px); overflow: hidden; transition: background 0.25s, color 0.25s;
+}
+.toolwall-grid a:focus-visible { outline: 3px solid var(--ink); outline-offset: -8px; }
+.toolwall-grid .n, .toolwall-grid .t { font-family: var(--mono); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
+.toolwall-grid .n { font-size: 0.66rem; opacity: 0.6; }
+.toolwall-grid .t { font-size: clamp(0.6rem, 0.8vw, 0.78rem); line-height: 1.25; font-weight: 600; }
+.toolwall-grid svg {
+  position: absolute; left: 50%; top: 46%; width: 48%; height: auto; transform: translate(-50%, -50%);
+  fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: square; stroke-linejoin: miter;
+  transition: transform 0.45s var(--ease);
+}
+.toolwall-grid svg .d { stroke-dasharray: 3 4; opacity: 0.7; }
+.toolwall-grid svg .x { stroke-dasharray: 3 4; opacity: 0.75; }
+.toolwall-grid svg .f { fill: currentColor; }
+.toolwall-grid svg .th { stroke-width: 4; }
+.toolwall-grid svg .g { stroke-width: 6; stroke-linecap: butt; }
+.toolwall-grid a:hover { background: var(--ink); color: var(--accent); }
+.toolwall-grid a:hover svg { transform: translate(-50%, -50%) scale(1.14) rotate(-4deg); }
+
+/* cells pop in one after another when the wall scrolls into view */
+.js .toolwall-grid.reveal { opacity: 1; transform: none; }
+.js .toolwall-grid.reveal li { opacity: 0; transform: translateY(18px); transition: opacity 0.6s var(--ease), transform 0.6s var(--ease); transition-delay: calc(var(--i) * 22ms); }
+.js .toolwall-grid.reveal.in li { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .js .toolwall-grid.reveal li { opacity: 1; transform: none; transition: none; } }
+
+@media (max-width: 1000px) {
+  .toolwall-grid { grid-template-columns: repeat(4, 1fr); }
+  .toolwall-grid li:nth-child(8n) { border-right: 2px solid var(--ink); }
+  .toolwall-grid li:nth-child(4n) { border-right: 0; }
+  .toolwall-grid .t { font-size: clamp(0.62rem, 1.5vw, 0.8rem); }
+}
+@media (max-width: 640px) {
+  .toolwall-grid .n { display: none; }
+  .toolwall-grid .t { font-size: 0.58rem; letter-spacing: 0.03em; margin-top: auto; }
+  .toolwall-grid svg { width: 44%; top: 38%; }
+}
+
+/* the price strip now ends the home page, right above the dark footer */
+.price-section { padding-bottom: clamp(56px, 8vw, 110px); }
+
 /* ---------- Final CTA ---------- */
 .final .big { margin-bottom: clamp(28px, 4vw, 56px); }
 .final.dark { padding-bottom: clamp(56px, 8vw, 110px); }

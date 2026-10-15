@@ -22,7 +22,7 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
   </div>
   <div class="hero-media">
     {{clip:hero|3560/2160|Hero clip · sketch a box, extrude it, change a parameter, watch it rebuild}}
-    <p class="caption mono"><span>A part, from sketch to STL</span><span>01:10</span></p>
+    <p class="caption mono"><span>A beautiful, fast native macOS interface</span><span>01:10</span></p>
   </div>
 </section>
 
@@ -36,7 +36,7 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
       <article class="tile reveal">
         {{clip:parameters_4_3|4/3|Clip · change width from 40 to 60 mm, the whole bracket rebuilds}}
         <p class="mono">01 · Parameters</p>
-        <h3 class="mid">Change a number.</h3>
+        <h3 class="mid">Change it later.</h3>
         <p>Name a size once: <code>wall</code>, <code>tolerance</code>, <code>hole_d</code>. Edit it and everything built on it rebuilds.</p>
       </article>
       <article class="tile reveal">
@@ -48,14 +48,58 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
       <article class="tile reveal">
         {{clip:export_4_3|4/3|Clip · export an STL and open it in the slicer}}
         <p class="mono">03 · Print</p>
-        <h3 class="mid">Export. Slice.</h3>
-        <p>STL and STEP out, STEP in. Straight to your slicer, and no cloud in between.</p>
+        <h3 class="mid">Import. Export.</h3>
+        <p>STL and STEP, in and out. Straight to your slicer, and no cloud in between.</p>
       </article>
     </div>
   </div>
 </section>
 
-<section class="section dark">
+<section class="section toolwall">
+  <div class="wrap toolwall-head">
+    <h2 class="big">Thirty-two tools.<br />One window.</h2>
+    <div class="toolwall-side">
+      <p class="lead">Sketch, shape, finish and print, without a menu maze.</p>
+      <a class="btn btn-ink btn-lg" href="/features/">Learn the features</a>
+    </div>
+  </div>
+  <ul class="toolwall-grid reveal" aria-label="Tools in SimplMaker, each linking to its page in the docs">
+      <li style="--i:0"><a href="/docs/sketch/start/"><span class="n">01</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="14" width="32" height="22"/><circle cx="8" cy="14" r="2.6" class="f"/><circle cx="40" cy="36" r="2.6" class="f"/></svg><span class="t">Sketch</span></a></li>
+      <li style="--i:1"><a href="/docs/sketch/constraints/"><span class="n">02</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 40V10M10 40H40M10 30H20V40"/><path d="M26 14l10 0" class="d"/></svg><span class="t">Constraints</span></a></li>
+      <li style="--i:2"><a href="/docs/sketch/dimensions/"><span class="n">03</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 12v24M40 12v24M8 24h32M8 24l6-4M8 24l6 4M40 24l-6-4M40 24l-6 4"/></svg><span class="t">Dimensions</span></a></li>
+      <li style="--i:3"><a href="/docs/sketch/text/"><span class="n">04</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 10H39M24 10V40M16 40H32"/></svg><span class="t">Text</span></a></li>
+      <li style="--i:4"><a href="/docs/sketch/draw/#gears"><span class="n">05</span><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="12"/><circle cx="24" cy="24" r="4"/><g class="g"><path d="M24 4V12"/><path d="M24 36V44"/><path d="M4 24H12"/><path d="M36 24H44"/><path d="M9.9 9.9L15.5 15.5"/><path d="M32.5 32.5L38.1 38.1"/><path d="M9.9 38.1L15.5 32.5"/><path d="M32.5 15.5L38.1 9.9"/></g></svg><span class="t">Gear</span></a></li>
+      <li style="--i:5"><a href="/docs/create/plane/"><span class="n">06</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M4 36L16 22H44L32 36Z"/><path d="M24 29V8M19 13L24 8L29 13"/></svg><span class="t">Plane</span></a></li>
+      <li style="--i:6"><a href="/docs/concepts/parameters/"><span class="n">07</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M6 13H42M6 24H42M6 35H42"/><circle cx="17" cy="13" r="4.5" class="f"/><circle cx="31" cy="24" r="4.5" class="f"/><circle cx="21" cy="35" r="4.5" class="f"/></svg><span class="t">Parameters</span></a></li>
+      <li style="--i:7"><a href="/docs/concepts/timeline/"><span class="n">08</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M4 24H44"/><circle cx="10" cy="24" r="4.5" class="f"/><circle cx="24" cy="24" r="4.5" class="f"/><circle cx="38" cy="24" r="4.5"/><path d="M24 12V19M38 12V19" class="d"/></svg><span class="t">Timeline</span></a></li>
+      <li style="--i:8"><a href="/docs/create/extrude/"><span class="n">09</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 28L24 36L40 28L24 20Z"/><path d="M8 28V40L24 48L40 40V28M24 36V48" class="x"/><path d="M24 4V16M18 10L24 4L30 10"/></svg><span class="t">Extrude</span></a></li>
+      <li style="--i:9"><a href="/docs/create/revolve/"><span class="n">10</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4V44" class="d"/><path d="M24 14C34 14 40 18 40 22S34 30 24 30" /><path d="M24 14C14 14 8 18 8 22S14 30 24 30"/><path d="M8 38C14 44 34 44 40 38M36 36l4 2l-1 5"/></svg><span class="t">Revolve</span></a></li>
+      <li style="--i:10"><a href="/docs/create/sweep/"><span class="n">11</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 40C10 22 38 34 38 12"/><circle cx="10" cy="40" r="4.5"/><circle cx="38" cy="12" r="2.6" class="f"/></svg><span class="t">Sweep</span></a></li>
+      <li style="--i:11"><a href="/docs/create/loft/"><span class="n">12</span><svg viewBox="0 0 48 48" aria-hidden="true"><ellipse cx="24" cy="10" rx="8" ry="3"/><ellipse cx="24" cy="38" rx="17" ry="6"/><path d="M16 10L7 36M32 10l9 26"/></svg><span class="t">Loft</span></a></li>
+      <li style="--i:12"><a href="/docs/create/rib/"><span class="n">13</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 6V40H42"/><path d="M10 18L30 40" /><path d="M10 28L20 40" class="d"/></svg><span class="t">Rib</span></a></li>
+      <li style="--i:13"><a href="/docs/create/pipe/"><span class="n">14</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M6 16H28Q40 16 40 28V44"/><path d="M6 30H22Q28 30 28 36V44"/></svg><span class="t">Pipe</span></a></li>
+      <li style="--i:14"><a href="/docs/modify/combine/"><span class="n">15</span><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="18" cy="24" r="12"/><circle cx="30" cy="24" r="12"/></svg><span class="t">Combine</span></a></li>
+      <li style="--i:15"><a href="/docs/modify/split/"><span class="n">16</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="6" width="32" height="15"/><rect x="8" y="27" width="32" height="15"/><path d="M3 24H45" class="d"/></svg><span class="t">Split</span></a></li>
+      <li style="--i:16"><a href="/docs/modify/fillet-chamfer/"><span class="n">17</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 8H40V40" class="d"/><path d="M8 40V26A18 18 0 0 1 26 8H40"/></svg><span class="t">Fillet</span></a></li>
+      <li style="--i:17"><a href="/docs/modify/fillet-chamfer/#chamfer-types"><span class="n">18</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 8H40V40" class="d"/><path d="M8 40V22L22 8H40"/></svg><span class="t">Chamfer</span></a></li>
+      <li style="--i:18"><a href="/docs/modify/shell/"><span class="n">19</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6L40 15V33L24 42L8 33V15Z"/><path d="M24 17L32 21.5V30.5L24 35L16 30.5V21.5Z"/></svg><span class="t">Shell</span></a></li>
+      <li style="--i:19"><a href="/docs/modify/hole/"><span class="n">20</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="7" width="34" height="34" rx="3"/><circle cx="24" cy="24" r="9"/><path d="M24 12V36M12 24H36" class="d"/></svg><span class="t">Hole</span></a></li>
+      <li style="--i:20"><a href="/docs/modify/thread/"><span class="n">21</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M15 6V42M33 6V42"/><path d="M15 15L33 10M15 25L33 20M15 35L33 30M15 44L33 40"/></svg><span class="t">Thread</span></a></li>
+      <li style="--i:21"><a href="/docs/modify/draft/"><span class="n">22</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 42V6" class="d"/><path d="M11 42L17 8H31L37 42Z"/><path d="M11 22C14 22 15 24 15 26"/></svg><span class="t">Draft</span></a></li>
+      <li style="--i:22"><a href="/docs/modify/mirror-pattern/#mirror"><span class="n">23</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3V45" class="d"/><path d="M19 12L7 38H19Z"/><path d="M29 12L41 38H29Z" class="x"/></svg><span class="t">Mirror</span></a></li>
+      <li style="--i:23"><a href="/docs/modify/mirror-pattern/#pattern"><span class="n">24</span><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="11" cy="11" r="4.5"/><circle cx="24" cy="11" r="4.5"/><circle cx="37" cy="11" r="4.5"/><circle cx="11" cy="24" r="4.5"/><circle cx="24" cy="24" r="4.5"/><circle cx="37" cy="24" r="4.5"/><circle cx="11" cy="37" r="4.5"/><circle cx="24" cy="37" r="4.5"/><circle cx="37" cy="37" r="4.5"/></svg><span class="t">Pattern</span></a></li>
+      <li style="--i:24"><a href="/docs/modify/move-scale/#move-and-rotate"><span class="n">25</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5V43M5 24H43M17 11L24 5L31 11M17 37L24 43L31 37M11 17L5 24L11 31M37 17L43 24L37 31"/></svg><span class="t">Move</span></a></li>
+      <li style="--i:25"><a href="/docs/modify/move-scale/#scale"><span class="n">26</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="22" width="20" height="20"/><path d="M26 22L42 6M31 6H42V17"/></svg><span class="t">Scale</span></a></li>
+      <li style="--i:26"><a href="/docs/modify/lay-on-floor/"><span class="n">27</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M4 42H44"/><rect x="10" y="26" width="28" height="16"/><path d="M24 5V18M18 12L24 18L30 12"/></svg><span class="t">Lay on floor</span></a></li>
+      <li style="--i:27"><a href="/docs/modify/section-analysis/"><span class="n">28</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="7" width="34" height="34"/><path d="M7 21L21 7M7 35L35 7M19 41L41 19M33 41L41 33"/></svg><span class="t">Section</span></a></li>
+      <li style="--i:28"><a href="/docs/print/print-preview/"><span class="n">29</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 41H40M11 34H37M14 27H34M17 20H31M20 13H28" class="t"/></svg><span class="t">Print preview</span></a></li>
+      <li style="--i:29"><a href="/docs/concepts/files/#import"><span class="n">30</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 34V6M14 24L24 34L34 24"/><path d="M7 37V43H41V37"/></svg><span class="t">Import</span></a></li>
+      <li style="--i:30"><a href="/docs/print/export/"><span class="n">31</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6V34M14 16L24 6L34 16"/><path d="M7 37V43H41V37"/></svg><span class="t">Export</span></a></li>
+      <li style="--i:31"><a href="/docs/ai/assistant/"><span class="n">32</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5C25.5 17 31 22.5 43 24C31 25.5 25.5 31 24 43C22.5 31 17 25.5 5 24C17 22.5 22.5 17 24 5Z"/></svg><span class="t">AI assistant</span></a></li>
+  </ul>
+</section>
+
+<section class="section dark price-section">
   <div class="wrap price-strip">
     <div class="figure reveal"><span class="num">${{price}}</span></div>
     <div class="copy reveal">
@@ -63,17 +107,6 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
       <p class="muted">Pay once and keep that version forever. No subscription, no account, no cloud, no expiring files. Try it free for {{trial_days}} days first.</p>
       <a class="arrow-link" href="/pricing/">Pricing</a>
     </div>
-  </div>
-</section>
-
-<section class="section final">
-  <div class="wrap">
-    <h2 class="big">Try it for<br />{{trial_days}} days.</h2>
-    <div class="btn-row">
-      <a class="btn btn-accent btn-lg" href="/download/">Download for Mac</a>
-      <a class="btn btn-ghost btn-lg" href="/pricing/">See pricing</a>
-    </div>
-    <p class="mono muted" style="margin-top:24px">No card. No account. {{min_os}}+, Apple Silicon.</p>
   </div>
 </section>
 

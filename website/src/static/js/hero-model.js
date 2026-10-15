@@ -88,10 +88,11 @@
     var lineCount = lineData.length / 8;
 
     // ---- state ----
-    var yaw = 0.62, pitch = 0.5;           // radians; yaw turns about Z (up), pitch tips the part toward the viewer
+    var yaw = -0.85, pitch = 0.46;          // radians; yaw turns about Z (up), pitch tips the part toward the viewer
     var vYaw = 0, vPitch = 0;              // drag inertia
-    var SPIN = reduced ? 0 : 0.28;         // idle spin, radians per second
+    var SPIN = reduced ? 0 : 0.28;         // idle spin, radians per second (its mean; the speed varies)
     var dragging = false, lastX = 0, lastY = 0, lastT = 0;
+    var idleT = 0;                         // seconds of idle motion so far; drives the slow drift
     var inView = true, tabShown = true, visible = true, raf = 0, prev = 0;
     var W = 1, H = 1, dpr = 1;
     var DIST = 7, FOV = DIST * 0.46, NEAR = 1, FAR = 20;   // FOV here is the focal factor: the part fills about 46% of the box
@@ -162,10 +163,17 @@
       var dt = prev ? Math.min(0.05, (t - prev) / 1000) : 0.016;
       prev = t;
       if (!dragging) {
-        // Let a flick coast, then ease back into the idle spin.
+        // Let a flick coast, then ease back into the idle motion: a steady turn to the right whose speed breathes a
+        // little, and (fading in over the first seconds) a slow nod up and down, so it never repeats exactly.
         var k = Math.pow(0.04, dt);
-        vYaw = SPIN + (vYaw - SPIN) * k;
-        vPitch *= k;
+        idleT += dt;
+        var fade = Math.min(1, idleT / 5), yawTarget = 0, pitchTarget = 0;
+        if (SPIN) {
+          yawTarget = SPIN * (1 + 0.35 * Math.sin(0.43 * idleT) + 0.15 * Math.sin(1.1 * idleT + 2));
+          pitchTarget = fade * (0.1 * Math.cos(0.28 * idleT) + 0.04 * Math.cos(0.67 * idleT + 0.8)) + 0.1 * (0.45 - pitch);   // the last term keeps the nod around the starting view
+        }
+        vYaw = yawTarget + (vYaw - yawTarget) * k;
+        vPitch = pitchTarget + (vPitch - pitchTarget) * k;
         yaw += vYaw * dt;
         pitch = clampPitch(pitch + vPitch * dt);
       }
