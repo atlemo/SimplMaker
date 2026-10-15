@@ -50,6 +50,20 @@ import Testing
         #expect(covered > 0.08 && covered < 0.9, "the part fills a good part of the picture: \(covered)")
     }
 
+    /// A new window's layer takes the window's scale only on a later pass of the run loop, and its first frames came at half
+    /// the pixels asked for; with the main thread busy, two of them matched and a half-size picture went back to the assistant.
+    @Test func theFirstFrameIsTheSizeAskedFor() throws {
+        let renderer = try #require(Renderer())
+        for (width, height) in [(1024, 768), (640, 480), (801, 601)] {
+            let (view, window) = ViewportSnapshot.offscreenView(width: width, height: height, renderer: renderer)
+            view.draw(view.bounds)
+            renderer.waitForGPU()
+            let texture = try #require(view.currentDrawable?.texture)
+            #expect(texture.width == width && texture.height == height, "asked for \(width) × \(height), drew \(texture.width) × \(texture.height)")
+            withExtendedLifetime(window) {}
+        }
+    }
+
     @Test func differentDirectionsGiveDifferentPictures() async throws {
         let t = try await part()
         var shares: [String: Double] = [:]

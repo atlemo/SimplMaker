@@ -101,19 +101,33 @@ import Testing
     private let iso = CameraPose(target: SIMD3(30, 20, 0), distance: 220, yaw: -.pi / 3, pitch: 0.55)
     private let flat = CameraPose(target: SIMD3(0, 0, 0), distance: 60, yaw: -.pi / 2, pitch: 1.55)
 
+    /// Waits (up to two seconds) for the view to stop moving by itself, noting each pose it passes through.
+    private func poses(until view: ViewportMTKView) async throws -> [CameraPose] {
+        var seen: [CameraPose] = []
+        let began = Date()
+        while view.isAnimatingCamera && Date().timeIntervalSince(began) < 2 {
+            if let pose = view.renderer?.camera.pose, pose != seen.last { seen.append(pose) }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        return seen
+    }
+
     @Test func theCameraTurnsInStagesAndArrives() async throws {
         guard NSWorkspace.shared.accessibilityDisplayShouldReduceMotion == false else { return }
         let view = try makeView()
         let renderer = try #require(view.renderer)
-        renderer.camera.pose = flat
-        view.animateCamera(to: iso, duration: 0.3)
-        #expect(view.isAnimatingCamera)
-        try await Task.sleep(for: .milliseconds(150))
-        let mid = renderer.camera.pose
-        #expect(mid != flat && !mid.isClose(to: iso), "part of the way, not jumped: \(mid)")
-        try await Task.sleep(for: .milliseconds(400))
-        #expect(renderer.camera.pose.isClose(to: iso))
-        #expect(!view.isAnimatingCamera)
+        // The animation goes by the clock, and the main actor is shared with the tests running alongside: held up for
+        // longer than the whole turn, it rightly jumps to the end, and that run shows nothing. So a few tries.
+        var between: CameraPose?
+        for _ in 0..<5 where between == nil {
+            renderer.camera.pose = flat
+            view.animateCamera(to: iso, duration: 0.3)
+            #expect(view.isAnimatingCamera)
+            between = try await poses(until: view).first { $0 != flat && !$0.isClose(to: iso) }
+            #expect(renderer.camera.pose.isClose(to: iso))
+            #expect(!view.isAnimatingCamera)
+        }
+        #expect(between != nil, "part of the way, not jumped")
     }
 
     @Test func takingHoldOfTheViewStopsIt() async throws {
@@ -138,7 +152,7 @@ import Testing
         view.animateCamera(to: iso, duration: 0.3)
         try await Task.sleep(for: .milliseconds(50))
         view.animateCamera(to: flat, duration: 0.2)  // straight back
-        try await Task.sleep(for: .milliseconds(400))
+        _ = try await poses(until: view)
         #expect(renderer.camera.pose.isClose(to: flat))
         #expect(!view.isAnimatingCamera)
     }

@@ -139,17 +139,7 @@ enum ViewportSnapshot {
         }
         shared = renderer
 
-        // A scale of 1 or 2 points per pixel makes no difference to the picture, so the window's own is used and the size is pinned.
-        let scale = 2
-        let view = ViewportMTKView(frame: NSRect(x: 0, y: 0, width: width / scale, height: height / scale), device: renderer.device)
-        view.renderer = renderer
-        view.colorPixelFormat = Renderer.colorFormat
-        view.depthStencilPixelFormat = Renderer.depthFormat
-        view.framebufferOnly = false
-        view.autoResizeDrawable = false
-        view.drawableSize = CGSize(width: width, height: height)
-        let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
-        window.contentView = view
+        let (view, window) = offscreenView(width: width, height: height, renderer: renderer)
 
         renderer.setScene(meshes)
         var overlay = SketchOverlay()
@@ -197,10 +187,18 @@ enum ViewportSnapshot {
         var previous: [UInt8] = []
         var pixels: [UInt8] = []
         var size = (width: 0, height: 0)
+        var wrongSize: (width: Int, height: Int)?
         for attempt in 0..<12 {
             view.draw(view.bounds)
             renderer.waitForGPU()
+            // A frame of another size is not the picture asked for (two of them in a row would look settled): draw again.
             guard let texture = view.currentDrawable?.texture else {
+                try await Task.sleep(for: .milliseconds(40))
+                continue
+            }
+            guard texture.width == width, texture.height == height else {
+                wrongSize = (texture.width, texture.height)
+                pin(view, width: width, height: height)
                 try await Task.sleep(for: .milliseconds(40))
                 continue
             }
@@ -214,6 +212,10 @@ enum ViewportSnapshot {
             if attempt < 11 { try await Task.sleep(for: .milliseconds(40)) }
         }
         withExtendedLifetime(window) {}
+        if pixels.isEmpty, let wrong = wrongSize {
+            throw AIError(.invalidArguments, "The picture could not be drawn at \(width) × \(height) pixels (it kept coming out \(wrong.width) × \(wrong.height)).",
+                          reason: "Try again; if it keeps failing the graphics device may be busy.")
+        }
         guard !pixels.isEmpty, size.width > 0, !isBlank(pixels) else {
             throw AIError(.invalidArguments, "The picture could not be drawn.", reason: "Try again; if it keeps failing the graphics device may be busy.")
         }
@@ -221,6 +223,31 @@ enum ViewportSnapshot {
             throw AIError(.invalidArguments, "The picture could not be saved as an image.")
         }
         return SnapshotImage(png: png, width: size.width, height: size.height, section: sectionNote)
+    }
+
+    /// A view of `width` × `height` pixels in a window nobody sees, for one picture.
+    static func offscreenView(width: Int, height: Int, renderer: Renderer) -> (ViewportMTKView, NSWindow) {
+        // A scale of 1 or 2 points per pixel makes no difference to the picture, so the window's own is used and the size is pinned.
+        let view = ViewportMTKView(frame: NSRect(x: 0, y: 0, width: max(width / 2, 1), height: max(height / 2, 1)), device: renderer.device)
+        view.renderer = renderer
+        view.colorPixelFormat = Renderer.colorFormat
+        view.depthStencilPixelFormat = Renderer.depthFormat
+        view.framebufferOnly = false
+        view.autoResizeDrawable = false
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = view
+        pin(view, width: width, height: height)
+        return (view, window)
+    }
+
+    /// Pins the view's drawables to `width` × `height` pixels. Its layer takes the window's scale only on a later pass of the
+    /// run loop and then sizes its drawables by its own size and scale, so until then (or after, on a screen of another scale)
+    /// a frame can come at half or double the pixels asked for. Given the scale the pixel size implies, it stays as asked.
+    private static func pin(_ view: MTKView, width: Int, height: Int) {
+        let pixels = CGSize(width: width, height: height)
+        view.layer?.contentsScale = CGFloat(width) / max(view.bounds.width, 1)
+        (view.layer as? CAMetalLayer)?.drawableSize = pixels
+        view.drawableSize = pixels
     }
 
     /// Every pixel is the colour of the first one (nothing was drawn).

@@ -53,8 +53,8 @@ import simd
         #expect(hasThread(model) && model.result?.errors.isEmpty == true, "the drop builds the thread")
     }
 
-    @Test func aStepIsQuickWhateverTheThreadCosts() async throws {
-        let model = try await threadedBlockModel()
+    /// The slowest step of a drag of six steps, in seconds.
+    private func slowestStep(_ model: DocumentModel) async throws -> Double {
         model.selectedFeature = "b"
         let handle = try #require(model.dragHandles.first)
         model.beginHandleDrag(slot: handle.slot)
@@ -68,6 +68,30 @@ import simd
         }
         model.endHandleDrag()
         try await settle(model)
-        #expect(slowest < 0.15, "the slowest step of the drag took \(slowest) s")
+        return slowest
+    }
+
+    /// Waits (up to a minute) until the main actor answers promptly. A step is mostly turns on it, and when the tests run side
+    /// by side the others keep it busy (pictures, windows), so a step can take far longer than its own work.
+    private func quietMainActor() async throws {
+        let deadline = Date().addingTimeInterval(60)
+        var prompt = 0
+        while prompt < 25 && Date() < deadline {
+            let t = Date()
+            try await Task.sleep(for: .milliseconds(2))
+            prompt = Date().timeIntervalSince(t) < 0.01 ? prompt + 1 : 0
+        }
+    }
+
+    @Test func aStepIsQuickWhateverTheThreadCosts() async throws {
+        let model = try await threadedBlockModel()
+        // A step that built the thread would take about 0.2 s every time; one that leaves it out takes a few ms. A slow step
+        // can still be the other tests getting in, so the quickest of three drags counts.
+        var best = Double.infinity
+        for _ in 0..<3 where best >= 0.15 {
+            try await quietMainActor()
+            best = min(best, try await slowestStep(model))
+        }
+        #expect(best < 0.15, "the slowest step of the quickest drag took \(best) s")
     }
 }
