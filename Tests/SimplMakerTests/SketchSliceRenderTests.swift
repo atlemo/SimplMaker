@@ -72,7 +72,7 @@ import simd
             bytes = [UInt8](repeating: 0, count: texture.width * texture.height * 4)
             size = (texture.width, texture.height)
             texture.getBytes(&bytes, bytesPerRow: texture.width * 4, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
-            if bytes == last { break }
+            if bytes == last && !ViewportSnapshot.isBlank(bytes) { break }  // (a drawable not drawn into yet is blank)
             last = bytes
         }
         try #require(size.0 > 0, "no frame came at the view's full size")

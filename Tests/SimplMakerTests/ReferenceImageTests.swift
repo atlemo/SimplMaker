@@ -175,7 +175,7 @@ import UniformTypeIdentifiers
             try await Task.sleep(for: .milliseconds(100))
             guard let texture = view.fullSizeTexture else { continue }
             texture.getBytes(&pixel, bytesPerRow: 4, from: MTLRegionMake2D(Int(p.x * scale), Int(p.y * scale), 1, 1), mipmapLevel: 0)
-            if pixel == last { break }
+            if pixel == last && pixel[3] != 0 { break }  // (a drawable not drawn into yet is clear; a drawn one is opaque)
             last = pixel
         }
         try #require(last != nil, "no frame came at the view's full size")
