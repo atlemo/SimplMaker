@@ -1,7 +1,7 @@
 // Docs search: filters /docs/search.json in the browser. No dependencies.
 (function () {
   'use strict';
-  var inputs = document.querySelectorAll('#docs-q');
+  var inputs = document.querySelectorAll('.docs-search input, .docs-home-search input');
   if (!inputs.length) return;
   var index = null, loading = null;
   function load() {

@@ -15,6 +15,12 @@
     menu.addEventListener('click', function (e) {
       if (e.target.closest('a')) { toggle.setAttribute('aria-expanded', 'false'); menu.classList.remove('open'); }
     });
+    // Escape closes the menu and returns focus to its button.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') {
+        toggle.setAttribute('aria-expanded', 'false'); menu.classList.remove('open'); toggle.focus();
+      }
+    });
   }
 
   // Clips: nothing is fetched until a clip is near the screen; they play only while visible.

@@ -15,7 +15,7 @@ Placeholders available in pages and partials:
     {{clip:name|16/10|Label shown until the video exists}}   a looping video figure
     {{changelog}}                            the release notes from ../release-notes/*.html
 """
-import hashlib, html, json, re, shutil, sys
+import datetime, hashlib, html, json, re, shutil, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -108,6 +108,8 @@ def page_html(layout, *, title, description, nav="", route, content, body_class=
         "robots": "noindex, follow" if noindex else "index, follow, max-image-preview:large",
         "body_class": body_class,
         "content": content,
+        # The docs search script is only needed on the docs.
+        "docs_script": f'<script src="{asset("js/docs.js")}" defer></script>' if route.startswith("/docs/") else "",
     }
     for item in ("features", "pricing", "compare", "docs"):
         values[f"cur_{item}"] = ' aria-current="page"' if nav == item else ""
@@ -118,9 +120,16 @@ def page_html(layout, *, title, description, nav="", route, content, body_class=
 
 
 def write(route, text):
-    dest = OUT / route.strip("/") / "index.html" if route != "/" else OUT / "index.html"
+    if route == "/404.html":                       # the error page is served as a plain file
+        dest = OUT / "404.html"
+    else:
+        dest = OUT / route.strip("/") / "index.html" if route != "/" else OUT / "index.html"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(text)
+
+
+def lastmod(path):
+    return datetime.date.fromtimestamp(path.stat().st_mtime).isoformat()
 
 
 def image_info(name):
@@ -143,8 +152,9 @@ def image_info(name):
     return None
 
 
-def build_docs(layout, urls):
-    """Documentation: src/docs/<section>/<page>.md, ordered and grouped by src/docs/_nav.txt."""
+def build_docs(layout, urls, docs_out):
+    """Documentation: src/docs/<section>/<page>.md, ordered and grouped by src/docs/_nav.txt.
+    Appends (url, lastmod) to urls, and each page's plain facts to docs_out (for llms.txt)."""
     from mdconv import Converter
     root = SRC / "docs"
     groups, order = [], []          # groups: (title, [path]) ; order: [path]
@@ -177,10 +187,11 @@ def build_docs(layout, urls):
     group_of = {p: g for g, items in groups for p in items}
     missing, search = [], []
 
-    def nav_html(current):
-        out = ['<div class="docs-search"><label class="visually-hidden" for="docs-q">Search the docs</label>'
-               '<input id="docs-q" type="search" placeholder="Search the docs" autocomplete="off" />'
-               '<ul class="docs-results" id="docs-results" hidden></ul></div><nav class="docs-groups" aria-label="Documentation">']
+    def nav_html(current, suffix=""):
+        # The menu comes twice on a docs page (phone and desktop), so each copy has its own ids.
+        out = [f'<div class="docs-search"><label class="visually-hidden" for="docs-q{suffix}">Search the docs</label>'
+               f'<input id="docs-q{suffix}" type="search" placeholder="Search the docs" autocomplete="off" />'
+               f'<ul class="docs-results" id="docs-results{suffix}" hidden></ul></div><nav class="docs-groups" aria-label="Documentation">']
         for title, items in groups:
             out.append(f'<p class="mono docs-group">{html.escape(title)}</p><ul>')
             for p in items:
@@ -205,8 +216,13 @@ def build_docs(layout, urls):
             pn += (f'<a class="next" href="/docs/{next_p}/"><span class="mono">Next</span>{html.escape(pages[next_p]["meta"]["title"])}</a>' if next_p else "")
             pn += "</nav>"
         lead = f'<p class="docs-lead">{html.escape(meta["description"])}</p>'
+        crumbs = {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "SimplMaker", "item": SITE_URL + "/"},
+            {"@type": "ListItem", "position": 2, "name": "Docs", "item": SITE_URL + "/docs/"},
+            {"@type": "ListItem", "position": 3, "name": meta["title"], "item": SITE_URL + f"/docs/{path}/"}]}
         content = (
-            f'<div class="docs-wrap"><details class="docs-mobile"><summary>Documentation menu</summary>{nav_html(path)}</details>'
+            f'<script type="application/ld+json">{json.dumps(crumbs, ensure_ascii=False)}</script>'
+            f'<div class="docs-wrap"><details class="docs-mobile"><summary>Documentation menu</summary>{nav_html(path, "-mobile")}</details>'
             f'<aside class="docs-nav">{nav_html(path)}</aside>'
             f'<article class="docs-article"><p class="mono docs-crumb"><a href="/docs/">Docs</a> / {html.escape(group_of[path])}</p>'
             f'<h1>{html.escape(meta["title"])}</h1>{lead}{article}{pn}</article>'
@@ -214,10 +230,12 @@ def build_docs(layout, urls):
         route = f"/docs/{path}/"
         write(route, page_html(layout, title=f'{meta["title"]} · Docs', description=meta["description"], nav="docs",
                                route=route, content=content, body_class="docs"))
-        urls.append(SITE_URL + route)
+        urls.append((SITE_URL + route, lastmod(f)))
         text = re.sub(r"<[^>]+>", " ", article)
         search.append({"t": meta["title"], "u": route, "g": group_of[path], "h": [t for _, _, t in conv.headings],
                        "x": re.sub(r"\s+", " ", html.unescape(text)).strip()[:4000]})
+        docs_out.append({"route": route, "title": meta["title"], "description": meta["description"],
+                         "group": group_of[path], "body": body})
 
     # The docs home: every group and page.
     cards = []
@@ -235,9 +253,70 @@ def build_docs(layout, urls):
         f'<section class="wrap docs-home" style="padding-bottom:var(--section)">{"".join(cards)}</section>')
     write("/docs/", page_html(layout, title="Docs", description="SimplMaker documentation: getting started, sketching, every tool and feature, exporting for 3D printing, shortcuts and settings.",
                               nav="docs", route="/docs/", content=home, body_class="docs-home-page"))
-    urls.append(SITE_URL + "/docs/")
+    urls.append((SITE_URL + "/docs/", lastmod(root / "_nav.txt")))
     (OUT / "docs" / "search.json").write_text(json.dumps(search, ensure_ascii=False, separators=(",", ":")))
     return len(order), missing
+
+
+def doc_links(body):
+    """Docs pages link as [x](doc:section/page); in llms-full.txt those become absolute URLs."""
+    body = re.sub(r"^!\[[^\]]*\]\(shot:[^)]*\)\s*$", "", body, flags=re.M)   # screenshots mean nothing to a text reader
+    return re.sub(r"\]\(doc:([^)]+)\)",
+                  lambda m: "](" + SITE_URL + "/docs/" + m.group(1).replace("#", "/#", 1) + ("" if "#" in m.group(1) else "/") + ")",
+                  body)
+
+
+def write_llms(pages, docs):
+    """llms.txt (an index for AI assistants and crawlers) and llms-full.txt (every doc page as plain Markdown)."""
+    def line(route_or_url, title, desc):
+        url = route_or_url if route_or_url.startswith("http") else SITE_URL + route_or_url
+        return f"- [{title}]({url}): {desc}"
+
+    short = {"/features/": "Features", "/pricing/": "Pricing", "/compare/": "Compare with other CAD tools",
+             "/download/": "Download", "/changelog/": "Changelog", "/support/": "Support",
+             "/privacy/": "Privacy policy", "/terms/": "Terms of sale and use", "/eula/": "Licence agreement",
+             "/refunds/": "Refunds"}
+    for p in pages:
+        p["title"] = short.get(p["route"], p["title"])
+    product = [p for p in pages if p["route"] in short and p["route"] not in ("/privacy/", "/terms/", "/eula/", "/refunds/")]
+    legal = [p for p in pages if p["route"] in ("/privacy/", "/terms/", "/eula/", "/refunds/")]
+    lines = [
+        "# SimplMaker", "",
+        "> SimplMaker is native parametric CAD for Mac, made for makers who 3D print. Sketch a profile, extrude it, "
+        "name the dimensions as parameters, and the whole part rebuilds when a number changes. It imports and exports "
+        "STEP and exports STL for the slicer. It costs $%s once (no subscription, no account) and has a free "
+        "%s-day trial with every feature. Requires macOS 15 or later on Apple Silicon." % (VARS["price"], VARS["trial_days"]),
+        "",
+        "## Key facts", "",
+        f"- Product: SimplMaker, version {VARS['version']}, by Atle Mo",
+        "- Platform: macOS 15 or later, Apple Silicon. No Windows, Linux or iPad version.",
+        f"- Price: ${VARS['price']} once per major version. Includes all 1.x updates. No subscription, no account.",
+        f"- Trial: {VARS['trial_days']} days, the full app, no card.",
+        "- Files: parts are plain files on the user's Mac. Imports STEP; exports STEP and STL.",
+        "- Licence: a key is entered in the app. It checks the key about once a week and keeps working offline for 30 days.",
+        "- Not included: assemblies, CAM, simulation, rendering.",
+        f"- Support: {VARS['support_email']}", "",
+        "## Product", "",
+        *[line(p["route"], p["title"], p["description"]) for p in product], "",
+        "## Documentation", "",
+    ]
+    group = None
+    for d in docs:
+        if d["group"] != group:
+            group = d["group"]
+            lines += ["", f"### {group}", ""]
+        lines.append(line(d["route"], d["title"], d["description"]))
+    lines += ["", "## Legal", "", *[line(p["route"], p["title"], p["description"]) for p in legal], "",
+              "## Optional", "",
+              f"- [Full documentation as plain Markdown]({SITE_URL}/llms-full.txt): every docs page in one file", ""]
+    (OUT / "llms.txt").write_text("\n".join(lines))
+
+    full = ["# SimplMaker documentation", "",
+            f"> Every docs page of SimplMaker {VARS['version']}, in Markdown. Index: {SITE_URL}/llms.txt", ""]
+    for d in docs:
+        full += ["", "---", "", f"## {d['title']}", "", f"Section: {d['group']}. URL: {SITE_URL}{d['route']}", "",
+                 d["description"], "", doc_links(d["body"]).strip(), ""]
+    (OUT / "llms-full.txt").write_text("\n".join(full))
 
 
 def build():
@@ -245,20 +324,24 @@ def build():
         shutil.rmtree(OUT)
     shutil.copytree(SRC / "static", OUT)
     layout = includes((SRC / "layout.html").read_text())
-    urls = []
+    urls, pages, docs = [], [], []
     for page in sorted((SRC / "pages").rglob("*.html")):
         meta, body = front_matter(page.read_text(), page)
         rel = page.relative_to(SRC / "pages")
         route = "/" + str(rel.parent).strip(".") + ("/" if str(rel.parent) != "." else "")
+        if str(rel.parent) == "404":                  # src/pages/404/index.html is served as /404.html
+            route = "/404.html"
         write(route, page_html(layout, title=meta["title"], description=meta["description"], nav=meta.get("nav", ""),
                                route=route, content=render(body), body_class=meta.get("class", ""),
                                noindex=bool(meta.get("noindex")), raw_title=bool(meta.get("raw_title"))))
         if not meta.get("noindex"):
-            urls.append(SITE_URL + route)
-    doc_count, missing = build_docs(layout, urls)
-    sitemap = "".join(f"<url><loc>{u}</loc></url>\n" for u in urls)
+            urls.append((SITE_URL + route, lastmod(page)))
+            pages.append({"route": route, "title": render(meta["title"]), "description": render(meta["description"])})
+    doc_count, missing = build_docs(layout, urls, docs)
+    sitemap = "".join(f"<url><loc>{u}</loc><lastmod>{d}</lastmod></url>\n" for u, d in urls)
     (OUT / "sitemap.xml").write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + sitemap + "</urlset>\n")
+    write_llms(pages, docs)
     print(f"built {len(urls)} indexable pages ({doc_count} doc pages) into {OUT.relative_to(REPO)}")
     if missing:
         names = sorted({m for _, m in missing})

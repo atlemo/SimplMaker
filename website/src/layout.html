@@ -11,14 +11,30 @@
   <meta name="theme-color" content="#F3F1EA" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="SimplMaker" />
+  <meta property="og:locale" content="en_US" />
   <meta property="og:title" content="{{page:title}}" />
   <meta property="og:description" content="{{page:description}}" />
   <meta property="og:url" content="{{page:canonical}}" />
-  <meta name="twitter:card" content="summary" />
+  <meta property="og:image" content="https://simplmaker.com/img/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="SimplMaker: a parametric CAD model of a cube with two holes, in the Mac app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{page:title}}" />
+  <meta name="twitter:description" content="{{page:description}}" />
+  <meta name="twitter:image" content="https://simplmaker.com/img/og-image.png" />
   <link rel="icon" href="/favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="preload" href="/fonts/InterTight.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="{{asset:css/style.css}}" />
+  <link rel="dns-prefetch" href="https://cloud.umami.is" />
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@graph":[
+    {"@type":"Organization","@id":"https://simplmaker.com/#org","name":"SimplMaker","url":"https://simplmaker.com/","logo":"https://simplmaker.com/img/app-icon.png","founder":{"@type":"Person","name":"Atle Mo"}},
+    {"@type":"WebSite","@id":"https://simplmaker.com/#website","url":"https://simplmaker.com/","name":"SimplMaker","inLanguage":"en","publisher":{"@id":"https://simplmaker.com/#org"}},
+    {"@type":"SoftwareApplication","@id":"https://simplmaker.com/#app","name":"SimplMaker","url":"https://simplmaker.com/","downloadUrl":"https://simplmaker.com/download/","softwareVersion":"{{version}}","operatingSystem":"macOS 15 or later (Apple Silicon)","applicationCategory":"DesignApplication","description":"Native parametric CAD for Mac, made for makers who 3D print. Sketch, extrude, change a named parameter and the part rebuilds. STEP import, STEP and STL export. One-time price, no subscription, no account.","featureList":["Parametric sketches with constraints","Named parameters with units and expressions","Extrude, revolve, sweep, loft, rib and pipe","Fillet, chamfer, shell, hole and thread","Editable feature timeline","STEP import and STEP and STL export","3D print preview with layer lines"],"offers":{"@type":"Offer","price":"{{price}}","priceCurrency":"USD","availability":"https://schema.org/InStock"},"publisher":{"@id":"https://simplmaker.com/#org"}}
+  ]}
+  </script>
   <script>document.documentElement.classList.add('js')</script>
   <script defer src="https://cloud.umami.is/script.js" data-website-id="8f0e176e-479f-44b7-9895-06220d5d3458"></script>
 </head>
@@ -30,6 +46,6 @@
   </main>
 {{include:footer.html}}
   <script src="{{asset:js/site.js}}" defer></script>
-  <script src="{{asset:js/docs.js}}" defer></script>
+  {{page:docs_script}}
 </body>
 </html>
