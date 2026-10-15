@@ -60,7 +60,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// The sketch Pattern tool's options (grid or circle, OK, Cancel), under its fields.
     private var patternHUD: SelfSizingHostingView<SketchPatternHUD>?
     /// Typed values for the sketch step in progress (a line's length and angle, ...), beside the cursor.
-    private var sketchPanel: NSStackView?
+    private var sketchPanel: SketchFieldPanel?
     private var sketchFields: [SketchInput: ValueField] = [:]
     private var sketchFieldOrder: [SketchInput] = []
     /// Holds the controls typed into or clicked (the handle's field and options, the sketch fields,
@@ -1450,16 +1450,15 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     private func buildSketchFields(_ inputs: [SketchInput]) {
         removeSketchFields()
-        let panel = NSStackView()
+        let panel = SketchFieldPanel()
         panel.orientation = .horizontal
         panel.spacing = DS.Spacing.labelGap
         panel.edgeInsets = NSEdgeInsets(top: DS.Spacing.space2, left: DS.Spacing.labelGap, bottom: DS.Spacing.space2, right: DS.Spacing.space2)
         panel.wantsLayer = true
-        panel.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
         panel.layer?.cornerRadius = DS.Radius.sm
         // An accent outline and a shadow set it apart from the panels around the viewport.
         panel.layer?.borderWidth = 1.5
-        panel.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        panel.applyColors()
         panel.layer?.shadowColor = NSColor.black.cgColor
         panel.layer?.shadowOpacity = 0.25
         panel.layer?.shadowRadius = 6
@@ -1879,6 +1878,28 @@ final class ValueField: NSTextField, ParameterCompleting {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+}
+
+/// The panel of value fields over the sketch. Its fill and outline are layer colours, which are fixed when set,
+/// so they are set again whenever the appearance it is drawn in changes; otherwise a fill picked in the light
+/// appearance stays under the dark appearance's white text.
+final class SketchFieldPanel: NSStackView {
+    func applyColors() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
+            layer?.borderColor = NSColor.controlAccentColor.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyColors()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyColors()
+    }
 }
 
 /// A see-through layer for the viewport's controls, over the floating panels, just the size of

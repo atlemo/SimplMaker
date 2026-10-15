@@ -439,7 +439,7 @@ struct FeatureHUD: View {
             }
             .controlSize(.small)
             .padding(DS.Spacing.space3)
-            .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.xl2))
+            .panelGlass(in: .rect(cornerRadius: DS.Radius.xl2))
             .fixedSize()
         }
     }
@@ -538,7 +538,7 @@ struct SketchPatternHUD: View {
             }
             .controlSize(.small)
             .padding(DS.Spacing.space3)
-            .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.xl2))
+            .panelGlass(in: .rect(cornerRadius: DS.Radius.xl2))
             .fixedSize()
         } else if let session = model.sketchSession, let setup = session.patternSetup {
             VStack(alignment: .leading, spacing: DS.Spacing.space2) {
@@ -573,7 +573,7 @@ struct SketchPatternHUD: View {
             }
             .controlSize(.small)
             .padding(DS.Spacing.space3)
-            .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.xl2))
+            .panelGlass(in: .rect(cornerRadius: DS.Radius.xl2))
             .fixedSize()
         }
     }
@@ -659,7 +659,7 @@ struct FeatureDoneBar: View {
             .controlSize(.small)
             .padding(.horizontal, DS.Spacing.space4)
             .padding(.vertical, DS.Spacing.space2)
-            .glassEffect(.regular, in: .capsule)
+            .panelGlass(in: .capsule)
             .fixedSize()
             .transition(.opacity)
         }

@@ -139,7 +139,7 @@ fi
 if xcrun --find actool >/dev/null 2>&1; then
   PARTIAL="$(mktemp -t simplmaker-icon).plist"
   xcrun actool "$ROOT/Packaging/AppIcon.icon" --compile "$APP/Contents/Resources" --app-icon AppIcon \
-    --platform macosx --target-device mac --minimum-deployment-target 26.0 \
+    --platform macosx --target-device mac --minimum-deployment-target 15.0 \
     --output-partial-info-plist "$PARTIAL" --output-format human-readable-text --errors >/dev/null
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$APP/Contents/Info.plist" 2>/dev/null || true
   rm -f "$PARTIAL"

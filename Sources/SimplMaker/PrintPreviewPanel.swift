@@ -22,7 +22,7 @@ struct PrintPreviewPanel: View {
         }
         .padding(DS.Spacing.space6)
         .frame(width: Self.width)
-        .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.window))
+        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
     }
 
     private func option(_ title: String, values: [Double], selection: Binding<Double>) -> some View {

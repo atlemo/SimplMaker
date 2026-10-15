@@ -99,7 +99,7 @@ struct TimelineBar: View {
         .padding(.horizontal, DS.Spacing.space4)
         .frame(height: Self.height)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: DS.Radius.xl3))
+        .panelGlass(in: .rect(cornerRadius: DS.Radius.xl3))
     }
 
     /// Start · back one · forward one · end, for the marker. (Named here: the symbols' own names

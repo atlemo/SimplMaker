@@ -102,7 +102,7 @@ struct LockedBanner: View {
             }
             .font(.callout)
             .padding(.horizontal, 14).padding(.vertical, 8)
-            .glassEffect(.regular, in: .capsule)
+            .panelGlass(in: .capsule)
             .transition(.opacity)
         }
     }

@@ -133,7 +133,7 @@ struct TitlebarAppearance: NSViewRepresentable {
         guard let frame = window.contentView?.superview else { return }
         recolorSelectedTabTitle(in: frame, window: window, tint: tint)
         for view in allSubviews(of: frame) {
-            if let glass = view as? NSGlassEffectView, glass.className == "NSGlassEffectView", isInTabBar(glass) {
+            if #available(macOS 26.0, *), let glass = view as? NSGlassEffectView, glass.className == "NSGlassEffectView", isInTabBar(glass) {
                 glass.tintColor = tint
             } else if view.className == "NSTabBarScrollView", let host = view.superview {
                 let wash = host.subviews.first { $0.identifier == tabTintID }

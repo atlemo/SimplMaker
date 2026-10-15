@@ -123,3 +123,46 @@ struct AccentScope: ViewModifier {
         content.environment(\.accent, color).tint(color)
     }
 }
+
+extension View {
+    /// Liquid Glass on macOS 26; on older systems the system's thin material with a hairline edge,
+    /// which is the nearest look the older SDK offers.
+    @ViewBuilder
+    func panelGlass<S: Shape>(in shape: S) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular, in: shape)
+        } else {
+            self
+                .background(.regularMaterial, in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+        }
+    }
+}
+
+extension ToolbarContent {
+    /// Drops the glass pill macOS 26 draws behind a toolbar item; older systems draw none.
+    @ToolbarContentBuilder
+    func withoutSharedBackground() -> some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
+    }
+}
+
+extension DS {
+    /// The window and under-page greys as macOS 26 draws them for an app built for 26. A binary whose
+    /// deployment target is older gets the pre-26 values for the system's own colours even on 26
+    /// (light mode: window 236 instead of 255, under-page 159 instead of 246), so the welcome window
+    /// asks for the 26 values by hand there. Dark mode and older systems keep the system's colours.
+    static let windowBackground = lightOverride(white: 1.0, system: .windowBackgroundColor)
+    static let underPageBackground = lightOverride(white: 246 / 255, system: .underPageBackgroundColor)
+
+    private static func lightOverride(white: CGFloat, system: NSColor) -> Color {
+        guard #available(macOS 26.0, *) else { return Color(nsColor: system) }
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua ? NSColor(white: white, alpha: 1) : system
+        })
+    }
+}

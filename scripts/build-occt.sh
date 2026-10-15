@@ -23,7 +23,7 @@ fi
 
 EXTRA=()
 if [ "$(uname)" = "Darwin" ]; then
-  EXTRA+=(-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0)
+  EXTRA+=(-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0)
 fi
 
 cmake -S "$SRC" -B "$BUILD" -G Ninja \
@@ -59,7 +59,7 @@ else
   { echo "CREATE $OUT"; for a in "$LIBDIR"/libTK*.a; do echo "ADDLIB $a"; done; echo SAVE; echo END; } | ar -M
 fi
 if [ "$(uname)" = "Darwin" ]; then
-  clang++ -dynamiclib -arch arm64 -mmacosx-version-min=26.0 -o "$PREFIX/lib/libSimplOCCT.dylib" \
+  clang++ -dynamiclib -arch arm64 -mmacosx-version-min=15.0 -o "$PREFIX/lib/libSimplOCCT.dylib" \
     -install_name @rpath/libSimplOCCT.dylib -Wl,-force_load,"$OUT" \
     -framework Foundation -framework AppKit -framework IOKit -lc++
 fi

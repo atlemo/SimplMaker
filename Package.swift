@@ -12,7 +12,7 @@ let occt = ProcessInfo.processInfo.environment["OCCT_ROOT"] ?? "\(packageRoot)/T
 
 let package = Package(
     name: "SimplMaker",
-    platforms: [.macOS("26.0")],
+    platforms: [.macOS("15.0")],
     products: [
         .executable(name: "SimplMaker", targets: ["SimplMaker"]),
         // The stdio relay for MCP clients that start servers as programs (Claude Desktop); bundle-app.sh puts it in the app.
