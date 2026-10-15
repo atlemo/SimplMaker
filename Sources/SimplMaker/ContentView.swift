@@ -732,7 +732,7 @@ struct ParametersList: View {
     var body: some View {
         List(selection: $selection) {
             ForEach(model.document.parameters) { p in
-                ParameterRow(model: model, parameter: p, renaming: renamingBinding(p.name),
+                ParameterRow(model: model, parameter: p, selected: selection == p.name, renaming: renamingBinding(p.name),
                              valueFocused: focusBinding(p.name), tabbed: { moveFocus(from: p.name, backwards: $0) })
                     .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
                     .tag(p.name)
@@ -740,6 +740,12 @@ struct ParametersList: View {
             }
         }
         .listStyle(.sidebar)
+        .background(OutsideClickMonitor {
+            // A click anywhere else (the 3D view, a body in the browser) lets go of the row and its field.
+            if focused != nil { NSApp.keyWindow?.makeFirstResponder(nil) }
+            focused = nil
+            selection = nil
+        })
         .contextMenu(forSelectionType: String.self) { names in
             if names.count == 1, let name = names.first {
                 Button("Rename") { renaming = name }
@@ -762,6 +768,40 @@ struct ParametersList: View {
         let names = model.document.parameters.map(\.name)
         guard let i = names.firstIndex(of: name), names.count > 1 else { return }
         focused = names[(i + (backwards ? names.count - 1 : 1)) % names.count]
+    }
+}
+
+/// Calls `onOutsideClick` when the mouse goes down in the window outside this view's frame.
+struct OutsideClickMonitor: NSViewRepresentable {
+    let onOutsideClick: () -> Void
+
+    func makeNSView(context: Context) -> MonitorView { MonitorView() }
+    func updateNSView(_ view: MonitorView, context: Context) { view.onOutsideClick = onOutsideClick }
+
+    final class MonitorView: NSView {
+        var onOutsideClick: () -> Void = {}
+        private var monitor: Any?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+                MainActor.assumeIsolated {
+                    if let self, let window = self.window, event.window === window,
+                       !self.bounds.contains(self.convert(event.locationInWindow, from: nil)) {
+                        self.onOutsideClick()
+                    }
+                }
+                return event
+            }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            if newWindow == nil, let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+        }
     }
 }
 
@@ -1225,6 +1265,11 @@ struct RowFieldStyle: ViewModifier {
     @Environment(\.backgroundProminence) private var prominence
     let focused: Bool
 
+    /// The accent a shade darker, for the focus border of a field on a row that is already the accent colour.
+    private var darkerAccent: Color {
+        Color(nsColor: NSColor(accent).blended(withFraction: 0.3, of: .black) ?? NSColor(accent))
+    }
+
     func body(content: Content) -> some View {
         let mode = Self.mode(focused: focused, rowSelected: prominence == .increased)
         let palette = Self.palette(mode)
@@ -1237,8 +1282,10 @@ struct RowFieldStyle: ViewModifier {
             .padding(.vertical, 2)
             .background(shape.fill(Color(nsColor: palette.fill)))
             .background(FieldEditorColors(active: focused, accent: NSColor(accent)))
+            .focusEffectDisabled()  // the system's ring would add a second edge under ours
             .overlay(shape.strokeBorder(
-                mode == .selected ? Color.white.opacity(0.4) : mode == .focused ? accent : Color.secondary.opacity(0.4),
+                mode == .selected ? Color.white.opacity(0.4)
+                    : mode == .focused ? (prominence == .increased ? darkerAccent : accent) : Color.secondary.opacity(0.4),
                 lineWidth: mode == .focused ? 2 : 1))
     }
 }
@@ -1427,11 +1474,14 @@ struct SketchIcon: View {
 struct ParameterRow: View {
     let model: DocumentModel
     let parameter: Parameter
+    /// Whether the row is the selected one, on the accent colour.
+    var selected = false
     @Binding var renaming: Bool
     /// Whether the value field has the keyboard; setting it true moves the keyboard there.
     @Binding var valueFocused: Bool
     /// Tab or Shift-Tab pressed in the value field.
     let tabbed: (Bool) -> Void
+    @Environment(\.accent) private var accent
     /// Why the last rename was refused (a taken or invalid name).
     @State private var renameError: String?
     /// The drag on the name that is changing the value: nil when none is going on.
@@ -1506,27 +1556,32 @@ struct ParameterRow: View {
                 } else if let q = model.result?.parameters.values[parameter.name] {
                     Text(parameter.unit.format(q.value)).foregroundStyle(.secondary).font(.caption)
                 }
-                // Length, angle or plain number.
-                Menu {
-                    ForEach([(UnitKind.length, "Length (mm)"), (.angle, "Angle (deg)"), (.none, "Number")], id: \.0) { unit, title in
-                        Button {
-                            model.setParameterUnit(parameter.name, unit)
-                        } label: {
-                            if parameter.unit == unit { Label(title, systemImage: "checkmark") } else { Text(title) }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 2) {
-                        Text(parameter.unit == .length ? "mm" : parameter.unit == .angle ? "deg" : "#")
-                            .font(.caption.monospaced())
-                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
-                    }
-                    .padding(.horizontal, 5).padding(.vertical, 2)
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(.secondary.opacity(0.5)))
+                // Length, angle or plain number. The label is drawn here, and a nearly invisible menu over it takes
+                // the click: a menu draws its own label in its tint, which is the row's colour when selected.
+                HStack(spacing: 2) {
+                    Text(parameter.unit == .length ? "mm" : parameter.unit == .angle ? "deg" : "#")
+                        .font(.caption.monospaced())
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
+                .foregroundStyle(selected ? Color.white : accent)
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .overlay {
+                    Menu {
+                        ForEach([(UnitKind.length, "Length (mm)"), (.angle, "Angle (deg)"), (.none, "Number")], id: \.0) { unit, title in
+                            Button {
+                                model.setParameterUnit(parameter.name, unit)
+                            } label: {
+                                if parameter.unit == unit { Label(title, systemImage: "checkmark") } else { Text(title) }
+                            }
+                        }
+                    } label: {
+                        Color.clear.contentShape(Rectangle())
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .opacity(0.011)
+                }
                 .help("Length, angle or plain number")
             }
             if let renameError {
