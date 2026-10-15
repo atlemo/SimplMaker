@@ -212,10 +212,12 @@ struct SettingsView: View {
 
     @ViewBuilder private var generalPane: some View {
         Form {
-            Toggle("Show the welcome window at launch", isOn: $showWelcome)
-            Text("Off, SimplMaker opens an empty part at launch instead. The window is always available under Window → Welcome to SimplMaker.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                Toggle("Show the welcome window at launch", isOn: $showWelcome)
+                Text("Off, SimplMaker opens an empty part at launch instead. The window is always available under Window → Welcome to SimplMaker.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
                 Picker("Accent color", selection: $accentSource) {
                     ForEach(Preferences.AccentSource.allCases) { Text($0.title).tag($0) }
@@ -336,18 +338,20 @@ struct SettingsView: View {
             Picker("Units", selection: $unitSystem) {
                 ForEach(Preferences.UnitSystem.allCases) { Text($0.title).tag($0) }
             }
-            if unitSystem.isUS {
-                Picker("Grid square", selection: $gridSizeUS) {
-                    ForEach(Preferences.usGridSizes) { Text($0.title).tag($0.mm) }
+            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                if unitSystem.isUS {
+                    Picker("Grid square", selection: $gridSizeUS) {
+                        ForEach(Preferences.usGridSizes) { Text($0.title).tag($0.mm) }
+                    }
+                } else {
+                    Picker("Grid square", selection: $gridSizeMetric) {
+                        ForEach(Preferences.metricGridSizes) { Text($0.title).tag($0.mm) }
+                    }
                 }
-            } else {
-                Picker("Grid square", selection: $gridSizeMetric) {
-                    ForEach(Preferences.metricGridSizes) { Text($0.title).tag($0.mm) }
-                }
+                Text("The size of one square of the sketch grid, which \"Snap to Grid\" snaps to. Automatic picks a round size that follows the zoom; a fixed size is thinned out only when zoomed far out.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            Text("The size of one square of the sketch grid, which \"Snap to Grid\" snaps to. Automatic picks a round size that follows the zoom; a fixed size is thinned out only when zoomed far out.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
                 Picker("Sketch background", selection: $sketchPaper) {
                     ForEach(Preferences.SketchPaper.allCases) { Text($0.title).tag($0) }
