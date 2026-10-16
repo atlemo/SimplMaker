@@ -43,7 +43,9 @@ enum TransformPivot: String, CaseIterable, Identifiable {
 
 enum SketchTool: String, CaseIterable, Identifiable {
     case select = "Select", line = "Line", rectangle = "Rectangle", centerRectangle = "Center Rectangle", slot = "Slot"
+    case roundedRectangle = "Rounded Rectangle"
     case circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", arc3Point = "3-Point Arc", bezier = "Spline"
+    case tangentArc = "Tangent Arc"
     case polygon = "Polygon", triangle = "Triangle", gear = "Gear"
     case point = "Point", text = "Text", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
     case distance = "Distance"
@@ -51,7 +53,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// Toolbar groups: drawing, changing curves, and dimensions (Select stands alone).
-    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .slot, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .gear, .point, .text]
+    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .roundedRectangle, .slot, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .tangentArc, .bezier, .gear, .point, .text]
     static let modify: [SketchTool] = [.fillet, .trim, .extend]
 
     /// The name under the icon in the toolbar (menus use the full `rawValue`).
@@ -68,7 +70,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     /// Tools whose clicks place points (and so snap to shape centers).
     var placesPoints: Bool {
         switch self {
-        case .line, .rectangle, .centerRectangle, .slot, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .gear, .point, .text: return true
+        case .line, .rectangle, .centerRectangle, .roundedRectangle, .slot, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .tangentArc, .bezier, .gear, .point, .text: return true
         case .select, .fillet, .trim, .extend, .dimension, .distance: return false
         }
     }
@@ -76,7 +78,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     /// Tools that share a toolbar button and a key: the ways to draw one kind of shape.
     var family: [SketchTool] {
         switch self {
-        case .rectangle, .centerRectangle: return [.rectangle, .centerRectangle]
+        case .rectangle, .centerRectangle, .roundedRectangle: return [.rectangle, .centerRectangle, .roundedRectangle]
         case .circle, .circle2Point: return [.circle, .circle2Point]
         case .polygon, .triangle: return [.polygon, .triangle]
         case .arc, .arc3Point: return [.arc, .arc3Point]
@@ -89,6 +91,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         switch self {
         case .rectangle: return "2-Point"
         case .centerRectangle: return "Center"
+        case .roundedRectangle: return "Rounded"
         case .circle: return "Center"
         case .circle2Point: return "2-Point"
         case .polygon: return "Polygon"
@@ -129,6 +132,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .rectangle: return "square"
         case .centerRectangle: return "square-center"
         case .slot: return "slot"
+        case .roundedRectangle: return "square-rounded"
+        case .tangentArc: return "tangent-arc"
         case .arc3Point: return "arc-3-point"
         case .circle: return "circle"
         case .circle2Point: return "diameter"
@@ -157,6 +162,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .line: return "l"
         case .rectangle, .centerRectangle: return "r"
         case .slot: return "o"
+        case .roundedRectangle: return "r"
+        case .tangentArc: return "n"
         case .circle, .circle2Point: return "c"
         case .polygon, .triangle: return "g"
         case .arc, .arc3Point: return "a"
@@ -179,7 +186,9 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .select: return "Click to select, double-click for all joined curves, drag to move, ⌫ deletes"
         case .line: return "Click points to draw connected lines · Esc ends the chain"
         case .rectangle: return "Click two opposite corners · \(again) for a center rectangle"
-        case .centerRectangle: return "Click the center, then a corner · \(again) for two corners"
+        case .centerRectangle: return "Click the center, then a corner · \(again) for rounded corners"
+        case .roundedRectangle: return "Click two opposite corners, rounded by the radius (type it first or after) · \(again) for two corners"
+        case .tangentArc: return "Click the free end of a line or arc, then where the arc ends · it carries on smoothly from that end · click again to keep going"
         case .slot: return "Click the center of one end, then the center of the other · type the width first or after"
         case .circle: return "Click the center, then a point on the circle · \(again) for 2-point"
         case .circle2Point: return "Click two points on opposite sides of the circle · \(again) for center"
@@ -319,6 +328,9 @@ final class SketchSession {
     /// The width the Slot tool draws, as typed (kept from one slot to the next).
     private(set) var slotWidth = "10 mm"
     var slotWidthValue: Double { (try? parameters.value(of: slotWidth, kind: .length)) ?? 10 }
+    /// The corner radius the Rounded Rectangle tool draws (kept from one rectangle to the next).
+    private(set) var roundedRadius = "5 mm"
+    var roundedRadiusValue: Double { (try? parameters.value(of: roundedRadius, kind: .length)) ?? 5 }
     /// What the next gear will be (kept from one gear to the next); its id and centre are not used.
     private(set) var gearDefaults = SketchGearDef()
     /// The gear the Gear tool's fields are changing: the one just placed, or one clicked in Select.
@@ -818,6 +830,37 @@ final class SketchSession {
                 clicks = [SketchSnap(sketch.position(r.end) ?? s.position, point: r.end)]
             }
             return finish("Line")
+        case .roundedRectangle:
+            guard clicks.count == 2 else { return nil }
+            defer { clicks = [] }
+            let a = clicks[0].position, b = s.position
+            guard abs(a.x - b.x) > 1e-6, abs(a.y - b.y) > 1e-6 else { pendingDimensions = []; return nil }
+            guard let rounded = sketch.addRoundedRectangle(from: clicks[0], to: s, radius: roundedRadiusValue, expression: roundedRadius) else {
+                pendingDimensions = []
+                message = "The corner radius is more than half the shorter side: make it smaller, or the rectangle bigger"
+                return nil
+            }
+            // Width and height run corner to corner, since the rounded corners have shortened the sides.
+            addPendingDimensions([.width: .distance(rounded.corners[0], rounded.corners[1]), .height: .distance(rounded.corners[1], rounded.corners[2])])
+            return finish("Rounded Rectangle")
+        case .tangentArc:
+            if clicks.count == 1 {  // the start must be the free end of a line or arc: the arc carries on from it
+                guard let p = clicks[0].point, sketch.freeEnd(at: p) != nil else {
+                    clicks = []
+                    message = "Start on the free end of a line or arc: the arc carries on from it"
+                    return nil
+                }
+                return nil
+            }
+            guard clicks.count == 2 else { return nil }
+            guard let made = sketch.addTangentArc(from: clicks[0], to: s) else {
+                clicks.removeLast()
+                message = "The arc can't reach there: the point must be ahead of the end, and not on the line's own extension"
+                return nil
+            }
+            // Keep going from its end, like a chain of lines.
+            clicks = [SketchSnap(sketch.position(made.end) ?? s.position, point: made.end)]
+            return finish("Tangent Arc")
         case .slot:
             guard clicks.count == 2 else { return nil }
             defer { clicks = [] }
@@ -942,6 +985,8 @@ final class SketchSession {
         case (.rectangle, 1), (.centerRectangle, 1): return [.width, .height]
         case (.slot, 0): return [.width]
         case (.slot, 1): return [.length, .width]
+        case (.roundedRectangle, 0): return [.radius]
+        case (.roundedRectangle, 1): return [.width, .height, .radius]
         case (.circle, 1), (.circle2Point, 1): return [.diameter]
         case (.polygon, 0): return [.sides]
         case (.gear, _): return [.teeth, .module, .pressureAngle, .backlash, .bore]
@@ -959,6 +1004,7 @@ final class SketchSession {
         typed[field] = t.isEmpty ? nil : t
         if field == .sides, let n = typedValue(.sides) { polygonSides = Int(n) }
         if tool == .slot, field == .width, typedValue(.width) != nil, let text = typed[.width] { slotWidth = Self.expression(text, .width) }
+        if tool == .roundedRectangle, field == .radius, typedValue(.radius) != nil, let text = typed[.radius] { roundedRadius = Self.expression(text, .radius) }
         if field.isGear, typedValue(field) != nil, let text = typed[field] { setGear(field, Self.expression(text, field)) }
         if manipulating != nil { previewTyped() }
         if patternSetup != nil { applyTypedPattern() }
@@ -1012,7 +1058,7 @@ final class SketchSession {
         case .slot:
             // The length is from the first end's center to the second's; the width is drawn across it, not placed.
             return SketchSnap(a + dir * (typedValue(.length) ?? len))
-        case .rectangle:
+        case .rectangle, .roundedRectangle:
             let w = typedValue(.width) ?? abs(d.x), h = typedValue(.height) ?? abs(d.y)
             return SketchSnap(a + SIMD2(d.x < 0 ? -w : w, d.y < 0 ? -h : h))
         case .centerRectangle:
@@ -1051,6 +1097,7 @@ final class SketchSession {
         case .offsetDistance: return offsetDistance
         case .sides: return Double(sidesCount)
         case .width where tool == .slot: return slotWidthValue
+        case .radius where tool == .roundedRectangle: return roundedRadiusValue
         case .teeth: return evaluated(gearShown.teeth, .none)
         case .module: return evaluated(gearShown.module, .length)
         case .pressureAngle: return evaluated(gearShown.pressureAngle, .angle)
@@ -1095,7 +1142,7 @@ final class SketchSession {
             typed = [:]
             return nil
         }
-        if tool == .slot, clicks.isEmpty {  // the width is set: nothing to place yet
+        if tool == .slot || tool == .roundedRectangle, clicks.isEmpty {  // the width or radius is set: nothing to place yet
             typed = [:]
             return nil
         }
@@ -2242,6 +2289,22 @@ final class SketchSession {
         switch tool {
         case .line: return [[a, c]]
         case .rectangle: return [[a, SIMD2(c.x, a.y), c, SIMD2(a.x, c.y), a]]
+        case .roundedRectangle:
+            let x0 = min(a.x, c.x), x1 = max(a.x, c.x), y0 = min(a.y, c.y), y1 = max(a.y, c.y)
+            let r = min(roundedRadiusValue, min(x1 - x0, y1 - y0) / 2)
+            guard r > 1e-6 else { return [[a, c]] }
+            // Four quarter arcs, joined by the straight sides; the last point repeats the first to close the outline.
+            let outline = circle(SIMD2(x1 - r, y0 + r), r, -.pi / 2, 0) + circle(SIMD2(x1 - r, y1 - r), r, 0, .pi / 2)
+                + circle(SIMD2(x0 + r, y1 - r), r, .pi / 2, .pi) + circle(SIMD2(x0 + r, y0 + r), r, .pi, 1.5 * .pi)
+            return [outline + [outline[0]]]
+        case .tangentArc:
+            // The arc from the start, along its free end, to the cursor, as it would be drawn.
+            guard clicks.count == 1, let p = clicks[0].point, let free = sketch.freeEnd(at: p),
+                  let made = Sketch.tangentArc(from: a, direction: free.direction, to: c) else { return [[a, c]] }
+            let a0 = atan2(a.y - made.center.y, a.x - made.center.x)
+            var a1 = atan2(c.y - made.center.y, c.x - made.center.x)
+            if made.ccw { while a1 <= a0 { a1 += 2 * .pi } } else { while a1 >= a0 { a1 -= 2 * .pi } }
+            return [circle(made.center, simdLength(a - made.center), a0, a1)]
         case .centerRectangle:
             let o = 2 * a - c
             return [[o, SIMD2(c.x, o.y), c, SIMD2(o.x, c.y), o], [o, c]]

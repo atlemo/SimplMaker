@@ -348,6 +348,87 @@ extension Sketch {
         return ([plus, minus], [arcA, arcB], [ca, cb])
     }
 
+    /// Rectangle from two corner snaps with all four corners rounded by `radius` (driven by `expression`). The
+    /// radius is one dimension, on the first corner's arc; the other three arcs are equal to it. Returns the sides
+    /// (bottom, right, top, left), the corners and the arcs, or nil when the rectangle has no size or the radius is
+    /// more than half its shorter side.
+    @discardableResult
+    public mutating func addRoundedRectangle(from s: SketchSnap, to e: SketchSnap, radius: Double, expression: String)
+        -> (lines: [EntityID], corners: [EntityID], arcs: [EntityID])? {
+        let s = concrete(s), e = concrete(e)
+        let w = abs(e.position.x - s.position.x), h = abs(e.position.y - s.position.y)
+        guard w > 1e-9, h > 1e-9, radius > 1e-9, radius <= min(w, h) / 2 + 1e-9 else { return nil }
+        let r = addRectangle(s.position.x, s.position.y, e.position.x, e.position.y)
+        attach(r.corners[0], to: s)
+        attach(r.corners[2], to: e)
+        var first: EntityID?
+        var arcs: [EntityID] = []
+        for corner in r.corners {
+            guard let dim = filletCorner(corner, radius: radius, expression: expression),
+                  let at = dimensions.firstIndex(where: { $0.id == dim }), case .radius(let arc) = dimensions[at].kind else { continue }
+            if let first {
+                // One radius for all four corners: the others are equal to the first, not dimensions of their own.
+                dimensions.remove(at: at)
+                constrain(.equal(first, arc))
+            } else {
+                first = arc
+            }
+            arcs.append(arc)
+        }
+        return (r.lines, r.corners, arcs)
+    }
+
+    /// Where an arc that leaves `p` heading along `t` and arrives at `e` is centred: on the normal at `p`, so it
+    /// starts tangent to the line or arc it continues, and as far from `p` as from `e`. `ccw` says whether it runs
+    /// counter-clockwise from `p`. Nil when `e` is not ahead of `p`, or lies on the tangent line itself.
+    public static func tangentArc(from p: SIMD2<Double>, direction t: SIMD2<Double>, to e: SIMD2<Double>)
+        -> (center: SIMD2<Double>, ccw: Bool)? {
+        let v = e - p
+        guard vdot(v, t) > 1e-9 else { return nil }
+        let n = SIMD2(-t.y, t.x)
+        let denom = 2 * vdot(n, v)
+        guard abs(denom) > 1e-9 else { return nil }
+        let center = p + n * (vdot(v, v) / denom)
+        let r = p - center
+        return (center, vdot(t, SIMD2(-r.y, r.x)) > 0)
+    }
+
+    /// Where a line or arc leaves its free end at `p`: the curve, and the direction it heads when it leaves `p`
+    /// (away from the curve). Nil unless exactly one construction-free line or arc ends at `p`.
+    public func freeEnd(at p: EntityID) -> (curve: EntityID, direction: SIMD2<Double>)? {
+        let users = curves.filter { !$0.construction && pointIDs(of: $0).contains(p) }
+        guard users.count == 1, let c = users.first, let pp = position(p) else { return nil }
+        func unit(_ v: SIMD2<Double>) -> SIMD2<Double>? { let l = vlen(v); return l > 1e-9 ? v / l : nil }
+        switch c.geometry {
+        case .line(let a, let b):
+            guard a == p || b == p, let o = position(a == p ? b : a), let d = unit(pp - o) else { return nil }
+            return (c.id, d)
+        case .arc(let center, let s, let e):
+            guard let cp = position(center) else { return nil }
+            let r = pp - cp
+            if e == p, let d = unit(SIMD2(-r.y, r.x)) { return (c.id, d) }  // an arc runs counter-clockwise: this is where it heads
+            if s == p, let d = unit(SIMD2(r.y, -r.x)) { return (c.id, d) }  // from its start it heads back the other way
+            return nil
+        default: return nil
+        }
+    }
+
+    /// Arc from the free end of a line or arc at `from` to `to`, leaving that end in the same direction, so the two
+    /// are tangent (a constraint keeps them so). Returns the arc and its end point; nil when `from` is not a free end,
+    /// or `to` can't be reached from it (see `Sketch.tangentArc`).
+    @discardableResult
+    public mutating func addTangentArc(from s: SketchSnap, to e: SketchSnap) -> (arc: EntityID, end: EntityID)? {
+        guard let p = s.point, let free = freeEnd(at: p), let pp = position(p) else { return nil }
+        let e = concrete(e)
+        let target = e.point.flatMap { position($0) } ?? e.position
+        guard let made = Sketch.tangentArc(from: pp, direction: free.direction, to: target) else { return nil }
+        let endID = resolve(e)
+        let center = addPoint(made.center.x, made.center.y)
+        let arc = made.ccw ? addArc(center: center, start: p, end: endID) : addArc(center: center, start: endID, end: p)
+        constrain(.tangent(free.curve, arc))
+        return (arc, endID)
+    }
+
     /// Arc from `start` to `end` through `through`, with a new center point; nil if the three are
     /// in a line.
     @discardableResult

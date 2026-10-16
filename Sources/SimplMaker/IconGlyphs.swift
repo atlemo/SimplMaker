@@ -201,7 +201,9 @@ enum IconGlyphs {
     // Drawn from a 17 x 17 pt artwork at 1.25 times its size, centred in the 24-unit box (see SVGGlyph for the attributes).
     "lay-on-floor": "<path d=\"M2.125 20.75L19 20.75\" /><path d=\"M11.519 2.207L21.688 7.144L16.876 17.188L6.707 12.376Z\" stroke=\"accent\" stroke-weight=\"0.833\" stroke-linejoin=\"miter\" />",
     "shell": "<path d=\"M3 7v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7\" /><path d=\"M7 7v9h10V7\" stroke=\"accent\" />",
-    "slot": "<rect width=\"20\" height=\"10\" x=\"2\" y=\"7\" rx=\"5\" />",
+    "square-rounded": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"5\" />",
+    "tangent-arc": "<path d=\"M3 20h6a8 8 0 0 1 8-8\" />",
+    "slot":"<rect width=\"20\" height=\"10\" x=\"2\" y=\"7\" rx=\"5\" />",
     "square-center":"<rect width=\"18\" height=\"14\" x=\"3\" y=\"5\" rx=\"1\" /><circle cx=\"12\" cy=\"12\" r=\"1.4\" fill=\"currentColor\" stroke=\"none\" />",
     "arc-3-point": "<path d=\"M4 18A9 9 0 0 1 20 18\" /><circle cx=\"4\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"12\" cy=\"9.6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"20\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",
     "corner-round": "<path d=\"M4 20v-8a8 8 0 0 1 8-8h8\" /><circle cx=\"4\" cy=\"4\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\" />",
