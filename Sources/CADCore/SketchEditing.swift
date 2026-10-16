@@ -326,6 +326,28 @@ extension Sketch {
         return (lines, circle)
     }
 
+    /// Slot (a stadium): two round ends of diameter `width`, centred on `a` and `b`, joined by two sides that
+    /// are tangent to both ends and parallel. The ends are equal, so they stay round as the slot is resized.
+    /// Returns the two sides and the two ends' arcs (round `a`, then round `b`); the centers are `a` and `b`.
+    @discardableResult
+    public mutating func addSlot(from a: SketchSnap, to b: SketchSnap, width: Double) -> (sides: [EntityID], ends: [EntityID], centers: [EntityID]) {
+        let a = concrete(a), b = concrete(b)
+        let pa = a.point.flatMap { position($0) } ?? a.position, pb = b.point.flatMap { position($0) } ?? b.position
+        let d = pb - pa
+        let len = max(vlen(d), 1e-3)
+        let axis = d / len, perp = SIMD2(-axis.y, axis.x), r = width / 2
+        let ca = resolve(a), cb = resolve(b)
+        let aPlus = addPoint((pa + perp * r).x, (pa + perp * r).y), aMinus = addPoint((pa - perp * r).x, (pa - perp * r).y)
+        let bPlus = addPoint((pb + perp * r).x, (pb + perp * r).y), bMinus = addPoint((pb - perp * r).x, (pb - perp * r).y)
+        let plus = addLine(aPlus, bPlus), minus = addLine(aMinus, bMinus)
+        let arcA = addArc(center: ca, start: aPlus, end: aMinus)  // counter-clockwise round the end at a, through the outside
+        let arcB = addArc(center: cb, start: bMinus, end: bPlus)  // and round the end at b
+        for side in [plus, minus] { for end in [arcA, arcB] { constrain(.tangent(side, end)) } }
+        constrain(.parallel(plus, minus))
+        constrain(.equal(arcA, arcB))
+        return ([plus, minus], [arcA, arcB], [ca, cb])
+    }
+
     /// Arc from `start` to `end` through `through`, with a new center point; nil if the three are
     /// in a line.
     @discardableResult

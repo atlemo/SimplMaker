@@ -42,7 +42,7 @@ enum TransformPivot: String, CaseIterable, Identifiable {
 }
 
 enum SketchTool: String, CaseIterable, Identifiable {
-    case select = "Select", line = "Line", rectangle = "Rectangle", centerRectangle = "Center Rectangle"
+    case select = "Select", line = "Line", rectangle = "Rectangle", centerRectangle = "Center Rectangle", slot = "Slot"
     case circle = "Circle", circle2Point = "2-Point Circle", arc = "Arc", arc3Point = "3-Point Arc", bezier = "Spline"
     case polygon = "Polygon", triangle = "Triangle", gear = "Gear"
     case point = "Point", text = "Text", fillet = "Round Corner", trim = "Trim", extend = "Extend", dimension = "Dimension"
@@ -51,7 +51,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// Toolbar groups: drawing, changing curves, and dimensions (Select stands alone).
-    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .gear, .point, .text]
+    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .slot, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .gear, .point, .text]
     static let modify: [SketchTool] = [.fillet, .trim, .extend]
 
     /// The name under the icon in the toolbar (menus use the full `rawValue`).
@@ -68,7 +68,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     /// Tools whose clicks place points (and so snap to shape centers).
     var placesPoints: Bool {
         switch self {
-        case .line, .rectangle, .centerRectangle, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .gear, .point, .text: return true
+        case .line, .rectangle, .centerRectangle, .slot, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .bezier, .gear, .point, .text: return true
         case .select, .fillet, .trim, .extend, .dimension, .distance: return false
         }
     }
@@ -128,6 +128,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .line: return "minus"
         case .rectangle: return "square"
         case .centerRectangle: return "square-center"
+        case .slot: return "slot"
         case .arc3Point: return "arc-3-point"
         case .circle: return "circle"
         case .circle2Point: return "diameter"
@@ -155,6 +156,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .select: return "s"
         case .line: return "l"
         case .rectangle, .centerRectangle: return "r"
+        case .slot: return "o"
         case .circle, .circle2Point: return "c"
         case .polygon, .triangle: return "g"
         case .arc, .arc3Point: return "a"
@@ -178,6 +180,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .line: return "Click points to draw connected lines · Esc ends the chain"
         case .rectangle: return "Click two opposite corners · \(again) for a center rectangle"
         case .centerRectangle: return "Click the center, then a corner · \(again) for two corners"
+        case .slot: return "Click the center of one end, then the center of the other · type the width first or after"
         case .circle: return "Click the center, then a point on the circle · \(again) for 2-point"
         case .circle2Point: return "Click two points on opposite sides of the circle · \(again) for center"
         case .polygon: return "Click the center, then a corner · type the number of sides, or press ↑ ↓ · \(again) for a triangle"
@@ -313,6 +316,9 @@ final class SketchSession {
     /// How many sides the polygon being drawn has: three for the Triangle tool.
     var sidesCount: Int { tool == .triangle ? 3 : polygonSides }
     var drawsPolygon: Bool { tool == .polygon || tool == .triangle }
+    /// The width the Slot tool draws, as typed (kept from one slot to the next).
+    private(set) var slotWidth = "10 mm"
+    var slotWidthValue: Double { (try? parameters.value(of: slotWidth, kind: .length)) ?? 10 }
     /// What the next gear will be (kept from one gear to the next); its id and centre are not used.
     private(set) var gearDefaults = SketchGearDef()
     /// The gear the Gear tool's fields are changing: the one just placed, or one clicked in Select.
@@ -812,6 +818,16 @@ final class SketchSession {
                 clicks = [SketchSnap(sketch.position(r.end) ?? s.position, point: r.end)]
             }
             return finish("Line")
+        case .slot:
+            guard clicks.count == 2 else { return nil }
+            defer { clicks = [] }
+            guard distance(clicks[0], s) > 1e-6 else { pendingDimensions = []; return nil }
+            let slot = sketch.addSlot(from: clicks[0], to: s, width: slotWidthValue)
+            // The width is always a dimension (it is what makes the ends round); the length only when typed.
+            pendingDimensions.removeAll { $0.input == .width }
+            pendingDimensions.append((.width, slotWidth, slotWidthValue))
+            addPendingDimensions([.length: .distance(slot.centers[0], slot.centers[1]), .width: .diameter(slot.ends[0])])
+            return finish("Slot")
         case .rectangle:
             guard clicks.count == 2 else { return nil }
             defer { clicks = [] }
@@ -924,6 +940,8 @@ final class SketchSession {
         switch (tool, clicks.count) {
         case (.line, 1): return [.length, .angle]
         case (.rectangle, 1), (.centerRectangle, 1): return [.width, .height]
+        case (.slot, 0): return [.width]
+        case (.slot, 1): return [.length, .width]
         case (.circle, 1), (.circle2Point, 1): return [.diameter]
         case (.polygon, 0): return [.sides]
         case (.gear, _): return [.teeth, .module, .pressureAngle, .backlash, .bore]
@@ -940,6 +958,7 @@ final class SketchSession {
         let t = text.trimmingCharacters(in: .whitespaces)
         typed[field] = t.isEmpty ? nil : t
         if field == .sides, let n = typedValue(.sides) { polygonSides = Int(n) }
+        if tool == .slot, field == .width, typedValue(.width) != nil, let text = typed[.width] { slotWidth = Self.expression(text, .width) }
         if field.isGear, typedValue(field) != nil, let text = typed[field] { setGear(field, Self.expression(text, field)) }
         if manipulating != nil { previewTyped() }
         if patternSetup != nil { applyTypedPattern() }
@@ -990,6 +1009,9 @@ final class SketchSession {
             let angle = typedValue(.angle) ?? (len > 1e-9 ? atan2(d.y, d.x) : 0)
             let length = typedValue(.length) ?? len
             return SketchSnap(a + length * SIMD2(cos(angle), sin(angle)))
+        case .slot:
+            // The length is from the first end's center to the second's; the width is drawn across it, not placed.
+            return SketchSnap(a + dir * (typedValue(.length) ?? len))
         case .rectangle:
             let w = typedValue(.width) ?? abs(d.x), h = typedValue(.height) ?? abs(d.y)
             return SketchSnap(a + SIMD2(d.x < 0 ? -w : w, d.y < 0 ? -h : h))
@@ -1028,6 +1050,7 @@ final class SketchSession {
         case .countX, .countY, .copies, .spacingX, .spacingY, .spread: return patternValue(field)
         case .offsetDistance: return offsetDistance
         case .sides: return Double(sidesCount)
+        case .width where tool == .slot: return slotWidthValue
         case .teeth: return evaluated(gearShown.teeth, .none)
         case .module: return evaluated(gearShown.module, .length)
         case .pressureAngle: return evaluated(gearShown.pressureAngle, .angle)
@@ -1069,6 +1092,10 @@ final class SketchSession {
             return finish("Edit Gear")
         }
         if tool == .polygon, clicks.isEmpty {  // the number of sides is set: nothing to place yet
+            typed = [:]
+            return nil
+        }
+        if tool == .slot, clicks.isEmpty {  // the width is set: nothing to place yet
             typed = [:]
             return nil
         }
@@ -2225,6 +2252,12 @@ final class SketchSession {
             guard let id = trial.addArc(from: SketchSnap(a), to: SketchSnap(clicks[1].position), through: SketchSnap(c)),
                   let g = trial.geometry(of: id) else { return [[a, clicks[1].position]] }
             return [(0...48).map { g.point(Double($0) / 48) }]
+        case .slot:
+            // The two ends and the sides, as they would be drawn to the cursor.
+            let len = simdLength(c - a), r = slotWidthValue / 2
+            guard len > 1e-6 else { return [circle(a, r, 0, 2 * .pi)] }
+            let t = atan2(c.y - a.y, c.x - a.x)
+            return [circle(a, r, t + .pi / 2, t + 3 * .pi / 2) + circle(c, r, t - .pi / 2, t + .pi / 2)]
         case .circle:
             let r = simdLength(c - a)
             return [circle(a, r, 0, 2 * .pi)]

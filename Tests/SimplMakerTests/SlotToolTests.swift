@@ -1,0 +1,109 @@
+// Copyright © 2026 Atle Mo. All rights reserved.
+import CADCore
+import Foundation
+import Testing
+@testable import SimplMaker
+
+/// The Slot sketch tool: two centers and a width draw a stadium. The width is always a dimension (it makes the ends
+/// round); the length is dimensioned only when it is typed.
+@Suite @MainActor struct SlotToolTests {
+    private func session() -> SketchSession {
+        SketchSession(featureID: IDs.make(), frame: .xy, sketch: Sketch(), parameters: ParameterEvaluator.evaluate([]))
+    }
+
+    private func click(_ s: SketchSession, _ x: Double, _ y: Double) -> String? {
+        _ = s.handle(SketchMouse(phase: .moved, uv: SIMD2(x, y), pick: nil))
+        let down = s.handle(SketchMouse(phase: .down, uv: SIMD2(x, y), pick: nil))
+        let up = s.handle(SketchMouse(phase: .up, uv: SIMD2(x, y), pick: nil))
+        return down.commit ?? up.commit
+    }
+
+    private func arcs(_ s: SketchSession) -> [SketchCurve] {
+        s.sketch.curves.filter { if case .arc = $0.geometry { return true } else { return false } }
+    }
+
+    private func diameters(_ s: SketchSession) -> [SketchDimension] {
+        s.sketch.dimensions.filter { if case .diameter = $0.kind { return true } else { return false } }
+    }
+
+    private func distances(_ s: SketchSession) -> [SketchDimension] {
+        s.sketch.dimensions.filter { if case .distance = $0.kind { return true } else { return false } }
+    }
+
+    @Test func twoCentersMakeASlotOfTheTypedWidth() {
+        let s = session()
+        s.setTool(.slot)
+        s.setTyped(.width, "8")
+        _ = click(s, 0, 0)
+        #expect(s.sketch.curves.isEmpty, "the first center alone draws nothing")
+        _ = click(s, 20, 0)
+        #expect(s.sketch.curves.count == 4, "two sides and two round ends")
+        #expect(arcs(s).count == 2)
+        for end in arcs(s) {
+            #expect(abs((s.sketch.radius(of: end) ?? 0) - 4) < 1e-6, "each end's radius is half the width")
+        }
+        #expect(diameters(s).count == 1 && diameters(s)[0].expression == s.slotWidth)
+        #expect(s.slotWidthValue == 8)
+        #expect(distances(s).isEmpty, "the length is not dimensioned unless typed")
+    }
+
+    @Test func theWidthIsTenMillimetresUnlessTyped() {
+        let s = session()
+        s.setTool(.slot)
+        #expect(s.slotWidthValue == 10)
+        _ = click(s, 0, 0)
+        _ = click(s, 20, 0)
+        #expect(diameters(s).count == 1 && diameters(s)[0].expression == "10 mm")
+    }
+
+    @Test func theWidthIsKeptForTheNextSlot() {
+        let s = session()
+        s.setTool(.slot)
+        s.setTyped(.width, "8")
+        _ = click(s, 0, 0)
+        _ = click(s, 20, 0)
+        _ = click(s, 40, 0)
+        _ = click(s, 60, 0)
+        #expect(diameters(s).count == 2)
+        #expect(diameters(s).allSatisfy { $0.expression == s.slotWidth })
+    }
+
+    @Test func aTypedLengthSetsTheDistanceBetweenCenters() {
+        let s = session()
+        s.setTool(.slot)
+        _ = click(s, 0, 0)
+        s.setTyped(.length, "30")
+        _ = click(s, 20, 0)
+        #expect(distances(s).count == 1)
+        #expect(distances(s).first?.expression.hasPrefix("30") == true)
+    }
+
+    @Test func sameCenterTwiceDrawsNothing() {
+        let s = session()
+        s.setTool(.slot)
+        _ = click(s, 5, 5)
+        _ = click(s, 5, 5)
+        #expect(s.sketch.curves.isEmpty)
+    }
+
+    @Test func typingTheWidthAloneDoesNotPlaceAPoint() {
+        let s = session()
+        s.setTool(.slot)
+        s.setTyped(.width, "6")
+        #expect(s.commitTyped() == nil)
+        #expect(s.sketch.curves.isEmpty)
+        #expect(s.slotWidthValue == 6)
+    }
+
+    @Test func previewShowsTheSlotToTheCursor() {
+        let s = session()
+        s.setTool(.slot)
+        s.setTyped(.width, "8")
+        _ = click(s, 0, 0)
+        _ = s.handle(SketchMouse(phase: .moved, uv: SIMD2(20, 0), pick: nil))
+        let points = s.previewPolylines().flatMap { $0 }
+        #expect(abs((points.map(\.x).max() ?? 0) - 24) < 1e-6, "the far end reaches 4 mm past the far center")
+        #expect(abs((points.map(\.x).min() ?? 0) + 4) < 1e-6, "the near end reaches 4 mm before the first center")
+        #expect(abs((points.map(\.y).max() ?? 0) - 4) < 1e-6)
+    }
+}
