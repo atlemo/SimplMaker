@@ -59,8 +59,8 @@ While you sketch, the letters pick sketch tools instead.
 | [[F]] | Round Corner |
 | [[T]] | Trim |
 | [[E]] | Extend |
-| [[I]] | Dimension |
-| [[D]] | Distance |
+| [[D]] | Dimension |
+| [[I]] | Distance |
 
 Other keys while sketching:
 

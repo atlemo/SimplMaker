@@ -185,8 +185,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .chamfer: return "h"
         case .trim: return "t"
         case .extend: return "e"
-        case .dimension: return "i"
-        case .distance: return "d"
+        case .dimension: return "d"
+        case .distance: return "i"
         }
     }
     /// "R again": pressing the key a second time picks the next way of drawing the shape.

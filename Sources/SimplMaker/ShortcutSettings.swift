@@ -33,7 +33,7 @@ struct ShortcutsPane: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Button("Restore Defaults") { store.resetAll(); notice = nil }
+                Button("Reset to Default") { store.resetAll(); notice = nil }
                     .disabled(!store.hasCustomShortcuts)
             }
             .padding(DS.Spacing.space3)
