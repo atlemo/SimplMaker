@@ -106,6 +106,12 @@ enum NavigationPreset: String, CaseIterable, Identifiable {
     static var choosable: [NavigationPreset] { allCases.filter { $0 != .custom } }
 }
 
+/// Where the pointer is in the view, so a zoom can keep the spot under it in place.
+struct ZoomAnchor {
+    var point: CGPoint      // points, origin top-left
+    var viewSize: CGSize
+}
+
 struct NavigationConfig: Codable, Equatable {
     /// Dragging with the left button on empty space (on a face, edge or handle it selects or drags that instead).
     var left: NavBindings
@@ -195,7 +201,9 @@ struct NavigationConfig: Codable, Equatable {
 
     /// Moves the camera. `dx` is to the right and `dy` downward, in points on screen (for a wheel, in lines):
     /// how far the fingers or the pointer moved.
-    func navigate(_ camera: inout Camera, _ action: NavAction, input: NavInput, dx: Float, dy: Float, viewHeight: Float) {
+    /// A zoom by scroll or wheel keeps the spot under `cursor` (view coordinates) where it is, when one is given.
+    func navigate(_ camera: inout Camera, _ action: NavAction, input: NavInput, dx: Float, dy: Float, viewHeight: Float,
+                  cursor: ZoomAnchor? = nil) {
         // A notch of the wheel is a lot less than a point on the trackpad.
         let scale: Float = input == .wheel ? 10 : 1
         let dx = dx * scale, dy = dy * scale
@@ -215,7 +223,7 @@ struct NavigationConfig: Codable, Equatable {
             let perUnit: Float = input == .wheel ? log(1.1) / scale : 0.01
             let sign: Float = input == .drag ? 1 : -1
             let exponent = sign * dy * perUnit * Float(zoomSpeed) * (invertZoom ? -1 : 1)
-            camera.zoom(exp(exponent))
+            if let cursor { camera.zoom(exp(exponent), about: cursor.point, viewSize: cursor.viewSize) } else { camera.zoom(exp(exponent)) }
         case .roll:
             // A drag follows the pointer round the middle of the view (see ViewportMTKView); a scroll, which has
             // no pointer to follow, turns by how far it went sideways.
@@ -224,10 +232,11 @@ struct NavigationConfig: Codable, Equatable {
     }
 
     /// The trackpad's pinch; `magnification` is positive when the fingers spread.
-    func pinch(_ camera: inout Camera, magnification: Float) {
+    func pinch(_ camera: inout Camera, magnification: Float, cursor: ZoomAnchor? = nil) {
         guard magnification > -1 else { return }
         let base = 1 + magnification
-        camera.zoom(pow(base, -Float(zoomSpeed)))
+        let factor = pow(base, -Float(zoomSpeed))
+        if let cursor { camera.zoom(factor, about: cursor.point, viewSize: cursor.viewSize) } else { camera.zoom(factor) }
     }
 
     /// The trackpad's rotate gesture, in degrees (positive counter-clockwise). In a sketch the picture turns

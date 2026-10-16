@@ -940,7 +940,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         // Held with ⇧, many mice turn the wheel sideways.
         if !precise, dy == 0 { (dx, dy) = (0, dx) }
         let action = navAction((precise ? config.trackpad : config.wheel)[NavModifier(event.modifierFlags)])
-        config.navigate(&renderer.camera, action, input: precise ? .trackpad : .wheel, dx: dx, dy: dy, viewHeight: Float(bounds.height))
+        config.navigate(&renderer.camera, action, input: precise ? .trackpad : .wheel, dx: dx, dy: dy, viewHeight: Float(bounds.height),
+                        cursor: ZoomAnchor(point: location(event), viewSize: bounds.size))
         needsDisplay = true
     }
 
@@ -952,7 +953,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     override func magnify(with event: NSEvent) {
         guard let renderer else { return }
-        navigation.pinch(&renderer.camera, magnification: Float(event.magnification))
+        navigation.pinch(&renderer.camera, magnification: Float(event.magnification),
+                         cursor: ZoomAnchor(point: location(event), viewSize: bounds.size))
         needsDisplay = true
     }
 

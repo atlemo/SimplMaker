@@ -114,6 +114,36 @@ import Testing
         #expect(cam.distance < Camera().distance)
     }
 
+    /// The spot of the picture under the cursor is still under it after zooming, in either projection.
+    @Test(arguments: [true, false]) func zoomingKeepsTheSpotUnderTheCursor(orthographic: Bool) throws {
+        let size = CGSize(width: 800, height: 600), cursor = CGPoint(x: 650, y: 140)
+        var cam = Camera()
+        cam.orthographic = orthographic
+        cam.roll = 0.3
+        cam.centerShift = SIMD2(0.1, -0.05)
+        let ray = cam.ray(at: cursor, viewSize: size)
+        // The point of the target's plane under the cursor.
+        let t = simd_dot(cam.target - ray.origin, cam.forward) / simd_dot(ray.direction, cam.forward)
+        let spot = ray.origin + ray.direction * t
+        let anchor = ZoomAnchor(point: cursor, viewSize: size)
+        NavigationConfig.simplMaker().pinch(&cam, magnification: 0.5, cursor: anchor)
+        NavigationConfig.simplMaker().pinch(&cam, magnification: -0.3, cursor: anchor)
+        let after = try #require(cam.project(spot, viewSize: size))
+        #expect(abs(after.x - cursor.x) < 0.01 && abs(after.y - cursor.y) < 0.01)
+    }
+
+    @Test func zoomingTowardTheCursorMovesTheTarget() {
+        var cam = Camera()
+        let before = cam.target
+        NavigationConfig.simplMaker().pinch(&cam, magnification: 0.5,
+                                            cursor: ZoomAnchor(point: CGPoint(x: 700, y: 100), viewSize: CGSize(width: 800, height: 600)))
+        #expect(simd_length(cam.target - before) > 1)
+        var centered = Camera()
+        NavigationConfig.simplMaker().pinch(&centered, magnification: 0.5,
+                                            cursor: ZoomAnchor(point: CGPoint(x: 400, y: 300), viewSize: CGSize(width: 800, height: 600)))
+        #expect(simd_length(centered.target - before) < 1e-3)
+    }
+
     @Test func rotateCanBeTurnedOff() {
         var c = NavigationConfig.simplMaker()
         var cam = Camera()
