@@ -458,6 +458,8 @@ final class SketchSession {
     private var dragMoved = false
     /// A dimension line being dragged to a new place, and the one the cursor is over.
     private var dragDimension: EntityID?
+    /// How far the grabbed point of an angle's arc was from where its offset put it, so the arc doesn't jump to the cursor.
+    private var dragGrab = 0.0
     private(set) var hoverDimension: EntityID?
     /// What a dragged point last snapped to; a model edge or corner it is dropped on is followed from then on.
     private var dragSnap: SketchSnap?
@@ -753,6 +755,7 @@ final class SketchSession {
             if hover == nil, let d = hoverDimension {  // a dimension line: drag it to move it
                 dragDimension = d
                 dragMoved = false
+                dragGrab = m.uv.flatMap { angleGrab(d, at: $0) } ?? 0
                 return (true, nil)
             }
             guard let h = hover else {
@@ -777,7 +780,8 @@ final class SketchSession {
         case .distance:
             return (true, distanceClick())
         case .trim, .extend:
-            guard let h = hover, sketch.curve(h) != nil, let uv = m.uv else {
+            // A click near a line's end or a crossing picks the point there: the curve it belongs to is what is edited.
+            guard let uv = m.uv, let h = (hover.flatMap { sketch.curve($0) != nil ? $0 : nil }) ?? nearestCurve(uv) else {
                 message = "Click on a curve"
                 return (true, nil)
             }
@@ -1980,6 +1984,12 @@ final class SketchSession {
             if d <= tolerance, d < (best?.1 ?? .infinity) { best = (p.id, d) }
         }
         if let best { return best.0 }
+        return nearestCurve(uv)
+    }
+
+    /// The nearest curve within the pick tolerance, whatever points are there.
+    func nearestCurve(_ uv: SIMD2<Double>) -> EntityID? {
+        var best: (EntityID, Double)?
         let positions = sketch.positionTable()
         for c in sketch.curves where tool == .select || !Sketch.isGenerated(c.id) {
             guard mayBeNear(c, uv, positions), let g = sketch.geometry(of: c.id) else { continue }
@@ -2342,13 +2352,23 @@ final class SketchSession {
         return best?.0
     }
 
+    /// The offset an angle has, less how far out from its centre `uv` is along the wedge's middle: what a drag keeps,
+    /// so the arc moves by the cursor's own movement from the point it was grabbed at. Nil for anything but an angle.
+    private func angleGrab(_ id: EntityID, at uv: SIMD2<Double>) -> Double? {
+        guard let i = sketch.dimensions.firstIndex(where: { $0.id == id }), sketch.dimensions[i].isAngle,
+              let arc = sketch.angleArc(of: sketch.dimensions[i], size: tolerance) else { return nil }
+        let dir = SIMD2(cos(arc.middle), sin(arc.middle))
+        guard let offset = sketch.dimensions[i].offset else { return 0 }
+        return offset - simd_dot(uv - arc.center, dir)
+    }
+
     /// Drags a dimension's line to where the cursor is: only how far it stands from what it measures changes.
     private func moveDimensionLine(_ id: EntityID, to uv: SIMD2<Double>) {
         if let i = sketch.dimensions.firstIndex(where: { $0.id == id }), sketch.dimensions[i].isAngle {
-            // An angle stays on its wedge: the cursor sets how far out its arc and value stand.
+            // An angle stays on its wedge: the cursor sets how far out its arc and value stand, from where it was grabbed.
             guard let arc = sketch.angleArc(of: sketch.dimensions[i], size: tolerance) else { return }
             let dir = SIMD2(cos(arc.middle), sin(arc.middle))
-            sketch.dimensions[i].offset = max(simd_dot(uv - arc.center, dir) / 1.15, tolerance * 5)
+            sketch.dimensions[i].offset = max(simd_dot(uv - arc.center, dir) + dragGrab, tolerance * 5)
             sketch.dimensions[i].wedge = arc.middle
             return
         }
