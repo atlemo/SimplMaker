@@ -1242,7 +1242,7 @@ final class DocumentModel {
     func sketchMouse(_ m: SketchMouse) -> Bool {
         guard let session = sketchSession else { return false }
         let r = session.handle(m)
-        if m.phase != .moved || !session.clicks.isEmpty || (session.tool == .gear && session.gearActive == nil) { overlayRevision += 1 }  // the ghost gear follows the cursor
+        if m.phase != .moved || !session.clicks.isEmpty || session.anglePicks != nil || (session.tool == .gear && session.gearActive == nil) { overlayRevision += 1 }  // the ghost gear and a placing angle follow the cursor
         commitSketch(r.commit)
         return r.handled
     }

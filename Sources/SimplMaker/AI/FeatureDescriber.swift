@@ -194,6 +194,7 @@ struct FeatureDescriber {
         case .radius: return "radius"
         case .diameter: return "diameter"
         case .angle: return "angle"
+        case .supplementAngle: return "supplement_angle"
         case .lineAngle: return "line_angle"
         case .radialOffset: return "radial_offset"
         case .gap: return "gap"

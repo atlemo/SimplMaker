@@ -215,7 +215,7 @@ struct ViewportPalette: Equatable {
                 edge: SIMD4(0.04, 0.04, 0.05, 1), hover: SIMD4(0.45, 0.72, 1, 1), selection: SIMD4(0.2, 0.55, 1, 1),
                 sketchSelected: SIMD4(1, 0.4, 0.75, 1),
                 wireEdge: SIMD4(0.8, 0.82, 0.86, 1),
-                sketch: SIMD4(0.45, 0.68, 1, 1), sketchConstrained: SIMD4(0.93, 0.93, 0.95, 1),
+                sketch: SIMD4(0.45, 0.68, 1, 1), sketchConstrained: SIMD4(0.35, 0.9, 0.45, 1),
                 construction: SIMD4(1, 0.62, 0.25, 1), preview: SIMD4(0.65, 0.65, 0.7, 1), point: SIMD4(0.85, 0.87, 0.92, 1),
                 inactiveSketch: SIMD4(0.5, 0.6, 0.85, 1), handle: SIMD4(1, 0.58, 0.1, 1), invalid: SIMD4(1, 0.3, 0.3, 1),
                 region: SIMD4(0.35, 0.6, 1, 0.18), plane: SIMD4(1, 0.65, 0.2, 0.22), lineScale: 1)
@@ -228,7 +228,7 @@ struct ViewportPalette: Equatable {
                 edge: SIMD4(0.12, 0.13, 0.16, 1), hover: SIMD4(0.1, 0.55, 1, 1), selection: SIMD4(0, 0.4, 1, 1),
                 sketchSelected: SIMD4(0.85, 0.08, 0.55, 1),
                 wireEdge: SIMD4(0.12, 0.13, 0.16, 1),
-                sketch: SIMD4(0.1, 0.3, 0.85, 1), sketchConstrained: SIMD4(0.08, 0.08, 0.1, 1),
+                sketch: SIMD4(0.1, 0.3, 0.85, 1), sketchConstrained: SIMD4(0.1, 0.62, 0.25, 1),
                 construction: SIMD4(0.9, 0.55, 0.15, 1), preview: SIMD4(0.45, 0.45, 0.5, 1), point: SIMD4(0.15, 0.2, 0.35, 1),
                 inactiveSketch: SIMD4(0.35, 0.45, 0.7, 1), handle: SIMD4(0.95, 0.5, 0.05, 1), invalid: SIMD4(0.9, 0.12, 0.12, 1),
                 region: SIMD4(0.25, 0.5, 0.95, 0.16), plane: SIMD4(0.95, 0.6, 0.15, 0.2), lineScale: 1)

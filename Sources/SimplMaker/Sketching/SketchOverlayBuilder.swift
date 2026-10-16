@@ -24,6 +24,7 @@ struct DimensionLabel: Identifiable, Equatable {
     static func referenceID(_ curve: EntityID) -> EntityID { "ref:" + curve }
     static func curve(ofReference id: EntityID) -> EntityID? { id.hasPrefix("ref:") ? String(id.dropFirst(4)) : nil }
     static let pendingID = "pending-length"
+    static let pendingAngleID = "pending-angle"
 }
 
 /// A constraint symbol drawn next to the geometry it constrains.
@@ -72,7 +73,7 @@ enum SketchOverlayBuilder {
         if let line = s.dimensionLine(of: d) { return simdLength(line.p2 - line.p1) }
         func length(_ id: EntityID) -> Double? { s.lineEnds(id).map { simdLength($0.1 - $0.0) } }
         switch d.kind {
-        case .angle(let a, let b):
+        case .angle(let a, let b), .supplementAngle(let a, let b):
             guard let la = length(a), let lb = length(b) else { return nil }
             return min(la, lb)
         case .lineAngle(let l): return length(l)
@@ -263,6 +264,10 @@ enum SketchOverlayBuilder {
                 o.preview += dimensionSegments(line, size: session.snapTolerance, frame: f)
             }
         }
+        // The angle waiting to be placed: its wedge under the cursor, drawn as it will be stored.
+        if let p = session.anglePreview, let arc = s.angleArc(of: SketchDimension(p.kind, "", offset: p.radius), size: session.snapTolerance) {
+            o.preview += angleSegments(arc, size: session.snapTolerance, frame: f)
+        }
         for line in session.previewPolylines() { o.preview += segments(line, frame: f, id: 0) }
         if let snap = session.lastSnap {
             let w = world(f, snap.position)
@@ -351,7 +356,8 @@ enum SketchOverlayBuilder {
         let marks = offsetMarks(session)
         var out: [DimensionLabel] = s.dimensions.compactMap { d in
             guard shows(d, session) || marks.labelled.contains(d.id),
-                  let anchor = s.dimensionLine(of: d).map(labelAnchor) ?? anchor(d.kind, s, size: session.snapTolerance) else { return nil }
+                  let anchor = s.dimensionLine(of: d).map(labelAnchor) ?? angleLabel(d, s, size: session.snapTolerance)
+                      ?? anchor(d.kind, s, size: session.snapTolerance) else { return nil }
             return DimensionLabel(id: d.id, world: world(session.frame, anchor),
                                   text: dimensionText(d, session),
                                   editing: session.editingDimension == d.id, isDimension: true,
@@ -369,6 +375,10 @@ enum SketchOverlayBuilder {
         if let length = session.pendingLineLength, let line = pending, let anchor = anchor(.length(line), s) {
             out.append(DimensionLabel(id: DimensionLabel.pendingID, world: world(session.frame, anchor),
                                       text: "\(measured(length)) · click again to place", editing: true))
+        }
+        if let p = session.anglePreview, let anchor = angleLabel(SketchDimension(p.kind, "", offset: p.radius), s, size: session.snapTolerance) {
+            out.append(DimensionLabel(id: DimensionLabel.pendingAngleID, world: world(session.frame, anchor),
+                                      text: "\(UnitKind.angle.format(p.value)) · click to place", editing: true))
         }
         return out
     }
@@ -419,6 +429,12 @@ enum SketchOverlayBuilder {
         }
     }
 
+    /// An angle's value stands just outside its arc, at the middle of the wedge, so it moves with the arc's radius.
+    static func angleLabel(_ d: SketchDimension, _ s: Sketch, size: Double) -> SIMD2<Double>? {
+        guard d.isAngle, let arc = s.angleArc(of: d, size: size) else { return nil }
+        return arc.center + arc.radius * 1.15 * SIMD2(cos(arc.middle), sin(arc.middle))
+    }
+
     static func anchor(_ k: SketchDimension.Kind, _ s: Sketch, size: Double = 1, lookup: Lookup? = nil) -> SIMD2<Double>? {
         func mid(_ a: SIMD2<Double>?, _ b: SIMD2<Double>?) -> SIMD2<Double>? {
             guard let a, let b else { return nil }
@@ -445,7 +461,7 @@ enum SketchOverlayBuilder {
             }
             guard let center, let r = s.radius(of: curve) else { return nil }
             return center + r * SIMD2(0.7071, 0.7071)
-        case .angle(let a, let b):
+        case .angle(let a, let b), .supplementAngle(let a, let b):
             guard let arc = s.angleArc(of: SketchDimension(k, ""), size: size) else { return mid(lineMid(a), lineMid(b)) }
             return arc.center + arc.radius * 1.15 * SIMD2(cos(arc.middle), sin(arc.middle))
         case .lineAngle:

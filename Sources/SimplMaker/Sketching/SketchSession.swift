@@ -447,6 +447,8 @@ final class SketchSession {
     /// Typed values from earlier steps of the shape in progress (an arc's radius), as dimensions to add.
     private var pendingDimensions: [(input: SketchInput, expression: String, value: Double)] = []
     private(set) var dimensionPicks: [EntityID] = []
+    /// Two lines picked for an angle: the angle waits for a click to place it, on the wedge under the cursor.
+    private(set) var anglePicks: (EntityID, EntityID)?
     var editingDimension: EntityID?
     var message: String?
 
@@ -547,6 +549,7 @@ final class SketchSession {
         typed = [:]
         pendingDimensions = []
         dimensionPicks = []
+        anglePicks = nil
         message = nil
     }
 
@@ -1932,6 +1935,7 @@ final class SketchSession {
     /// Dimension tool clicks. A line waits for a second click: the same line or empty space
     /// places its length, another line an angle, a point a distance. Circles and arcs take one click.
     private func dimensionClick() -> String? {
+        if anglePicks != nil { return placeAngle() }
         let singleLine = dimensionPicks.count == 1 && sketch.kind(of: dimensionPicks[0]) == .line
         guard let h = hover else {
             if singleLine { return createDimension() }  // empty space: place the length
@@ -2137,19 +2141,48 @@ final class SketchSession {
         return simdLength(b - a)
     }
 
+    /// The angle the cursor would place between the two picked lines, as it would be stored, and its value.
+    var anglePreview: (kind: SketchDimension.Kind, value: Double, radius: Double)? {
+        guard let (a, b) = anglePicks, let cursor else { return nil }
+        return sketch.angleChoice(a, b, toward: cursor, size: snapTolerance)
+    }
+
     private func createDimension() -> String? {
         defer { dimensionPicks = [] }
         guard let suggestion = sketch.suggestDimension(for: dimensionPicks) else {
             message = "Can't dimension that combination"
             return nil
         }
+        if case .angle = suggestion.kind, dimensionPicks.count == 2 {
+            // Two lines: wait for the click that places the angle, on the wedge under the cursor.
+            anglePicks = (dimensionPicks[0], dimensionPicks[1])
+            message = "Click where to place the angle · Esc cancels"
+            return nil
+        }
         return addDimension(suggestion.kind, value: suggestion.value)
+    }
+
+    /// The click that places a picked angle: the wedge the cursor is in, at its current value.
+    private func placeAngle() -> String? {
+        guard let (a, b) = anglePicks, let cursor else { return nil }
+        guard let choice = sketch.angleChoice(a, b, toward: cursor, size: snapTolerance) else {
+            anglePicks = nil
+            message = "Can't dimension that combination"
+            return nil
+        }
+        anglePicks = nil
+        let action = addDimension(choice.kind, value: choice.value)
+        // The arc and its value stay at the radius clicked, not at the default size.
+        if let id = editingDimension, let i = sketch.dimensions.firstIndex(where: { $0.id == id }) {
+            sketch.dimensions[i].offset = choice.radius
+        }
+        return action
     }
 
     /// Adds a dimension at its current value and opens it for typing.
     private func addDimension(_ kind: SketchDimension.Kind, value: Double) -> String? {
         let unit: UnitKind
-        if case .angle = kind { unit = .angle } else { unit = .length }
+        unit = SketchDimension(kind, "").unitKind
         let id = IDs.make()
         guard sketch.applyDimension(kind, expression: formatDimension(value, kind: unit), value: value,
                                     values: values, id: id) else {
@@ -2187,7 +2220,7 @@ final class SketchSession {
     /// Esc: cancel the current tool step, then the tool, then the selection.
     func escape() {
         if editingDimension != nil { editingDimension = nil }
-        else if !clicks.isEmpty || !dimensionPicks.isEmpty { resetToolState() }
+        else if !clicks.isEmpty || !dimensionPicks.isEmpty || anglePicks != nil { resetToolState() }
         else if patternSetup != nil { cancelPattern() }
         else if mirrorSetup != nil { cancelMirror() }
         else if gearBackup != nil { cancelGearEdit() }

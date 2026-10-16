@@ -463,16 +463,19 @@ public enum SketchSolver {
                     let u = me.dir(l, $0), d = atan2(u.y, u.x) - target
                     return atan2(sin(d), cos(d))
                 }
-            case .angle(let a, let b):
-                // sin(θ - v) where θ is the ccw angle from a to b; zero at θ = v.
+            case .angle(let a, let b), .supplementAngle(let a, let b):
+                // A supplement is 180° less the ccw angle from a to b, so it's the same residual aimed at 180° − v.
+                var turn = v
+                if case .supplementAngle = k { turn = .pi - v }
+                // sin(θ - turn) where θ is the ccw angle from a to b; zero at θ = turn.
                 add {
                     let u = me.dir(a, $0), w = me.dir(b, $0)
-                    return (vcross(u, w) * cos(v) - vdot(u, w) * sin(v)) / max(vlen(u) * vlen(w), 1e-12)
+                    return (vcross(u, w) * cos(turn) - vdot(u, w) * sin(turn)) / max(vlen(u) * vlen(w), 1e-12)
                 }
-                // Reject the θ = v + π branch.
+                // Reject the θ = turn + π branch.
                 add {
                     let u = me.dir(a, $0), w = me.dir(b, $0)
-                    let c = (vdot(u, w) * cos(v) + vcross(u, w) * sin(v)) / max(vlen(u) * vlen(w), 1e-12)
+                    let c = (vdot(u, w) * cos(turn) + vcross(u, w) * sin(turn)) / max(vlen(u) * vlen(w), 1e-12)
                     return c >= 0 ? 0 : c
                 }
             }
@@ -594,7 +597,7 @@ extension SketchSolver {
         var stepped = sketch
         var turning: [(id: EntityID, from: Double, delta: Double)] = []
         for d in sketch.dimensions {
-            guard case .angle = d.kind, let target = dimensionValues[d.id], let now = sketch.measure(d.kind) else { continue }
+            guard d.isAngle, let target = dimensionValues[d.id], let now = sketch.measure(d.kind) else { continue }
             let delta = atan2(sin(target - now), cos(target - now))
             if abs(delta) > 1e-9 { turning.append((d.id, now, delta)) }
         }

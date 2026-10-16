@@ -39,6 +39,21 @@ import Testing
         #expect(s.points.map(\.id) == ["origin"])
     }
 
+    @Test func angleFollowsTheWedgeUnderTheCursor() {
+        var s = Sketch()
+        let a = s.addPoint(0, 0), b = s.addPoint(30, 40), c = s.addPoint(0, 10)
+        let l1 = s.addLine(a, b), l2 = s.addLine(a, c)
+        func at(_ deg: Double) -> SIMD2<Double> { SIMD2(cos(deg * .pi / 180), sin(deg * .pi / 180)) * 20 }
+        // The small wedge (70°, between the two lines) is l1 to l2; the large one (250°) is l2 to l1.
+        let small = s.angleChoice(l1, l2, toward: at(70), size: 0.5)
+        let large = s.angleChoice(l1, l2, toward: at(250), size: 0.5)
+        let wedge = Double.pi / 2 - atan2(40, 30)
+        #expect(small?.kind == .angle(l1, l2))
+        #expect(abs((small?.value ?? 0) - wedge) < 1e-9)
+        #expect(large?.kind == .angle(l2, l1))
+        #expect(abs((large?.value ?? 0) - (2 * .pi - wedge)) < 1e-9)
+    }
+
     @Test func suggestedDimensions() {
         var s = Sketch()
         let a = s.addPoint(0, 0), b = s.addPoint(30, 40), c = s.addPoint(0, 10)

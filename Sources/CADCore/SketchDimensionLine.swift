@@ -60,7 +60,7 @@ extension Sketch {
             out.center = cp
             out.arrowAtStart = d.kind != .radius(c)
             return out
-        case .length, .angle, .lineAngle, .radialOffset: return nil
+        case .length, .angle, .supplementAngle, .lineAngle, .radialOffset: return nil
         }
     }
 
@@ -83,7 +83,7 @@ extension Sketch {
         case .lineAngle(let l):
             guard case let (a, b)? = lineEnds(l), vlen(b - a) > 1e-9, let direction = lineDirection(l) else { return nil }
             return AngleArc(center: a, radius: radius(vlen(b - a)), start: 0, sweep: direction, axis: true)
-        case .angle(let l1, let l2):
+        case .angle(let l1, let l2), .supplementAngle(let l1, let l2):
             guard case let (a1, b1)? = lineEnds(l1), case let (a2, b2)? = lineEnds(l2),
                   case .line(let s1, let e1)? = curve(l1)?.geometry, case .line(let s2, let e2)? = curve(l2)?.geometry,
                   let t = measure(d.kind) else { return nil }
@@ -126,9 +126,27 @@ extension Sketch {
                 }
                 if let best { start = best.start }
             }
-            return AngleArc(center: vertex, radius: radius(min(vlen(u), vlen(w))), start: start, sweep: t, axis: false)
+            // A placed angle keeps the radius it was placed at (its offset); until then the arc is drawn at the default size.
+            return AngleArc(center: vertex, radius: d.offset ?? radius(min(vlen(u), vlen(w))), start: start, sweep: t, axis: false)
         default: return nil
         }
+    }
+
+    /// The angle between two lines as the wedge the cursor points into: the two ways of reading the pair
+    /// (first to second, and second to first) each draw an arc, and the one whose middle is nearest the cursor wins.
+    /// The radius is the cursor's distance from the vertex, so the arc passes under the cursor.
+    public func angleChoice(_ l1: EntityID, _ l2: EntityID, toward p: SIMD2<Double>, size: Double)
+        -> (kind: SketchDimension.Kind, value: Double, radius: Double)? {
+        var best: (kind: SketchDimension.Kind, value: Double, radius: Double, miss: Double)?
+        // Four readings: each pair of lines both ways round, as the turn and as its supplement (the other wedge).
+        for kind in [SketchDimension.Kind.angle(l1, l2), .angle(l2, l1), .supplementAngle(l1, l2), .supplementAngle(l2, l1)] {
+            guard let arc = angleArc(of: SketchDimension(kind, ""), size: size), let value = measure(kind) else { continue }
+            let toCursor = atan2(p.y - arc.center.y, p.x - arc.center.x)
+            let miss = abs(atan2(sin(toCursor - arc.middle), cos(toCursor - arc.middle)))
+            let radius = max(vlen(p - arc.center), size * 5)
+            if best == nil || miss < best!.miss { best = (kind, value, radius, miss) }
+        }
+        return best.map { ($0.kind, $0.value, $0.radius) }
     }
 
     /// Which way a circle's diameter or radius is drawn until it is moved: up and to the right, or for an arc, through its middle.
@@ -160,7 +178,7 @@ extension Sketch {
         case .gap(_, let other): return [other]
         case .pointLineDistance(_, let line): return [line]
         case .distance(let a, _), .horizontalDistance(let a, _), .verticalDistance(let a, _): return [a]
-        case .length, .radius, .diameter, .angle, .lineAngle, .radialOffset: return []
+        case .length, .radius, .diameter, .angle, .supplementAngle, .lineAngle, .radialOffset: return []
         }
     }
 }

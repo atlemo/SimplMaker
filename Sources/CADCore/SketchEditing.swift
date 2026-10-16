@@ -123,7 +123,7 @@ extension Sketch {
     public static func references(_ k: SketchDimension.Kind) -> [EntityID] {
         switch k {
         case .distance(let a, let b), .horizontalDistance(let a, let b), .verticalDistance(let a, let b),
-             .angle(let a, let b), .radialOffset(let a, let b), .gap(let a, let b): return [a, b]
+             .angle(let a, let b), .supplementAngle(let a, let b), .radialOffset(let a, let b), .gap(let a, let b): return [a, b]
         case .pointLineDistance(let p, let l): return [p, l]
         case .length(let a), .radius(let a), .diameter(let a), .lineAngle(let a): return [a]
         }
@@ -596,11 +596,12 @@ extension Sketch {
             return abs(rb - ra)
         case .gap(let a, let b):
             return rimGap(a, b).map { abs($0.gap($0.side)) }
-        case .angle(let l1, let l2):
+        case .angle(let l1, let l2), .supplementAngle(let l1, let l2):
             guard case let (a1, b1)? = lineEnds(l1), case let (a2, b2)? = lineEnds(l2) else { return nil }
             let u = b1 - a1, w = b2 - a2
             var t = atan2(vcross(u, w), vdot(u, w))
             if t < 0 { t += 2 * .pi }
+            if case .supplementAngle = k { t = .pi - t; if t < 0 { t += 2 * .pi } }  // 180° less the turn, kept 0° to 360°
             return t
         case .lineAngle(let l):
             guard case let (a, b)? = lineEnds(l) else { return nil }
