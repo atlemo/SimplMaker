@@ -106,4 +106,15 @@ import Testing
         #expect(abs((points.map(\.x).min() ?? 0) + 4) < 1e-6, "the near end reaches 4 mm before the first center")
         #expect(abs((points.map(\.y).max() ?? 0) - 4) < 1e-6)
     }
+
+    @Test func previewDrawsTheWholeOutlineIncludingBothSides() throws {
+        let s = session()
+        s.setTool(.slot)
+        _ = click(s, 0, 0)
+        _ = s.handle(SketchMouse(phase: .moved, uv: SIMD2(20, 0), pick: nil))
+        let outline = try #require(s.previewPolylines().first)
+        // The outline closes: its last point is its first, so the side back to the start is drawn too.
+        // (A polyline draws only the segments between neighbouring points, so without this the top side is missing.)
+        #expect(outline.first == outline.last)
+    }
 }

@@ -2257,7 +2257,8 @@ final class SketchSession {
             let len = simdLength(c - a), r = slotWidthValue / 2
             guard len > 1e-6 else { return [circle(a, r, 0, 2 * .pi)] }
             let t = atan2(c.y - a.y, c.x - a.x)
-            return [circle(a, r, t + .pi / 2, t + 3 * .pi / 2) + circle(c, r, t - .pi / 2, t + .pi / 2)]
+            let outline = circle(a, r, t + .pi / 2, t + 3 * .pi / 2) + circle(c, r, t - .pi / 2, t + .pi / 2)
+            return [outline + [outline[0]]]  // back to the start: the last side closes the loop
         case .circle:
             let r = simdLength(c - a)
             return [circle(a, r, 0, 2 * .pi)]
