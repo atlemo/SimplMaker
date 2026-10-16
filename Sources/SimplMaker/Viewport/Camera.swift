@@ -192,6 +192,20 @@ struct Camera {
 
     mutating func zoom(_ factor: Float) { distance = min(max(distance * factor, 0.5), 100_000) }
 
+    /// Zooms so that the spot of the picture under `point` (view coordinates, points, origin top-left) stays
+    /// under it: the camera drifts toward the point when zooming in and away from it when zooming out.
+    mutating func zoom(_ factor: Float, about point: CGPoint, viewSize: CGSize) {
+        let before = distance
+        zoom(factor)
+        let applied = distance / before  // the zoom limits may have held it back
+        let w = Float(max(viewSize.width, 1)), h = Float(max(viewSize.height, 1))
+        let nx = 2 * Float(point.x) / w - 1 - centerShift.x, ny = 1 - 2 * Float(point.y) / h - centerShift.y
+        // The point's offset from the target, across the plane through the target facing the camera, at the old distance.
+        let half = before * tan(fovY / 2)
+        let offset = nx * half * (w / h) * right + ny * half * up
+        target += offset * (1 - applied)
+    }
+
     /// Ray through a point in view coordinates (points, origin top-left).
     func ray(at p: CGPoint, viewSize: CGSize) -> (origin: SIMD3<Float>, direction: SIMD3<Float>) {
         let w = Float(max(viewSize.width, 1)), h = Float(max(viewSize.height, 1))
