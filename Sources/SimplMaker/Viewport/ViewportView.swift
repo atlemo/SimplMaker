@@ -1290,10 +1290,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }.map { NSRect(x: $0.x - 22, y: $0.y - 22, width: 44, height: 44) }
         // The room the taper dial's arc takes on screen: no arrow's field or the options panel sits on it.
         let dialZone: NSRect? = model.dragHandles.lazy.compactMap { h -> NSRect? in
-            guard let dial = h.dial else { return nil }
-            let limit = DocumentModel.DragHandle.Dial.limit
+            guard let dial = h.dial, !dial.wraps else { return nil }  // a revolve's dot sits on the body, its field beside it
             let points = (0...16).compactMap { i -> CGPoint? in
-                let a = -limit + 2 * limit * Double(i) / 16
+                let a = -dial.reach + 2 * dial.reach * Double(i) / 16
                 let q = h.base + dial.radius * (cos(a) * h.direction + sin(a) * dial.side)
                 return renderer.camera.project(SIMD3(Float(q.x), Float(q.y), Float(q.z)), viewSize: self.bounds.size)
             }

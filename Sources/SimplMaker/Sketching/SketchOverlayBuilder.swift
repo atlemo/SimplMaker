@@ -476,24 +476,27 @@ enum SketchOverlayBuilder {
 }
 
 extension SketchOverlayBuilder {
-    /// An extrude's taper dial: an arc round `center`, reaching either way from `axis` towards the dial's side, and
-    /// the dot on it at `angle` (the part that is grabbed).
+    /// A dial: an arc round `center` and the dot on it at `angle` (the part that is grabbed). A taper's arc reaches
+    /// either way from `axis` towards the dial's side; a revolve's is the whole circle, and its dot is the feature's arrow.
     static func dial(center: SIMD3<Double>, axis: SIMD3<Double>, dial: DocumentModel.DragHandle.Dial, angle: Double,
                      into o: inout SketchOverlay) {
         func f(_ p: SIMD3<Double>) -> SIMD3<Float> { SIMD3(Float(p.x), Float(p.y), Float(p.z)) }
         func at(_ a: Double) -> SIMD3<Double> { center + dial.radius * (cos(a) * axis + sin(a) * dial.side) }
-        let limit = DocumentModel.DragHandle.Dial.limit, steps = 72
-        // Opaque around the middle (zero angle), fading to nothing at either end of the arc.
+        let steps = 72
+        let from = dial.wraps ? 0 : -dial.reach
+        // Opaque around the middle (zero angle), fading to nothing at either end of the arc; a whole circle stays opaque.
         func fade(_ t: Double) -> UInt32 {
+            if dial.wraps { return 65535 }
             let e = min(max((1 - abs(2 * t - 1)) / 0.6, 0), 1)
             return UInt32((e * e * (3 - 2 * e) * 65535).rounded())
         }
         for i in 0..<steps {
             let t0 = Double(i) / Double(steps), t1 = Double(i + 1) / Double(steps)
-            let a = f(at(-limit + 2 * limit * t0)), b = f(at(-limit + 2 * limit * t1))
+            let a = f(at(from + 2 * dial.reach * t0)), b = f(at(from + 2 * dial.reach * t1))
             o.dialArc.append(SegmentInstance(ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z, id: fade(t0) | fade(t1) << 16))
         }
         let dot = f(at(angle))
-        o.dialDot.append(SegmentInstance(ax: dot.x, ay: dot.y, az: dot.z, bx: dot.x, by: dot.y, bz: dot.z, id: PickID.dialHandle.raw))
+        let pick = dial.wraps ? PickID.handle : PickID.dialHandle  // a revolve's dot is its one arrow (slot 0)
+        o.dialDot.append(SegmentInstance(ax: dot.x, ay: dot.y, az: dot.z, bx: dot.x, by: dot.y, bz: dot.z, id: pick.raw))
     }
 }

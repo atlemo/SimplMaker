@@ -1450,8 +1450,8 @@ final class DocumentModel {
         var allowsNegative = false
         /// Which of the feature's arrows this is: a hole has one for its depth (0) and one for its diameter (1).
         var slot = 0
-        /// A dial instead of an arrow: a dot dragged round an arc sets an angle (the taper of an extrude). It is
-        /// centred on `base`; `direction` is where it points at 0°, and `value` is the angle in radians.
+        /// A dial instead of an arrow: a dot dragged round an arc sets an angle (the taper of an extrude, the turn of
+        /// a revolve). It is centred on `base`; `direction` is where it points at 0°, and `value` is the angle in radians.
         var dial: Dial?
         /// The value may be zero (a taper of nothing is no taper).
         var allowsZero = false
@@ -1461,6 +1461,10 @@ final class DocumentModel {
             var side: SIMD3<Double>
             /// Arc radius, in mm.
             var radius: Double
+            /// How far the dot may go: either way from zero (a taper), or round from zero (a revolve's turn), in radians.
+            var reach = Dial.limit
+            /// The dot goes all the way round (a revolve): its arc is drawn whole, and the angle runs from zero up to `reach`.
+            var wraps = false
             /// The arc reaches this far either way, in radians.
             static let limit = 85.0 * Double.pi / 180
         }
@@ -1575,11 +1579,11 @@ final class DocumentModel {
         return true
     }
 
-    /// An extrude or a draft is selected and shows its dial.
+    /// An extrude, a draft or a revolve is selected and shows its dial.
     var showsDial: Bool {
         guard sketchSession == nil, pendingTool == nil, holeMoveStart == nil, let id = selectedFeature else { return false }
         switch document.features.first(where: { $0.id == id })?.kind {
-        case .extrude?, .draft?: return true
+        case .extrude?, .draft?, .revolve?: return true
         default: return false
         }
     }
@@ -1587,6 +1591,12 @@ final class DocumentModel {
     /// A draft is selected: its dial leans the faces rather than tapering an extrusion.
     var selectedIsDraft: Bool {
         guard let id = selectedFeature, case .draft? = document.features.first(where: { $0.id == id })?.kind else { return false }
+        return true
+    }
+
+    /// A revolve is selected: its dial turns the profile round the axis.
+    var selectedIsRevolve: Bool {
+        guard let id = selectedFeature, case .revolve? = document.features.first(where: { $0.id == id })?.kind else { return false }
         return true
     }
 
@@ -1719,13 +1729,26 @@ final class DocumentModel {
             guard let sr = result.sketches[rv.sketch], let ref = rv.profiles.first,
                   let region = Regenerator.region(ref, in: sr),
                   let axis = try? Regenerator.axis(rv.axis, sketch: sr) else { return nil }
-            // A tangent arrow at the profile: its length is the arc the profile's sample point travels.
+            // A dot round the axis, just outside the profile's outer edge at the height the profile is picked, so the
+            // field and options sit beside the body. (A tangent arrow ran a full turn's length, a long way off the body.)
             let p = sr.frame.point(region.sample.x, region.sample.y)
-            let radial = (p - axis.origin) - simd_dot(p - axis.origin, axis.direction) * axis.direction
-            let r = simd_length(radial)
-            guard r > 1e-6 else { return nil }
-            return handle("Angle", p, simd_normalize(simd_cross(axis.direction, radial)), rv.angle, unit: .angle,
-                          per: r, max: 2 * .pi)
+            let along = simd_dot(p - axis.origin, axis.direction)
+            let center = axis.origin + along * axis.direction
+            let radial = p - center
+            guard simd_length(radial) > 1e-6 else { return nil }
+            let outward = simd_normalize(radial)
+            let edge = sr.regions.firstIndex { $0.index == region.index }.map { i in
+                let positions = sr.regionMeshes[i].positions
+                return stride(from: 0, to: positions.count - 2, by: 3).map { k -> Double in
+                    let q = SIMD3(Double(positions[k]), Double(positions[k + 1]), Double(positions[k + 2])) - axis.origin
+                    return simd_length(q - simd_dot(q, axis.direction) * axis.direction)
+                }.max() ?? 0
+            } ?? 0
+            var h = handle("Angle", center, outward, rv.angle, unit: .angle, max: 2 * .pi)
+            let clear = 10 * (dialView?.mmPerPoint ?? 0.25)  // the dot stands a little off the wall
+            h.dial = DragHandle.Dial(side: simd_cross(axis.direction, outward), radius: max(edge, simd_length(radial)) + clear,
+                                     reach: 2 * .pi, wraps: true)
+            return h
         case .primitive(let pf):
             guard let frame = try? Regenerator.primitiveFrame(pf, result) else { return nil }
             switch pf.kind {
@@ -1994,7 +2017,14 @@ final class DocumentModel {
             let hit = o + d * (simd_dot(h.base - o, pn) / facing)
             let v = hit - h.base
             var angle = atan2(simd_dot(v, dial.side), simd_dot(v, h.direction))
-            angle = min(max((angle * 180 / .pi).rounded() * .pi / 180, -DragHandle.Dial.limit), DragHandle.Dial.limit)
+            var low = -dial.reach
+            if dial.wraps {
+                // Round the whole circle: take the turn nearest the one the dot is on, so it never jumps back to the start.
+                let turn = 2 * Double.pi
+                angle += (((handlePreviewValue ?? h.value) - angle) / turn).rounded() * turn
+                low = 1 * .pi / 180  // a turn of nothing is no turn
+            }
+            angle = min(max((angle * 180 / .pi).rounded() * .pi / 180, low), dial.reach)
             handlePreviewValue = angle
             var preview = start
             Self.set(expression: formatDimension(angle, kind: .angle), of: h.featureID, slot: h.slot, in: &preview)
