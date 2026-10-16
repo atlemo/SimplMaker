@@ -696,12 +696,13 @@ final class SketchSession {
             // pixels: sketch lines are thin, and picking shouldn't need pixel precision.
             hover = entity(for: m.pick) ?? m.uv.flatMap { m.snapping ? nearestEntity($0) : nil }
             if let h = hover, Sketch.isGenerated(h), tool != .select { hover = nil }  // copies are only for picking their pattern
-            hoverDimension = tool == .select && hover == nil ? m.uv.flatMap { dimensionLine(near: $0) } : nil
+            hoverDimension = tool == .select && hover == nil ? m.uv.flatMap { dimensionLine(near: $0) ?? angleDimension(near: $0) } : nil
         }
         gridStep = m.gridStep
         snapping = m.snapping
         if let uv = m.uv, curveDown == nil, tool != .select || dragEntity != nil { _ = snap(uv, excluding: dragEntity) } else { setLastSnap(nil) }
-        if let uv = m.uv { cursor = uv }
+        // Once a value is typed for a pending angle, its wedge stays where it was: the value decides, not the cursor.
+        if let uv = m.uv, anglePicks == nil || typed.isEmpty { cursor = uv }
         switch m.phase {
         case .moved: return (false, nil)
         case .down: return mouseDown(m)
@@ -1024,6 +1025,7 @@ final class SketchSession {
 
     /// The fields for the current drawing step.
     var inputFields: [SketchInput] {
+        if anglePicks != nil { return [.angle] }  // two lines picked: type the angle, or click to place it
         if let patternSetup { return patternSetup.kind == .rectangular ? [.countX, .spacingX, .countY, .spacingY] : [.copies, .spread] }
         if offsetSetup != nil { return [.offsetDistance] }
         if manipulating != nil { return [.moveX, .moveY, .turn] }
@@ -1175,6 +1177,7 @@ final class SketchSession {
 
     /// Return in a field: place the next point from the typed values, as a click would.
     func commitTyped() -> String? {
+        if anglePicks != nil { return placeTypedAngle() }
         if patternSetup != nil { return commitPattern() }
         if mirrorSetup != nil { return commitMirror() }
         if offsetSetup != nil { return commitOffset() }
@@ -2142,7 +2145,7 @@ final class SketchSession {
     }
 
     /// The angle the cursor would place between the two picked lines, as it would be stored, and its value.
-    var anglePreview: (kind: SketchDimension.Kind, value: Double, radius: Double)? {
+    var anglePreview: (kind: SketchDimension.Kind, value: Double, radius: Double, middle: Double)? {
         guard let (a, b) = anglePicks, let cursor else { return nil }
         return sketch.angleChoice(a, b, toward: cursor, size: snapTolerance)
     }
@@ -2162,6 +2165,28 @@ final class SketchSession {
         return addDimension(suggestion.kind, value: suggestion.value)
     }
 
+    /// Return with a typed value for a picked angle: the wedge the cursor was in, set to the typed value.
+    private func placeTypedAngle() -> String? {
+        guard let (a, b) = anglePicks, let cursor, let target = typedValue(.angle) else {
+            message = "Type the angle, like 80"
+            return nil
+        }
+        guard let choice = sketch.angleChoice(a, b, toward: cursor, size: snapTolerance) else {
+            anglePicks = nil
+            message = "Can't dimension that combination"
+            return nil
+        }
+        guard let action = addDimension(choice.kind, value: target) else {
+            return nil  // the picks stay, so another value can be typed
+        }
+        anglePicks = nil
+        typed = [:]
+        if let id = editingDimension, let i = sketch.dimensions.firstIndex(where: { $0.id == id }) {
+            sketch.dimensions[i].offset = choice.radius; sketch.dimensions[i].wedge = choice.middle
+        }
+        return action
+    }
+
     /// The click that places a picked angle: the wedge the cursor is in, at its current value.
     private func placeAngle() -> String? {
         guard let (a, b) = anglePicks, let cursor else { return nil }
@@ -2174,7 +2199,7 @@ final class SketchSession {
         let action = addDimension(choice.kind, value: choice.value)
         // The arc and its value stay at the radius clicked, not at the default size.
         if let id = editingDimension, let i = sketch.dimensions.firstIndex(where: { $0.id == id }) {
-            sketch.dimensions[i].offset = choice.radius
+            sketch.dimensions[i].offset = choice.radius; sketch.dimensions[i].wedge = choice.middle
         }
         return action
     }
@@ -2319,9 +2344,38 @@ final class SketchSession {
 
     /// Drags a dimension's line to where the cursor is: only how far it stands from what it measures changes.
     private func moveDimensionLine(_ id: EntityID, to uv: SIMD2<Double>) {
+        if let i = sketch.dimensions.firstIndex(where: { $0.id == id }), sketch.dimensions[i].isAngle {
+            // An angle stays on its wedge: the cursor sets how far out its arc and value stand.
+            guard let arc = sketch.angleArc(of: sketch.dimensions[i], size: tolerance) else { return }
+            let dir = SIMD2(cos(arc.middle), sin(arc.middle))
+            sketch.dimensions[i].offset = max(simd_dot(uv - arc.center, dir) / 1.15, tolerance * 5)
+            sketch.dimensions[i].wedge = arc.middle
+            return
+        }
         guard let i = sketch.dimensions.firstIndex(where: { $0.id == id }), let line = sketch.dimensionLine(of: sketch.dimensions[i])
         else { return }
         sketch.dimensions[i].offset = line.value(through: uv)
+    }
+
+    /// An angle's arc (within a few pixels of it, or of its value) where the cursor is: the angle to drag.
+    func angleDimension(near uv: SIMD2<Double>) -> EntityID? {
+        var best: (EntityID, Double)?
+        for d in sketch.dimensions where d.isAngle {
+            guard let arc = sketch.angleArc(of: d, size: tolerance) else { continue }
+            let off = uv - arc.center
+            let r = simdLength(off)
+            // Near the arc, within its sweep; or near the value, which stands just outside it.
+            let angle = atan2(off.y, off.x)
+            var turned = angle - arc.start
+            turned = turned.truncatingRemainder(dividingBy: 2 * .pi)
+            if turned < 0 { turned += 2 * .pi }
+            let onArc = abs(r - arc.radius) <= tolerance && turned <= arc.sweep
+            let onValue = simdLength(uv - (arc.center + arc.radius * 1.15 * SIMD2(cos(arc.middle), sin(arc.middle)))) <= tolerance * 4
+            guard onArc || onValue else { continue }
+            let miss = onArc ? abs(r - arc.radius) : tolerance
+            if best == nil || miss < best!.1 { best = (d.id, miss) }
+        }
+        return best?.0
     }
 
     /// How a distance between two points is taken, when it can be changed.

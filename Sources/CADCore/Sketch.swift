@@ -95,6 +95,9 @@ public struct SketchDimension: Codable, Hashable, Sendable, Identifiable {
     /// measures, in mm, or for a circle's radius or diameter the angle of its line in radians.
     /// Nil until it is moved: it then sits on the measured points (a circle's goes up and to the right).
     public var offset: Double?
+    /// For an angle: the direction, in radians from its corner, of the middle of the arc it was placed on. Nil until
+    /// placed: the arc then takes the wedge the lines make by default. Kept so the arc stays on its wedge when the lines move.
+    public var wedge: Double?
 
     public init(id: EntityID = IDs.make(), _ kind: Kind, _ expression: String, offset: Double? = nil) {
         self.id = id; self.kind = kind; self.expression = expression; self.offset = offset

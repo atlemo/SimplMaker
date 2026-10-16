@@ -126,6 +126,16 @@ extension Sketch {
                 }
                 if let best { start = best.start }
             }
+            // A placed angle keeps its wedge: of the arcs of this size between the two lines, the one nearest where it was placed.
+            if let wedge = d.wedge {
+                let rays = [r1, r2, r1 + .pi, r2 + .pi]
+                var nearest: (start: Double, miss: Double)?
+                for from in rays where rays.contains(where: { abs(ccw(from, $0) - t) < 1e-4 }) {
+                    let miss = abs(atan2(sin(from + t / 2 - wedge), cos(from + t / 2 - wedge)))
+                    if nearest == nil || miss < nearest!.miss { nearest = (from, miss) }
+                }
+                if let nearest { start = nearest.start }
+            }
             // A placed angle keeps the radius it was placed at (its offset); until then the arc is drawn at the default size.
             return AngleArc(center: vertex, radius: d.offset ?? radius(min(vlen(u), vlen(w))), start: start, sweep: t, axis: false)
         default: return nil
@@ -136,17 +146,17 @@ extension Sketch {
     /// (first to second, and second to first) each draw an arc, and the one whose middle is nearest the cursor wins.
     /// The radius is the cursor's distance from the vertex, so the arc passes under the cursor.
     public func angleChoice(_ l1: EntityID, _ l2: EntityID, toward p: SIMD2<Double>, size: Double)
-        -> (kind: SketchDimension.Kind, value: Double, radius: Double)? {
-        var best: (kind: SketchDimension.Kind, value: Double, radius: Double, miss: Double)?
+        -> (kind: SketchDimension.Kind, value: Double, radius: Double, middle: Double)? {
+        var best: (kind: SketchDimension.Kind, value: Double, radius: Double, middle: Double, miss: Double)?
         // Four readings: each pair of lines both ways round, as the turn and as its supplement (the other wedge).
         for kind in [SketchDimension.Kind.angle(l1, l2), .angle(l2, l1), .supplementAngle(l1, l2), .supplementAngle(l2, l1)] {
             guard let arc = angleArc(of: SketchDimension(kind, ""), size: size), let value = measure(kind) else { continue }
             let toCursor = atan2(p.y - arc.center.y, p.x - arc.center.x)
             let miss = abs(atan2(sin(toCursor - arc.middle), cos(toCursor - arc.middle)))
             let radius = max(vlen(p - arc.center), size * 5)
-            if best == nil || miss < best!.miss { best = (kind, value, radius, miss) }
+            if best == nil || miss < best!.miss { best = (kind, value, radius, arc.middle, miss) }
         }
-        return best.map { ($0.kind, $0.value, $0.radius) }
+        return best.map { ($0.kind, $0.value, $0.radius, $0.middle) }
     }
 
     /// Which way a circle's diameter or radius is drawn until it is moved: up and to the right, or for an arc, through its middle.

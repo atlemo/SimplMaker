@@ -46,6 +46,63 @@ import Testing
         #expect(abs((s.sketch.measure(d.kind) ?? 0) - 80 * .pi / 180) < 1e-5)
     }
 
+    /// Typing the value places the angle on the wedge the cursor was in when typing started; moving on doesn't change it.
+    @Test func typingAnAngleSetsTheWedgeTheCursorWasIn() {
+        let s = session()
+        s.setTool(.dimension)
+        _ = click(s, 10, 0.2)                       // line X
+        _ = click(s, 5, 7.5)                        // line Y
+        move(s, 6, 3)                               // right of the corner: the turn from X to Y
+        s.setTyped(.angle, "80")
+        move(s, -8, 9)                              // the cursor moves on, but the wedge stays
+        #expect(s.commitTyped() == "Dimension")
+        let d = s.sketch.dimensions.last!
+        #expect(d.kind == .angle("X", "Y"))
+        #expect(abs((s.sketch.measure(d.kind) ?? 0) - 80 * .pi / 180) < 1e-5)
+        #expect(s.anglePicks == nil)
+    }
+
+    /// A placed angle stays on the side it was placed, when its value changes and the lines move.
+    @Test func aPlacedAngleKeepsItsWedgeWhenTheLinesMove() {
+        let s = session()
+        s.setTool(.dimension)
+        _ = click(s, 10, 0.2)                       // line X
+        _ = click(s, 5, 7.5)                        // line Y
+        move(s, -8, 9)                              // left of the corner
+        #expect(click(s, -8, 9) == "Dimension")
+        let d = s.sketch.dimensions.last!
+        let before = s.sketch.angleArc(of: d, size: 0.5)!.middle
+        #expect(cos(before - atan2(9, -8)) > 0.9, "placed on the cursor's side")
+        #expect(s.setDimension(d.id, expression: "70") == "Edit Dimension")
+        let after = s.sketch.angleArc(of: s.sketch.dimensions.last!, size: 0.5)!.middle
+        #expect(cos(after - atan2(9, -8)) > 0.9, "still on that side after the value changed")
+    }
+
+    /// Dragging a placed angle's value moves its arc out along the wedge, like a linear dimension's line.
+    @Test func aPlacedAngleDragsOutAlongItsWedge() {
+        let s = session()
+        s.setTool(.dimension)
+        _ = click(s, 10, 0.2)
+        _ = click(s, 5, 7.5)
+        move(s, 4, 3)
+        #expect(click(s, 4, 3) == "Dimension")
+        let d = s.sketch.dimensions.last!
+        s.setTool(.select)
+        let arc = s.sketch.angleArc(of: d, size: 0.5)!
+        let dir = SIMD2(cos(arc.middle), sin(arc.middle))
+        let on = arc.center + arc.radius * dir
+        move(s, on.x, on.y)
+        #expect(s.hoverDimension == d.id, "the arc is the handle")
+        _ = s.handle(SketchMouse(phase: .down, uv: on, pick: nil, tolerance: 0.5, gridStep: nil))
+        let far = arc.center + (arc.radius * 2) * dir
+        _ = s.handle(SketchMouse(phase: .dragged, uv: far, pick: nil, tolerance: 0.5, gridStep: nil))
+        _ = s.handle(SketchMouse(phase: .up, uv: far, pick: nil, tolerance: 0.5))
+        let moved = s.sketch.dimensions.first { $0.id == d.id }!
+        #expect(abs((moved.offset ?? 0) - arc.radius * 2 / 1.15) < 1e-6)
+        let after = s.sketch.angleArc(of: moved, size: 0.5)!
+        #expect(abs(after.middle - arc.middle) < 1e-6, "same wedge")
+    }
+
     @Test func aPlacedAngleCanBeSetToATypedValue() {
         let s = session()
         s.setTool(.dimension)
