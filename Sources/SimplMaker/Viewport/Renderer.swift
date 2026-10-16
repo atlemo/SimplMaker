@@ -888,6 +888,14 @@ final class Renderer {
         var face, faceHover, faceSelected, edgeHover, edgeSelected: SIMD4<Float>
     }
 
+    /// How much of the ground grid to draw, 0...1, from the view direction: full while the view looks down at
+    /// the floor at 25° of elevation or more, gone by 5°. `forward` is the unit direction the camera looks in,
+    /// so its Z is minus the sine of the elevation (the same in perspective and orthographic).
+    static func groundGridOpacity(forward: SIMD3<Float>) -> Float {
+        let t = min(max((abs(forward.z) - 0.087) / (0.423 - 0.087), 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
     /// Highlights made from the body's own colour, as Fusion does: a red body lights up in lighter
     /// red, with red borders, rather than turning blue. A very light colour (white, aluminium)
     /// darkens instead, since lightening it would show nothing. Without a colour of its own, a body
@@ -1063,10 +1071,16 @@ final class Renderer {
             line(b.axisU, 1, p.sketchAxisU, 1.2)
             line(b.axisV, 1, p.sketchAxisV, 1.2)
         } else if showGrid, !camera.isBelowGround, let g = worldGrid {  // seen from under the floor the grid would only be in the way
-            segments(g.minor, g.minorCount, DrawParams(color: p.gridMinor, hoverColor: p.gridMinor, selectColor: p.gridMinor,
-                                                       thickness: 1 * scale, depthBias: 0, pickable: 0))
-            segments(g.major, g.majorCount, DrawParams(color: p.grid, hoverColor: p.grid, selectColor: p.grid,
-                                                       thickness: 1 * scale, depthBias: 0, pickable: 0))
+            // Seen almost edge-on the lines pile up into moiré, so the grid fades out as the view flattens. Blended
+            // (fadePipeline) so the opacity shows; at full opacity it is the same as drawing it solid.
+            let opacity = Self.groundGridOpacity(forward: camera.forward)
+            func faded(_ c: SIMD4<Float>) -> SIMD4<Float> { SIMD4(c.x, c.y, c.z, c.w * opacity) }
+            if opacity > 0 {
+                segments(g.minor, g.minorCount, DrawParams(color: faded(p.gridMinor), hoverColor: faded(p.gridMinor), selectColor: faded(p.gridMinor),
+                                                           thickness: 1 * scale, depthBias: 0, pickable: 0), pipeline: fadePipeline)
+                segments(g.major, g.majorCount, DrawParams(color: faded(p.grid), hoverColor: faded(p.grid), selectColor: faded(p.grid),
+                                                           thickness: 1 * scale, depthBias: 0, pickable: 0), pipeline: fadePipeline)
+            }
         }
         // Fills sit just in front of the faces they lie on, but behind every edge and sketch line.
         let fillBias = 0.0002 * biasScale
