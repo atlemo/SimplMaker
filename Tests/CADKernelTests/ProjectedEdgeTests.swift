@@ -106,6 +106,31 @@ import Testing
         #expect(r.errors["sk"]?.contains("projected edge not found") == true, "\(r.errors)")
     }
 
+    @Test func anEdgeOffTheSketchPlaneProjectsAndFollowsTheBox() throws {
+        // The top edge of the left face: the far side of the box, so it is off the right face's sketch plane.
+        let far = EdgeRef(body: "box", edge: "box.left|box.top")
+        let r0 = Regenerator.regenerate(document(height: "20 mm", sketch: Sketch()))
+        let frame = try #require(r0.sketches["sk"]?.frame)
+        let ends = try #require(r0.body("box")).edgeEnds(far.edge)
+        #expect(abs(simd_dot(ends.start - frame.origin, frame.normal)) > 1, "the edge really is off the plane")
+        func uv(_ p: SIMD3<Double>) -> SIMD2<Double> { SIMD2(simd_dot(p - frame.origin, frame.xAxis), simd_dot(p - frame.origin, frame.yAxis)) }
+        var s = Sketch()
+        s.project(ModelSnap(edge: far, start: uv(ends.start), end: uv(ends.end)))
+        #expect(s.projections.map(\.edge) == [far])
+        let p = s.projections[0]
+        #expect(s.point(p.start)?.fixed == true && s.point(p.end)?.fixed == true)
+
+        // Growing the box in height moves the top edge up by 2 mm; its flattened ends move with it.
+        let r1 = Regenerator.regenerate(document(height: "22 mm", sketch: s))
+        #expect(r1.errors.isEmpty, "\(r1.errors)")
+        let solved0 = try #require(Regenerator.regenerate(document(height: "20 mm", sketch: s)).sketches["sk"]?.solved)
+        let solved1 = try #require(r1.sketches["sk"]?.solved)
+        for id in [p.start, p.end] {
+            let a = try #require(solved0.position(id)), b = try #require(solved1.position(id))
+            #expect(abs(simd_length(b - a) - 2) < 1e-6, "\(a) -> \(b)")
+        }
+    }
+
     @Test func projectionsSurviveSavingAndOldFilesStillLoad() throws {
         let s = try notch("20 mm")
         let back = try JSONDecoder().decode(Sketch.self, from: JSONEncoder().encode(s))

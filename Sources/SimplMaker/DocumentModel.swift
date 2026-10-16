@@ -1136,7 +1136,8 @@ final class DocumentModel {
         startSketchSlice(frame)
     }
 
-    /// Body edges and corners that lie in the sketch plane, for the sketch to snap to.
+    /// Body edges and corners that lie in the sketch plane, for the sketch to snap to, and every straight body
+    /// edge (wherever it is) for Project Edge.
     func updateSketchReferences() {
         guard let session = sketchSession else { return }
         let f = session.frame
@@ -1154,21 +1155,27 @@ final class DocumentModel {
                 while last + 1 < edge.count, edge[last + 1] == edge[first] { last += 1 }
                 defer { first = last + 1 }
                 let run = (first...last).map { (a: local(s, $0 * 6), b: local(s, $0 * 6 + 3)) }
-                guard run.contains(where: { abs($0.a.w) < 1e-3 && abs($0.b.w) < 1e-3 }) else { continue }
-                // A straight edge lying in the plane can be followed: the sketch then keeps hold of the
-                // edge itself, not just of where it is now.
+                // A straight edge can be projected from anywhere on the body (Project Edge): its ends are flattened
+                // onto the plane. One lying in the plane is also followed by the snapping, so the sketch keeps hold of
+                // the edge itself, not just of where it is now.
                 var model: ModelSnap?
                 var ends = (a: run[0].a.uv, b: run[run.count - 1].b.uv)
-                if run.count == 1, run[0].a.w.magnitude < 1e-3, run[0].b.w.magnitude < 1e-3,
+                if run.count == 1,
                    let name = edge[first] < m.mesh.edgeNames.count ? m.mesh.edgeNames[Int(edge[first])] : nil,
                    let e = try? body?.edgeEnds(name) {
                     func uv(_ p: SIMD3<Double>) -> SIMD2<Double> {
                         let d = p - f.origin
                         return SIMD2(simd_dot(d, f.xAxis), simd_dot(d, f.yAxis))
                     }
-                    ends = (uv(e.start), uv(e.end))
-                    model = ModelSnap(edge: EdgeRef(body: m.id, edge: name), start: ends.a, end: ends.b)
+                    let straight = ModelSnap(edge: EdgeRef(body: m.id, edge: name), start: uv(e.start), end: uv(e.end))
+                    refs.straightEdges[straight.edge] = straight
+                    if run[0].a.w.magnitude < 1e-3, run[0].b.w.magnitude < 1e-3 {
+                        ends = (straight.start, straight.end)
+                        model = straight
+                    }
                 }
+                // Off the plane, nothing below applies: its segments and points are not in the plane to snap to.
+                guard run.contains(where: { abs($0.a.w) < 1e-3 && abs($0.b.w) < 1e-3 }) else { continue }
                 for seg in run where abs(seg.a.w) < 1e-3 && abs(seg.b.w) < 1e-3 {
                     refs.segments.append((seg.a.uv, seg.b.uv))
                     refs.segmentModels.append(model)
@@ -1239,8 +1246,16 @@ final class DocumentModel {
         overlayRevision += 1
     }
 
+    /// The body edge a pick is, as a reference a sketch can project (nil for anything else).
+    func edgeRef(of pick: PickID) -> EdgeRef? {
+        guard pick.isEdge, pick.body >= 0, pick.body < meshes.count, let name = name(of: pick) else { return nil }
+        return EdgeRef(body: meshes[pick.body].id, edge: name)
+    }
+
     func sketchMouse(_ m: SketchMouse) -> Bool {
         guard let session = sketchSession else { return false }
+        var m = m
+        m.edge = m.pick.flatMap(edgeRef(of:))
         let r = session.handle(m)
         if m.phase != .moved || !session.clicks.isEmpty || session.anglePicks != nil || (session.tool == .gear && session.gearActive == nil) { overlayRevision += 1 }  // the ghost gear and a placing angle follow the cursor
         commitSketch(r.commit)

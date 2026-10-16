@@ -49,6 +49,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     case polygon = "Polygon", triangle = "Triangle", gear = "Gear"
     case point = "Point", text = "Text", fillet = "Round Corner", chamfer = "Chamfer", trim = "Trim", extend = "Extend", dimension = "Dimension"
     case distance = "Distance"
+    case projectEdge = "Project Edge"
 
     var id: String { rawValue }
 
@@ -56,7 +57,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     var drawsSlot: Bool { self == .slot || self == .overallSlot }
 
     /// Toolbar groups: drawing, changing curves, and dimensions (Select stands alone).
-    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .roundedRectangle, .slot, .overallSlot, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .tangentArc, .ellipse, .bezier, .gear, .point, .text]
+    static let draw: [SketchTool] = [.line, .rectangle, .centerRectangle, .roundedRectangle, .slot, .overallSlot, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .tangentArc, .ellipse, .bezier, .gear, .point, .text, .projectEdge]
     static let modify: [SketchTool] = [.fillet, .chamfer, .trim, .extend]
 
     /// The name under the icon in the toolbar (menus use the full `rawValue`).
@@ -74,7 +75,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     var placesPoints: Bool {
         switch self {
         case .line, .rectangle, .centerRectangle, .roundedRectangle, .slot, .overallSlot, .circle, .circle2Point, .polygon, .triangle, .arc, .arc3Point, .tangentArc, .ellipse, .bezier, .gear, .point, .text: return true
-        case .select, .fillet, .chamfer, .trim, .extend, .dimension, .distance: return false
+        case .select, .fillet, .chamfer, .trim, .extend, .dimension, .distance, .projectEdge: return false
         }
     }
 
@@ -152,6 +153,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .gear: return "settings"
         case .point: return "dot"
         case .text: return "type"
+        case .projectEdge: return "link"
         case .fillet: return "corner-round"
         case .chamfer: return "corner-chamfer"
         case .trim: return "scissors"
@@ -181,6 +183,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .gear: return "k"
         case .point: return "p"
         case .text: return "x"
+        case .projectEdge: return "u"
         case .fillet: return "f"
         case .chamfer: return "h"
         case .trim: return "t"
@@ -218,6 +221,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
         case .extend: return "Click near the end of a line or arc to extend it to the next curve"
         case .dimension: return "Click a line (then click again to place its length), a circle or arc, or two items for a distance or angle · or click any grey size"
+        case .projectEdge: return "Click straight body edges to bring them into the sketch · they follow the body, and their points can be constrained and dimensioned · Esc ends"
         case .distance: return "Click two items (points, lines, circles or arcs), then type the distance between them · a circle is measured from its edge, its center point from the middle"
         }
     }
@@ -292,6 +296,8 @@ struct SketchMouse {
     var gridStep: Double?
     /// False while ⌥ is held: place exactly where the cursor is.
     var snapping = true
+    /// The body edge under the cursor (set from `pick` by the document), for Project Edge.
+    var edge: EdgeRef?
 }
 
 /// Model geometry the cursor can snap to while sketching: body edges and corners that lie in the
@@ -303,6 +309,8 @@ struct SketchReferences {
     var segmentModels: [ModelSnap?] = []
     var points: [SIMD2<Double>] = []
     var pointModels: [ModelSnap?] = []
+    /// Every straight body edge, wherever it lies, flattened onto the sketch plane: what Project Edge can bring in.
+    var straightEdges: [EdgeRef: ModelSnap] = [:]
 
     func segmentModel(_ i: Int) -> ModelSnap? { i < segmentModels.count ? segmentModels[i] : nil }
     func pointModel(_ i: Int) -> ModelSnap? { i < pointModels.count ? pointModels[i] : nil }
@@ -732,12 +740,37 @@ final class SketchSession {
         }
     }
 
+    /// Project Edge: a click on a straight body edge brings it into the sketch as a projection (its ends are fixed
+    /// points, and a construction line joins them). The tool stays on for more edges; Esc ends it.
+    private func projectEdgeClick(_ edge: EdgeRef?) -> (handled: Bool, commit: String?) {
+        guard let edge else {
+            message = "Click a straight body edge to project it into the sketch"
+            return (true, nil)
+        }
+        guard let model = references.straightEdges[edge] else {
+            message = "Only straight edges can be projected for now"
+            return (true, nil)
+        }
+        // An edge pointing straight at the sketch plane lands as a point, not a line.
+        guard simdLength(model.end - model.start) > 1e-6 else {
+            message = "That edge points straight at the sketch, so it has no length in it"
+            return (true, nil)
+        }
+        if sketch.projections.contains(where: { $0.edge == edge }) {
+            message = "That edge is already projected"
+            return (true, nil)
+        }
+        sketch.project(model)
+        return (true, finish("Project Edge"))
+    }
+
     private func mouseDown(_ m: SketchMouse) -> (handled: Bool, commit: String?) {
         message = nil
         if patternSetup != nil { return (patternClick(), nil) }
         if mirrorSetup != nil { return (mirrorClick(), nil) }
         if offsetSetup != nil { return (hover != nil, nil) }  // the arrow and the field set it; clicks on curves are ignored
         switch tool {
+        case .projectEdge: return projectEdgeClick(m.edge)
         case .select:
             if let h = hover, let gid = sketch.gear(ofGenerated: h) {  // a gear: change it with the Gear tool's fields
                 setTool(.gear)
@@ -992,7 +1025,7 @@ final class SketchSession {
             if let anchor = s.point ?? hover, beginEditingText(anchoredAt: anchor) { return nil }
             pendingText = s
             return nil
-        case .select, .dimension, .distance, .fillet, .chamfer, .trim, .extend, .bezier:
+        case .select, .dimension, .distance, .fillet, .chamfer, .trim, .extend, .bezier, .projectEdge:
             clicks = []
             return nil
         }

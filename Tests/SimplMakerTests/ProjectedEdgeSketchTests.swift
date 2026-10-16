@@ -74,4 +74,48 @@ import Testing
         let d = simd_normalize(line.1 - line.0)
         #expect(abs(d.x * (p.y - line.0.y) - d.y * (p.x - line.0.x)) < 1e-6, "the corner is on the edge")
     }
+
+    /// Project Edge brings in an edge that is off the face being sketched on, and stays on for more edges.
+    @Test func projectEdgeBringsInAnEdgeOffTheFace() async throws {
+        let (_, session, _) = try await editing(Sketch())
+        let far = EdgeRef(body: "box", edge: "box.left|box.top")
+        session.setTool(.projectEdge)
+        _ = session.handle(SketchMouse(phase: .down, uv: nil, pick: nil, edge: far))
+        #expect(session.sketch.projections.map(\.edge) == [far], "\(session.message ?? "no message")")
+        // Clicking the same edge again changes nothing; the tool is still on, and Esc ends it.
+        _ = session.handle(SketchMouse(phase: .down, uv: nil, pick: nil, edge: far))
+        #expect(session.sketch.projections.count == 1)
+        #expect(session.tool == .projectEdge)
+        session.escape()
+        #expect(session.tool == .select)
+    }
+
+    @Test func projectEdgeSaysWhatItCannotProject() async throws {
+        let (_, session, _) = try await editing(Sketch())
+        session.setTool(.projectEdge)
+        _ = session.handle(SketchMouse(phase: .down, uv: nil, pick: nil, edge: nil))
+        #expect(session.sketch.projections.isEmpty && session.message != nil)
+        _ = session.handle(SketchMouse(phase: .down, uv: nil, pick: nil, edge: EdgeRef(body: "box", edge: "box.nothing")))
+        #expect(session.sketch.projections.isEmpty)
+        #expect(session.message == "Only straight edges can be projected for now")
+    }
+
+    @Test func anEdgePointingAtTheSketchIsRefused() async throws {
+        // The bottom front edge runs along the right face's normal, so it lands as a single point on that face.
+        let (_, session, _) = try await editing(Sketch())
+        session.setTool(.projectEdge)
+        _ = session.handle(SketchMouse(phase: .down, uv: nil, pick: nil, edge: EdgeRef(body: "box", edge: "box.bottom|box.front")))
+        #expect(session.sketch.projections.isEmpty)
+        #expect(session.message == "That edge points straight at the sketch, so it has no length in it")
+    }
+
+    /// The viewport's pick of a body edge reaches the tool as that edge.
+    @Test func aPickedBodyEdgeIsProjectedThroughTheDocument() async throws {
+        let (model, _, _) = try await editing(Sketch())
+        let body = try #require(model.meshes.firstIndex { $0.id == "box" })
+        let edge = try #require(model.meshes[body].mesh.edgeNames.firstIndex(of: "box.left|box.top"))
+        model.sketchSession?.setTool(.projectEdge)
+        _ = model.sketchMouse(SketchMouse(phase: .down, uv: nil, pick: PickID(body: body, edge: edge)))
+        #expect(model.sketchSession?.sketch.projections.map(\.edge) == [EdgeRef(body: "box", edge: "box.left|box.top")])
+    }
 }
