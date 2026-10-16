@@ -1401,7 +1401,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }
         // Beside where the shape starts (a rectangle's corner, a circle's center), so the sizes are typed where
         // they apply; for the other tools beside the next point.
-        let startsAtFirstClick: Set<SketchTool> = [.rectangle, .centerRectangle, .roundedRectangle, .slot, .circle, .circle2Point, .polygon, .triangle]
+        let startsAtFirstClick: Set<SketchTool> = [.rectangle, .centerRectangle, .roundedRectangle, .slot, .overallSlot, .circle, .circle2Point, .polygon, .triangle]
         let anchor = session.gearAnchor ?? (session.manipulatorMiddle == nil && startsAtFirstClick.contains(session.tool)
             ? session.clicks.first?.position ?? t : t)
         let world = session.frame.point(anchor.x, anchor.y)

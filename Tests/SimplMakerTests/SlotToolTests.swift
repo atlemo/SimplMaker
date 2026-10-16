@@ -107,6 +107,44 @@ import Testing
         #expect(abs((points.map(\.y).max() ?? 0) - 4) < 1e-6)
     }
 
+    @Test func overallLengthPlacesTheCentersARadiusInside() {
+        let s = session()
+        s.setTool(.overallSlot)
+        s.setTyped(.width, "10")
+        _ = click(s, 0, 0)
+        _ = click(s, 36, 0)
+        #expect(s.sketch.curves.count == 4)
+        #expect(diameters(s).first?.expression == s.slotWidth)
+        // The centers are 36 - 10 = 26 mm apart, so the outside of the ends is 36 mm.
+        let centers = s.sketch.points.map(\.position).filter { abs($0.y) < 1e-9 }.map(\.x).sorted()
+        #expect(centers.contains { abs($0 - 5) < 1e-6 } && centers.contains { abs($0 - 31) < 1e-6 })
+    }
+
+    @Test func aTypedOverallLengthIsDimensionedLessTheWidth() {
+        let s = session()
+        s.setTool(.overallSlot)
+        _ = click(s, 0, 0)
+        s.setTyped(.length, "36")
+        _ = click(s, 20, 0)
+        #expect(distances(s).count == 1)
+        #expect(distances(s).first?.expression.hasPrefix("(36") == true)
+        #expect(distances(s).first?.expression.hasSuffix(") - (\(s.slotWidth))") == true)
+    }
+
+    @Test func anOverallLengthShorterThanTheWidthDrawsNothing() {
+        let s = session()
+        s.setTool(.overallSlot)
+        _ = click(s, 0, 0)
+        _ = click(s, 8, 0)
+        #expect(s.sketch.curves.isEmpty)
+        #expect(s.message != nil)
+    }
+
+    @Test func overallSlotIsTheOtherModeOfTheSlotKey() {
+        #expect(SketchTool.overallSlot.family == [.slot, .overallSlot])
+        #expect(SketchTool.forKey("o", current: .slot) == .overallSlot)
+    }
+
     @Test func previewDrawsTheWholeOutlineIncludingBothSides() throws {
         let s = session()
         s.setTool(.slot)

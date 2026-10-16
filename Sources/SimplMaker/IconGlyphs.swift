@@ -203,10 +203,13 @@ enum IconGlyphs {
     "shell": "<path d=\"M3 7v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7\" /><path d=\"M7 7v9h10V7\" stroke=\"accent\" />",
     "square-rounded": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"5\" />",
     "tangent-arc": "<path d=\"M3 20h6a8 8 0 0 1 8-8\" />",
+    "ellipse": "<path d=\"M2 12a10 6 0 1 0 20 0a10 6 0 1 0-20 0\" />",
+    "slot-overall": "<rect width=\"20\" height=\"8\" x=\"2\" y=\"8\" rx=\"4\" /><path d=\"M2 4v3M22 4v3M2 4h20\" />",
     "slot":"<rect width=\"20\" height=\"10\" x=\"2\" y=\"7\" rx=\"5\" />",
     "square-center":"<rect width=\"18\" height=\"14\" x=\"3\" y=\"5\" rx=\"1\" /><circle cx=\"12\" cy=\"12\" r=\"1.4\" fill=\"currentColor\" stroke=\"none\" />",
     "arc-3-point": "<path d=\"M4 18A9 9 0 0 1 20 18\" /><circle cx=\"4\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"12\" cy=\"9.6\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" /><circle cx=\"20\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\" />",
-    "corner-round": "<path d=\"M4 20v-8a8 8 0 0 1 8-8h8\" /><circle cx=\"4\" cy=\"4\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\" />",
+    "corner-chamfer": "<path d=\"M4 20V8l4-4h12\" />",
+    "corner-round":"<path d=\"M4 20v-8a8 8 0 0 1 8-8h8\" /><circle cx=\"4\" cy=\"4\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\" />",
     // A threaded shaft: its outline, with the thread's slanted crests across it.
     "thread": "<rect width=\"12\" height=\"20\" x=\"6\" y=\"2\" rx=\"1.5\" /><path d=\"m6 8.75 12-3.5\" /><path d=\"m6 14 12-3.5\" /><path d=\"m6 19.25 12-3.5\" />",
     // A box grown up from its profile (shaded), with an arrow up beside it.

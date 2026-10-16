@@ -52,3 +52,10 @@ import Testing
         #expect(s.message != nil)
     }
 }
+
+@Suite @MainActor struct SketchChamferToolTests {
+    @Test func chamferIsOnTheModifyGroupAndKeepsItsOwnKey() {
+        #expect(SketchTool.modify.contains(.chamfer))
+        #expect(SketchTool.chamfer.family == [.chamfer])
+    }
+}

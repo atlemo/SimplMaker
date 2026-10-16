@@ -13,6 +13,8 @@ public enum CurveGeometry: Sendable, Equatable {
     case arc(center: SIMD2<Double>, radius: Double, start: Double, sweep: Double)
     /// Cubic Bézier through its four control points, t 0…1.
     case bezier([SIMD2<Double>])
+    /// Ellipse: center + major·cos t + minor·sin t (its axes' ends are center + major and center + minor).
+    case ellipse(center: SIMD2<Double>, major: SIMD2<Double>, minor: SIMD2<Double>)
 
     /// Point at parameter t: lines 0…1 start→end, arcs 0…1 start→end, circles t = angle.
     public func point(_ t: Double) -> SIMD2<Double> {
@@ -21,6 +23,7 @@ public enum CurveGeometry: Sendable, Equatable {
         case .circle(let c, let r): return c + r * SIMD2(cos(t), sin(t))
         case .arc(let c, let r, let a0, let sw): let a = a0 + sw * t; return c + r * SIMD2(cos(a), sin(a))
         case .bezier(let p): return Bezier.point(p, t)
+        case .ellipse(let c, let u, let v): return c + u * cos(t) + v * sin(t)
         }
     }
 
@@ -41,16 +44,23 @@ public enum CurveGeometry: Sendable, Equatable {
             return t / sw
         case .bezier(let ctrl):
             return Bezier.closest(p, ctrl)
+        case .ellipse(let c, let u, let v):
+            // Angle in the ellipse's own (affine) frame, where it is a circle.
+            let w = p - c, det = vcross(u, v)
+            let x = (v.y * w.x - v.x * w.y) / det, y = (u.x * w.y - u.y * w.x) / det
+            let t = atan2(y, x)
+            return t < 0 ? t + 2 * .pi : t
         }
     }
 
-    public var isClosed: Bool { if case .circle = self { return true }; return false }
+    public var isClosed: Bool { switch self { case .circle, .ellipse: return true; default: return false } }
 
     /// Whether parameter t lies on the curve itself (not its extension).
     func contains(_ t: Double, eps: Double = 1e-9) -> Bool {
         switch self {
         case .circle: return true
         case .line, .arc, .bezier: return t >= -eps && t <= 1 + eps
+        case .ellipse: return true
         }
     }
 }
@@ -61,7 +71,7 @@ func intersect(_ g: CurveGeometry, _ h: CurveGeometry) -> [SIMD2<Double>] {
     func circle(_ x: CurveGeometry) -> (SIMD2<Double>, Double)? {
         switch x {
         case .circle(let c, let r), .arc(let c, let r, _, _): return (c, r)
-        case .line, .bezier: return nil
+        case .line, .bezier, .ellipse: return nil
         }
     }
     if case .bezier(let p) = g {
@@ -140,6 +150,9 @@ extension Sketch {
         case .bezier:
             let p = pointIDs(of: c).compactMap { position($0) }
             return p.count == 4 ? .bezier(p) : nil
+        case .ellipse(let center, let major, let minor):
+            guard let pc = position(center), let pu = position(major), let pv = position(minor) else { return nil }
+            return .ellipse(center: pc, major: pu - pc, minor: pv - pc)
         }
     }
 
@@ -205,7 +218,7 @@ extension Sketch {
             old = start ? a : b
             curves[i].geometry = start ? .bezier(start: p, control1: c1, control2: c2, end: b)
                                        : .bezier(start: a, control1: c1, control2: c2, end: p)
-        case .circle: return
+        case .circle, .ellipse: return
         }
         // Length dimensions no longer describe the modified curve.
         dimensions.removeAll { if case .length(let l) = $0.kind { return l == id }; return false }
@@ -227,6 +240,7 @@ extension Sketch {
         let crossings = cuts(on: id)
         var t = g.parameter(of: click)
         switch g {
+        case .ellipse: return false  // not cut yet: an ellipse's trim is not supported
         case .circle:
             guard crossings.count >= 2 else { delete([id]); return true }
             // Neighbours around the click, cyclically.
@@ -266,6 +280,7 @@ extension Sketch {
                 case .arc(let center, _, let end):
                     curves.append(SketchCurve(id: second, .arc(center: center, start: pa, end: end), construction: original.construction))
                     constrain(.equal(id, second))
+                case .ellipse: return false
                 case .bezier(_, _, _, let end):
                     guard let ctrl else { return false }
                     let tail = Bezier.piece(ctrl, from: a.t, to: 1)
@@ -312,7 +327,7 @@ extension Sketch {
                     // and "before the start" wraps round to just under 2π/sweep.
                     guard t > 1 else { continue }
                     beyond = atStart ? 2 * .pi / sw - t : t - 1
-                case .circle, .bezier: continue
+                case .circle, .bezier, .ellipse: continue
                 }
                 guard beyond > 1e-7 else { continue }
                 if best == nil || beyond < best!.distance {
@@ -411,7 +426,7 @@ extension Sketch {
             guard let c = byID[id] else { continue }
             switch c.geometry {
             case .line(let a, let b), .arc(_, let a, let b), .bezier(let a, _, _, let b): order.append(id); ends.append((a, b))
-            case .circle: continue
+            case .circle, .ellipse: continue
             }
         }
         // The curves at each point, in order (a curve once, even when both its ends are the point), and how many
@@ -470,7 +485,7 @@ extension Sketch {
             let a = a0 + sw * t
             return SIMD2(-sin(a), cos(a))
         case .bezier(let p): return Bezier.tangent(p, t)
-        case .circle: return nil
+        case .circle, .ellipse: return nil
         }
     }
 
@@ -563,7 +578,7 @@ extension Sketch {
                 if item.reversed { run = run.reversed().map { Array($0.reversed()) } }
                 runs[i] = run
                 pieces.append(.bezier([run[0][0], run[0][1], run[run.count - 1][2], run[run.count - 1][3]]))
-            case .circle:
+            case .circle, .ellipse:
                 return []
             }
         }
@@ -615,6 +630,7 @@ extension Sketch {
             let (a, b) = item.reversed ? (e, s) : (s, e)  // keep the original's orientation
             guard let original = curve(item.id) else { continue }
             switch original.geometry {
+            case .circle, .ellipse: continue
             case .line:
                 let nid = addLine(a, b)
                 madeFrom[item.id, default: []].append(nid)
@@ -719,6 +735,55 @@ extension Sketch {
         }
         let dimID = IDs.make()
         dimension(.radius(arc), expression, id: dimID)
+        return dimID
+    }
+
+    /// Cuts the corner at point `p` where exactly two lines meet with a straight chamfer: each line is shortened
+    /// to `distance` from the corner, and the two new ends are joined by a line. The corner stays as a virtual
+    /// sharp on both lines; two construction legs from it to the new ends are equal, and the leg's length is the
+    /// dimension (driven by `expression`). Returns that dimension's id.
+    public mutating func chamferCorner(_ p: EntityID, distance d: Double, expression: String) -> EntityID? {
+        guard let pp = position(p) else { return nil }
+        let lines = curves.filter { c in
+            if case .line(let a, let b) = c.geometry { return a == p || b == p }
+            return false
+        }
+        guard lines.count == 2, curves.filter({ pointIDs(of: $0).contains(p) }).count == 2 else { return nil }
+        func farEnd(_ c: SketchCurve) -> SIMD2<Double>? {
+            guard case .line(let a, let b) = c.geometry else { return nil }
+            return position(a == p ? b : a)
+        }
+        guard let f1 = farEnd(lines[0]), let f2 = farEnd(lines[1]) else { return nil }
+        let originalEnds = lines.map { line -> (EntityID, EntityID)? in
+            if case .line(let a, let b) = line.geometry { return (a, b) }
+            return nil
+        }
+        let l1 = vlen(f1 - pp), l2 = vlen(f2 - pp)
+        guard l1 > 1e-9, l2 > 1e-9 else { return nil }
+        let u1 = (f1 - pp) / l1, u2 = (f2 - pp) / l2
+        let theta = acos(min(max(vdot(u1, u2), -1), 1))
+        guard theta > 0.5 * .pi / 180, theta < .pi - 0.5 * .pi / 180 else { return nil }
+        guard d > 1e-9, d < min(l1, l2) - 1e-9 else { return nil }
+        let t1 = pp + u1 * d, t2 = pp + u2 * d
+        let a = addPoint(t1.x, t1.y), b = addPoint(t2.x, t2.y)
+        for (line, end) in [(lines[0], a), (lines[1], b)] {
+            guard let i = curves.firstIndex(where: { $0.id == line.id }), case .line(let s, let e) = curves[i].geometry else { continue }
+            curves[i].geometry = s == p ? .line(start: end, end: e) : .line(start: s, end: end)
+        }
+        let legA = addLine(p, a, construction: true), legB = addLine(p, b, construction: true)
+        addLine(a, b)
+        constrain(.pointOnCurve(point: p, curve: lines[0].id))
+        constrain(.pointOnCurve(point: p, curve: lines[1].id))
+        constrain(.equal(legA, legB))
+        // Sides keep the length they had, measured corner to corner (as for a fillet).
+        for (line, ends) in zip(lines, originalEnds) {
+            guard let ends else { continue }
+            for i in dimensions.indices {
+                if case .length(let l) = dimensions[i].kind, l == line.id { dimensions[i].kind = .distance(ends.0, ends.1) }
+            }
+        }
+        let dimID = IDs.make()
+        dimension(.length(legA), expression, id: dimID)
         return dimID
     }
 }

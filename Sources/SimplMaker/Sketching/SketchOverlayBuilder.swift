@@ -146,6 +146,7 @@ enum SketchOverlayBuilder {
             case .line: return g.point(0.25)  // a quarter along: the middle is where the line's size shows
             case .circle(let c, let r): return c + SIMD2(0, r)
             case .arc, .bezier: return g.point(0.5)
+            case .ellipse: return g.point(0)
             }
         }
         for c in s.constraints {
@@ -200,6 +201,12 @@ enum SketchOverlayBuilder {
         case .bezier:
             let poles = s.pointIDs(of: c).compactMap { position($0) }
             return poles.count == 4 ? Bezier.flatten(poles) : []
+        case .ellipse(let center, let major, let minor):
+            guard let pc = position(center), let pu = position(major), let pv = position(minor) else { return [] }
+            return (0...192).map { i in
+                let t = Double(i) * 2 * .pi / 192
+                return pc + (pu - pc) * cos(t) + (pv - pc) * sin(t)
+            }
         }
     }
 
@@ -434,7 +441,7 @@ enum SketchOverlayBuilder {
             let center: SIMD2<Double>?
             switch curve.geometry {
             case .circle(let id, _), .arc(let id, _, _): center = position(id)
-            case .line, .bezier: center = nil
+            case .line, .bezier, .ellipse: center = nil
             }
             guard let center, let r = s.radius(of: curve) else { return nil }
             return center + r * SIMD2(0.7071, 0.7071)

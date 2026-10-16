@@ -260,6 +260,7 @@ public enum SketchSolver {
         var lines: [EntityID: (EntityID, EntityID)] = [:]
         var circleCenters: [EntityID: EntityID] = [:]  // circles and arcs
         var beziers: [EntityID: [EntityID]] = [:]      // start, control 1, control 2, end
+        var ellipses: [EntityID: (center: EntityID, major: EntityID, minor: EntityID)] = [:]
         var terms: [([Double]) -> Double] = []
 
         /// With `holdRadii`, circles keep the radius they have: nothing is solved for it.
@@ -279,6 +280,8 @@ public enum SketchSolver {
                     arcs[c.id] = (center, start); circleCenters[c.id] = center
                 case .bezier(let a, let c1, let c2, let b):
                     beziers[c.id] = [a, c1, c2, b]
+                case .ellipse(let center, let major, let minor):
+                    ellipses[c.id] = (center, major, minor)
                 }
             }
         }
@@ -387,6 +390,15 @@ public enum SketchSolver {
                     add { let d = me.dir(c, $0); return vcross(d, me.p(pt, $0) - me.p(ends.0, $0)) / max(vlen(d), 1e-12) }
                 } else if let center = me.circleCenters[c] {
                     add { vlen(me.p(pt, $0) - me.p(center, $0)) - me.radius(c, $0) }
+                } else if let e = me.ellipses[c] {
+                    // In the ellipse's own (affine) frame it is a unit circle: the point's coordinates there have length 1.
+                    add { x in
+                        let o = me.p(e.center, x), u = me.p(e.major, x) - o, v = me.p(e.minor, x) - o
+                        let w = me.p(pt, x) - o, det = vcross(u, v)
+                        guard abs(det) > 1e-12 else { return vlen(w) - 1 }
+                        let cx = (v.y * w.x - v.x * w.y) / det, cy = (u.x * w.y - u.y * w.x) / det
+                        return cx * cx + cy * cy - 1
+                    }
                 } else if let bz = me.beziers[c] {
                     add { x in
                         // Signed distance from the point to the curve, along the curve's normal.

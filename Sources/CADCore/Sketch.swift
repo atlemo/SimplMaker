@@ -37,6 +37,8 @@ public struct SketchCurve: Codable, Hashable, Sendable, Identifiable {
         case arc(center: EntityID, start: EntityID, end: EntityID)
         /// Cubic Bézier from `start` to `end`, pulled toward the two control points (its handles).
         case bezier(start: EntityID, control1: EntityID, control2: EntityID, end: EntityID)
+        /// Ellipse: its center, and the ends of its two axes (points on the curve). Point t is center + major·cos t + minor·sin t.
+        case ellipse(center: EntityID, major: EntityID, minor: EntityID)
     }
     public var id: EntityID
     public var geometry: Geometry
@@ -260,7 +262,7 @@ public struct Sketch: Codable, Hashable, Sendable {
     /// Circle/arc radius as currently stored in the geometry.
     public func radius(of curve: SketchCurve) -> Double? {
         switch curve.geometry {
-        case .line, .bezier: return nil
+        case .line, .bezier, .ellipse: return nil
         case .circle(_, let r): return r
         case .arc(let c, let s, _):
             guard let pc = point(c), let ps = point(s) else { return nil }

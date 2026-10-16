@@ -721,6 +721,18 @@ public enum Regenerator {
             let poles = solved.pointIDs(of: c).compactMap { solved.point($0)?.position }
             guard poles.count == 4 else { return }
             try ks.addBezier(c.id, poles)
+        case .ellipse(let center, let major, let minor):
+            guard let pc = solved.point(center), let pu = solved.point(major), let pv = solved.point(minor) else { return }
+            // Four cubic Béziers, a quarter turn each. An affine image of a circle's Béziers is the ellipse's, so
+            // the handles are taken in the ellipse's own frame; they share the curve's tag, so it is one profile.
+            let o = pc.position, u = pu.position - o, v = pv.position - o
+            let k = 4.0 / 3.0 * tan(.pi / 8)  // handle length for a quarter turn of a unit circle
+            func point(_ t: Double) -> SIMD2<Double> { o + u * cos(t) + v * sin(t) }
+            func slope(_ t: Double) -> SIMD2<Double> { -u * sin(t) + v * cos(t) }
+            for quarter in 0..<4 {
+                let t0 = Double(quarter) * .pi / 2, t1 = t0 + .pi / 2
+                try ks.addBezier(c.id, [point(t0), point(t0) + slope(t0) * k, point(t1) - slope(t1) * k, point(t1)])
+            }
         }
     }
 

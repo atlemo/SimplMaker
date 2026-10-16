@@ -42,7 +42,7 @@ import Testing
             case .line(let a, let b): return (a, b)
             case .arc(_, let a, let b): return (a, b)
             case .bezier(let a, _, _, let b): return (a, b)
-            case .circle: return nil
+            case .circle, .ellipse: return nil
             }
         }
         var remaining = ids.filter { ends($0) != nil }

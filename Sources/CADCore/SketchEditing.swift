@@ -5,7 +5,7 @@
 import Foundation
 
 public enum SketchEntityKind: Sendable, Equatable {
-    case point, line, circle, arc, bezier
+    case point, line, circle, arc, bezier, ellipse
     public var isCircular: Bool { self == .circle || self == .arc }
 }
 
@@ -72,6 +72,7 @@ extension Sketch {
         case .circle: return .circle
         case .arc: return .arc
         case .bezier: return .bezier
+        case .ellipse: return .ellipse
         }
     }
 
@@ -82,6 +83,7 @@ extension Sketch {
         case .circle(let center, _): return [center]
         case .arc(let center, let s, let e): return [center, s, e]
         case .bezier(let a, let c1, let c2, let b): return [a, c1, c2, b]
+        case .ellipse(let center, let major, let minor): return [center, major, minor]
         }
     }
 
@@ -102,7 +104,7 @@ extension Sketch {
         guard let c = curve(id) else { return nil }
         switch c.geometry {
         case .circle(let center, _), .arc(let center, _, _): return center
-        case .line, .bezier: return nil
+        case .line, .bezier, .ellipse: return nil
         }
     }
 
@@ -197,7 +199,7 @@ extension Sketch {
         func ends(_ c: SketchCurve) -> [EntityID] {
             switch c.geometry {
             case .line(let a, let b), .arc(_, let a, let b), .bezier(let a, _, _, let b): return [a, b]
-            case .circle: return []
+            case .circle, .ellipse: return []
             }
         }
         let candidates = curves.filter { $0.construction == seed.construction }
@@ -429,6 +431,32 @@ extension Sketch {
         return (arc, endID)
     }
 
+    /// Ellipse centred on `c`, with one axis from there to `major` (its end is on the curve) and the other axis
+    /// square to it, reaching out to where `minor` lies from the first axis. Both axes are construction lines, kept
+    /// square; their lengths are dimensions (the major one returned, to edit first). Nil when `c` and `major` coincide,
+    /// or `minor` lies on the major axis.
+    @discardableResult
+    public mutating func addEllipse(center c: SketchSnap, major m: SketchSnap, minor n: SketchSnap) -> (curve: EntityID, majorDimension: EntityID)? {
+        let c = concrete(c), m = concrete(m)
+        let pc = c.point.flatMap { position($0) } ?? c.position
+        let pm = m.point.flatMap { position($0) } ?? m.position
+        let len = vlen(pm - pc)
+        guard len > 1e-9 else { return nil }
+        let dir = (pm - pc) / len, perp = SIMD2(-dir.y, dir.x)
+        let b = vdot(n.position - pc, perp)
+        guard abs(b) > 1e-9 else { return nil }
+        let centerID = resolve(c), majorID = resolve(m)
+        let minorID = addPoint((pc + perp * b).x, (pc + perp * b).y)
+        let curve = IDs.make()
+        curves.append(SketchCurve(id: curve, .ellipse(center: centerID, major: majorID, minor: minorID)))
+        let majorAxis = addLine(centerID, majorID, construction: true), minorAxis = addLine(centerID, minorID, construction: true)
+        constrain(.perpendicular(majorAxis, minorAxis))
+        let majorDim = IDs.make()
+        dimension(.distance(centerID, majorID), formatDimension(len, kind: .length), id: majorDim)
+        dimension(.distance(centerID, minorID), formatDimension(abs(b), kind: .length))
+        return (curve, majorDim)
+    }
+
     /// Arc from `start` to `end` through `through`, with a new center point; nil if the three are
     /// in a line.
     @discardableResult
@@ -633,7 +661,7 @@ extension Sketch {
             case .circle(_, let r): out[c.id] = (.diameter(c.id), r * 2)
             case .arc(let center, let s, _):
                 if let pc = positions[center], let ps = positions[s] { out[c.id] = (.radius(c.id), vlen(ps - pc)) }
-            case .bezier: continue
+            case .bezier, .ellipse: continue
             }
         }
         return out
@@ -649,7 +677,7 @@ extension Sketch {
             guard let oc = curve(other), let orad = radius(of: oc), let op = center(of: other).flatMap({ position($0) })
             else { return nil }
             return RimGap(center: cp, radius: r, other: .circle(op, orad))
-        case .bezier?, nil: return nil
+        case .bezier?, .ellipse?, nil: return nil
         }
     }
 
@@ -824,8 +852,8 @@ extension Sketch {
         case .circle?, .arc?:
             guard let c = center(of: id), let cp = position(c) else { return false }
             soft = [.radius(id, max(vlen(target - cp), 1e-3))]
-        case .bezier?:
-            // The whole curve, handles and all, slides with the cursor.
+        case .bezier?, .ellipse?:
+            // The whole curve, handles and all (an ellipse's center and axis ends), slides with the cursor.
             guard let c = curve(id), let start = pointIDs(of: c).first.flatMap({ position($0) }) else { return false }
             let delta = target - grabOffset - start
             soft = pointIDs(of: c).compactMap { p in position(p).map { .point(p, $0 + delta) } }

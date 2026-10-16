@@ -59,3 +59,33 @@ import Testing
         return center
     }
 }
+
+/// An ellipse in a sketch: its axes stay square, and a point placed on it stays on it through a solve.
+@Suite struct SketchEllipseTests {
+    @Test func aPointOnTheEllipseStaysOnItWhenItsAxesMove() throws {
+        var s = Sketch()
+        let made = s.addEllipse(center: SketchSnap(SIMD2(0, 0)), major: SketchSnap(SIMD2(10, 0)), minor: SketchSnap(SIMD2(0, 5)))
+        let ellipse = try #require(made?.curve)
+        // A point on the ellipse (x = 10·cos 45°, y = 5·sin 45°), dragged off it, then solved back on.
+        let p = s.addPoint(7.5, 3.0)
+        s.constrain(.pointOnCurve(point: p, curve: ellipse))
+        #expect(SketchSolver.solve(&s, dimensionValues: [:]).status == .solved)
+        let pos = try #require(s.position(p))
+        let g = try #require(s.geometry(of: ellipse))
+        let t = g.parameter(of: pos)
+        #expect(simd_length(g.point(t) - pos) < 1e-6, "the point is on the ellipse")
+    }
+
+    @Test func theAxesAreSquareAndTheMajorDimensionIsTheMajorAxis() throws {
+        var s = Sketch()
+        let made = s.addEllipse(center: SketchSnap(SIMD2(0, 0)), major: SketchSnap(SIMD2(10, 0)), minor: SketchSnap(SIMD2(0, 5)))
+        let dim = try #require(made?.majorDimension)
+        #expect(s.dimensions.first { $0.id == dim }?.expression.hasPrefix("10") == true)
+        #expect(SketchSolver.solve(&s, dimensionValues: [dim: 12]).status == .solved)
+        let ellipse = try #require(made?.curve)
+        // The center is free to move, so the major axis is measured from it, not from the origin.
+        let g = try #require(s.geometry(of: ellipse))
+        guard case .ellipse(let c, let u, _) = g else { Issue.record("not an ellipse"); return }
+        #expect(abs(simd_length(u) - 12) < 1e-6, "the major axis is 12 mm long, measured from the center \(c)")
+    }
+}

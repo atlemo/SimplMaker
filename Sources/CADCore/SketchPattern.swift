@@ -236,6 +236,7 @@ extension Sketch {
                 geometry = .circle(center: id(m), radius: r)
             case .arc(let m, let a, let b): geometry = reversed ? .arc(center: id(m), start: id(b), end: id(a)) : .arc(center: id(m), start: id(a), end: id(b))
             case .bezier(let a, let c1, let c2, let b): geometry = .bezier(start: id(a), control1: id(c1), control2: id(c2), end: id(b))
+            case .ellipse(let m, let a, let b): geometry = .ellipse(center: id(m), major: id(a), minor: id(b))
             }
             curves.append(SketchCurve(id: id(c.id), geometry, construction: c.construction))
         }

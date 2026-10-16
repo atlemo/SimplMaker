@@ -91,7 +91,7 @@ import Testing
         for c in g.curves {
             switch c.geometry {
             case .line(let a, let b), .arc(_, let a, let b), .bezier(let a, _, _, let b): #expect(s.point(a) != nil && s.point(b) != nil)
-            case .circle: break
+            case .circle, .ellipse: break
             }
         }
     }

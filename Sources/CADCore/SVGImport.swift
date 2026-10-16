@@ -710,6 +710,7 @@ extension Sketch {
             case .arc(let m, let a, let b): d.geometry = .arc(center: remap(m), start: remap(a), end: remap(b))
             case .bezier(let a, let c1, let c2, let b):
                 d.geometry = .bezier(start: remap(a), control1: remap(c1), control2: remap(c2), end: remap(b))
+            case .ellipse(let m, let a, let b): d.geometry = .ellipse(center: remap(m), major: remap(a), minor: remap(b))
             }
             curves.append(d)
         }
