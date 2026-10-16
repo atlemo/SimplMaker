@@ -1373,7 +1373,7 @@ struct ProjectInspector: View {
             Picker("Type", selection: Binding(get: { project.mode }, set: { m in edit.update("Change Type") { $0.mode = m } })) {
                 ForEach(ProjectMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            edit.row(project.mode == .emboss ? "Height" : "Depth", project.height, "Edit Height") { $0.height = $1 }
+            edit.row("Height", project.signedHeight, "Edit Height") { $0.setHeight($1) }
             Toggle("Flip direction", isOn: Binding(get: { project.flipped }, set: { v in edit.update("Flip") { $0.flipped = v } }))
             LabeledContent("Profiles") {
                 HStack {

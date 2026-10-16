@@ -92,6 +92,59 @@ import Testing
         #expect(side.errors.isEmpty, "\(side.errors)")
     }
 
+    @Test func debossOntoPickedFacesKeepsTheRestOfTheBody() throws {
+        // Picking faces (the way the inspector does) and switching between emboss and deboss must not eat the body.
+        let side = [FaceRef(body: "post", face: "post.side")]
+        let before = try #require(Regenerator.regenerate(doc().withoutProjection).body("post")).volume
+        for mode in [ProjectMode.emboss, .deboss, .emboss, .deboss] {
+            let r = Regenerator.regenerate(doc(mode: mode, faces: side))
+            #expect(r.errors.isEmpty, "\(mode): \(r.errors)")
+            let post = try #require(r.body("post"))
+            #expect(post.isValid, "\(mode) left an invalid body")
+            #expect(abs(post.volume - before) < before * 0.1, "\(mode): \(before) -> \(post.volume)")
+        }
+    }
+
+    @Test func flatBoxFacePickDebossAndEmbossKeepTheBody() throws {
+        var s = Sketch()
+        let p = s.addPoint(0, 0)
+        s.constrain(.fix(p, x: 0, y: 0))
+        s.texts = [SketchText(id: "T", text: "Hi", position: p, height: "10 mm")]
+        func make(_ mode: ProjectMode, _ faces: [FaceRef]) -> CADDocument {
+            var d = CADDocument()
+            d.features = [
+                Feature(id: "box", name: "Box", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "60 mm", length: "40 mm", height: "10 mm"))),
+                Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s))),
+                Feature(id: "pr", name: "Project1", .project(ProjectFeature(
+                    sketch: "sk", profiles: ["T#0", "T#1"].map { ProfileRef(curves: [$0]) }, target: "box", faces: faces,
+                    mode: mode, height: "1 mm", flipped: true))),
+            ]
+            return d
+        }
+        let before = try #require(Regenerator.regenerate(make(.emboss, []).withoutProjection).body("box")).volume
+        let top = [FaceRef(body: "box", face: "box.top")]
+        for mode in [ProjectMode.emboss, .deboss, .emboss, .deboss] {
+            let r = Regenerator.regenerate(make(mode, top))
+            #expect(r.errors.isEmpty, "\(mode): \(r.errors)")
+            let box = try #require(r.body("box"))
+            #expect(box.isValid, "\(mode) left an invalid body")
+            // Raised by the height, or sunk into the top by it: the rest of the box stays.
+            let change = box.volume - before
+            #expect(mode == .emboss ? change > 0 : change < 0, "\(mode): \(before) -> \(box.volume)")
+        }
+    }
+
+    @Test func aSignedHeightSaysWhichWayTheProfilesGo() {
+        var pf = ProjectFeature(sketch: "sk", profiles: [], target: "post")
+        #expect(pf.mode == .emboss && pf.signedHeight == "1 mm")
+        pf.setHeight("-2 mm")
+        #expect(pf.mode == .deboss && pf.height == "2 mm" && pf.signedHeight == "-(2 mm)")
+        pf.setHeight("relief * 2")
+        #expect(pf.mode == .emboss && pf.height == "relief * 2")
+        pf.setHeight("-relief")
+        #expect(pf.mode == .deboss && pf.height == "relief")
+    }
+
     @Test func aMissingFaceOrBodyOrAZeroHeightSaysSo() throws {
         let gone = Regenerator.regenerate(doc(faces: [FaceRef(body: "post", face: "post.nope")]))
         #expect(gone.errors["pr"]?.contains("gone") == true, "\(gone.errors)")

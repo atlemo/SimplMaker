@@ -1821,10 +1821,9 @@ final class DocumentModel {
             }
             return nil
         case .project(let pf):
-            // Out of the surface where the first profile landed (into it, for a deboss).
+            // Out of the surface where the first profile landed. Dragged past zero it sinks in instead (a deboss).
             guard let landed = result.projectionHandles[id] else { return nil }
-            return handle(pf.mode == .emboss ? "Height" : "Depth", landed.origin,
-                          pf.mode == .emboss ? landed.normal : -landed.normal, pf.height)
+            return handle("Height", landed.origin, landed.normal, pf.signedHeight, negative: true)
         case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .pattern, .importBody, .image:
             return nil
         }
@@ -2309,7 +2308,7 @@ final class DocumentModel {
             df.angle = text
             doc.features[i].kind = .draft(df)
         case .project(var pf):
-            pf.height = text
+            pf.setHeight(text)
             doc.features[i].kind = .project(pf)
         case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .importBody, .image:
             break

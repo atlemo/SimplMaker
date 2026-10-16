@@ -197,6 +197,18 @@ public struct ProjectFeature: Codable, Hashable, Sendable {
         self.sketch = sketch; self.profiles = profiles; self.target = target; self.faces = faces
         self.mode = mode; self.height = height; self.flipped = flipped
     }
+
+    /// Sets the height from a size as typed or dragged: a negative one sinks the profiles in (a deboss), a positive one
+    /// stands them out (an emboss), so one size drags both ways. The mode follows the sign; the height stays positive.
+    public mutating func setHeight(_ text: String) {
+        let typed = text.trimmingCharacters(in: .whitespaces)
+        let sinks = typed.hasPrefix("-")
+        height = sinks ? String(typed.dropFirst()).trimmingCharacters(in: .whitespaces) : typed
+        mode = sinks ? .deboss : .emboss
+    }
+
+    /// The height as a signed size: negative for a deboss, which is what a drag handle shows and sets.
+    public var signedHeight: String { mode == .deboss ? "-(\(height))" : height }
 }
 
 /// Connected sketch curves used as a path (sweep, pipe) or a rib's centre line.

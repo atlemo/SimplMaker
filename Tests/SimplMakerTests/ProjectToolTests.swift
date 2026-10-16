@@ -120,11 +120,15 @@ import Testing
             if case .project(var p) = f.kind { p.mode = .deboss; f.kind = .project(p) }
         }
         try await settle(model)
+        // A deboss keeps the same handle on the surface: its size is negative, so it sinks in, and typing a negative one keeps it a deboss.
         let d = try #require(model.dragHandles.first)
-        #expect(d.label == "Depth" && d.direction.x < -0.9, "into the surface")
-        #expect(model.commitHandle("2", slot: 0))
+        #expect(d.label == "Height" && d.direction.x > 0.9 && d.value < 0, "into the surface: \(d.value)")
+        #expect(model.commitHandle("-2", slot: 0))
         try await settle(model)
-        #expect(project(model)?.height == "2 mm")
+        #expect(project(model)?.height == "2 mm" && project(model)?.mode == .deboss)
+        #expect(model.commitHandle("3", slot: 0))
+        try await settle(model)
+        #expect(project(model)?.height == "3 mm" && project(model)?.mode == .emboss)
     }
 
     @Test func theProfilesCanBePickedAgain() async throws {
