@@ -1340,7 +1340,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             for _ in 0..<4 where placed.contains(where: { $0.insetBy(dx: -2, dy: -2).intersects(NSRect(origin: NSPoint(x: x, y: y), size: size)) }) {
                 y = min(y + size.height + 4, max(bounds.height - size.height, 0))
             }
-            field.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
+            field.frame = clearOfDraggers(NSRect(origin: NSPoint(x: x, y: y), size: size), minX: 0, maxX: maxX,
+                                          maxY: max(bounds.height - size.height, 0))
             placed.append(field.frame)
         }
         if let hud = featureHUD, let first = placed.first {  // the options panel sits just below the first field
@@ -1414,7 +1415,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         var y = p.y + (below ? ManipulatorLayout.ringRadius + 12 : 20)
         if below, y + size.height > bounds.height - 48 { y = p.y - ManipulatorLayout.ringRadius - 12 - size.height }  // no room: above the ring
         if session.isOffsetting, let tip = manipulatorLayout?.anchor(for: .axis(.x)) {  // beside the arrow's tip
-            x = tip.x + 12
+            // Past the tip, on the side the arrow points to, so the field never covers the arrow's body.
+            let tail = manipulatorLayout?.arrows.first { $0.axis == .x }?.tail ?? tip
+            x = tip.x >= tail.x ? tip.x + 12 : tip.x - 12 - size.width
             y = tip.y - size.height / 2
         }
         // Never under the floating browser or inspector, where it would look like part of them.
@@ -1423,7 +1426,43 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         x = min(max(x, minX), maxX)
         let maxY = max(bounds.height - min(panelInsets.bottom, bounds.height * 0.3) - size.height, 0)
         y = min(max(y, 0), maxY)
-        panel.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
+        panel.frame = clearOfDraggers(NSRect(origin: NSPoint(x: x, y: y), size: size), minX: minX, maxX: maxX, maxY: maxY)
+    }
+
+    /// The screen areas of the manipulator's draggers (arrows, squares, ring handles, middle dot): no typed-value
+    /// field or panel may sit on top of one, or it could not be grabbed.
+    private var draggerZones: [NSRect] {
+        guard let layout = manipulatorLayout else { return [] }
+        func box(_ pts: [CGPoint]) -> NSRect? {
+            guard let x0 = pts.map(\.x).min(), let x1 = pts.map(\.x).max(),
+                  let y0 = pts.map(\.y).min(), let y1 = pts.map(\.y).max() else { return nil }
+            return NSRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0).insetBy(dx: -4, dy: -4)
+        }
+        var zones = layout.arrows.compactMap { box($0.polygon) } + layout.squares.compactMap { box($0.corners) }
+        let r = ManipulatorLayout.handleRadius + 2
+        zones += layout.rings.map { NSRect(x: $0.handle.x - r, y: $0.handle.y - r, width: 2 * r, height: 2 * r) }
+        let d = ManipulatorLayout.dotRadius + 2
+        zones.append(NSRect(x: layout.center.x - d, y: layout.center.y - d, width: 2 * d, height: 2 * d))
+        return zones
+    }
+
+    /// Moves `rect` the shortest way (to the side, above or below) so it overlaps no dragger, staying inside the
+    /// allowed range. Gives it back unchanged when nothing is in the way or nothing clear is found.
+    private func clearOfDraggers(_ rect: NSRect, minX: CGFloat, maxX: CGFloat, maxY: CGFloat) -> NSRect {
+        let zones = draggerZones
+        func blocked(_ r: NSRect) -> Bool { zones.contains { $0.intersects(r) } }
+        guard blocked(rect) else { return rect }
+        var candidates: [NSRect] = []
+        for z in zones where z.intersects(rect) {
+            for origin in [NSPoint(x: z.maxX + 6, y: rect.minY), NSPoint(x: z.minX - 6 - rect.width, y: rect.minY),
+                           NSPoint(x: rect.minX, y: z.maxY + 6), NSPoint(x: rect.minX, y: z.minY - 6 - rect.height)] {
+                candidates.append(NSRect(origin: origin, size: rect.size))
+            }
+        }
+        let fits = candidates.filter {
+            $0.minX >= minX && $0.minX <= maxX && $0.minY >= 0 && $0.minY <= maxY && !blocked($0)
+        }
+        return fits.min { hypot($0.minX - rect.minX, $0.minY - rect.minY) < hypot($1.minX - rect.minX, $1.minY - rect.minY) } ?? rect
     }
 
     /// Shows the Pattern tool's options just under its fields, or takes them away.

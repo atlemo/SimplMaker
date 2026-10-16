@@ -138,4 +138,68 @@ private extension CADDocument {
         d.features.removeAll { if case .project = $0.kind { true } else { false } }
         return d
     }
+
+    /// A strip that follows a run of smooth cubics, an offset curve closing it: one side face per run, and a deboss
+    /// projected onto it builds (a surface that is only tangent-continuous at its joints can't be thickened).
+    private func curvedStrip(flatRun: Bool = false) throws -> CADDocument {
+        var s = Sketch()
+        let lead = s.addPoint(-60, 0)
+        let p0 = s.addPoint(0, 0), p1 = s.addPoint(63, 0), p2 = s.addPoint(88, 8), p3 = s.addPoint(98, 20)
+        let b1 = s.addBezier(start: p0, control1: s.addPoint(30, 0), control2: s.addPoint(45, 0), end: p1)
+        let b2 = s.addBezier(start: p1, control1: s.addPoint(75, 0), control2: s.addPoint(85, 3), end: p2)
+        let b3 = s.addBezier(start: p2, control1: s.addPoint(89.8, 11), control2: s.addPoint(95, 16), end: p3)
+        var run = [b1, b2, b3]
+        if flatRun { run.insert(s.addLine(lead, p0), at: 0) }
+        let made = s.offset(run, distance: 2, expression: "2 mm")
+        var ends: [EntityID] = []
+        for id in made {
+            if case .bezier(let a, _, _, let b)? = s.curve(id)?.geometry { ends += [a, b] }
+            if case .line(let a, let b)? = s.curve(id)?.geometry { ends += [a, b] }
+        }
+        s.addLine(flatRun ? lead : p0, ends.first!); s.addLine(p3, ends.last!)
+        var plate = Sketch()
+        if flatRun { plate.addRectangle(-40, -15, 100, 10) } else { plate.addRectangle(20, -15, 60, 10) }
+        var d = CADDocument()
+        d.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xz, sketch: s)))]
+        let sk = try #require(Regenerator.regenerate(d).sketches["sk"])
+        let region = try #require(sk.regions.first)
+        let ref = ProfileRef(curves: region.tags.split(separator: ",").map(String.init), hintU: region.sample.x, hintV: region.sample.y)
+        d.features.append(Feature(id: "e", name: "Extrude1", .extrude(ExtrudeFeature(sketch: "sk", profiles: [ref], extent: .distance("20 mm")))))
+        d.features.append(Feature(id: "sk2", name: "Sketch2", .sketch(SketchFeature(plane: .xy, sketch: plate))))
+        let sk2 = try #require(Regenerator.regenerate(d).sketches["sk2"])
+        let r2 = try #require(sk2.regions.first)
+        let pref = ProfileRef(curves: r2.tags.split(separator: ",").map(String.init), hintU: r2.sample.x, hintV: r2.sample.y)
+        d.features.append(Feature(id: "pr", name: "Project1", .project(ProjectFeature(
+            sketch: "sk2", profiles: [pref], target: "e", mode: .deboss, height: "1 mm"))))
+        return d
+    }
+
+    @Test func aDebossOnASmoothRunOfCubicsBuildsAndTakesTheRightAmountAway() throws {
+        let d = try curvedStrip()
+        var plain = d
+        plain.features.removeLast()
+        let before = try #require(Regenerator.regenerate(plain).body("e"))
+        #expect(before.faceNames.filter { $0.contains(".side.") }.count == 4, "\(before.faceNames)")
+        let r = Regenerator.regenerate(d)
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let after = try #require(r.body("e"))
+        // The strip is 209.78 mm² thick-wise and 20 mm long; the volume reads true on spline faces.
+        #expect(abs(before.volume - 209.78178 * 20) < 1, "\(before.volume)")
+        // 60 × 10 mm of the surface (it is nearly flat there), 1 mm deep.
+        #expect(abs((before.volume - after.volume) - 600) < 5, "\(before.volume - after.volume)")
+    }
+
+    /// A deboss across the join of a flat run and a curved one is one pocket: the walls the two pieces of the relief
+    /// share at the join would otherwise stay behind as a thin membrane across the floor.
+    @Test func aDebossAcrossAFlatRunAndACurveHasNoWallAtTheJoin() throws {
+        let r = Regenerator.regenerate(try curvedStrip(flatRun: true))
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let body = try #require(r.body("e"))
+        let mesh = try body.tessellate(linearDeflection: 0.01)
+        // The join is at x = 0; no relief face may stand there across the pocket.
+        for (t, face) in mesh.triangleFace.enumerated() where mesh.faceNames[Int(face)].hasPrefix("pr.relief") {
+            let xs = (0..<3).map { Double(mesh.positions[Int(mesh.indices[t * 3 + $0]) * 3]) }
+            #expect(!xs.allSatisfy { abs($0) < 1e-6 }, "a wall across the pocket at the join")
+        }
+    }
 }

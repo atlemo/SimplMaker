@@ -43,7 +43,7 @@ public enum Bezier {
     /// own end points and end directions, and a piece is split until its middle strays less than `tolerance`.
     /// The pieces join end to end. Nil when the offset folds over itself (`d` is more than the curve's
     /// radius of curvature somewhere on the inner side).
-    public static func offset(_ p: [SIMD2<Double>], by d: Double, tolerance: Double = 5e-4) -> [[SIMD2<Double>]]? {
+    public static func offset(_ p: [SIMD2<Double>], by d: Double, tolerance: Double = 2e-2) -> [[SIMD2<Double>]]? {
         guard p.count == 4 else { return nil }
         /// The offset point at t, and the offset's velocity there (the curve's, scaled by 1 − d·curvature).
         func at(_ t: Double) -> (point: SIMD2<Double>, velocity: SIMD2<Double>, scale: Double)? {

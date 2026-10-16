@@ -79,6 +79,15 @@
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <Geom_Curve.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <Geom_TrimmedCurve.hxx>
+#include <Geom_SurfaceOfLinearExtrusion.hxx>
+#include <GeomAPI_PointsToBSpline.hxx>
+#include <BRepTools_WireExplorer.hxx>
+#include <GeomConvert.hxx>
+#include <GeomConvert_CompCurveToBSplineCurve.hxx>
+#include <ShapeFix_Face.hxx>
+#include <ShapeBuild_ReShape.hxx>
 #include <TopLoc_Location.hxx>
 #include <Bnd_Box.hxx>
 #include <Geom2d_Curve.hxx>
@@ -1138,6 +1147,153 @@ bool sk_sketch_add_bezier(SKHandle sketch, const char *tag, const double *uv, in
   SK_CATCH(false)
 }
 
+/// Joins the smooth Bézier pieces along a region's border into single spline edges, so that an extrude gives one
+/// side face for the whole run (a run of pieces, like an offset curve, would otherwise leave a seam at every joint,
+/// which shows in the body and ruins anything projected onto it). The merged edge takes the tag of the first
+/// piece that went into it; lines, arcs, sharp corners and the pieces of a curve that was split (or of a letter)
+/// are left alone. The run is refitted as one curve that is smooth all along, within a ten-thousandth of a
+/// millimetre: a surface that is only tangent-continuous at the joints can't be thickened by OCCT, so a relief
+/// projected onto it would fail. Gives back `face` unchanged when anything goes wrong.
+static TopoDS_Face mergeSmoothBeziers(const TopoDS_Face &face, std::vector<Named> &pieces) {
+  try {
+    struct Item {
+      TopoDS_Edge edge;
+      std::string tag;
+      bool eligible = false;
+      gp_Vec startDir, endDir;  // travel directions at the ends (unit length)
+      TopoDS_Vertex first, last;  // travel ends
+    };
+    std::map<std::string, int> uses;
+    auto tagOf = [&](const TopoDS_Shape &e) {
+      for (const Named &piece : pieces)
+        if (piece.shape.IsSame(e)) return piece.name;
+      return std::string();
+    };
+    for (TopExp_Explorer ex(face, TopAbs_EDGE); ex.More(); ex.Next()) ++uses[tagOf(ex.Current())];
+
+    Handle(Geom_Surface) surface;
+    TopLoc_Location placed;
+    surface = BRep_Tool::Surface(face, placed);
+    std::vector<TopoDS_Wire> wires;
+    std::vector<Named> named;  // the edges of the new wires and the tags they carry
+    bool merged = false;
+    const TopoDS_Wire outer = BRepTools::OuterWire(face);
+    TopoDS_Wire outerOut;
+    for (TopExp_Explorer wx(face, TopAbs_WIRE); wx.More(); wx.Next()) {
+      const TopoDS_Wire wire = TopoDS::Wire(wx.Current());
+      std::vector<Item> items;
+      for (BRepTools_WireExplorer we(wire, face); we.More(); we.Next()) {
+        Item it;
+        it.edge = we.Current();
+        it.tag = tagOf(it.edge);
+        double f, l;
+        Handle(Geom_BezierCurve) c = Handle(Geom_BezierCurve)::DownCast(BRep_Tool::Curve(it.edge, f, l));
+        const bool reversed = it.edge.Orientation() == TopAbs_REVERSED;
+        gp_Pnt pt;
+        gp_Vec d0, d1;
+        if (!c.IsNull() && !it.tag.empty() && uses[it.tag] == 1) {
+          c->D1(f, pt, d0);
+          c->D1(l, pt, d1);
+          if (d0.Magnitude() > 1e-9 && d1.Magnitude() > 1e-9) {
+            it.eligible = true;
+            it.startDir = (reversed ? -d1 : d0).Normalized();
+            it.endDir = (reversed ? -d0 : d1).Normalized();
+          }
+        }
+        TopoDS_Vertex v1, v2;
+        TopExp::Vertices(it.edge, v1, v2, true);  // by travel
+        it.first = v1;
+        it.last = v2;
+        items.push_back(it);
+      }
+      const int n = (int)items.size();
+      auto joins = [&](int a, int b) {
+        return items[a].eligible && items[b].eligible && items[a].last.IsSame(items[b].first) &&
+               items[a].endDir.Dot(items[b].startDir) > 1 - 1e-6;
+      };
+      int start = -1;
+      for (int k = 0; k < n && start < 0; ++k)
+        if (!joins((k + n - 1) % n, k)) start = k;
+      TopoDS_Wire out;
+      BRep_Builder bb;
+      bb.MakeWire(out);
+      if (start < 0 || n < 2) {  // nothing to join, or a loop that is smooth all the way round
+        for (const Item &it : items) {
+          bb.Add(out, it.edge);
+          named.push_back({it.edge, it.tag});
+        }
+      } else {
+        for (int k = 0; k < n;) {
+          const int i = (start + k) % n;
+          int len = 1;
+          while (k + len < n && joins((start + k + len - 1) % n, (start + k + len) % n)) ++len;
+          if (len == 1) {
+            bb.Add(out, items[i].edge);
+            named.push_back({items[i].edge, items[i].tag});
+            k += 1;
+            continue;
+          }
+          // The exact curve of the run, in travel order, then one smooth refit of it.
+          GeomConvert_CompCurveToBSplineCurve join;
+          bool ok = true;
+          for (int m = 0; m < len && ok; ++m) {
+            const Item &it = items[(start + k + m) % n];
+            double f, l;
+            Handle(Geom_Curve) c = BRep_Tool::Curve(it.edge, f, l);
+            Handle(Geom_TrimmedCurve) piece = new Geom_TrimmedCurve(c, f, l);
+            if (it.edge.Orientation() == TopAbs_REVERSED) piece->Reverse();
+            Handle(Geom_BSplineCurve) spline = GeomConvert::CurveToBSplineCurve(piece);
+            ok = m == 0 ? join.Add(spline, 1e-6) : join.Add(spline, 1e-6, true);
+          }
+          if (!ok) return face;
+          Handle(Geom_BSplineCurve) exact = join.BSplineCurve();
+          const int samples = std::max(120, 40 * exact->NbKnots());
+          NCollection_Array1<gp_Pnt> through(1, samples);
+          for (int q = 0; q < samples; ++q)
+            through(q + 1) = exact->Value(exact->FirstParameter() + (exact->LastParameter() - exact->FirstParameter()) * q / (samples - 1));
+          GeomAPI_PointsToBSpline approx(through, 3, 5, GeomAbs_C2, 1e-4);
+          if (!approx.IsDone()) return face;
+          BRepBuilderAPI_MakeEdge mk(Handle(Geom_Curve)(approx.Curve()), items[i].first, items[(start + k + len - 1) % n].last);
+          if (!mk.IsDone()) return face;
+          bb.Add(out, mk.Edge());
+          named.push_back({mk.Edge(), items[i].tag});  // the first piece's tag
+          merged = true;
+          k += len;
+        }
+      }
+      out.Closed(true);
+      if (wire.IsSame(outer)) outerOut = out;
+      else wires.push_back(out);
+    }
+    if (!merged) return face;
+    TopoDS_Face rebuilt;
+    BRep_Builder bb;
+    bb.MakeFace(rebuilt, surface, placed, BRep_Tool::Tolerance(face));
+    bb.Add(rebuilt, outerOut);
+    for (const TopoDS_Wire &w : wires) bb.Add(rebuilt, w);
+    rebuilt.Orientation(face.Orientation());
+    ShapeFix_Face fix(rebuilt);
+    fix.SetContext(new ShapeBuild_ReShape);
+    fix.Perform();
+    const TopoDS_Face done = fix.Face();
+    if (done.IsNull()) return face;
+    GProp_GProps before, after;
+    // (The adaptive form: the plain one is a few tenths of a percent off on a spline boundary.)
+    BRepGProp::SurfaceProperties(face, before, 1e-7);
+    BRepGProp::SurfaceProperties(done, after, 1e-7);
+    if (!BRepCheck_Analyzer(done).IsValid() ||
+        std::fabs(after.Mass() - before.Mass()) > 5e-4 * before.Mass() + 1e-9)
+      return face;
+    for (const Named &n : named) {
+      const TopoDS_Shape now = fix.Context()->Apply(n.shape);
+      if (!n.name.empty()) pieces.push_back({now, n.name});
+    }
+    return done;
+  } catch (...) {
+    return face;
+  }
+}
+
 int sk_sketch_build_regions(SKHandle sketch) {
   SK_TRY
   Sketch *s;
@@ -1186,7 +1342,7 @@ int sk_sketch_build_regions(SKHandle sketch) {
     tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
 
     Sketch::Region r;
-    r.face = f;
+    r.face = mergeSmoothBeziers(f, s->pieces);
     for (size_t k = 0; k < tags.size(); ++k) r.tags += (k ? "," : "") + tags[k];
     GProp_GProps props;
     BRepGProp::SurfaceProperties(f, props);
@@ -2421,7 +2577,32 @@ SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int face
     setError("the surface could not be thickened here · try a smaller height");
     return 0;
   }
-  return storeChecked(relief, names, feat + ".relief", "the projection produced an invalid solid");
+  // The pieces of a relief (a flat patch, a curved one) meet in a wall each; cut out as they are, the two coincident
+  // walls would stay behind as a thin membrane across the floor. Joined into one solid they are gone.
+  TopoDS_Shape result = relief;
+  int solids = 0;
+  for (TopExp_Explorer ex(relief, TopAbs_SOLID); ex.More(); ex.Next()) ++solids;
+  if (solids > 1) {
+    ShapeList args, tools;
+    bool firstSolid = true;
+    for (TopExp_Explorer ex(relief, TopAbs_SOLID); ex.More(); ex.Next()) {
+      if (firstSolid) args.Append(ex.Current());
+      else tools.Append(ex.Current());
+      firstSolid = false;
+    }
+    BRepAlgoAPI_Fuse fuse;
+    fuse.SetArguments(args);
+    fuse.SetTools(tools);
+    fuse.SetFuzzyValue(1e-6);
+    fuse.Build();
+    if (fuse.IsDone() && !fuse.HasErrors()) {
+      std::vector<Named> carried;
+      carry(fuse, names, carried);
+      result = unify(fuse.Shape(), carried);
+      names = carried;
+    }
+  }
+  return storeChecked(result, names, feat + ".relief", "the projection produced an invalid solid");
   SK_CATCH(0)
 }
 
@@ -2636,8 +2817,19 @@ SKHandle sk_fillet(SKHandle body, const char *const *edgeNames, int count, doubl
     setError("fillet radius must be positive");
     return 0;
   }
-  return edgeFeature<BRepFilletAPI_MakeFillet>(body, edgeNames, count, featureOrDefault(featureId, "fillet"), "fillet",
-                                               [&](BRepFilletAPI_MakeFillet &mk, const TopoDS_Edge &e) { mk.Add(radius, e); });
+  auto round = [&](double r) {
+    return edgeFeature<BRepFilletAPI_MakeFillet>(body, edgeNames, count, featureOrDefault(featureId, "fillet"), "fillet",
+                                                 [&](BRepFilletAPI_MakeFillet &mk, const TopoDS_Edge &e) { mk.Add(r, e); });
+  };
+  SKHandle made = round(radius);
+  // A round that uses up a whole face (1 mm on a 2 mm strip) meets itself exactly, and OCCT can fail there on
+  // spline faces although a hair less builds. A millionth less is the same round for any real part.
+  if (!made) {
+    const std::string why = g_error;
+    made = round(radius * (1 - 1e-6));
+    if (!made) setError(why);
+  }
+  return made;
   SK_CATCH(0)
 }
 
@@ -3082,13 +3274,31 @@ bool sk_body_chamfer_handle(SKHandle body, const char *edgeName, const char *fac
   SK_CATCH(false)
 }
 
+/// A solid's volume and centre. The plain integration is up to a percent or two off on a face that is a straight
+/// extrusion of a spline of several spans (what a run of merged curves gives), so those solids are measured from
+/// a fine mesh of a copy instead; every other solid gets the exact form.
+static void accurateVolume(const TopoDS_Shape &shape, GProp_GProps &props) {
+  bool spline = false;
+  for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More() && !spline; ex.Next()) {
+    Handle(Geom_SurfaceOfLinearExtrusion) e =
+        Handle(Geom_SurfaceOfLinearExtrusion)::DownCast(BRep_Tool::Surface(TopoDS::Face(ex.Current())));
+    Handle(Geom_BSplineCurve) b = e.IsNull() ? nullptr : Handle(Geom_BSplineCurve)::DownCast(e->BasisCurve());
+    spline = !b.IsNull() && b->NbKnots() > 2;
+  }
+  if (spline) {
+    BRepBuilderAPI_Copy copy(shape, true, false);  // meshed on a copy: the body itself may be meshed by another thread
+    BRepMesh_IncrementalMesh(copy.Shape(), 0.002, false, 0.1, false);
+    BRepGProp::VolumeProperties(copy.Shape(), props, false, false, true);
+  } else BRepGProp::VolumeProperties(shape, props);
+}
+
 double sk_body_volume(SKHandle body) {
   SK_TRY
   Body *b;
   auto keep = lookup(body, b);
   if (!b) return 0;
   GProp_GProps props;
-  BRepGProp::VolumeProperties(b->shape, props);
+  accurateVolume(b->shape, props);
   return props.Mass();
   SK_CATCH(0)
 }
@@ -3148,7 +3358,7 @@ bool sk_measure_element(SKHandle body, bool isFace, const char *name, SKMeasure 
   GProp_GProps props;
   if (!name) {
     out->geom = SK_GEOM_BODY;
-    BRepGProp::VolumeProperties(shape, props);
+    accurateVolume(shape, props);
     out->volume = props.Mass();
     copyXYZ(out->centroid, props.CentreOfMass());
     GProp_GProps surface;

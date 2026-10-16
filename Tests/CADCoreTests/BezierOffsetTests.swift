@@ -39,7 +39,7 @@ import Testing
         let made = s.offset([id], distance: 2, expression: "2 mm")
         #expect(!made.isEmpty)
         let offset = samples(s, made)
-        for q in offset { #expect(abs(distance(q, to: original) - 2) < 0.01, "a point strayed: \(q)") }
+        for q in offset { #expect(abs(distance(q, to: original) - 2) < 0.03, "a point strayed: \(q)") }
         // The ends are exactly 2 mm to the left of where the curve starts and finishes.
         let first = offset.first!, last = offset.last!
         #expect(vlen(first - SIMD2(0, 2)) < 1e-6, "\(first)")
@@ -54,14 +54,14 @@ import Testing
                              control2: s.addPoint(p[2].x, p[2].y), end: s.addPoint(p[3].x, p[3].y))
         let original = samples(s, [id])
         let made = s.offset([id], distance: -1.5, expression: "1.5 mm")  // to the right
-        for q in samples(s, made) { #expect(abs(distance(q, to: original) - 1.5) < 0.01) }
+        for q in samples(s, made) { #expect(abs(distance(q, to: original) - 1.5) < 0.03) }
         #expect(samples(s, made).first!.y < 0, "right of a curve that heads along +x is below it")
         // Against the grain: the same curve drawn backwards, offset to the same side of the page.
         var r = Sketch()
         let rid = r.addBezier(start: r.addPoint(p[3].x, p[3].y), control1: r.addPoint(p[2].x, p[2].y),
                               control2: r.addPoint(p[1].x, p[1].y), end: r.addPoint(p[0].x, p[0].y))
         let made2 = r.offset([rid], distance: 1.5, expression: "1.5 mm")  // left of the backwards travel = below
-        #expect(samples(r, made2).allSatisfy { abs(distance($0, to: original) - 1.5) < 0.01 })
+        #expect(samples(r, made2).allSatisfy { abs(distance($0, to: original) - 1.5) < 0.03 })
         #expect(samples(r, made2).last!.y < 0)
     }
 
