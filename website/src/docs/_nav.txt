@@ -14,7 +14,14 @@ concepts/files
 ## Sketching
 sketch/start
 sketch/draw
+sketch/slot
+sketch/rounded-rectangle
+sketch/tangent-arc
+sketch/ellipse
+sketch/gear
 sketch/edit
+sketch/chamfer
+sketch/project-edge
 sketch/dimensions
 sketch/constraints
 sketch/text

@@ -24,6 +24,8 @@ Press [[F]], then click the point where two lines meet. SimplMaker rounds it wit
 This rounds a *sketch* corner. To round the edges of a solid, use [Fillet](doc:modify/fillet-chamfer).
 :::
 
+To cut a sketch corner straight across instead, use the [Chamfer](doc:sketch/chamfer) tool.
+
 ## Trim
 
 Press [[T]], then click the part of a curve you want to remove. It is cut away up to where other curves cross it.

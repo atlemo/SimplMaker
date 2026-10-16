@@ -48,15 +48,20 @@ While you sketch, the letters pick sketch tools instead.
 |---|---|
 | [[S]] | Select |
 | [[L]] | Line |
-| [[R]] | Rectangle. Press again for the centre rectangle. |
+| [[R]] | Rectangle. Press again for the centre rectangle, and again for the rounded rectangle. |
+| [[O]] | Slot. Press again for the overall-length slot. |
 | [[C]] | Circle. Press again for the 2-point circle. |
 | [[G]] | Polygon. Press again for a triangle. |
 | [[A]] | Arc. Press again for the 3-point arc. |
+| [[N]] | Tangent Arc |
+| [[J]] | Ellipse |
 | [[B]] | Spline |
 | [[K]] | Gear |
 | [[P]] | Point |
 | [[X]] | Text |
+| [[U]] | Project Edge |
 | [[F]] | Round Corner |
+| [[H]] | Chamfer |
 | [[T]] | Trim |
 | [[E]] | Extend |
 | [[D]] | Dimension |
