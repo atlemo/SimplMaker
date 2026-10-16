@@ -1,19 +1,76 @@
 {
-  "fill" : {
-    "solid" : "extended-gray:0.00000,1.00000"
-  },
+  "color-space-for-untagged-svg-colors" : "display-p3",
+  "fill-specializations" : [
+    {
+      "value" : {
+        "solid" : "extended-gray:1.00000,1.00000"
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "solid" : "extended-gray:0.00000,1.00000"
+      }
+    }
+  ],
   "groups" : [
     {
       "layers" : [
         {
           "glass" : false,
+          "hidden" : false,
+          "image-name" : "cube_only_v7-black_transp.png",
+          "name" : "cube_only_v7-black_transp",
+          "opacity-specializations" : [
+            {
+              "value" : 1
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0
+            }
+          ],
+          "position" : {
+            "scale" : 0.67,
+            "translation-in-points" : [
+              0,
+              5
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0.5
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "hidden" : false,
           "image-name" : "cube_only_v7-bw.png",
           "name" : "cube_only_v7-bw",
+          "opacity" : 1,
           "position-specializations" : [
+            {
+              "value" : {
+                "scale" : 1,
+                "translation-in-points" : [
+                  0,
+                  0
+                ]
+              }
+            },
             {
               "idiom" : "square",
               "value" : {
-                "scale" : 0.55,
+                "scale" : 0.52,
                 "translation-in-points" : [
                   1,
                   8
@@ -24,9 +81,10 @@
         }
       ],
       "shadow" : {
-        "kind" : "neutral",
+        "kind" : "none",
         "opacity" : 0.5
       },
+      "specular" : false,
       "translucency" : {
         "enabled" : false,
         "value" : 0.5
@@ -36,17 +94,35 @@
       "layers" : [
         {
           "glass" : false,
+          "hidden" : false,
           "image-name" : "AppIcon_grid_bw_bg.png",
           "name" : "AppIcon_grid_bw_bg",
-          "opacity" : 0.73,
+          "opacity-specializations" : [
+            {
+              "value" : 0
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0
+            }
+          ],
           "position-specializations" : [
             {
-              "idiom" : "square",
               "value" : {
-                "scale" : 0.54,
+                "scale" : 0.5,
                 "translation-in-points" : [
                   0,
                   0
+                ]
+              }
+            },
+            {
+              "idiom" : "square",
+              "value" : {
+                "scale" : 0.5,
+                "translation-in-points" : [
+                  0,
+                  -1
                 ]
               }
             }
@@ -64,9 +140,6 @@
     }
   ],
   "supported-platforms" : {
-    "circles" : [
-      "watchOS"
-    ],
     "squares" : "shared"
   }
 }
