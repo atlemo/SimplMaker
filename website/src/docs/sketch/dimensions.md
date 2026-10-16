@@ -9,7 +9,7 @@ A **dimension** fixes a size or a distance. It takes a value or an [expression](
 
 ### Dimension tool
 
-Press [[I]] for the **Dimension** tool, then click:
+Press [[D]] for the **Dimension** tool, then click:
 
 | Click | You get |
 |---|---|
@@ -28,7 +28,7 @@ SimplMaker shows the current size of shapes in grey. **Click any grey size** to 
 
 ### Distance tool
 
-Press [[D]] for the **Distance** tool, then click two items and type the distance between them. For example, put a hole 4 mm from the edge of a rectangle.
+Press [[I]] for the **Distance** tool, then click two items and type the distance between them. For example, put a hole 4 mm from the edge of a rectangle.
 
 - A point, a line or a circle's centre point is measured as usual.
 - A circle or arc is measured from its **edge**. To measure from the middle, click its centre point instead.
