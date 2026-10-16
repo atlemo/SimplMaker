@@ -2029,10 +2029,14 @@ struct ViewportView: NSViewRepresentable {
                 return SIMD4(Float(r), Float(g), Float(b), 1)
             }
         }
-        if c.fitRevision != fitRevision, let b = model.sceneBounds {
+        // A fit asked for while the part is empty (a new document, at launch) is used up here, so the first body
+        // added later doesn't pull the camera to itself.
+        if c.fitRevision != fitRevision {
             c.fitRevision = fitRevision
-            view.updateCameraInsets()
-            renderer.camera.fit(min: b.min, max: b.max, aspect: view.viewAspect)
+            if let b = model.sceneBounds {
+                view.updateCameraInsets()
+                renderer.camera.fit(min: b.min, max: b.max, aspect: view.viewAspect)
+            }
         }
         renderer.camera.orthographic = orthographic
         renderer.visualStyle = visualStyle
