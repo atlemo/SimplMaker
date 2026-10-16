@@ -98,9 +98,40 @@ import Testing
         _ = s.handle(SketchMouse(phase: .dragged, uv: far, pick: nil, tolerance: 0.5, gridStep: nil))
         _ = s.handle(SketchMouse(phase: .up, uv: far, pick: nil, tolerance: 0.5))
         let moved = s.sketch.dimensions.first { $0.id == d.id }!
-        #expect(abs((moved.offset ?? 0) - arc.radius * 2 / 1.15) < 1e-6)
+        #expect(abs((moved.offset ?? 0) - arc.radius * 2) < 1e-6, "the arc ends under the cursor, at twice its radius")
         let after = s.sketch.angleArc(of: moved, size: 0.5)!
         #expect(abs(after.middle - arc.middle) < 1e-6, "same wedge")
+    }
+
+    /// Grabbing the arc off its middle line must not move the arc until the cursor does: it follows the cursor's movement.
+    @Test func aPlacedAngleDoesNotJumpToTheCursorWhenGrabbedOffItsMiddle() {
+        let s = session()
+        s.setTool(.dimension)
+        _ = click(s, 10, 0.2)
+        _ = click(s, 5, 7.5)
+        move(s, 4, 3)
+        #expect(click(s, 4, 3) == "Dimension")
+        let d = s.sketch.dimensions.last!
+        s.setTool(.select)
+        let arc = s.sketch.angleArc(of: d, size: 0.5)!
+        let dir = SIMD2(cos(arc.middle), sin(arc.middle))
+        let grab = arc.center + arc.radius * SIMD2(cos(arc.middle + 0.3), sin(arc.middle + 0.3))  // 0.3 rad off the middle, inside the sweep
+        move(s, grab.x, grab.y)
+        #expect(s.hoverDimension == d.id)
+        let before = s.sketch.dimensions.first { $0.id == d.id }?.offset ?? 0
+
+        func drag(to p: SIMD2<Double>) {
+            _ = s.handle(SketchMouse(phase: .down, uv: grab, pick: nil, tolerance: 0.5, gridStep: nil))
+            _ = s.handle(SketchMouse(phase: .dragged, uv: p, pick: nil, tolerance: 0.5, gridStep: nil))
+            _ = s.handle(SketchMouse(phase: .up, uv: p, pick: nil, tolerance: 0.5))
+        }
+        drag(to: grab)                                        // no movement: nothing changes
+        let still = s.sketch.dimensions.first { $0.id == d.id }?.offset ?? 0
+        #expect(abs(still - before) < 1e-6, "the arc stays put under the cursor")
+
+        drag(to: grab + dir)                                  // 1 mm straight out along the middle
+        let out = s.sketch.dimensions.first { $0.id == d.id }?.offset ?? 0
+        #expect(abs((out - before) - 1) < 1e-6, "it moves by the cursor's own 1 mm")
     }
 
     @Test func aPlacedAngleCanBeSetToATypedValue() {
