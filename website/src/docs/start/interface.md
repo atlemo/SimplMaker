@@ -50,8 +50,8 @@ Press **Sketch** and pick a plane or a face to enter sketch mode. The toolbar ch
 
 | Group | Tools |
 |---|---|
-| **Draw** | Line, Rectangle, Circle, Polygon, Arc, Spline, Gear, Point, Text |
-| **Modify** | Round Corner, Trim, Extend, Offset |
+| **Draw** | Line, Rectangle, Slot, Circle, Polygon, Arc, Tangent Arc, Ellipse, Spline, Gear, Point, Text, Project Edge |
+| **Modify** | Round Corner, Chamfer, Trim, Extend, Offset |
 | **Transform** | Move, Scale, Pattern, Mirror |
 | **Constraints** | Dimension, Distance, Constrain, Construction |
 
