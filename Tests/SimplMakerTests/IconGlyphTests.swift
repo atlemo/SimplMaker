@@ -24,7 +24,7 @@ import Testing
         let used = ["cuboid", "cylinder", "globe", "torus", "orbit", "waypoints", "extrude", "extrude-two", "extrude-mirrored", "revolve", "hole", "layers-2",
                     "square-split-horizontal", "circle-dot", "rotate-3d", "spline", "fillet", "chamfer", "chamfer-equal", "chamfer-angle", "chamfer-two", "thread",
                     "pen-tool", "circle-x", "focus", "mouse-pointer-2", "minus", "square", "circle",
-                    "dot", "scissors", "arrow-up-right", "ruler", "link", "offset","square-dashed", "corner-round", "file-box"]
+                    "dot", "scissors", "arrow-up-right", "ruler", "link", "offset", "project", "square-dashed", "corner-round", "file-box"]
         for name in used {
             #expect(IconGlyphs.table[name] != nil, "expected glyph \"\(name)\" in IconGlyphs.table")
             #expect(!SVGGlyph.parse(IconGlyphs.table[name] ?? "").isEmpty)

@@ -58,7 +58,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .shell: return "shell"
         case .draft: return "draft"
         case .canvas: return "image"
-        case .project: return "square-dashed"
+        case .project: return "project"
         case .measure: return "ruler"
         case .sectionAnalysis: return "section-analysis"
         }
