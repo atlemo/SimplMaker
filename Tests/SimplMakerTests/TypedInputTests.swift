@@ -374,4 +374,38 @@ import Testing
         // Let the last rebuild finish: a kernel call still running when the test process exits crashes it.
         for _ in 0..<500 where model.isRegenerating { try await Task.sleep(for: .milliseconds(10)) }
     }
+
+    /// Typing a parameter's name in a field keeps the name as the dimension's expression, in every drawing tool
+    /// (not the number it stands for now), so the sketch follows the parameter when it changes.
+    @Test func typedParameterNamesStayAsDimensionExpressionsInEveryDrawingTool() throws {
+        let params = [Parameter("plen", "25 mm"), Parameter("pwid", "6 mm"), Parameter("prad", "3 mm"),
+                      Parameter("pdia", "12 mm"), Parameter("pang", "40 deg", unit: .angle)]
+        func run(_ tool: SketchTool, before: [(SketchInput, String)] = [], then: [(SketchInput, String)], at: SIMD2<Double> = SIMD2(30, 20),
+                 sourceLocation: SourceLocation = #_sourceLocation) throws {
+            let s = session(params)
+            s.setTool(tool)
+            for (f, t) in before { s.setTyped(f, t) }
+            click(s, 0, 0)
+            move(s, at.x, at.y)
+            for (f, t) in then { s.setTyped(f, t) }
+            _ = s.commitTyped()
+            let names = Set(params.map(\.name))
+            let expressions = s.sketch.dimensions.map(\.expression)
+            #expect(!expressions.isEmpty, "\(tool.rawValue) made no dimension from typed fields", sourceLocation: sourceLocation)
+            for e in expressions {
+                #expect(names.contains { e.contains($0) }, "\(tool.rawValue) stored \(e), not the parameter", sourceLocation: sourceLocation)
+            }
+        }
+        try run(.line, then: [(.length, "plen"), (.angle, "pang")])
+        try run(.rectangle, then: [(.width, "plen"), (.height, "pwid")])
+        try run(.centerRectangle, then: [(.width, "plen"), (.height, "pwid")])
+        try run(.roundedRectangle, then: [(.width, "plen"), (.height, "pdia"), (.radius, "prad")])
+        try run(.slot, before: [(.width, "pwid")], then: [(.length, "plen")])
+        try run(.overallSlot, before: [(.width, "pwid")], then: [(.length, "plen")])
+        try run(.circle, then: [(.diameter, "pdia")])
+        try run(.circle2Point, then: [(.diameter, "pdia")])
+        try run(.polygon, then: [(.diameter, "pdia")])
+        try run(.polygon, then: [(.length, "plen")])
+        try run(.triangle, then: [(.length, "plen")])
+    }
 }
