@@ -2219,7 +2219,10 @@ final class SketchSession {
             message = "Can't dimension that combination"
             return nil
         }
-        guard let action = addDimension(choice.kind, value: target) else {
+        // Typed as a parameter or a sum ("angle", "base + 10"), the dimension keeps the text and follows it.
+        let text = typed[.angle] ?? ""
+        let follows = (try? Expressions.parse(text))?.references.isEmpty == false
+        guard let action = addDimension(choice.kind, value: target, expression: follows ? text : nil) else {
             return nil  // the picks stay, so another value can be typed
         }
         anglePicks = nil
@@ -2248,11 +2251,11 @@ final class SketchSession {
     }
 
     /// Adds a dimension at its current value and opens it for typing.
-    private func addDimension(_ kind: SketchDimension.Kind, value: Double) -> String? {
+    private func addDimension(_ kind: SketchDimension.Kind, value: Double, expression: String? = nil) -> String? {
         let unit: UnitKind
         unit = SketchDimension(kind, "").unitKind
         let id = IDs.make()
-        guard sketch.applyDimension(kind, expression: formatDimension(value, kind: unit), value: value,
+        guard sketch.applyDimension(kind, expression: expression ?? formatDimension(value, kind: unit), value: value,
                                     values: values, id: id) else {
             message = "That dimension would over-constrain the sketch"
             return nil

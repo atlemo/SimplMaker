@@ -63,6 +63,23 @@ import Testing
         #expect(t.setDimension(id!, expression: "80") == "Edit Dimension")
     }
 
+    @Test func aTypedParameterNameStaysTheAnglesExpression() {
+        var sk = Sketch()
+        let o = sk.addPoint(0, 0), p = sk.addPoint(20, 0), q = sk.addPoint(10, 15)
+        _ = sk.addLine(o, p, id: "A"); _ = sk.addLine(o, q, id: "B")
+        let params = ParameterEvaluator.evaluate([Parameter("angle", "110 deg", unit: .angle)])
+        let t = SketchSession(featureID: "sk", frame: .xy, sketch: sk, parameters: params)
+        t.setTool(.dimension)
+        _ = click(t, 10, 0.2)
+        _ = click(t, 5, 7.5)
+        #expect(t.anglePicks != nil)
+        t.setTyped(.angle, "angle")
+        #expect(t.commitTyped() == "Dimension")
+        let d = t.sketch.dimensions.last
+        #expect(d?.expression == "angle", "the dimension follows the parameter, not its value now")
+        #expect(t.values[d!.id].map { abs($0 - 110 * .pi / 180) < 1e-6 } == true)
+    }
+
     @Test func emptySpaceAlsoPlacesTheLengthAndTwoLinesGiveAnAngleOrDistance() {
         let s = session()
         s.setTool(.dimension)
