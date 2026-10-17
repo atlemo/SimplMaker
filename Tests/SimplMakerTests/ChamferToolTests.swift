@@ -32,6 +32,36 @@ import Testing
         }
     }
 
+    /// A 20 × 1.5 × 10 strip: a 1 mm chamfer round its top face leaves nothing between the two long sides (1 + 1 > 1.5).
+    private func stripModel() async throws -> DocumentModel {
+        var d = CADDocument()
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20", length: "1.5", height: "10")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        return model
+    }
+
+    @Test func aStartingSizeThatDoesNotFitIsMadeSmallerNotRefused() async throws {
+        let model = try await stripModel()
+        try pickTop(model)
+        model.run(.chamfer)
+        try await settle(model)
+        #expect(model.alert == nil, "no alert: \(String(describing: model.alert?.message))")
+        let e = try #require(chamfer(model), "the chamfer is kept")
+        #expect(e.size == "0.5 mm", "1 mm did not fit the 1.5 mm strip; half of it does: \(e.size)")
+        #expect(model.result?.errors.isEmpty == true)
+        #expect(model.handleNote?.text.contains("1 mm didn't fit") == true && model.handleNote?.feature == model.document.features.last?.id)
+        #expect(model.dragHandle != nil, "its arrow is there to change the size")
+    }
+
+    @Test func aStartingSizeThatFitsIsLeftAlone() async throws {
+        let model = try await boxModel()
+        try pickTop(model)
+        model.run(.chamfer)
+        try await settle(model)
+        #expect(chamfer(model)?.size == "1 mm" && model.handleNote == nil)
+    }
+
     @Test func theButtonStartsEqualDistance() async throws {
         let model = try await boxModel()
         #expect(model.chamferMode == .equalDistance)

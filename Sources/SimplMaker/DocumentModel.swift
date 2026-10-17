@@ -734,6 +734,8 @@ final class DocumentModel {
     /// drag handle and size field appear.
     func add(_ feature: Feature) {
         documentBeforeNewFeature = document
+        newFeatureShrink = nil
+        handleNote = nil
         let alreadyHidden = document.hidden
         commit(feature)
         if isRegenerating {
@@ -834,6 +836,54 @@ final class DocumentModel {
         alert = AlertInfo(title: "\(name) could not be made", message: reason)
     }
 
+    /// The sizes a just-made fillet or chamfer started with, and how many times they have been halved since.
+    @ObservationIgnored private var newFeatureShrink: (id: FeatureID, size: Double, second: Double?, halvings: Int)?
+
+    /// A just-made fillet or chamfer that does not build at its starting size (2 mm, 1 mm) gets half of it, then a
+    /// quarter... (up to five times, each a rebuild of its own, one after another) until it builds, so the user has an
+    /// arrow to pull and not an alert. False when it has none left to try: the feature is then taken out as before.
+    private func shrinkNewEdgeFeature(_ id: FeatureID) -> Bool {
+        guard let i = document.index(of: id) else { return false }
+        var state: (id: FeatureID, size: Double, second: Double?, halvings: Int)
+        if let known = newFeatureShrink, known.id == id {
+            state = known
+        } else {
+            let edgeFeature: EdgeFeature
+            switch document.features[i].kind {
+            case .fillet(let e), .chamfer(let e): edgeFeature = e
+            default: return false
+            }
+            guard let start = try? parameterValues.value(of: edgeFeature.size, kind: .length), start > 0 else { return false }
+            var second: Double?
+            if case .chamfer = document.features[i].kind, edgeFeature.mode == .twoDistances {
+                second = try? parameterValues.value(of: edgeFeature.second, kind: .length)
+            }
+            state = (id, start, second, 0)
+        }
+        func setSizes(_ factor: Double) {
+            var doc = document
+            Self.set(expression: formatDimension(state.size * factor, kind: .length), of: id, slot: 0, in: &doc)
+            if let second = state.second { Self.set(expression: formatDimension(second * factor, kind: .length), of: id, slot: 1, in: &doc) }
+            // Quietly, as part of making the feature: undo takes the whole feature away, and no size it had on the way is a step.
+            document = doc
+            documentRevision += 1
+            onDocumentChange?(doc)
+        }
+        guard state.halvings < 5 else {
+            setSizes(1)
+            newFeatureShrink = nil
+            return false
+        }
+        state.halvings += 1
+        let factor = pow(0.5, Double(state.halvings))
+        setSizes(factor)
+        newFeatureShrink = state
+        handleNote = (id, "\(UnitKind.length.format(state.size)) didn't fit these edges, so it starts at \(UnitKind.length.format(state.size * factor)). Drag the arrow or type a size to change it.")
+        newFeatureUnbuilt = true
+        regenerate()
+        return true
+    }
+
     private func noteProgress(_ step: RegenProgress) {
         guard isRegenerating else { return }  // the rebuild finished while this was on its way
         regenProgress = step
@@ -899,6 +949,9 @@ final class DocumentModel {
         if previewFeature == nil, final, newFeatureUnbuilt, let id = newFeature {
             newFeatureUnbuilt = false
             if r.errors[id] != nil {
+                // A new fillet or chamfer starts at a size that may be too big for these edges: take the largest of
+                // half, a quarter... that builds, and leave its handle to change it.
+                if shrinkNewEdgeFeature(id) { return }
                 // A tool that fails leaves nothing in the timeline: the feature goes, the model stays as it was.
                 dropFailedNewFeature(id, rebuilt: r)
                 return
@@ -1003,6 +1056,7 @@ final class DocumentModel {
 
     /// Return (or Esc) after sizing a feature: done with it, so its handle and size field go away.
     func finishFeatureEdit() {
+        handleNote = nil
         if let id = newFeature, let r = result, r.errors[id] != nil {
             return dropFailedNewFeature(id, rebuilt: r)  // sized to something that does not build: not kept
         }
@@ -1527,6 +1581,8 @@ final class DocumentModel {
     var previewInvalid = false
     /// Why the size typed in the handle's field can't be used, shown under the field.
     private(set) var handleProblem: String?
+    /// Something to tell the user about the size just given (not an error): a starting size that was made smaller to fit.
+    private(set) var handleNote: (feature: FeatureID, text: String)?
     /// What's typed in the handle's field and not stored yet (the viewport keeps this up to date).
     @ObservationIgnored var handleDraft: String?
     /// Bumped when the field should drop its typing and show the stored size again.
@@ -2239,6 +2295,7 @@ final class DocumentModel {
             return false
         }
         handleProblem = nil
+        handleNote = nil
         handlePreviewValue = size.value * h.lengthPerUnit
         var preview = document
         Self.set(expression: size.expression, of: h.featureID, slot: h.slot, in: &preview)
@@ -2260,6 +2317,7 @@ final class DocumentModel {
             return false
         }
         handleProblem = nil
+        handleNote = nil
         handleDraft = nil
         handlePreviewValue = nil
         let old = (try? parameterValues.value(of: h.expression, kind: h.unit)) ?? 0

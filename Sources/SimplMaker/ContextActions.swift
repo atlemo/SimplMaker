@@ -435,6 +435,12 @@ struct FeatureHUD: View {
                         .foregroundStyle(.red)
                         .errorWrap(problem, width: 320)
                 }
+                if let note = model.handleNote, note.feature == id, model.handleProblem == nil {
+                    Text(note.text)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .errorWrap(note.text, width: 320)
+                }
                 controls(id)
             }
             .controlSize(.small)
