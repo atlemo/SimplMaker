@@ -42,10 +42,10 @@ A printed thread comes out slightly tight. The **Tolerance offset** models the t
 | Choice | Offset |
 |---|---|
 | **None** | No offset |
-| **PETG** | +1 % |
-| **ASA** | +1.5 % |
-| **ABS** | +2 % |
-| **Nylon** | +3 % |
+| **PETG** | +2 % |
+| **ASA** | +3 % |
+| **ABS** | +4 % |
+| **Nylon** | +6 % |
 | **Custom percent** | A percentage you set |
 | **Custom distance** | A distance you set |
 

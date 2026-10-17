@@ -332,7 +332,7 @@ import Testing
     }
 
     @Test func presetsAndOldFilesAndParameters() throws {
-        #expect(ThreadMaterial.allCases.map(\.percent) == [1, 2, 1.5, 3])
+        #expect(ThreadMaterial.allCases.map(\.percent) == [2, 4, 3, 6])
         // A file from before the offset has neither key.
         var json = try #require(JSONSerialization.jsonObject(
             with: JSONEncoder().encode(ThreadFeature(face: FaceRef(body: "b", face: "b.side"), tolerance: "2"))) as? [String: Any])

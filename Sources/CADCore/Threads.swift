@@ -123,10 +123,10 @@ public enum ThreadMaterial: String, Codable, Hashable, Sendable, CaseIterable {
     /// The suggested offset, in percent of the major diameter.
     public var percent: Double {
         switch self {
-        case .petg: return 1
-        case .asa: return 1.5
-        case .abs: return 2
-        case .nylon: return 3
+        case .petg: return 2
+        case .asa: return 3
+        case .abs: return 4
+        case .nylon: return 6
         }
     }
 }
