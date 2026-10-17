@@ -87,6 +87,7 @@
 #include <GeomConvert.hxx>
 #include <GeomConvert_CompCurveToBSplineCurve.hxx>
 #include <ShapeFix_Face.hxx>
+#include <ShapeFix_FixSmallFace.hxx>
 #include <ShapeBuild_ReShape.hxx>
 #include <TopLoc_Location.hxx>
 #include <Bnd_Box.hxx>
@@ -407,6 +408,43 @@ std::string cornerMessage(Body &b, const std::vector<TopoDS_Edge> &edges, const 
   return buf;
 }
 
+/// How a failed round or chamfer along `edges` reads when a short edge in their tangent chains is the reason: a size
+/// bigger than the shortest edge it runs along doesn't fit, and a hair-thin face (two rounds that use up a whole face
+/// between them leave one) is more than OCCT can follow, whatever the size. Empty when there is no such edge (a
+/// chamfer measured two ways has no one size, so only the hair-thin face counts then).
+std::string sliverMessage(Body &b, const std::vector<TopoDS_Edge> &edges, const char *kind, double size) {
+  try {
+    BRepFilletAPI_MakeChamfer mk(b.shape);
+    for (const TopoDS_Edge &e : edges) mk.Add(Precision::Confusion() * 10, e);  // Add finds each edge's tangent chain
+    double shortest = 1e30;
+    for (int ic = 1; ic <= mk.NbContours(); ++ic)
+      for (int j = 1; j <= mk.NbEdges(ic); ++j) {
+        GProp_GProps props;
+        BRepGProp::LinearProperties(mk.Edge(ic, j), props);
+        shortest = std::min(shortest, props.Mass());
+      }
+    char buf[280];
+    if (shortest < 1e-3) {
+      std::snprintf(buf, sizeof buf,
+                    "the edge runs past a hair-thin face, which two rounds that use up a whole face between them leave; make one of those rounds a little smaller");
+    } else if (size > 0 && shortest < size - 1e-6) {
+      std::snprintf(buf, sizeof buf, "a %s of %.4g mm does not fit: the edge has a stretch only %.2g mm long, so make the %s smaller than that",
+                    kind, size, shortest, kind);
+    } else {
+      return "";
+    }
+    return buf;
+  } catch (Standard_Failure &) {
+    return "";
+  }
+}
+
+/// Why a round or chamfer failed, when something the body has (a rounded corner, a very short edge) explains it.
+std::string failureMessage(Body &b, const std::vector<TopoDS_Edge> &edges, const char *kind, double size) {
+  std::string why = cornerMessage(b, edges, kind, size);
+  return why.empty() ? sliverMessage(b, edges, kind, size) : why;
+}
+
 /// True when every edge of `edges` is a convex edge of `shape`. Rounding only convex edges takes material away, so
 /// a rounded body that is bigger than before is wrong; rounding a concave edge fills the corner and does add some.
 /// An edge that is concave, tangent or not shared by exactly two faces counts as not convex.
@@ -463,9 +501,59 @@ bool allConvex(const TopoDS_Shape &shape, const std::vector<TopoDS_Edge> &edges)
   }
 }
 
+/// The length of the shortest edge in the tangent chains of `edges`, 0 if there is none (see sliverMessage).
+double shortestChainEdge(Body &b, const std::vector<TopoDS_Edge> &edges) {
+  try {
+    BRepFilletAPI_MakeChamfer mk(b.shape);
+    for (const TopoDS_Edge &e : edges) mk.Add(Precision::Confusion() * 10, e);
+    double shortest = 0;
+    bool any = false;
+    for (int ic = 1; ic <= mk.NbContours(); ++ic)
+      for (int j = 1; j <= mk.NbEdges(ic); ++j) {
+        GProp_GProps props;
+        BRepGProp::LinearProperties(mk.Edge(ic, j), props);
+        shortest = any ? std::min(shortest, props.Mass()) : props.Mass();
+        any = true;
+      }
+    return shortest;
+  } catch (Standard_Failure &) {
+    return 0;
+  }
+}
+
+/// `b` without its hair-thin strip faces: two rounds that use up a whole face between them leave one (see the nudge in
+/// Regenerator.edgeFeature), and a chamfer or round that has to run across it fails whatever its size. The strip goes,
+/// the faces on either side meet, and every other face keeps its name. False if nothing was removed or the result is no
+/// good (not valid, or a different volume).
+bool healStrips(const Body &b, Body &out, const std::string &fallback) {
+  try {
+    ShapeFix_FixSmallFace fix;
+    fix.Init(b.shape);
+    fix.SetPrecision(1e-4);
+    fix.Perform();
+    const TopoDS_Shape healed = fix.FixShape();
+    if (healed.IsNull() || !BRepCheck_Analyzer(healed).IsValid()) return false;
+    std::vector<Named> names;
+    for (const Named &n : namedFaces(b)) {
+      const TopoDS_Shape m = fix.Context()->Apply(n.shape);
+      if (!m.IsNull() && m.ShapeType() == TopAbs_FACE) names.push_back({m, n.name});
+    }
+    Body candidate = makeBody(healed, names, fallback);
+    if (candidate.faces.Extent() >= b.faces.Extent()) return false;
+    GProp_GProps before, after;
+    BRepGProp::VolumeProperties(b.shape, before);
+    BRepGProp::VolumeProperties(healed, after);
+    if (std::abs(after.Mass() - before.Mass()) > 1e-4 * before.Mass()) return false;
+    out = std::move(candidate);
+    return true;
+  } catch (Standard_Failure &) {
+    return false;
+  }
+}
+
 template <class Maker, class AddFn>
 SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, const std::string &feat,
-                            const char *kind, AddFn add, double size = 0) {
+                            const char *kind, AddFn add, double size = 0, bool healed = false) {
   Body *b;
   auto keep = lookup(body, b);
   if (!b) return 0;
@@ -487,6 +575,28 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
   }
   std::vector<TopoDS_Edge> picked;
   for (auto &u : used) picked.push_back(TopoDS::Edge(u.first));
+  // A chain with a hair-thin strip face in it fails whatever the size: leave the strip out of the body and try once more.
+  auto fail = [&](const std::string &message) -> SKHandle {
+    Body strippedBody;
+    if (!healed && shortestChainEdge(*b, picked) < 1e-3 && healStrips(*b, strippedBody, feat + "." + kind)) {
+      std::vector<std::string> kept;
+      for (int k = 0; k < count; ++k)
+        if (strippedBody.edgeIndex.count(edgeNames[k])) kept.push_back(edgeNames[k]);
+      if (!kept.empty()) {
+        std::vector<const char *> pointers;
+        for (const std::string &name : kept) pointers.push_back(name.c_str());
+        const SKHandle h = store(std::move(strippedBody));
+        const SKHandle made = edgeFeature<Maker>(h, pointers.data(), (int)pointers.size(), feat, kind, add, size, true);
+        {
+          std::lock_guard<std::mutex> lock(g_mutex);
+          g_objects.erase(h);
+        }
+        return made;  // 0 with the reason the healed body gave, which is the one that still holds
+      }
+    }
+    setError(message);
+    return 0;
+  };
   // A chamfer as big as the radius of a rounded corner it runs round is refused here, not left to OCCT: it
   // sometimes fails, but it also returns bodies that pass BRepCheck and still have the wrong shape.
   if (std::strcmp(kind, "chamfer") == 0) {
@@ -498,9 +608,8 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
   }
   mk.Build();
   if (!mk.IsDone()) {
-    std::string why = cornerMessage(*b, picked, kind, size);
-    setError(why.empty() ? std::string(kind) + " failed (size too large for the adjacent faces?)" : why);
-    return 0;
+    std::string why = failureMessage(*b, picked, kind, size);
+    return fail(why.empty() ? std::string(kind) + " failed (size too large for the adjacent faces?)" : why);
   }
   std::vector<Named> names;
   carry(mk, namedFaces(*b), names);
@@ -527,7 +636,10 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
     BRepGProp::VolumeProperties(result, after);
     return after.Mass() > before.Mass() * (1 + 1e-6) + 1e-9 && allConvex(b->shape, all);
   };
-  const std::string tooBig = std::string(kind) + " failed (size too large for the adjacent faces?)";
+  auto tooBigMessage = [&] {
+    const std::string why = failureMessage(*b, picked, kind, size);
+    return why.empty() ? std::string(kind) + " failed (size too large for the adjacent faces?)" : why;
+  };
   BRepCheck_Analyzer check(out.shape);
   if (!check.IsValid()) {
     // OCCT sometimes returns a fillet's result with a shell that is not quite closed or with edge tolerances
@@ -536,21 +648,16 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
     fix.Perform();
     if (BRepCheck_Analyzer(fix.Shape()).IsValid()) {
       if (grew(fix.Shape())) {
-        setError(tooBig);
-        return 0;
+        return fail(tooBigMessage());
       }
       std::vector<Named> fixedNames;
       for (const Named &n : names) fixedNames.push_back({fix.Context()->Apply(n.shape), n.name});
       return store(makeBody(fix.Shape(), fixedNames, feat + "." + kind));
     }
-    std::string why = cornerMessage(*b, picked, kind, size);
-    setError(why.empty() ? std::string(kind) + " produced an invalid solid" : why);
-    return 0;
+    std::string why = failureMessage(*b, picked, kind, size);
+    return fail(why.empty() ? std::string(kind) + " produced an invalid solid" : why);
   }
-  if (grew(out.shape)) {
-    setError(tooBig);
-    return 0;
-  }
+  if (grew(out.shape)) return fail(tooBigMessage());
   return store(std::move(out));
 }
 
@@ -2900,7 +3007,7 @@ SKHandle sk_chamfer_ex(SKHandle body, const char *const *edgeNames, const char *
         if (mode == SK_CHAMFER_TWO_DISTANCES) mk.Add(first, second, e, onFirst[k]);
         else mk.AddDA(first, second, e, onFirst[k]);
         ++k;
-      });
+      }, 0, true);  // the faces picked belong to this body: no healed copy to retry on
   SK_CATCH(0)
 }
 
