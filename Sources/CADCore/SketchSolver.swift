@@ -271,6 +271,12 @@ public enum SketchSolver {
                     pointSlot[p.id] = initial.count; initial += [p.x, p.y]
                 }
             }
+            // The sketch's own axes are fixed lines through the origin (y = 0 and x = 0), so a constraint can name them.
+            for (axis, direction) in [(SketchMirrorDef.xAxis, SIMD2(1.0, 0)), (SketchMirrorDef.yAxis, SIMD2(0, 1.0))] {
+                fixedPoints[axis + "#0"] = .zero
+                fixedPoints[axis + "#1"] = direction
+                lines[axis] = (axis + "#0", axis + "#1")
+            }
             for c in s.curves {
                 switch c.geometry {
                 case .line(let a, let b): lines[c.id] = (a, b)

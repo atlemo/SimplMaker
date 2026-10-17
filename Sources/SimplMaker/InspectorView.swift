@@ -144,7 +144,7 @@ struct SketchInspector: View {
             LabeledContent("Constraints", value: "\(sketch.sketch.constraints.count)")
         }
         if let session {
-            Section("Constrain Selection (\(session.selection.count))") {
+            Section("Constrain Selection (\(session.selection.count + session.axisSelection.count))") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], alignment: .leading) {
                     ForEach(ConstraintTool.allCases, id: \.self) { c in
                         Button(c.rawValue) { model.sketchCommand { $0.apply(c) } }

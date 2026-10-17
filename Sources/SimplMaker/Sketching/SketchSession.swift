@@ -335,6 +335,7 @@ final class SketchSession {
         if t != .select { stopManipulating(); cancelPattern(); cancelMirror(); cancelOffset() }
         if t != .gear || tool != .gear { gearBackup = nil; gearActive = nil }  // what the fields did stays, with the next change
         tool = t
+        axisSelection = []
         if t.family.count > 1 { lastInFamily[t.family[0]] = t }
         resetToolState()
     }
@@ -423,7 +424,12 @@ final class SketchSession {
         polygonSides = min(max(polygonSides + delta, Sketch.polygonSides.lowerBound), Sketch.polygonSides.upperBound)
         typed[.sides] = nil
     }
-    var selection: [EntityID] = []
+    var selection: [EntityID] = [] {
+        didSet { if selection.isEmpty { axisSelection = [] } }
+    }
+    /// The sketch's axes picked along with the selection, to constrain against (see `SketchMirrorDef.xAxis`). Kept apart
+    /// from `selection`, which every other command reads as drawn geometry; cleared with it.
+    private(set) var axisSelection: [EntityID] = []
     private(set) var hover: EntityID?
     /// Set by Scale to ask the toolbar to show that tool's popover.
     var transformRequested: SketchTransformTool?
@@ -564,6 +570,8 @@ final class SketchSession {
     }
 
     var hoverEntity: EntityID? { hover }
+    /// The cursor is on one of the sketch's axes, which can be picked to constrain against.
+    var hoverIsAxis: Bool { hover.map(SketchMirrorDef.isAxis) ?? false }
     var hoverIsDraggable: Bool {
         if hover == nil, hoverDimension != nil { return true }
         guard let hover, !Sketch.isGenerated(hover) else { return false }
@@ -792,9 +800,19 @@ final class SketchSession {
                 return (true, nil)
             }
             guard let h = hover else {
-                if !m.additive { selection = [] }
+                if !m.additive { selection = []; axisSelection = [] }
                 return (false, nil)  // empty space: let the view orbit
             }
+            if SketchMirrorDef.isAxis(h) {  // an axis is a line to constrain against: it is picked, not dragged
+                if m.additive {
+                    if let i = axisSelection.firstIndex(of: h) { axisSelection.remove(at: i) } else { axisSelection.append(h) }
+                } else {
+                    selection = []
+                    axisSelection = [h]
+                }
+                return (true, nil)
+            }
+            if !m.additive { axisSelection = [] }
             if m.additive {
                 if let i = selection.firstIndex(of: h) { selection.remove(at: i) } else { selection.append(h) }
             } else if !selection.contains(h) {
@@ -2019,7 +2037,16 @@ final class SketchSession {
             if d <= tolerance, d < (best?.1 ?? .infinity) { best = (p.id, d) }
         }
         if let best { return best.0 }
-        return nearestCurve(uv)
+        return nearestCurve(uv) ?? nearestAxis(uv)
+    }
+
+    /// The sketch's x or y axis if the cursor is within the pick tolerance of it: with Select, so that a constraint can
+    /// use it as a line (mirror two points across it, put a point on it). Points and curves are found first.
+    func nearestAxis(_ uv: SIMD2<Double>) -> EntityID? {
+        guard tool == .select, patternSetup == nil, mirrorSetup == nil, offsetSetup == nil else { return nil }
+        let dx = abs(uv.x), dy = abs(uv.y)  // the distance to the y axis and to the x axis
+        guard min(dx, dy) <= tolerance else { return nil }
+        return dy <= dx ? SketchMirrorDef.xAxis : SketchMirrorDef.yAxis
     }
 
     /// The nearest curve within the pick tolerance, whatever points are there.
@@ -2321,10 +2348,13 @@ final class SketchSession {
         return finish("Delete")
     }
 
-    func canApply(_ c: ConstraintTool) -> Bool { sketch.constraints(c, for: selection) != nil }
+    func canApply(_ c: ConstraintTool) -> Bool { sketch.constraints(c, for: selection + axisSelection) != nil }
+
+    /// Whether a button for the constraints is worth showing: something is selected, an axis included.
+    var hasConstraintSelection: Bool { !selection.isEmpty || !axisSelection.isEmpty }
 
     func apply(_ c: ConstraintTool) -> String? {
-        guard let kinds = sketch.constraints(c, for: selection) else { return nil }
+        guard let kinds = sketch.constraints(c, for: selection + axisSelection) else { return nil }
         guard sketch.applyConstraints(kinds, values: values) else {
             message = "\(c.rawValue) would over-constrain the sketch"
             return nil

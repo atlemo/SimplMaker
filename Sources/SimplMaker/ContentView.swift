@@ -2001,7 +2001,7 @@ struct SketchToolbar: View {
     /// The constraints, enabled when they fit the selection.
     private var constrainChoices: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space1) {
-            if session.selection.isEmpty {
+            if !session.hasConstraintSelection {
                 Text("Select sketch entities first").font(.caption).foregroundStyle(.secondary)
                     .padding(.bottom, DS.Spacing.space2)
             }

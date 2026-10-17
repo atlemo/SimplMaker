@@ -211,3 +211,74 @@ func approxLine(_ g: CurveGeometry?, _ a: SIMD2<Double>, _ b: SIMD2<Double>) -> 
         #expect(s.constraints(.symmetric, for: [a, b]) == nil, "needs a line")
     }
 }
+
+/// The sketch's own axes, picked as lines to constrain against.
+@Suite struct AxisConstraintTests {
+    @Test func twoPointsAreSymmetricAboutTheYAxis() throws {
+        var s = Sketch()
+        let a = s.addPoint(-7, 3), b = s.addPoint(4, 6)
+        let kinds = try #require(s.constraints(.symmetric, for: [a, b, SketchMirrorDef.yAxis]))
+        #expect(kinds == [.symmetric(a, b, line: SketchMirrorDef.yAxis)])
+        let applied = s.applyConstraints(kinds, values: [:])
+        #expect(applied)
+        let pa = try #require(s.position(a)), pb = try #require(s.position(b))
+        #expect(abs(pa.x + pb.x) < 1e-6 && abs(pa.y - pb.y) < 1e-6, "\(pa) \(pb)")
+        // The axis may come first in the pick.
+        #expect(s.constraints(.symmetric, for: [SketchMirrorDef.xAxis, a, b]) != nil)
+        #expect(s.constraints(.symmetric, for: [a, SketchMirrorDef.yAxis]) == nil, "needs two points")
+    }
+
+    @Test func circlesAreSymmetricAboutTheXAxis() throws {
+        var s = Sketch()
+        let c1 = s.addCircle(center: s.addPoint(-5, 8), radius: 2), c2 = s.addCircle(center: s.addPoint(9, -3), radius: 2)
+        let kinds = try #require(s.constraints(.symmetric, for: [c1, c2, SketchMirrorDef.xAxis]))
+        let applied = s.applyConstraints(kinds, values: [:])
+        #expect(applied)
+        let q1 = try #require(s.center(of: c1).flatMap { s.position($0) }), q2 = try #require(s.center(of: c2).flatMap { s.position($0) })
+        #expect(abs(q1.y + q2.y) < 1e-6 && abs(q1.x - q2.x) < 1e-6)
+    }
+
+    @Test func aPointCanLieOnAnAxis() throws {
+        var s = Sketch()
+        let p = s.addPoint(6, 4)
+        let kinds = try #require(s.constraints(.coincident, for: [p, SketchMirrorDef.xAxis]))
+        #expect(kinds == [.pointOnCurve(point: p, curve: SketchMirrorDef.xAxis)])
+        let applied = s.applyConstraints(kinds, values: [:])
+        #expect(applied)
+        #expect(abs(try #require(s.position(p)).y) < 1e-6)
+    }
+
+    @Test func aLineParallelOrSquareToAnAxisIsLevelOrUpright() throws {
+        var s = Sketch()
+        let l = s.addLine(s.addPoint(0, 0), s.addPoint(10, 3))
+        #expect(s.constraints(.parallel, for: [l, SketchMirrorDef.xAxis]) == [.horizontal(l)])
+        #expect(s.constraints(.perpendicular, for: [SketchMirrorDef.xAxis, l]) == [.vertical(l)])
+        #expect(s.constraints(.parallel, for: [l, SketchMirrorDef.yAxis]) == [.vertical(l)])
+        #expect(s.constraints(.perpendicular, for: [l, SketchMirrorDef.yAxis]) == [.horizontal(l)])
+        #expect(s.constraints(.parallel, for: [SketchMirrorDef.xAxis, SketchMirrorDef.yAxis]) == nil)
+        #expect(s.constraints(.horizontal, for: [SketchMirrorDef.xAxis]) == nil, "the axes are not changed")
+        #expect(s.constraints(.fix, for: [SketchMirrorDef.xAxis]) == nil)
+    }
+
+    @Test func aCircleCanTouchAnAxis() throws {
+        var s = Sketch()
+        let c = s.addCircle(center: s.addPoint(3, 9), radius: 2)
+        let kinds = try #require(s.constraints(.tangent, for: [c, SketchMirrorDef.xAxis]))
+        let applied = s.applyConstraints(kinds, values: [:])
+        #expect(applied)
+        let y = try #require(s.center(of: c).flatMap { s.position($0) }).y
+        #expect(abs(abs(y) - 2) < 1e-6, "\(y)")
+    }
+
+    @Test func aConstraintOnAnAxisSurvivesAnotherOneBeingDeleted() throws {
+        var s = Sketch()
+        let a = s.addPoint(-7, 3), b = s.addPoint(4, 6), loose = s.addPoint(1, 1)
+        let applied = s.applyConstraints([.symmetric(a, b, line: SketchMirrorDef.yAxis)], values: [:])
+        #expect(applied)
+        s.delete([loose])
+        #expect(s.constraints.count == 1)
+        let r = SketchSolver.solve(&s, dimensionValues: [:])
+        #expect(r.status == .solved)
+        #expect(r.degreesOfFreedom == 2, "one free coordinate for each point, less the two the mirror ties: \(r.degreesOfFreedom)")
+    }
+}

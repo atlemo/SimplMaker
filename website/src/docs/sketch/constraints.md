@@ -28,6 +28,17 @@ Only the constraints that fit the selection are enabled.
 
 ![Constraint symbols next to the geometry.](shot:sketch-constraints)
 
+## Use the axes as guides
+
+The sketch's **X axis** and **Y axis** (the two lines through the origin) can be selected like any line, and used in a constraint. [[⇧]]-click them along with the other items:
+
+- **Symmetric**: two points (or two circle centres) mirrored across an axis.
+- **Coincident**: a point that stays on an axis.
+- **Parallel** and **Perpendicular**: a line that stays level or upright, as it is against that axis.
+- **Tangent**: a circle or arc that touches an axis.
+
+The axes themselves never move, and can't be deleted.
+
 ## Symbols
 
 Small symbols next to the geometry show each constraint: **H**, **V**, **∥**, **⊥**, **T**, **=** and so on. Click one to select it and press [[⌫]] to delete it. The inspector also lists them, each with a button to remove it.

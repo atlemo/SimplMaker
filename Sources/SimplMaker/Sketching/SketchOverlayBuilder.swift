@@ -238,6 +238,12 @@ enum SketchOverlayBuilder {
                 }
             }
         }
+        // A picked axis: the line through the origin, reaching well past the screen.
+        let reach = session.mmPerPixel > 0 ? session.mmPerPixel * 6000 : 1000
+        for axis in session.axisSelection {
+            let along = axis == SketchMirrorDef.xAxis ? SIMD2(reach, 0) : SIMD2(0, reach)
+            o.axisSelected += segments([-along, along], frame: f, id: 0)
+        }
         for (i, p) in s.points.enumerated() where !ofGear(p.id) {
             let w = world(f, p.position)
             o.points.append(SegmentInstance(ax: w.x, ay: w.y, az: w.z, bx: w.x, by: w.y, bz: w.z,

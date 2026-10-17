@@ -450,7 +450,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if sketchDrag, model.sketchSession?.tool == .select { return .closedHand }
         if let session = model.sketchSession {
             switch session.tool {
-            case .select: return session.hoverIsDraggable ? .openHand : .arrow
+            case .select: return session.hoverIsDraggable ? .openHand : session.hoverIsAxis ? .pointingHand : .arrow
             case .dimension, .distance, .trim, .extend, .fillet: return session.hoverEntity != nil ? .pointingHand : .arrow
             default: return .crosshair
             }

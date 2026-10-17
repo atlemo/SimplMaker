@@ -126,6 +126,8 @@ struct SketchOverlay {
     var imageBorder: [SegmentInstance] = []
     var curves: [SegmentInstance] = []
     var construction: [SegmentInstance] = []
+    /// A sketch axis picked to constrain against, drawn in the selection colour over the sketch's own axis.
+    var axisSelected: [SegmentInstance] = []
     var inactive: [SegmentInstance] = []   // finished sketches: thin, pickable as paths and axes
     var preview: [SegmentInstance] = []
     var points: [SegmentInstance] = []     // zero-length segments drawn as squares
@@ -452,6 +454,7 @@ final class Renderer {
         var imageBorder: MTLBuffer?, imageBorderCount = 0
         var curves: MTLBuffer?, curveCount = 0
         var construction: MTLBuffer?, constructionCount = 0
+        var axisSelected: MTLBuffer?, axisSelectedCount = 0
         var inactive: MTLBuffer?, inactiveCount = 0
         var preview: MTLBuffer?, previewCount = 0
         var points: MTLBuffer?, pointCount = 0
@@ -657,6 +660,7 @@ final class Renderer {
         g.imageBorder = makeBuffer(o.imageBorder); g.imageBorderCount = o.imageBorder.count
         g.curves = makeBuffer(o.curves); g.curveCount = o.curves.count
         g.construction = makeBuffer(o.construction); g.constructionCount = o.construction.count
+        g.axisSelected = makeBuffer(o.axisSelected); g.axisSelectedCount = o.axisSelected.count
         g.inactive = makeBuffer(o.inactive); g.inactiveCount = o.inactive.count
         g.preview = makeBuffer(o.preview); g.previewCount = o.preview.count
         g.points = makeBuffer(o.points); g.pointCount = o.points.count
@@ -1227,6 +1231,8 @@ final class Renderer {
                             thickness: 3 * scale, depthBias: 0.0008, pickable: 1,
                             style: DrawStyle.dashedRound, radius: 0.9 * scale, dashPitch: 5 * scale, dashLength: 1.8 * scale),
                  pipeline: shapePipeline)
+        segments(overlay.axisSelected, overlay.axisSelectedCount,
+                 DrawParams(color: select, hoverColor: select, selectColor: select, thickness: 3.6 * scale, depthBias: 0.0009, pickable: 0))
         segments(overlay.preview, overlay.previewCount,
                  DrawParams(color: p.preview, hoverColor: hover, selectColor: select,
                             thickness: 1.5 * scale, depthBias: 0.0009, pickable: 0))

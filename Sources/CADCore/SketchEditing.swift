@@ -758,25 +758,35 @@ extension Sketch {
     // MARK: constraint tools
 
     /// The constraints a tool would add for the selection, or nil if it doesn't apply.
+    ///
+    /// The sketch's axes (`SketchMirrorDef.xAxis` / `yAxis`) can be picked as lines to constrain against: a point
+    /// or a pair of points to the axis, a line parallel or square to it, a circle or arc tangent to it.
     public func constraints(_ tool: ConstraintTool, for ids: [EntityID]) -> [SketchConstraint.Kind]? {
-        let kinds = ids.compactMap { kind(of: $0) }
+        let kinds = ids.compactMap { SketchMirrorDef.isAxis($0) ? SketchEntityKind.line : kind(of: $0) }
         guard kinds.count == ids.count, !ids.isEmpty else { return nil }
+        let axes = ids.filter(SketchMirrorDef.isAxis)
         let lines = zip(ids, kinds).filter { $0.1 == .line }.map(\.0)
         let circular = zip(ids, kinds).filter { $0.1.isCircular }.map(\.0)
         let pts = zip(ids, kinds).filter { $0.1 == .point }.map(\.0)
         switch tool {
         case .horizontal, .vertical:
-            guard lines.count == ids.count else { return nil }
+            guard lines.count == ids.count, axes.isEmpty else { return nil }
             return lines.map { tool == .horizontal ? .horizontal($0) : .vertical($0) }
         case .parallel, .perpendicular:
-            guard ids.count == 2, lines.count == 2 else { return nil }
+            guard ids.count == 2, lines.count == 2, axes.count < 2 else { return nil }
+            if let axis = axes.first {
+                // Parallel to the x axis is level; square to it is upright (and the other way round for the y axis).
+                let line = ids.first { $0 != axis }!
+                let level = (axis == SketchMirrorDef.xAxis) == (tool == .parallel)
+                return [level ? .horizontal(line) : .vertical(line)]
+            }
             return [tool == .parallel ? .parallel(lines[0], lines[1]) : .perpendicular(lines[0], lines[1])]
         case .equal:
-            guard ids.count == 2, lines.count == 2 || circular.count == 2 else { return nil }
+            guard ids.count == 2, axes.isEmpty, lines.count == 2 || circular.count == 2 else { return nil }
             return [.equal(ids[0], ids[1])]
         case .tangent:
             let beziers = kinds.filter { $0 == .bezier }.count
-            guard ids.count == 2, (circular.count >= 1 && lines.count + circular.count == 2) || (lines.count == 1 && beziers == 1)
+            guard ids.count == 2, (circular.count >= 1 && lines.count + circular.count == 2) || (lines.count == 1 && beziers == 1 && axes.isEmpty)
             else { return nil }
             return [.tangent(ids[0], ids[1])]
         case .coincident:
@@ -788,7 +798,7 @@ extension Sketch {
             }
             return nil
         case .midpoint:
-            guard ids.count == 2, pts.count == 1, lines.count == 1 else { return nil }
+            guard ids.count == 2, pts.count == 1, lines.count == 1, axes.isEmpty else { return nil }
             return [.midpoint(point: pts[0], line: lines[0])]
         case .concentric:
             guard ids.count == 2, circular.count == 2, let a = center(of: circular[0]), let b = center(of: circular[1]) else {
