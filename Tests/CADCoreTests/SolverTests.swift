@@ -124,6 +124,26 @@ import Testing
         #expect(abs((s.measure(.lineAngle(l)) ?? -1) - 30 * .pi / 180) < 1e-6)
     }
 
+    @Test func arcAngleSweepsTheArcAboutItsCentre() throws {
+        var s = Sketch()
+        let c = s.addPoint(0, 0), a = s.addPoint(10, 0), b = s.addPoint(0, 10)
+        let arc = s.addArc(center: c, start: a, end: b)
+        s.dimension(.radius(arc), "10 mm", id: "r")
+        s.dimension(.arcAngle(arc), "90 deg", id: "sweep")
+        #expect(abs((s.measure(.arcAngle(arc)) ?? -1) - .pi / 2) < 1e-9, "counter-clockwise from the start to the end")
+        let drawn = try #require(s.angleArc(of: SketchDimension(.arcAngle(arc), ""), size: 1))
+        #expect(drawn.center == SIMD2(0, 0) && abs(drawn.sweep - .pi / 2) < 1e-9 && drawn.radius <= 10 && !drawn.axis)
+        for degrees in [200.0, 45.0, 300.0, 120.0] {
+            let r = SketchSolver.solveLocally(&s, dimensionValues: ["r": 10, "sweep": degrees * .pi / 180])
+            #expect(r.status == .solved, "\(degrees)°")
+            #expect(abs((s.measure(.arcAngle(arc)) ?? -1) - degrees * .pi / 180) < 1e-5, "\(degrees)° is the sweep now")
+            #expect(abs((s.radius(of: s.curve(arc)!) ?? 0) - 10) < 1e-5, "and the radius stays")
+        }
+        let copy = try JSONDecoder().decode(Sketch.self, from: JSONEncoder().encode(s))
+        #expect(copy.dimensions.contains { $0.kind == .arcAngle(arc) }, "it is saved and read back")
+        #expect(Sketch.references(.arcAngle(arc)) == [arc])
+    }
+
     @Test func angleBetweenTwoLinesIsDrawnAtTheirCorner() throws {
         var s = Sketch()
         let o = s.addPoint(2, 1), a = s.addPoint(12, 1), b = s.addPoint(2 + 5, 1 + 5 * 3.0.squareRoot())

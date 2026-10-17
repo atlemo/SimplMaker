@@ -60,7 +60,7 @@ extension Sketch {
             out.center = cp
             out.arrowAtStart = d.kind != .radius(c)
             return out
-        case .length, .angle, .supplementAngle, .lineAngle, .radialOffset: return nil
+        case .length, .angle, .supplementAngle, .lineAngle, .arcAngle, .radialOffset: return nil
         }
     }
 
@@ -83,6 +83,12 @@ extension Sketch {
         case .lineAngle(let l):
             guard case let (a, b)? = lineEnds(l), vlen(b - a) > 1e-9, let direction = lineDirection(l) else { return nil }
             return AngleArc(center: a, radius: radius(vlen(b - a)), start: 0, sweep: direction, axis: true)
+        case .arcAngle(let c):
+            // Drawn inside the arc, from its start round to its end.
+            guard case .arc(let center, let start, _)? = curve(c)?.geometry, let cp = position(center), let sp = position(start),
+                  let sweep = measure(d.kind), vlen(sp - cp) > 1e-9 else { return nil }
+            return AngleArc(center: cp, radius: min(max(vlen(sp - cp) * 0.6, size * 3), vlen(sp - cp)),
+                            start: atan2(sp.y - cp.y, sp.x - cp.x), sweep: sweep, axis: false)
         case .angle(let l1, let l2), .supplementAngle(let l1, let l2):
             guard case let (a1, b1)? = lineEnds(l1), case let (a2, b2)? = lineEnds(l2),
                   case .line(let s1, let e1)? = curve(l1)?.geometry, case .line(let s2, let e2)? = curve(l2)?.geometry,
@@ -188,7 +194,7 @@ extension Sketch {
         case .gap(_, let other): return [other]
         case .pointLineDistance(_, let line): return [line]
         case .distance(let a, _), .horizontalDistance(let a, _), .verticalDistance(let a, _): return [a]
-        case .length, .radius, .diameter, .angle, .supplementAngle, .lineAngle, .radialOffset: return []
+        case .length, .radius, .diameter, .angle, .supplementAngle, .lineAngle, .arcAngle, .radialOffset: return []
         }
     }
 }

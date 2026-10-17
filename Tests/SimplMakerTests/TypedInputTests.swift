@@ -99,7 +99,43 @@ import Testing
         #expect(a.commitTyped() == "Arc")
         let arc = try #require(a.sketch.curves.first)
         #expect(a.sketch.radius(of: arc).map { abs($0 - 8) < 1e-6 } == true)
-        #expect(a.sketch.dimensions.map(\.expression) == ["8 mm"])
+        #expect(a.sketch.dimensions.map(\.expression) == ["8 mm", "90 deg"], "the typed radius and sweep are both kept as dimensions")
+        #expect(a.sketch.dimensions.last?.kind == .arcAngle(arc.id))
+        #expect(a.sketch.measure(.arcAngle(arc.id)).map { abs($0 - .pi / 2) < 1e-6 } == true)
+    }
+
+    @Test func aTypedSweepStaysAParameterAndCanBeChangedLater() throws {
+        let s = session([Parameter("opening", "120 deg", unit: .angle)])
+        s.setTool(.arc)
+        click(s, 0, 0)
+        move(s, 0, 3)
+        s.setTyped(.radius, "8")
+        _ = s.commitTyped()
+        s.setTyped(.sweep, "opening")
+        #expect(s.commitTyped() == "Arc")
+        let arc = try #require(s.sketch.curves.first)
+        let d = try #require(s.sketch.dimensions.first { $0.kind == .arcAngle(arc.id) })
+        #expect(d.expression == "opening", "the name, not 120 deg")
+        #expect(s.sketch.measure(d.kind).map { abs($0 - 120 * .pi / 180) < 1e-6 } == true)
+        #expect(s.sketch.radius(of: arc).map { abs($0 - 8) < 1e-6 } == true)
+        // Editing the dimension turns the arc's end about its centre, and the radius stays.
+        #expect(s.setDimension(d.id, expression: "200") == "Edit Dimension")
+        #expect(s.sketch.measure(d.kind).map { abs($0 - 200 * .pi / 180) < 1e-4 } == true, "the arc now sweeps 200°")
+        #expect(s.sketch.radius(of: arc).map { abs($0 - 8) < 1e-4 } == true)
+        let label = SketchOverlayBuilder.labels(s).first { $0.id == d.id }
+        #expect(label?.text == "200 deg", "the arc's sweep has a label: \(String(describing: label?.text))")
+    }
+
+    @Test func aSweepOfNothingOrBackwardsIsNotDimensioned() throws {
+        let s = session()
+        s.setTool(.arc)
+        click(s, 0, 0)
+        move(s, 0, 3)
+        s.setTyped(.radius, "8")
+        _ = s.commitTyped()
+        s.setTyped(.sweep, "-90")
+        #expect(s.commitTyped() == "Arc")
+        #expect(s.sketch.dimensions.map(\.expression) == ["8 mm"], "a clockwise sweep is not the arc's counter-clockwise one")
     }
 
     @Test func polygonIsRegularWithTheChosenNumberOfSides() throws {

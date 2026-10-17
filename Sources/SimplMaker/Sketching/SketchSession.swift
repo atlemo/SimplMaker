@@ -1016,7 +1016,9 @@ final class SketchSession {
             defer { clicks = [] }
             guard distance(clicks[0], clicks[1]) > 1e-6 else { pendingDimensions = []; return nil }
             let arc = sketch.addArc(center: clicks[0], start: clicks[1], end: s)
-            addPendingDimensions([.radius: .radius(arc)])
+            // A sweep typed as more than nothing and less than a whole turn is the arc's own: dimensioned, so it can follow a parameter.
+            pendingDimensions.removeAll { $0.input == .sweep && !($0.value > 1e-6 && $0.value < 2 * .pi - 1e-6) }
+            addPendingDimensions([.radius: .radius(arc), .sweep: .arcAngle(arc)])
             return finish("Arc")
         case .point:
             clicks = []

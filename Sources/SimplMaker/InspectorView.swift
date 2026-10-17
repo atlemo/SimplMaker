@@ -248,6 +248,7 @@ struct SketchInspector: View {
         case .radius(let c): return "Radius \(c)"
         case .diameter(let c): return "Ø \(c)"
         case .angle, .supplementAngle, .lineAngle: return "Angle"
+        case .arcAngle(let c): return "Sweep \(c)"
         case .radialOffset: return "Offset"
         case .gap: return "Gap"
         }

@@ -80,6 +80,7 @@ public struct SketchDimension: Codable, Hashable, Sendable, Identifiable {
         case diameter(EntityID)                       // circle/arc
         case angle(EntityID, EntityID)                // line, line: counter-clockwise from first to second
         case supplementAngle(EntityID, EntityID)      // line, line: 180° less that counter-clockwise angle (the other wedge at the same corner)
+        case arcAngle(EntityID)                       // arc: how far it sweeps, counter-clockwise from its start to its end
         case lineAngle(EntityID)                      // line: its angle to the sketch's x-axis, 0° to 180°; the line stays on the side (above or below) it is on
         case radialOffset(from: EntityID, to: EntityID)  // circle/arc radii difference (concentric offsets)
         /// Clear space from a circle's or arc's rim (first) to a point, a line, or another circle or arc's rim.
@@ -87,6 +88,8 @@ public struct SketchDimension: Codable, Hashable, Sendable, Identifiable {
     }
     public var id: EntityID
     public var kind: Kind
+    /// Whether this measures how far an arc sweeps.
+    public var isArcAngle: Bool { if case .arcAngle = kind { return true }; return false }
     /// Whether this measures an angle between two lines (either reading of the pair).
     public var isAngle: Bool { if case .angle = kind { return true }; if case .supplementAngle = kind { return true }; return false }
     /// Driving value as an expression, e.g. "width / 2".
@@ -104,7 +107,7 @@ public struct SketchDimension: Codable, Hashable, Sendable, Identifiable {
     }
     public var unitKind: UnitKind {
         switch kind {
-        case .angle, .supplementAngle, .lineAngle: return .angle
+        case .angle, .supplementAngle, .lineAngle, .arcAngle: return .angle
         default: return .length
         }
     }

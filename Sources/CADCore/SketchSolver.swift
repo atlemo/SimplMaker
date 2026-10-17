@@ -257,6 +257,7 @@ public enum SketchSolver {
         var radiusSlot: [EntityID: Int] = [:]          // circles
         var heldRadius: [EntityID: Double] = [:]       // circles whose radius is held constant this pass
         var arcs: [EntityID: (center: EntityID, start: EntityID)] = [:]
+        var arcEnds: [EntityID: EntityID] = [:]
         var lines: [EntityID: (EntityID, EntityID)] = [:]
         var circleCenters: [EntityID: EntityID] = [:]  // circles and arcs
         var beziers: [EntityID: [EntityID]] = [:]      // start, control 1, control 2, end
@@ -276,8 +277,8 @@ public enum SketchSolver {
                 case .circle(let center, let r):
                     if holdRadii { heldRadius[c.id] = r } else { radiusSlot[c.id] = initial.count; initial.append(r) }
                     circleCenters[c.id] = center
-                case .arc(let center, let start, _):
-                    arcs[c.id] = (center, start); circleCenters[c.id] = center
+                case .arc(let center, let start, let end):
+                    arcs[c.id] = (center, start); arcEnds[c.id] = end; circleCenters[c.id] = center
                 case .bezier(let a, let c1, let c2, let b):
                     beziers[c.id] = [a, c1, c2, b]
                 case .ellipse(let center, let major, let minor):
@@ -463,6 +464,18 @@ public enum SketchSolver {
                     let u = me.dir(l, $0), d = atan2(u.y, u.x) - target
                     return atan2(sin(d), cos(d))
                 }
+            case .arcAngle(let c):
+                // The counter-clockwise angle from the arc's start to its end, as for two lines.
+                guard let a = me.arcs[c], let e = me.arcEnds[c] else { return }
+                add {
+                    let u = me.p(a.start, $0) - me.p(a.center, $0), w = me.p(e, $0) - me.p(a.center, $0)
+                    return (vcross(u, w) * cos(v) - vdot(u, w) * sin(v)) / max(vlen(u) * vlen(w), 1e-12)
+                }
+                add {  // not the turn + π branch
+                    let u = me.p(a.start, $0) - me.p(a.center, $0), w = me.p(e, $0) - me.p(a.center, $0)
+                    let c = (vdot(u, w) * cos(v) + vcross(u, w) * sin(v)) / max(vlen(u) * vlen(w), 1e-12)
+                    return c >= 0 ? 0 : c
+                }
             case .angle(let a, let b), .supplementAngle(let a, let b):
                 // A supplement is 180° less the ccw angle from a to b, so it's the same residual aimed at 180° − v.
                 var turn = v
@@ -597,7 +610,7 @@ extension SketchSolver {
         var stepped = sketch
         var turning: [(id: EntityID, from: Double, delta: Double)] = []
         for d in sketch.dimensions {
-            guard d.isAngle, let target = dimensionValues[d.id], let now = sketch.measure(d.kind) else { continue }
+            guard d.isAngle || d.isArcAngle, let target = dimensionValues[d.id], let now = sketch.measure(d.kind) else { continue }
             let delta = atan2(sin(target - now), cos(target - now))
             if abs(delta) > 1e-9 { turning.append((d.id, now, delta)) }
         }

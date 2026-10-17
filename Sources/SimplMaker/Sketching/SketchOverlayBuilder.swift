@@ -466,7 +466,7 @@ enum SketchOverlayBuilder {
         case .angle(let a, let b), .supplementAngle(let a, let b):
             guard let arc = s.angleArc(of: SketchDimension(k, ""), size: size) else { return mid(lineMid(a), lineMid(b)) }
             return arc.center + arc.radius * 1.15 * SIMD2(cos(arc.middle), sin(arc.middle))
-        case .lineAngle:
+        case .lineAngle, .arcAngle:
             guard let arc = s.angleArc(of: SketchDimension(k, ""), size: size) else { return nil }
             return arc.center + arc.radius * 1.15 * SIMD2(cos(arc.middle), sin(arc.middle))
         case .radialOffset(_, let b):

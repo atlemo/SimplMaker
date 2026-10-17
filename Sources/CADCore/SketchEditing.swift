@@ -125,7 +125,7 @@ extension Sketch {
         case .distance(let a, let b), .horizontalDistance(let a, let b), .verticalDistance(let a, let b),
              .angle(let a, let b), .supplementAngle(let a, let b), .radialOffset(let a, let b), .gap(let a, let b): return [a, b]
         case .pointLineDistance(let p, let l): return [p, l]
-        case .length(let a), .radius(let a), .diameter(let a), .lineAngle(let a): return [a]
+        case .length(let a), .radius(let a), .diameter(let a), .lineAngle(let a), .arcAngle(let a): return [a]
         }
     }
 
@@ -606,6 +606,12 @@ extension Sketch {
         case .lineAngle(let l):
             guard case let (a, b)? = lineEnds(l) else { return nil }
             return abs(atan2(b.y - a.y, b.x - a.x))
+        case .arcAngle(let c):
+            guard case .arc(let center, let start, let end)? = curve(c)?.geometry,
+                  let cp = position(center), let sp = position(start), let ep = position(end) else { return nil }
+            var t = atan2(vcross(sp - cp, ep - cp), vdot(sp - cp, ep - cp))
+            if t <= 0 { t += 2 * .pi }
+            return t
         }
     }
 
