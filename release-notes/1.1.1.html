@@ -1,0 +1,12 @@
+<h2>SimplMaker 1.1.1</h2>
+<p>Fixes for angle dimensions, chamfers and fillets, plus a few sketching and viewing improvements.</p>
+<ul>
+  <li>Angle dimensions: clicking the "click to place" label no longer opens an editor that ignored what you typed. Typing a parameter name (like <code>angle</code>) keeps the dimension linked to it instead of storing its number.</li>
+  <li>Arcs: a sweep typed while drawing an arc becomes a dimension, so it can follow a parameter, and can be changed later.</li>
+  <li>Chamfer and Fillet: a new one that is too big for its edges now starts at a size that fits (half, a quarter...) with its arrow ready to adjust, instead of failing.</li>
+  <li>Chamfers and fillets now work across the hair-thin faces two rounds leave when they use up a whole wall (1.5 mm rounds on a 3 mm wall). When a size still does not fit, the message says which part of the edge is too short.</li>
+  <li>Sketching: a new Show Shape Centres option in the Inspector marks the middle of every closed shape with an X.</li>
+  <li>Revolve: the angle is a dot on the body's rim, instead of a long arrow that put its field far from the part.</li>
+  <li>The ground grid fades as the view flattens, so it no longer shimmers when seen almost edge-on.</li>
+  <li>Help menu: a link to the SimplMaker documentation.</li>
+</ul>
