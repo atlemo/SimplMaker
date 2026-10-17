@@ -125,6 +125,8 @@ struct SketchInspector: View {
                 Button("Finish Sketch") { model.finishSketch() }
                 Toggle("Slice View", isOn: Bindable(model).sketchSlice)
                     .help("Hide everything between this sketch's plane and the camera, to reach a sketch that lies between walls")
+                Toggle("Show Shape Centres", isOn: Bindable(model).showShapeCentres)
+                    .help("Mark the middle of each closed shape with an X, to see where a click will snap")
             }
             LabeledContent("Plane", value: planeName)
             if sketch.uprightAxes != true, session == nil, sketch.plane.isFaceOrPlane {

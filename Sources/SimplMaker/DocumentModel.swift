@@ -172,6 +172,10 @@ final class DocumentModel {
     /// Sketching: everything between the sketch's plane and the camera is cut away, to reach a sketch that lies
     /// between walls. A view setting: not saved, no undo step.
     var sketchSlice = false
+    /// Sketching: an X at the middle of every closed shape, not just while a point tool is drawing. Kept between launches.
+    var showShapeCentres = UserDefaults.standard.bool(forKey: Preferences.showShapeCentres) {
+        didSet { UserDefaults.standard.set(showShapeCentres, forKey: Preferences.showShapeCentres) }
+    }
     /// The sketch plane the renderer slices at, while sketching with the slice on.
     var sketchSlicePlane: (origin: SIMD3<Float>, normal: SIMD3<Float>)? {
         guard sketchSlice, let f = sketchSession?.frame else { return nil }
@@ -1345,7 +1349,7 @@ final class DocumentModel {
         o.images = imageDraws()
         o.imageBorder = imageBorder()
         if let session = sketchSession {
-            SketchOverlayBuilder.editing(session, into: &o)
+            SketchOverlayBuilder.editing(session, into: &o, showCentres: showShapeCentres)
             // The fill is from the last rebuild: while a gear's fields are changing it, it would show the old gear.
             if !session.hasPendingGearEdit, let r = result?.sketches[session.featureID] { SketchOverlayBuilder.regions(r, slot: 0, into: &o) }
             return o

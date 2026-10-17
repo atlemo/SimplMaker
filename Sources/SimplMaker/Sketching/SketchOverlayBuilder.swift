@@ -220,7 +220,7 @@ enum SketchOverlayBuilder {
     }
 
     /// The sketch being edited: pickable curves and points, plus the tool preview.
-    static func editing(_ session: SketchSession, into o: inout SketchOverlay) {
+    static func editing(_ session: SketchSession, into o: inout SketchOverlay, showCentres: Bool = false) {
         let s = session.sketch, f = session.frame
         let positions = s.positionTable()
         let redrawn = session.redrawnCurves
@@ -247,13 +247,13 @@ enum SketchOverlayBuilder {
         for text in session.textOutlines() {
             for line in text.polylines { o.curves += segments(line, frame: f, id: PickID(sketchPoint: text.anchor).raw) }
         }
-        // While drawing, a small + marks the middle of each closed shape, where the cursor snaps.
-        if session.tool.placesPoints {
+        // An X marks the middle of each closed shape: where the cursor snaps while a point tool draws, and on every shape with Show Shape Centres on.
+        if session.tool.placesPoints || showCentres {
             let r = session.snapTolerance
             for c in session.shapeCenters() where !c.points.contains(where: Sketch.isGenerated) {
                 let p = c.position
-                o.construction += segments([p - SIMD2(r, 0), p + SIMD2(r, 0)], frame: f, id: 0)
-                o.construction += segments([p - SIMD2(0, r), p + SIMD2(0, r)], frame: f, id: 0)
+                o.construction += segments([p - SIMD2(r, r), p + SIMD2(r, r)], frame: f, id: 0)
+                o.construction += segments([p - SIMD2(r, -r), p + SIMD2(r, -r)], frame: f, id: 0)
             }
         }
         let marks = offsetMarks(session)
