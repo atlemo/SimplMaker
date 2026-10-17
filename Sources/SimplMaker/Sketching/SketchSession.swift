@@ -25,7 +25,7 @@ enum SketchTransformTool: String, CaseIterable, Identifiable {
         switch self {
         case .move: return "Move or rotate the selected curves (or the whole sketch): drag the arrows, the square or the ring, or type a distance or an angle"
         case .scale: return "Make the selected curves (or the whole sketch) bigger or smaller"
-        case .pattern: return "Copy the selected curves (or the whole sketch) in a grid or around a point: drag the arrows or the ring, or type the counts and spacing"
+        case .pattern: return "Copy the selected curves (or the whole sketch) in a grid or around a point: drag the arrows or the ring, or type the counts and spacing. Press it again with the same curves selected, or click any copy, to change that pattern"
         case .mirror: return "Mirror the selected curves (or the whole sketch) across a line, a construction line, a projected edge or an axis; the mirror image stays linked to what it copies"
         }
     }
@@ -1515,7 +1515,18 @@ final class SketchSession {
     private(set) var patternIsNew = true
 
     var isPatterning: Bool { patternSetup != nil }
-    var canPattern: Bool { patternSetup != nil || sketch.canPattern(selection) }
+    var canPattern: Bool { patternSetup != nil || patternToEdit != nil || sketch.canPattern(selection) }
+
+    /// The existing pattern the Pattern button should open instead of starting a second one: one of whose copies is
+    /// selected, or whose originals are exactly what the selection (or the whole sketch, with nothing selected) would copy.
+    private var patternToEdit: EntityID? {
+        for id in selection {
+            if let pid = Sketch.pattern(ofGenerated: id), sketch.patterns.contains(where: { $0.id == pid }) { return pid }
+        }
+        let sources = Set(sketch.patternSources(selection))
+        guard !sources.isEmpty else { return nil }
+        return sketch.patterns.first { Set($0.sources) == sources }?.id
+    }
 
     /// The numbers the pattern's expressions come to now (0 where they don't come to one).
     private func evaluated(_ text: String, _ kind: UnitKind) -> Double { (try? parameters.value(of: text, kind: kind)) ?? 0 }
@@ -1552,6 +1563,7 @@ final class SketchSession {
     /// The Pattern button: starts a pattern of the selection (or the whole sketch), or ends it, pressed again.
     func beginPattern() {
         if patternSetup != nil { cancelPattern(); return }
+        if let existing = patternToEdit { beginPattern(editing: existing); return }
         guard sketch.canPattern(selection) else { message = "Nothing to copy"; return }
         var def = SketchPatternDef(sources: sketch.patternSources(selection))
         if let box = sketch.patternBox(selection) {
@@ -2681,6 +2693,10 @@ final class SketchSession {
         if patternSetup != nil { return message ?? patternHint }
         if mirrorSetup != nil { return message ?? mirrorHint }
         if offsetSetup != nil { return message ?? offsetHint }
+        if tool == .select, manipulating == nil, let h = hover, let pid = Sketch.pattern(ofGenerated: h),
+           sketch.patterns.contains(where: { $0.id == pid }) {
+            return "Click to change this pattern (counts, spacing, angle) · or delete it"
+        }
         var s = manipulating == nil ? tool.hint : "Drag an arrow, the square or the ring to move or turn \(selection.isEmpty ? "the sketch" : "the selection") · or type the values · Esc to stop"
         if let snap = lastSnap { s = "Snap: \(snap.kind.rawValue)\(snap.kind == .grid ? " \(gridStep.map { formatDimension($0, kind: .length) } ?? "")" : "") · " + s }
         if !inputFields.isEmpty, manipulating == nil {

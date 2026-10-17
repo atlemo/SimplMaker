@@ -55,3 +55,46 @@ import Testing
         #expect(g?.module == "tooth" && g?.pressureAngle == "press" && g?.teeth == "n * 4", "gear is \(String(describing: g))")
     }
 }
+
+/// Opening a pattern that is already made, to change it, instead of stacking a second one on the same curves.
+@Suite @MainActor struct PatternReopenTests {
+    private func patterned() -> SketchSession {
+        var s = Sketch()
+        s.addRectangle(0, 0, 10, 10, lineIDs: ["B", "R", "T", "L"])
+        let session = SketchSession(featureID: "sk", frame: .xy, sketch: s, parameters: ParameterValues())
+        session.selection = ["B", "R", "T", "L"]
+        session.beginPattern()
+        session.setTyped(.countX, "3")
+        session.setTyped(.spacingX, "20")
+        #expect(session.commitTyped() != nil)
+        return session
+    }
+
+    @Test func patternButtonWithTheSameCurvesSelectedChangesThePattern() {
+        let s = patterned()
+        s.selection = ["B", "R", "T", "L"]
+        s.beginPattern()
+        #expect(s.isPatterning && !s.patternIsNew)
+        s.setTyped(.countX, "5")
+        #expect(s.commitTyped() != nil)
+        #expect(s.sketch.patterns.count == 1 && s.sketch.patterns[0].countX == "5")
+    }
+
+    @Test func patternButtonWithNothingSelectedChangesAPatternOfTheWholeSketch() {
+        var sk = Sketch()
+        sk.addRectangle(0, 0, 10, 10, lineIDs: ["B", "R", "T", "L"])
+        let s = SketchSession(featureID: "sk", frame: .xy, sketch: sk, parameters: ParameterValues())
+        s.beginPattern()
+        #expect(s.commitTyped() != nil)
+        s.selection = []
+        s.beginPattern()
+        #expect(s.isPatterning && !s.patternIsNew)
+    }
+
+    @Test func aDifferentSelectionStartsANewPattern() {
+        let s = patterned()
+        s.selection = ["B"]
+        s.beginPattern()
+        #expect(s.isPatterning && s.patternIsNew)
+    }
+}
