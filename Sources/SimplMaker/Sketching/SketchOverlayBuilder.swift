@@ -374,11 +374,13 @@ enum SketchOverlayBuilder {
         }
         if let length = session.pendingLineLength, let line = pending, let anchor = anchor(.length(line), s) {
             out.append(DimensionLabel(id: DimensionLabel.pendingID, world: world(session.frame, anchor),
-                                      text: "\(measured(length)) · click again to place", editing: true))
+                                      text: "\(measured(length)) · click again to place", editing: true,
+                                      passesClicks: true))
         }
         if let p = session.anglePreview, let anchor = angleLabel(SketchDimension(p.kind, "", offset: p.radius), s, size: session.snapTolerance) {
             out.append(DimensionLabel(id: DimensionLabel.pendingAngleID, world: world(session.frame, anchor),
-                                      text: "\(UnitKind.angle.format(p.value)) · click to place", editing: true))
+                                      text: "\(UnitKind.angle.format(p.value)) · click to place", editing: true,
+                                      passesClicks: true))  // the click that places it may land on its own label
         }
         return out
     }

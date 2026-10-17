@@ -40,6 +40,29 @@ import Testing
                 "the sketch follows the new value")
     }
 
+    @Test func pendingReadoutsLetTheClickThroughToPlaceTheDimension() {
+        let s = session()
+        s.setTool(.dimension)
+        _ = click(s, 10, 0.3)
+        #expect(SketchOverlayBuilder.labels(s).first { $0.id == DimensionLabel.pendingID }?.passesClicks == true)
+        _ = click(s, 10, -0.2)
+        // Two free lines from one corner: an angle waits for its placing click.
+        var sk = Sketch()
+        let o = sk.addPoint(0, 0), p = sk.addPoint(20, 0), q = sk.addPoint(10, 15)
+        _ = sk.addLine(o, p, id: "A"); _ = sk.addLine(o, q, id: "B")
+        let t = SketchSession(featureID: "sk", frame: .xy, sketch: sk, parameters: ParameterValues())
+        t.setTool(.dimension)
+        _ = click(t, 10, 0.2)
+        _ = click(t, 5, 7.5)
+        #expect(t.anglePicks != nil)
+        let pending = SketchOverlayBuilder.labels(t).first { $0.id == DimensionLabel.pendingAngleID }
+        #expect(pending?.passesClicks == true, "the click that places the angle may land on its own label")
+        #expect(click(t, 8, 3) == "Dimension")
+        let id = t.editingDimension
+        #expect(id != nil && t.sketch.dimensions.contains { $0.id == id! }, "the editor opens on a real dimension")
+        #expect(t.setDimension(id!, expression: "80") == "Edit Dimension")
+    }
+
     @Test func emptySpaceAlsoPlacesTheLengthAndTwoLinesGiveAnAngleOrDistance() {
         let s = session()
         s.setTool(.dimension)

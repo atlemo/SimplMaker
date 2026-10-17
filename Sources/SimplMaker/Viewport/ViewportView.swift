@@ -1026,8 +1026,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         } else if let curve = DimensionLabel.curve(ofReference: id) {
             model.sketchCommand { $0.dimensionReference(curve) }  // a measured size becomes a dimension
             refreshOverlay()
-        } else if id != DimensionLabel.pendingID {
-            model.sketchSession?.editingDimension = id
+        } else if let session = model.sketchSession, session.sketch.dimensions.contains(where: { $0.id == id }) {
+            session.editingDimension = id  // only a real dimension: the pending readouts are not one to edit
         }
     }
 
