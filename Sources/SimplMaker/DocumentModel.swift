@@ -106,7 +106,10 @@ final class DocumentModel {
     /// A new sketch is waiting for the user to click an origin plane or a flat face.
     private(set) var isPickingSketchPlane = false
     /// The feature just created by a tool, while it is still being sized: Cancel takes it out again.
-    var newFeature: FeatureID?
+    var newFeature: FeatureID? { didSet { if newFeature == nil { newFeatureGroup = [] } } }
+    /// Features made in the same step as `newFeature` (threads on holes of different sizes): while it is being set up,
+    /// the settings that make sense for all of them (see `updateFeatures`) change them together, and Cancel takes all out.
+    var newFeatureGroup: [FeatureID] = []
     @ObservationIgnored var documentBeforeNewFeature: CADDocument?
     /// `newFeature` has not been through a complete rebuild yet: if that one fails, the feature is taken out again.
     @ObservationIgnored private var newFeatureUnbuilt = false
@@ -630,6 +633,13 @@ final class DocumentModel {
         }
     }
 
+    /// The same change to several features, as one undo step.
+    func updateFeatures(_ ids: [FeatureID], _ actionName: String, _ change: (inout Feature) -> Void) {
+        mutate(actionName) { doc in
+            for id in ids { if let i = doc.index(of: id) { change(&doc.features[i]) } }
+        }
+    }
+
     /// Moves a feature to another place in the timeline (`index` is its new position), unless it
     /// would then come before what it's built from; the reason shows in an alert.
     func moveFeature(_ id: FeatureID, to index: Int) {
@@ -732,12 +742,17 @@ final class DocumentModel {
 
     /// Adds a new feature as one undo step, hides the sketches it uses, and selects it so its
     /// drag handle and size field appear.
-    func add(_ feature: Feature) {
+    /// `alongside` are features made in the same step (one undo step for all); `feature` is the one that is selected.
+    func add(_ feature: Feature, alongside others: [Feature] = []) {
         documentBeforeNewFeature = document
         newFeatureShrink = nil
         handleNote = nil
         let alreadyHidden = document.hidden
-        commit(feature)
+        if others.isEmpty {
+            commit(feature)
+        } else {
+            mutate("Add \(feature.typeName)") { doc in for f in [feature] + others { doc.addFeature(f) } }
+        }
         if isRegenerating {
             sketchesHiddenPendingRebuild = Set(feature.sketchesUsed).subtracting(alreadyHidden)
             highlightPendingRebuild = highlighted
@@ -746,6 +761,7 @@ final class DocumentModel {
         pendingTool = nil
         selectedFeature = feature.id
         newFeature = feature.id
+        newFeatureGroup = others.map(\.id)
         newFeatureUnbuilt = true
         handleFocusRequest += 1
     }
@@ -2425,11 +2441,14 @@ final class DocumentModel {
     }
 
     /// Previews an uncommitted edit (e.g. while typing in the inspector) without an undo step.
-    func preview(_ id: FeatureID, _ change: (inout Feature) -> Void) {
+    func preview(_ id: FeatureID, _ change: (inout Feature) -> Void) { preview([id], change) }
+
+    /// Previews the same uncommitted edit on several features; the first is the one being edited.
+    func preview(_ ids: [FeatureID], _ change: (inout Feature) -> Void) {
         var doc = document
-        guard let i = doc.index(of: id) else { return }
-        change(&doc.features[i])
-        regenerate(preview: doc, previewFeature: id)
+        for id in ids { if let i = doc.index(of: id) { change(&doc.features[i]) } }
+        guard let first = ids.first, doc.index(of: first) != nil else { return }
+        regenerate(preview: doc, previewFeature: first)
     }
 
     // MARK: files

@@ -750,10 +750,15 @@ extension DocumentModel {
             }
         }
         guard !groups.isEmpty else { return false }
-        for g in groups {
-            add(Feature(name: document.nextName("Thread"), .thread(ThreadFeature(
-                face: g.faces[0], moreFaces: Array(g.faces.dropFirst()), standard: g.standard, size: g.size.name))))
+        // One undo step, and while it is set up the tolerance, length and direction change for all of them.
+        var named = document
+        let features = groups.map { g -> Feature in
+            let f = Feature(name: named.nextName("Thread"), .thread(ThreadFeature(
+                face: g.faces[0], moreFaces: Array(g.faces.dropFirst()), standard: g.standard, size: g.size.name)))
+            named.features.append(f)
+            return f
         }
+        add(features[0], alongside: Array(features.dropFirst()))
         return true
     }
 

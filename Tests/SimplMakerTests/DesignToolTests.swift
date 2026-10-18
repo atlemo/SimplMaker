@@ -194,6 +194,30 @@ import Testing
         #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
     }
 
+    @Test func threadsOnHolesOfDifferentSizesShareTheirToleranceWhileTheyAreSetUp() async throws {
+        var doc = try twoHoleBlock()
+        // The second hole takes an M10: another size, so another thread feature.
+        if case .hole(var h) = doc.features[2].kind { h.diameter = "8.5"; doc.features[2].kind = .hole(h) }
+        let model = try await loaded(doc)
+        let names = try #require(model.meshes.first?.mesh.faceNames)
+        let walls = names.indices.filter { names[$0].contains(".hole.wall") }.map { PickID(body: 0, face: $0) }
+        #expect(walls.count == 2)
+        #expect(model.addThreads(on: walls))
+        let threads = model.document.features.filter { if case .thread = $0.kind { true } else { false } }
+        #expect(threads.count == 2 && Set(threads.map(\.name)).count == 2, "one thread per size, with names of their own")
+        #expect(model.newFeature != nil && model.newFeatureGroup.count == 1)
+        let ids = [model.newFeature!] + model.newFeatureGroup
+        model.updateFeatures(ids, "Change Thread Tolerance") { f in
+            if case .thread(var t) = f.kind { t.tolerance = "4"; t.toleranceMaterial = .abs; f.kind = .thread(t) }
+        }
+        for f in model.document.features {
+            if case .thread(let t) = f.kind { #expect(t.tolerance == "4" && t.toleranceMaterial == .abs, "\(f.name)") }
+        }
+        // Cancel takes all of them out again.
+        model.cancelNewFeature()
+        #expect(model.document.features.count == 3 && model.newFeatureGroup.isEmpty)
+    }
+
     @Test func clickingAHoleThreadsItAndTheOnesAlreadyPicked() async throws {
         let doc = try twoHoleBlock()
         let model = try await loaded(doc)

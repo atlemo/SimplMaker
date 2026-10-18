@@ -790,6 +790,29 @@ struct ThreadInspector: View {
         FeatureEdit(model: model, id: id, get: { if case .thread(let t) = $0 { t } else { nil } }, wrap: { .thread($0) })
     }
 
+    /// This thread and the ones made with it (holes of other sizes picked together), while it is being set up.
+    private var together: [FeatureID] { model.newFeature == id ? [id] + model.newFeatureGroup : [id] }
+
+    /// A change to every thread in `together`, as one undo step: for what is not about one thread's own size.
+    private func updateAll(_ name: String, _ change: @escaping (inout ThreadFeature) -> Void) {
+        model.updateFeatures(together, name) { f in
+            if case .thread(var t) = f.kind { change(&t); f.kind = .thread(t) }
+        }
+    }
+
+    private func previewAll(_ change: @escaping (inout ThreadFeature) -> Void) {
+        model.preview(together) { f in
+            if case .thread(var t) = f.kind { change(&t); f.kind = .thread(t) }
+        }
+    }
+
+    /// A labelled expression field like `FeatureEdit.row`, for a setting shared by `together`.
+    private func sharedRow(_ label: String, _ text: String, _ action: String, _ set: @escaping (inout ThreadFeature, String) -> Void) -> some View {
+        LabeledContent(label) {
+            ExpressionField(text: text, preview: { v in previewAll { set(&$0, v) } }) { v in updateAll(action) { set(&$0, v) } }
+        }
+    }
+
     /// The face as it was before the thread.
     private var cylinder: KCylinder? {
         try? model.result?.featureInputs[id]?[thread.face.body]?.faceCylinder(thread.face.face, flipped: thread.flipped)
@@ -815,7 +838,7 @@ struct ThreadInspector: View {
     private var tolerance: some View {
         VStack(alignment: .leading, spacing: 8) {
             Picker("Tolerance offset", selection: Binding(get: { toleranceChoice }, set: { choice in
-                edit.update(choice == .none ? "Remove Thread Tolerance" : "Change Thread Tolerance") { t in
+                updateAll(choice == .none ? "Remove Thread Tolerance" : "Change Thread Tolerance") { t in
                     switch choice {
                     case .none: t.tolerance = nil; t.toleranceMaterial = nil
                     case .material(let m):
@@ -838,7 +861,7 @@ struct ThreadInspector: View {
                 Text("Custom distance").tag(ToleranceChoice.distance)
             }
             if let value = thread.tolerance {
-                edit.row(thread.toleranceUnit == .percent ? "Offset (%)" : "Offset", value, "Edit Thread Tolerance") {
+                sharedRow(thread.toleranceUnit == .percent ? "Offset (%)" : "Offset", value, "Edit Thread Tolerance") {
                     $0.tolerance = $1; $0.toleranceMaterial = nil
                 }
                 Text("The thread is modeled this much larger (smaller if negative) on its major and minor diameters, to make up for printing.")
@@ -858,6 +881,10 @@ struct ThreadInspector: View {
                 LabeledContent("Kind", value: cylinder.isHole ? "Internal (in a hole)" : "External (on a shaft)")
             }
             if !thread.moreFaces.isEmpty { LabeledContent("Faces", value: "\(thread.faces.count) threaded the same way") }
+            if together.count > 1 {
+                Text("Tolerance, length and direction change for all \(together.count) threads made together; each size is set on its own.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Picker("Standard", selection: Binding(get: { thread.standard }, set: { standard in
                 // Keep about the same diameter in the new standard.
                 let d = size?.diameter ?? 6
@@ -884,19 +911,19 @@ struct ThreadInspector: View {
             tolerance
             Picker("Length", selection: Binding(get: { thread.length == nil }, set: { full in
                 let half = cylinder.map { mm(($0.length / 2).rounded()) } ?? "10 mm"
-                edit.update("Change Thread Length") { $0.length = full ? nil : half }
+                updateAll("Change Thread Length") { $0.length = full ? nil : half }
             })) {
                 Text("Full length").tag(true)
                 Text("Distance").tag(false)
             }
             if let length = thread.length {
-                edit.row("Distance", length, "Edit Thread Length") { $0.length = $1 }
+                sharedRow("Distance", length, "Edit Thread Length") { $0.length = $1 }
                 Toggle("Start from the other end", isOn: Binding(get: { thread.flipped }, set: { v in
-                    edit.update("Flip Thread") { $0.flipped = v }
+                    updateAll("Flip Thread") { $0.flipped = v }
                 }))
             }
             Toggle("Left-handed", isOn: Binding(get: { thread.leftHanded }, set: { v in
-                edit.update(v ? "Make Thread Left-Handed" : "Make Thread Right-Handed") { $0.leftHanded = v }
+                updateAll(v ? "Make Thread Left-Handed" : "Make Thread Right-Handed") { $0.leftHanded = v }
             }))
             Text("A modeled thread with the basic 60° profile. The face is turned or bored to the thread's diameters first.")
                 .font(.caption).foregroundStyle(.secondary)

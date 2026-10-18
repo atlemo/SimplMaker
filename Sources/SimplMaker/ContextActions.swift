@@ -394,8 +394,9 @@ extension DocumentModel {
     func cancelNewFeature() {
         guard let id = newFeature, let before = documentBeforeNewFeature else { return finishFeatureEdit() }
         let name = featureName(id)
+        let removed = Set([id] + newFeatureGroup)
         mutate("Cancel \(name)") { doc in
-            doc.features.removeAll { $0.id == id }
+            doc.features.removeAll { removed.contains($0.id) }
             doc.hidden = before.hidden
             doc.rollback = before.rollback
         }
