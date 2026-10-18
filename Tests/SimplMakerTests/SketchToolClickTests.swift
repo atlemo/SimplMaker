@@ -233,6 +233,85 @@ import Testing
         #expect(placed.curves.suffix(added).allSatisfy { $0.id != 0 }, "and they can be picked now")
     }
 
+    private func tallness(_ lines: [[SIMD2<Double>]]) -> Double {
+        let ys = lines.flatMap { $0 }.map(\.y)
+        return (ys.max() ?? 0) - (ys.min() ?? 0)
+    }
+
+    @Test func theSizeTypedBesideANewTextChangesTheLettersAtOnce() {
+        let s = session()
+        s.setTool(.text)
+        _ = click(s, 0, 0)
+        #expect(s.textHeightDraft == "10 mm", "the size field starts with the usual size")
+        s.setTextDraft("H")
+        #expect(abs(tallness(s.textPreview()) - 10) < 1e-6)
+        s.setTextHeightDraft("25")
+        #expect(abs(tallness(s.textPreview()) - 25) < 1e-6, "a bare number is millimetres")
+        s.setTextHeightDraft("1.5 in")
+        #expect(abs(tallness(s.textPreview()) - 38.1) < 1e-6, "and a unit works")
+        _ = s.placeText("H")
+        #expect(s.sketch.texts.first?.height == "1.5 in")
+    }
+
+    @Test func aSizeThatIsNoLengthKeepsTheLettersAndTheBoxAndIsNotPlaced() {
+        let s = session()
+        s.setTool(.text)
+        _ = click(s, 0, 0)
+        s.setTextDraft("H")
+        s.setTextHeightDraft("20")
+        for bad in ["", "abc", "0", "-5", "10 deg"] {
+            s.setTextHeightDraft(bad)
+            #expect(!s.textHeightIsUsable, "\"\(bad)\" is no size")
+            #expect(abs(tallness(s.textPreview()) - 20) < 1e-6, "the letters stay as they were while the size is wrong: \"\(bad)\"")
+        }
+        #expect(s.placeText("H") == nil && s.message?.contains("length") == true)
+        #expect(s.pendingText != nil && s.sketch.texts.isEmpty && s.textDraft == "H", "the box stays, to be fixed")
+        s.setTextHeightDraft("12")
+        #expect(s.placeText("H") == "Text" && s.sketch.texts.first?.height == "12 mm")
+    }
+
+    @Test func aParameterWorksAsTheSize() {
+        let s = SketchSession(featureID: IDs.make(), frame: .xy, sketch: Sketch(),
+                              parameters: ParameterEvaluator.evaluate([Parameter("label_h", "6 mm")]))
+        s.setTool(.text)
+        _ = click(s, 0, 0)
+        s.setTextDraft("H")
+        s.setTextHeightDraft("label_h * 2")
+        #expect(s.textHeightIsUsable && abs(tallness(s.textPreview()) - 12) < 1e-6)
+        _ = s.placeText("H")
+        #expect(s.sketch.texts.first?.height == "label_h * 2", "kept as an expression, so it follows the parameter")
+    }
+
+    @Test func aNewTextStartsWithTheSizeOfTheLastOne() {
+        let s = session()
+        s.setTool(.text)
+        _ = click(s, 0, 0)
+        s.setTextHeightDraft("7")
+        _ = s.placeText("One")
+        _ = click(s, 0, 30)
+        #expect(s.textHeightDraft == "7 mm" && s.textHeightShown == "7 mm")
+        s.setTextDraft("T")
+        #expect(abs(tallness(s.textPreview()) - 7) < 1e-6, "already drawn at that size")
+    }
+
+    @Test func theSizeOfATextBeingChangedCanBeChangedToo() {
+        var sketch = Sketch()
+        let p = sketch.addPoint(0, 0)
+        sketch.texts = [SketchText(id: "T", text: "H", position: p, height: "10 mm")]
+        let s = session(sketch)
+        s.setTool(.text)
+        #expect(s.beginEditingText(anchoredAt: p))
+        #expect(s.textHeightDraft == "10 mm", "the field starts with the size it has")
+        s.setTextHeightDraft("30")
+        #expect(abs(tallness(s.textOutlines().first?.polylines ?? []) - 30) < 1e-6, "the text itself redraws at once")
+        #expect(s.sketch.texts[0].height == "10 mm", "nothing is stored until Return")
+        s.cancelText()
+        #expect(abs(tallness(s.textOutlines().first?.polylines ?? []) - 10) < 1e-6, "Esc: back to the stored size")
+        #expect(s.beginEditingText(anchoredAt: p))
+        s.setTextHeightDraft("30")
+        #expect(s.placeText("H") == "Edit Text" && s.sketch.texts[0].height == "30 mm", "only the size changed, and that is an edit")
+    }
+
     @Test func escapeDropsTheTextBeingTyped() {
         let s = session()
         s.setTool(.text)

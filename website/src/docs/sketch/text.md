@@ -13,7 +13,9 @@ Text in a sketch is made of **profiles** (the letters), so you can use it like a
 
 The letters appear in the sketch as you type, at the size and place they will have. Press [[Esc]] to drop the text instead.
 
-To change the words later, click the text with the Text tool, or double-click it with the Select tool. The letters follow what you type there too.
+The box beside the words sets the **size** (the height of the capital letters). Press [[Tab]] to move to it, or click it. Type a length such as `12` or `12 mm`, or a parameter, and the letters change as you type. A new text starts with the size of the last one in the sketch.
+
+To change the words or the size later, click the text with the Text tool, or double-click it with the Select tool. The letters follow what you type there too.
 
 ## Size and font
 

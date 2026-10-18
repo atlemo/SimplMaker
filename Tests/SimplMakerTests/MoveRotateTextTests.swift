@@ -178,4 +178,60 @@ import Testing
         #expect(session.sketch.texts.map(\.text) == ["HI"] && session.textDraft.isEmpty)
         #expect(model.sketchOverlay().curves.count == two, "the same letters, now the sketch's own")
     }
+
+    @Test func theSizeFieldSitsBesideTheWordsAndResizesTheLettersAsItIsTyped() async throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: Sketch())))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        model.editSketch("sk")
+        let session = try #require(model.sketchSession)
+        session.setTool(.text)
+        _ = model.sketchMouse(SketchMouse(phase: .moved, uv: SIMD2(5, 5), pick: nil, tolerance: 0.5))
+        _ = model.sketchMouse(SketchMouse(phase: .down, uv: SIMD2(5, 5), pick: nil, tolerance: 0.5))
+
+        let view = ViewportMTKView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), device: nil)
+        let renderer = try #require(Renderer())
+        view.device = renderer.device
+        view.renderer = renderer
+        view.model = model
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = view
+        view.draw(view.bounds)
+        try await Task.sleep(for: .milliseconds(100))
+        let frameView = try #require(window.contentView?.superview)
+        let fields = allSubviews(of: frameView).compactMap { $0 as? ValueField }
+        let words = try #require(fields.first { $0.placeholderString?.contains("Type the text") == true })
+        let size = try #require(fields.first { $0.placeholderString == "Size" })
+        #expect(size.stringValue == "10 mm" && words.frame.maxX < size.frame.minX && words.frame.minY == size.frame.minY,
+                "the size is in the same place as the words, to their right")
+        #expect(words.currentEditor() != nil, "the words have the focus first")
+
+        key(window, "H", code: 4)
+        func tall() -> Double {
+            let ys = model.sketchOverlay().curves.flatMap { [Double($0.ay), Double($0.by)] }
+            return (ys.max() ?? 0) - (ys.min() ?? 0)
+        }
+        #expect(abs(tall() - 10) < 1e-3)
+        key(window, "\t", code: 48)
+        #expect(size.currentEditor() != nil && words.currentEditor() == nil, "Tab moves on to the size")
+        key(window, "2", code: 19)
+        key(window, "0", code: 29)
+        #expect(session.textHeightDraft == "20" && abs(tall() - 20) < 1e-3, "typing over the old size redraws the letters: \(tall())")
+        #expect(size.textColor == .labelColor)
+
+        key(window, "x", code: 7)  // 20x: no length
+        #expect(size.textColor == .systemRed && abs(tall() - 20) < 1e-3, "a wrong size shows red and the letters stay")
+        key(window, "\r", code: 36)
+        #expect(session.pendingText != nil && session.sketch.texts.isEmpty && size.currentEditor() != nil, "Return does not place it, and stays to fix it")
+        key(window, "1", code: 18)  // the refused size is selected: typing replaces it
+        key(window, "2", code: 19)
+        #expect(session.textHeightDraft == "12" && size.textColor == .labelColor && abs(tall() - 12) < 1e-3)
+        key(window, "\u{19}", code: 48)  // back-tab: to the words
+        #expect(words.currentEditor() != nil, "⇧Tab goes back")
+        key(window, "\r", code: 36)
+        try await settle(model)
+        #expect(session.sketch.texts.map(\.text) == ["H"] && session.sketch.texts.first?.height == "12 mm", "\(session.sketch.texts)")
+        #expect(allSubviews(of: frameView).compactMap { $0 as? ValueField }.allSatisfy { $0.placeholderString != "Size" }, "both boxes go away")
+    }
 }

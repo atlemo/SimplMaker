@@ -51,8 +51,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var seenHandleFieldReset = 0
     private var seenHandleFocusRequest = 0
     private var handlePreviewTask: Task<Void, Never>?
-    /// Where Text tool input is typed, at the clicked spot.
+    /// Where Text tool input is typed, at the clicked spot, and the size field beside it.
     private var textEntryField: ValueField?
+    private var textHeightField: ValueField?
     /// The text the typing box is changing (nil: a new text), to refill it when that changes.
     private var textEntryFor: EntityID?
     /// Options for the selected feature (Join/Cut, Flip, OK, Cancel), below the size field.
@@ -1195,21 +1196,26 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         manipulatorLayout = layout
     }
 
-    /// The Text tool's field: appears where the tool was clicked, focused, until Return or Esc.
+    /// The Text tool's fields: the words and, beside them, the size of the letters. They appear where the tool was
+    /// clicked, the words focused, until Return or Esc.
     private func syncTextEntry() {
         guard let renderer, let session = model?.sketchSession, let at = session.pendingText?.position else {
-            if let f = textEntryField {
+            for f in [textEntryField, textHeightField].compactMap({ $0 }) {
                 if f.currentEditor() != nil { window?.makeFirstResponder(self) }
                 f.removeFromSuperview()
-                textEntryField = nil
             }
+            textEntryField = nil
+            textHeightField = nil
             return
         }
-        let field: ValueField
-        if let textEntryField {
-            field = textEntryField
-            if textEntryFor != session.editingText {  // now editing another text: show its words
+        let field: ValueField, sizeField: ValueField
+        if let existing = textEntryField, let existingSize = textHeightField {
+            field = existing
+            sizeField = existingSize
+            if textEntryFor != session.editingText {  // now editing another text: show its words and size
                 field.stringValue = session.textEntryInitial
+                sizeField.stringValue = session.textHeightDraft
+                sizeField.textColor = .labelColor
                 field.currentEditor()?.selectAll(nil)
             }
         } else {
@@ -1219,8 +1225,17 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             field.placeholderString = "Type the text, then Return"
             field.stringValue = session.textEntryInitial  // editing: the words as they are
             field.delegate = self
-            raiseControls().addSubview(field)
+            sizeField = ValueField(frame: .zero)
+            sizeField.placeholderString = "Size"
+            sizeField.toolTip = "Height of the capital letters · a length such as 12 or 12 mm, or a parameter · Tab switches between the text and its size"
+            sizeField.stringValue = session.textHeightDraft
+            sizeField.completions = { [weak self] in self?.model?.completionCandidates() ?? [] }
+            sizeField.delegate = self
+            let layer = raiseControls()
+            layer.addSubview(field)
+            layer.addSubview(sizeField)
             textEntryField = field
+            textHeightField = sizeField
             DispatchQueue.main.async { [weak self, weak field] in
                 guard let field, field.superview != nil else { return }
                 self?.window?.makeFirstResponder(field)
@@ -1231,11 +1246,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         raiseControls()
         let w = session.frame.point(at.x, at.y)
         guard let p = renderer.camera.project(SIMD3(Float(w.x), Float(w.y), Float(w.z)), viewSize: bounds.size) else { return }
-        let size = NSSize(width: 220, height: 24)
-        // Below the baseline: the letters appear above it as they are typed, and the box must not hide them.
-        field.frame = NSRect(x: min(max(p.x, 0), max(bounds.width - size.width, 0)),
-                             y: min(max(p.y + 16, 0), max(bounds.height - size.height, 0)),
-                             width: size.width, height: size.height)
+        let wordsWidth: CGFloat = 220, sizeWidth: CGFloat = 84, gap: CGFloat = 6, height: CGFloat = 24
+        let width = min(wordsWidth + gap + sizeWidth, bounds.width)
+        // Below the baseline: the letters appear above it as they are typed, and the boxes must not hide them.
+        let x = min(max(p.x, 0), max(bounds.width - width, 0))
+        let y = min(max(p.y + 16, 0), max(bounds.height - height, 0))
+        let sizeFieldWidth = min(sizeWidth, max(width - gap - 40, 40))
+        field.frame = NSRect(x: x, y: y, width: width - gap - sizeFieldWidth, height: height)
+        sizeField.frame = NSRect(x: x + width - sizeFieldWidth, y: y, width: sizeFieldWidth, height: height)
     }
 
     // MARK: typed values
@@ -1583,6 +1601,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         } else if field === textEntryField, let session = model?.sketchSession {
             session.setTextDraft(field.stringValue)  // the letters appear in the sketch as they are typed
             refreshOverlay()
+        } else if field === textHeightField, let session = model?.sketchSession {
+            session.setTextHeightDraft(field.stringValue)  // and grow or shrink as the size is typed
+            field.textColor = session.textHeightIsUsable ? .labelColor : .systemRed
+            refreshOverlay()
         } else if let input = field.input, let session = model?.sketchSession {
             session.setTyped(input, field.stringValue)
             refreshOverlay()
@@ -1606,9 +1628,23 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         guard let field = control as? ValueField, let model else { return false }
         let newline = selector == #selector(NSResponder.insertNewline(_:))
         let cancel = selector == #selector(NSResponder.cancelOperation(_:))
-        if field === textEntryField {
+        if field === textEntryField || field === textHeightField, let words = textEntryField, let size = textHeightField {
+            let tab = selector == #selector(NSResponder.insertTab(_:)), backtab = selector == #selector(NSResponder.insertBacktab(_:))
+            if tab || backtab {  // between the words and their size
+                let next = field === words ? size : words
+                window?.makeFirstResponder(next)
+                next.selectText(nil)
+                return true
+            }
             guard newline || cancel else { return false }
-            let text = field.stringValue
+            if newline, model.sketchSession?.textHeightIsUsable == false {  // keep the boxes, to fix the size
+                NSSound.beep()
+                size.textColor = .systemRed
+                window?.makeFirstResponder(size)
+                size.selectText(nil)
+                return true
+            }
+            let text = words.stringValue
             window?.makeFirstResponder(self)
             if newline { model.sketchCommand { $0.placeText(text) } } else { model.sketchSession?.cancelText() }
             refreshOverlay()

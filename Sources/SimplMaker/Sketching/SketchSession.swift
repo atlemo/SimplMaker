@@ -215,7 +215,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .bezier: return "Click points to draw a smooth spline through them, or press and drag to pull a handle · click the first point to close it · Esc ends the spline"
         case .gear: return "Click where the center goes · set the teeth, module, pressure angle, backlash and bore before or after · gears that mesh share a module · click a gear to change it"
         case .point: return "Click to place a point"
-        case .text: return "Click where the text starts, type it, and press Return · click a text (or double-click it) to change its words"
+        case .text: return "Click where the text starts, type it, and press Return · Tab sets its size · click a text (or double-click it) to change its words or size"
         case .fillet: return "Click the corner point where two lines meet to round it with an arc"
         case .chamfer: return "Click the corner point where two lines meet to cut it straight across · its leg length is then editable"
         case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
@@ -450,9 +450,38 @@ final class SketchSession {
     var textEntryInitial: String { editingText.flatMap { id in sketch.texts.first { $0.id == id }?.text } ?? "" }
     /// What is typed in the box right now: the letters are drawn from it as they are typed (see `textOutlines`, `textPreview`).
     private(set) var textDraft = ""
+    /// The size field beside it, as typed. The letters are drawn at `textHeightShown`: the last size that was a usable length.
+    private(set) var textHeightDraft = "10 mm"
+    private(set) var textHeightShown = "10 mm"
 
     /// A keystroke in the typing box.
     func setTextDraft(_ string: String) { textDraft = string }
+
+    /// A keystroke in the size field. A bare number is millimetres.
+    func setTextHeightDraft(_ string: String) {
+        textHeightDraft = string
+        if let usable = usableTextHeight(string) { textHeightShown = usable }
+    }
+
+    /// Whether the size typed is a length above zero (an expression such as a parameter counts).
+    var textHeightIsUsable: Bool { usableTextHeight(textHeightDraft) != nil }
+
+    /// The size field's expression ("12" is "12 mm"), if it gives a length above zero.
+    private func usableTextHeight(_ string: String) -> String? {
+        let t = string.trimmingCharacters(in: .whitespaces)
+        let expression = Double(t).map { formatDimension($0, kind: .length) } ?? t
+        guard let v = try? parameters.value(of: expression, kind: .length), v > 0, v.isFinite else { return nil }
+        return expression
+    }
+
+    /// The size a new text starts with: that of the last text in the sketch, so a row of labels comes out alike.
+    private var newTextHeight: String { sketch.texts.last?.height ?? SketchText(text: "", position: "").height }
+
+    private func beginTextDraft(words: String, height: String) {
+        textDraft = words
+        textHeightDraft = height
+        textHeightShown = height
+    }
     private var chainPoint: EntityID?
     /// The Curve tool's run of curves so far (nil until its second point is placed).
     private(set) var curveChain: CurveChain?
@@ -1054,7 +1083,7 @@ final class SketchSession {
             // On an existing text (its dot or its letters): change it rather than start another.
             if let anchor = s.point ?? hover, beginEditingText(anchoredAt: anchor) { return nil }
             pendingText = s
-            textDraft = ""
+            beginTextDraft(words: "", height: newTextHeight)
             return nil
         case .select, .dimension, .distance, .fillet, .chamfer, .trim, .extend, .bezier, .projectEdge:
             clicks = []
@@ -2121,7 +2150,7 @@ final class SketchSession {
         guard let t = sketch.texts.first(where: { $0.position == point }), let at = sketch.position(point) else { return false }
         editingText = t.id
         pendingText = SketchSnap(at, point: point)
-        textDraft = t.text
+        beginTextDraft(words: t.text, height: t.height)
         selection = [point]
         dragEntity = nil
         return true
@@ -2130,15 +2159,18 @@ final class SketchSession {
     /// Return in the text field: the text starts at the clicked point (or the point it snapped to);
     /// when editing, the text's words change instead.
     func placeText(_ string: String) -> String? {
+        // A size that is no length is not placed: the box stays, to be fixed (the view checks before it lets go of the box).
+        guard textHeightIsUsable else { message = "The size must be a length above zero"; return nil }
+        let height = textHeightShown
         defer { pendingText = nil; editingText = nil; textDraft = "" }
         let text = string.trimmingCharacters(in: .whitespacesAndNewlines)
         if let id = editingText {
             guard !text.isEmpty else { message = "A text needs some letters"; return nil }
-            return updateText(id) { $0.text = text }
+            return updateText(id) { $0.text = text; $0.height = height }
         }
         guard let at = pendingText, !text.isEmpty else { return nil }
         let p = sketch.resolve(at)
-        let t = SketchText(text: text, position: p)
+        let t = SketchText(text: text, position: p, height: height)
         sketch.texts.append(t)
         selection = [p]
         return finish("Text")
@@ -2175,7 +2207,7 @@ final class SketchSession {
         sketch.texts.compactMap { t in
             guard let i = sketch.points.firstIndex(where: { $0.id == t.position }) else { return nil }
             var shown = t
-            if t.id == editingText { shown.text = textDraft }
+            if t.id == editingText { shown.text = textDraft; shown.height = textHeightShown }
             let polylines = shown.contours(in: sketch, parameters: parameters).map { contour in
                 contour.flatMap { TextOutline.flatten($0) }
             }
@@ -2186,7 +2218,7 @@ final class SketchSession {
     /// The letters of a new text as typed so far, at the size and place they will have: drawn live, before Return.
     func textPreview() -> [[SIMD2<Double>]] {
         guard editingText == nil, let at = pendingText?.position else { return [] }
-        let new = SketchText(text: textDraft, position: "")
+        let new = SketchText(text: textDraft, position: "", height: textHeightShown)
         guard let height = try? parameters.value(of: new.height, kind: .length) else { return [] }
         return TextOutline.contours(textDraft, fontName: new.font, height: height, origin: at, angle: new.angle).map { contour in
             contour.flatMap { TextOutline.flatten($0) }
