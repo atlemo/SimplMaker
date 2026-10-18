@@ -21,7 +21,7 @@ final class ViewCubeView: NSView {
     /// The colour of the hovered part (the accent, which while sketching is the system's).
     var accent: () -> NSColor = { .controlAccentColor }
 
-    static let size = NSSize(width: 124, height: 132)
+    static let size = NSSize(width: 136, height: 132)
     private let scale: CGFloat = 30  // half the cube's side, in points
     private var center: CGPoint { CGPoint(x: bounds.midX + 4, y: bounds.midY - 8) }
 
@@ -60,6 +60,9 @@ final class ViewCubeView: NSView {
         addSubview(button)
         homeButton = button
         // Curved arrows by the cube's top edge: the sketch turns a quarter on its paper, the way they point.
+        // They sit on a ring round the cube's top-right: counter-clockwise on top, clockwise down its right side.
+        let ring = [CGPoint(x: Self.size.width / 2 + 4 + 27, y: Self.size.height / 2 - 8 + 51),
+                    CGPoint(x: Self.size.width / 2 + 4 + 50, y: Self.size.height / 2 - 8 + 29)]
         for (i, spec) in [(counterClockwise: true, tip: "Turn the sketch a quarter counter-clockwise", action: #selector(turnCounterClockwise)),
                           (counterClockwise: false, tip: "Turn the sketch a quarter clockwise", action: #selector(turnClockwise))].enumerated() {
             let image = Self.turnArrow(counterClockwise: spec.counterClockwise)
@@ -70,9 +73,8 @@ final class ViewCubeView: NSView {
             b.imageScaling = .scaleNone
             b.toolTip = spec.tip
             b.isHidden = true
-            // The two arrows have different shapes: centre each in its own 22-point slot.
-            let slot = NSRect(x: Self.size.width - 50 + CGFloat(i) * 24, y: Self.size.height - 24, width: 22, height: 22)
-            b.frame = slot
+            b.frame = NSRect(x: ring[i].x - image.size.width / 2, y: ring[i].y - image.size.height / 2,
+                             width: image.size.width, height: image.size.height)
             addSubview(b)
             turnButtons.append(b)
         }
@@ -84,7 +86,7 @@ final class ViewCubeView: NSView {
     /// A turn arrow, drawn like a cube face: the same fill and outline, in the light or dark scheme at the time it is drawn.
     /// The outlines are the designer's SVG paths (35×20 pointing left, 20×35 pointing down), scaled down.
     private static func turnArrow(counterClockwise: Bool) -> NSImage {
-        let k: CGFloat = 0.6
+        let k: CGFloat = 0.9
         let natural = counterClockwise ? CGSize(width: 35, height: 20) : CGSize(width: 20, height: 35)
         let image = NSImage(size: CGSize(width: natural.width * k, height: natural.height * k), flipped: true) { _ in
             let dark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
