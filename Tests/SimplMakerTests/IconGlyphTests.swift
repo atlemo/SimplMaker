@@ -1,4 +1,5 @@
 // Copyright © 2026 Atle Mo. All rights reserved.
+import CADCore
 import Foundation
 import Testing
 @testable import SimplMaker
@@ -28,6 +29,13 @@ import Testing
         for name in used {
             #expect(IconGlyphs.table[name] != nil, "expected glyph \"\(name)\" in IconGlyphs.table")
             #expect(!SVGGlyph.parse(IconGlyphs.table[name] ?? "").isEmpty)
+        }
+    }
+
+    /// Every constraint has its own glyph in the Constrain menu.
+    @Test func everyConstraintHasAGlyph() {
+        for c in ConstraintTool.allCases {
+            #expect(IconGlyphs.table[c.icon] != nil, "missing glyph \"\(c.icon)\" for \(c.rawValue)")
         }
     }
 

@@ -231,5 +231,18 @@ enum IconGlyphs {
     "chamfer-two": "<path d=\"M20.133 10L20.133 20.667L2.133 20.667L2.133 3.334L8.133 3.334\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" /><path d=\"M10.8 3.334L20.133 7.334\" stroke=\"accent\" stroke-weight=\"1.667\" />",
     "chamfer-angle": "<path d=\"M20.8 14.667L20.8 21.333L2.8 21.333L2.8 4L9.467 4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" /><path d=\"M12.133 4.667L19.467 12\" stroke=\"accent\" stroke-weight=\"1.667\" /><path d=\"M20.8 0.667L20.8 8.667\" stroke-opacity=\"0.38\" stroke-weight=\"0.833\" stroke-linecap=\"butt\" /><path d=\"M20.8 4.667L16.8 4.667\" stroke-opacity=\"0.38\" stroke-weight=\"0.833\" stroke-linecap=\"butt\" />",
     "fillet": "<path d=\"M11.466 3.599L8.464 3.599L4.729 7.333L8.133 7.333L6.799 8.932L3.599 8.932L3.599 20L15.333 20L15.333 17.466L16.932 16.133L16.932 18.671L20 15.164L20 12.799L21.599 11.466L21.599 15.767L16.496 21.599L2 21.599L2 7.802L7.802 2L12.799 2L11.466 3.599Z\" fill=\"currentColor\" /><path d=\"M16.133 14.133C16.133 10.399 14.133 8.133 10.133 8.133L14.799 3.466C18.799 3.466 20.799 5.733 20.799 9.466L16.133 14.133Z\" fill=\"accent\" fill-opacity=\"0.2\" stroke=\"accent\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" />",
+    // SimplMaker's own, drawn in the same style: one glyph per sketch constraint (the Constrain menu). The ink draws the
+    // constrained geometry, the accent colour the thing that is held (a point, a mark, a right angle).
+    "constraint-coincident": "<path d=\"M3 19 12 12\" /><path d=\"M21 19 12 12\" /><circle cx=\"12\" cy=\"12\" r=\"2.5\" fill=\"accent\" stroke=\"none\" />",
+    "constraint-horizontal": "<path d=\"M3 12h18\" /><path d=\"M3 8v8\" stroke=\"accent\" /><path d=\"M21 8v8\" stroke=\"accent\" />",
+    "constraint-vertical": "<path d=\"M12 3v18\" /><path d=\"M8 3h8\" stroke=\"accent\" /><path d=\"M8 21h8\" stroke=\"accent\" />",
+    "constraint-parallel": "<path d=\"M7 20 13 4\" /><path d=\"M13 20 19 4\" />",
+    "constraint-perpendicular": "<path d=\"M5 4v16h16\" /><path d=\"M5 14h6v6\" stroke=\"accent\" />",
+    "constraint-tangent": "<circle cx=\"12\" cy=\"15.5\" r=\"6\" /><path d=\"M3 9.5h18\" /><circle cx=\"12\" cy=\"9.5\" r=\"1.6\" fill=\"accent\" stroke=\"none\" />",
+    "constraint-equal": "<path d=\"M5 9h14\" /><path d=\"M5 15h14\" />",
+    "constraint-midpoint": "<path d=\"M3 12h18\" /><path d=\"M3 8.5v7\" /><path d=\"M21 8.5v7\" /><circle cx=\"12\" cy=\"12\" r=\"2.5\" fill=\"accent\" stroke=\"none\" />",
+    "constraint-concentric": "<circle cx=\"12\" cy=\"12\" r=\"9\" /><circle cx=\"12\" cy=\"12\" r=\"4.5\" /><circle cx=\"12\" cy=\"12\" r=\"1.2\" fill=\"accent\" stroke=\"none\" />",
+    "constraint-symmetric": "<path d=\"M12 2.5v3\" stroke=\"accent\" /><path d=\"M12 9v1.5\" stroke=\"accent\" /><path d=\"M12 13.5V15\" stroke=\"accent\" /><path d=\"M12 18.5v3\" stroke=\"accent\" /><path d=\"M3.5 7 9 12l-5.5 5Z\" /><path d=\"M20.5 7 15 12l5.5 5Z\" />",
+    "constraint-fix": "<path d=\"M12 4v8\" /><path d=\"M5 12h14\" /><path d=\"m7 12-2.5 4.5\" /><path d=\"m12 12-2.5 4.5\" /><path d=\"m17 12-2.5 4.5\" /><circle cx=\"12\" cy=\"4\" r=\"2\" fill=\"accent\" stroke=\"none\" />",
     ]
 }

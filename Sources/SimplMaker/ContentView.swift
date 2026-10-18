@@ -2006,9 +2006,13 @@ struct SketchToolbar: View {
                     .padding(.bottom, DS.Spacing.space2)
             }
             ForEach(ConstraintTool.allCases, id: \.self) { c in
-                Button(c.rawValue) {
+                Button {
                     model.sketchCommand { $0.apply(c) }
                     constrainOpen = false
+                } label: {
+                    Label { Text(c.rawValue) } icon: {
+                        Icon(c.icon, size: 16, renderedStroke: Icon.toolStroke).opacity(session.canApply(c) ? 1 : 0.4)
+                    }
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.primary)  // a borderless button would draw in the accent, hard to read on the popover

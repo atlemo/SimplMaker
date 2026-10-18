@@ -2768,3 +2768,8 @@ final class SketchSession {
 }
 
 func simdLength(_ v: SIMD2<Double>) -> Double { (v.x * v.x + v.y * v.y).squareRoot() }
+
+extension ConstraintTool {
+    /// The glyph shown beside the constraint in the Constrain menu.
+    var icon: String { "constraint-" + String(describing: self) }
+}
