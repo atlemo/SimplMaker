@@ -775,14 +775,14 @@ public enum Regenerator {
             chosen = chosen.filter { i in r.bodies[i].body.bounds.map { overlaps($0, tb) } ?? false }
             for i in chosen {
                 let cut = try r.bodies[i].body.boolean(tool, SK_CUT)
-                if cut.volume <= 1e-9 { throw KernelError(message: "the cut removes all of \(r.bodies[i].name)") }
+                if cut.isEmpty { throw KernelError(message: "the cut removes all of \(r.bodies[i].name)") }
                 r.bodies[i].body = cut
             }
             r.affectedBodies[feature.id] = chosen.map { r.bodies[$0].id }
         case .intersect:
             for i in chosen {
                 let common = try r.bodies[i].body.boolean(tool, SK_COMMON)
-                if common.volume <= 1e-9 { throw KernelError(message: "the new shape doesn't overlap \(r.bodies[i].name)") }
+                if common.isEmpty { throw KernelError(message: "the new shape doesn't overlap \(r.bodies[i].name)") }
                 r.bodies[i].body = common
             }
             r.affectedBodies[feature.id] = chosen.map { r.bodies[$0].id }
@@ -985,6 +985,7 @@ public enum Regenerator {
     static func thread(_ f: ThreadFeature, _ feature: Feature, _ r: inout RegenResult) throws {
         let length = try f.length.map { try r.parameters.value(of: $0, kind: .length) }
         if let length, length <= 0 { throw KernelError(message: "the thread length must be positive") }
+        if f.faces.count > 1, threadTogether(f, feature, length: length, &r) { return }
         for (n, face) in f.faces.enumerated() {
             let spec = f.spec(at: n)
             let size: ThreadSize
@@ -1008,6 +1009,29 @@ public enum Regenerator {
                 throw KernelError(message: error.message + threadSizeHint(f, spec, size, body: body, face: face.face, length: length, r))
             }
         }
+    }
+
+    /// All of the feature's faces in one go, when they are on one body: a thread is mostly the time it takes to go through
+    /// the whole body, so one pass for the four holes of a feature takes about as long as one for a single hole. False
+    /// when it can't be done (the faces are on different bodies, the threads reach each other, a size or a thread
+    /// fails); nothing has then been changed, and the faces are threaded one at a time, which also tells what is wrong.
+    private static func threadTogether(_ f: ThreadFeature, _ feature: Feature, length: Double?, _ r: inout RegenResult) -> Bool {
+        guard let first = f.faces.first, f.faces.allSatisfy({ $0.body == first.body }),
+              let i = r.bodies.firstIndex(where: { $0.id == first.body }) else { return false }
+        var diameters: [Double] = [], pitches: [Double] = []
+        for n in f.faces.indices {
+            guard let size = try? f.size(of: f.spec(at: n), r.parameters),
+                  let diameter = try? f.modeledDiameter(of: size, r.parameters), diameter > size.pitch * 1.2 else { return false }
+            diameters.append(diameter)
+            pitches.append(size.pitch)
+        }
+        let body = r.bodies[i].body
+        guard let threaded = try? body.threads(faces: f.faces.map(\.face), majorDiameters: diameters, pitches: pitches, length: length,
+                                               flipped: f.flipped, leftHanded: f.leftHanded, featureID: feature.id) else { return false }
+        // The body as it was: the faces (and so the length handle) are found on it.
+        if r.featureInputs[feature.id]?[first.body] == nil { r.featureInputs[feature.id, default: [:]][first.body] = body }
+        r.bodies[i].body = threaded
+        return true
     }
 
     /// For a thread that couldn't be built: other sizes that do build on the same face (a thread can fail at one
@@ -1180,7 +1204,7 @@ public enum Regenerator {
             guard let tool = r.body(id) else { throw KernelError(message: "a tool body is missing") }
             body = try body.boolean(tool, f.operation == .cut ? SK_CUT : f.operation == .intersect ? SK_COMMON : SK_FUSE)
         }
-        if f.operation != .join, body.volume <= 1e-9 {
+        if f.operation != .join, body.isEmpty {
             throw KernelError(message: f.operation == .cut ? "the cut removes the whole body" : "the bodies don't overlap")
         }
         r.bodies[t].body = body

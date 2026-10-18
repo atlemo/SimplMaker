@@ -429,6 +429,18 @@ public final class KBody: @unchecked Sendable {
         try KBody.wrap(sk_thread(handle, face, majorDiameter, pitch, length ?? 0, flipped, leftHanded, featureID), "thread")
     }
 
+    /// Cuts threads into several round faces of this body at once (see sk_thread_many): much quicker than one face after
+    /// the other, but it fails when the threads would reach each other. The first face's new faces are named after
+    /// `featureID`, the others' "<featureID>.2", "<featureID>.3"...
+    public func threads(faces: [String], majorDiameters: [Double], pitches: [Double], length: Double?, flipped: Bool,
+                        leftHanded: Bool, featureID: String) throws -> KBody {
+        precondition(faces.count == majorDiameters.count && faces.count == pitches.count)
+        return try withCStrings(faces) {
+            try KBody.wrap(sk_thread_many(handle, Int32(faces.count), $0, majorDiameters, pitches, length ?? 0, flipped,
+                                          leftHanded, featureID), "thread")
+        }
+    }
+
     public func boolean(_ tool: KBody, _ op: SKBooleanOp) throws -> KBody {
         try KBody.wrap(sk_boolean(handle, tool.handle, op), "boolean")
     }
@@ -596,6 +608,9 @@ public final class KBody: @unchecked Sendable {
     // Remembered like the handles above: the inspector asks again on every redraw, and the volume of a threaded body
     // is an integral over its helical faces.
     public var volume: Double { (try? memoized("volume") { sk_body_volume(handle) }) ?? 0 }
+    /// Nothing left of it (what a cut that removes the whole body, or a common of bodies that don't meet, returns).
+    /// Quicker than `volume <= 1e-9` for a body with many faces, which is all it is used for.
+    public var isEmpty: Bool { (try? memoized("isEmpty") { sk_body_is_empty(handle) }) ?? true }
     public var isValid: Bool { (try? memoized("isValid") { sk_body_is_valid(handle) }) ?? false }
     public var bounds: (min: SIMD3<Double>, max: SIMD3<Double>)? {
         try? memoized("bounds") { () throws -> (min: SIMD3<Double>, max: SIMD3<Double>) in

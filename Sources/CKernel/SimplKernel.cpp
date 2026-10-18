@@ -70,6 +70,9 @@
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
+#include <BRepGProp_Domain.hxx>
+#include <BRepGProp_Face.hxx>
+#include <BRepGProp_Vinert.hxx>
 #include <BRepLib_ToolTriangulatedShape.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
@@ -99,6 +102,7 @@
 #include <Message.hxx>
 #include <Message_Messenger.hxx>
 #include <Message_PrinterOStream.hxx>
+#include <OSD_Parallel.hxx>
 #include <Poly_Triangulation.hxx>
 #include <RWStl.hxx>
 #include <STEPControl_Reader.hxx>
@@ -445,6 +449,64 @@ std::string failureMessage(Body &b, const std::vector<TopoDS_Edge> &edges, const
   return why.empty() ? sliverMessage(b, edges, kind, size) : why;
 }
 
+/// Whether a face of the shape is a straight extrusion of a spline of several spans (what a run of merged curves
+/// gives), the one kind of face whose plain volume integral is up to a percent or two off.
+bool hasSplineExtrusion(const TopoDS_Shape &shape) {
+  for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+    Handle(Geom_SurfaceOfLinearExtrusion) e =
+        Handle(Geom_SurfaceOfLinearExtrusion)::DownCast(BRep_Tool::Surface(TopoDS::Face(ex.Current())));
+    Handle(Geom_BSplineCurve) b = e.IsNull() ? nullptr : Handle(Geom_BSplineCurve)::DownCast(e->BasisCurve());
+    if (!b.IsNull() && b->NbKnots() > 2) return true;
+  }
+  return false;
+}
+
+/// How much more volume `after` encloses than `before`, with only the faces that differ between them integrated:
+/// a body's volume is the sum of its faces' shares (the cone from a reference point to each face, which is what
+/// BRepGProp adds up), so the faces both have cancel out and need no integral. A round or chamfer changes a few faces
+/// of a body that may have hundreds of them, and the integral over the helical faces of a thread is what takes the
+/// time. A face is the same in both when it has the same surface, position and orientation. Every share is taken from
+/// one point (BRepGProp picks its own for each shape, which would make the two bodies' shares incomparable): the
+/// middle of the faces that differ.
+double volumeChange(const TopoDS_Shape &before, const TopoDS_Shape &after) {
+  auto faces = [](const TopoDS_Shape &shape) {
+    NCollection_Map<TopoDS_Shape> set;
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) set.Add(ex.Current());
+    return set;
+  };
+  const NCollection_Map<TopoDS_Shape> was = faces(before), now = faces(after);
+  std::vector<TopoDS_Face> added, removed;
+  for (const TopoDS_Shape &f : now)
+    if (!was.Contains(f)) added.push_back(TopoDS::Face(f));
+  for (const TopoDS_Shape &f : was)
+    if (!now.Contains(f)) removed.push_back(TopoDS::Face(f));
+  Bnd_Box box;
+  for (const auto *list : {&added, &removed})
+    for (const TopoDS_Face &f : *list) BRepBndLib::Add(f, box);
+  if (box.IsVoid()) return 0;
+  double x0, y0, z0, x1, y1, z1;
+  box.Get(x0, y0, z0, x1, y1, z1);
+  const gp_Pnt reference((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+  BRepGProp_Vinert integral;
+  integral.SetLocation(reference);
+  auto share = [&](const TopoDS_Face &f) {
+    BRepGProp_Face face;
+    BRepGProp_Domain domain;
+    face.Load(f);
+    if (f.NbChildren() == 0) {
+      integral.Perform(face);
+    } else {
+      domain.Init(f);
+      integral.Perform(face, domain);
+    }
+    return integral.Mass();
+  };
+  double change = 0;
+  for (const TopoDS_Face &f : added) change += share(f);
+  for (const TopoDS_Face &f : removed) change -= share(f);
+  return change;
+}
+
 /// True when every edge of `edges` is a convex edge of `shape`. Rounding only convex edges takes material away, so
 /// a rounded body that is bigger than before is wrong; rounding a concave edge fills the corner and does add some.
 /// An edge that is concave, tangent or not shared by exactly two faces counts as not convex.
@@ -629,6 +691,11 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
   // OCCT can return a body that is valid, or repairable into a valid one, and still wrong when a round is too big
   // for its faces: bigger than before although only convex edges were rounded (see allConvex).
   auto grew = [&](const TopoDS_Shape &result) {
+    // Only a result that encloses more can be too big, and that shows in the faces that changed alone: the bodies'
+    // own volumes (an integral over every face, helical ones included) are only needed when it does.
+    // (Not for a body with a spline extrusion: the integral over those is off by a percent or two and not by the same
+    // amount from one reference point to the next, so for them the volumes are compared as they always were.)
+    if (!hasSplineExtrusion(b->shape) && !hasSplineExtrusion(result) && volumeChange(b->shape, result) <= 1e-9) return false;
     std::vector<TopoDS_Edge> all;
     for (auto &c : chain) all.push_back(TopoDS::Edge(c.first));
     GProp_GProps before, after;
@@ -640,7 +707,7 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
     const std::string why = failureMessage(*b, picked, kind, size);
     return why.empty() ? std::string(kind) + " failed (size too large for the adjacent faces?)" : why;
   };
-  BRepCheck_Analyzer check(out.shape);
+  BRepCheck_Analyzer check(out.shape, true, true);  // in parallel: it takes long on a body with threads
   if (!check.IsValid()) {
     // OCCT sometimes returns a fillet's result with a shell that is not quite closed or with edge tolerances
     // gone loose (after several fillets on one body); repairing it is often enough. Face names follow the repair.
@@ -781,7 +848,7 @@ bool fuseAll(const std::vector<TopoDS_Shape> &solids, std::vector<Named> &names,
 SKHandle storeChecked(const TopoDS_Shape &shape, const std::vector<Named> &names, const std::string &feat,
                       const char *failure) {
   Body b = makeBody(shape, names, feat);
-  if (!BRepCheck_Analyzer(b.shape).IsValid()) {
+  if (!BRepCheck_Analyzer(b.shape, true, true).IsValid()) {
     setError(failure);
     return 0;
   }
@@ -878,6 +945,43 @@ struct Cylinder {
   bool internal = false, freeStart = false, freeEnd = false;
 };
 
+/// What lies beyond the end of a round face, told from the flat face across its end edge (a hole's mouth or floor, a
+/// shaft's tip or shoulder), which takes no time however many faces the body has: 1 = air, 0 = material, -1 = it
+/// can't be told this way (the end is a cone, a fillet, several faces...). `end` is a point on the end, `outward` the
+/// unit direction away from the face along its axis.
+int endBeyond(const Body &b, const TopoDS_Face &face, const gp_Pnt &end, const gp_Vec &outward) {
+  TopoDS_Shape across;
+  for (TopExp_Explorer ex(face, TopAbs_EDGE); ex.More(); ex.Next()) {
+    const TopoDS_Edge &e = TopoDS::Edge(ex.Current());
+    if (BRep_Tool::Degenerated(e)) continue;
+    BRepAdaptor_Curve c(e);
+    bool onEnd = true;  // the edge lies in the plane across the axis at this end
+    for (double t : {0.0, 0.5, 1.0}) {
+      const gp_Pnt p = c.Value(c.FirstParameter() + t * (c.LastParameter() - c.FirstParameter()));
+      if (std::abs(gp_Vec(end, p).Dot(outward)) > 1e-6) onEnd = false;
+    }
+    if (!onEnd) continue;
+    TopoDS_Shape other;
+    int count = 0;
+    for (int i = 1; i <= b.faces.Extent(); ++i) {
+      const TopoDS_Shape &g = b.faces(i);
+      if (g.IsSame(face)) continue;
+      for (TopExp_Explorer eg(g, TopAbs_EDGE); eg.More(); eg.Next())
+        if (eg.Current().IsSame(e)) { other = g; ++count; break; }
+    }
+    if (count != 1) return -1;
+    if (!across.IsNull() && !across.IsSame(other)) return -1;
+    across = other;
+  }
+  if (across.IsNull()) return -1;
+  const TopoDS_Face &g = TopoDS::Face(across);
+  BRepAdaptor_Surface s(g);
+  if (s.GetType() != GeomAbs_Plane) return -1;
+  const double along = gp_Vec(planeNormal(g, s.Plane())).Dot(outward);
+  if (std::abs(along) < 0.999) return -1;
+  return along > 0 ? 1 : 0;
+}
+
 /// Works out a round face's Cylinder. A thread starts at an end with air beyond it (the tip of a
 /// shaft, the mouth of a hole), else at the end its axis points to; `flipped` takes the other end.
 bool cylinderOf(const Body &b, const TopoDS_Face &face, bool flipped, Cylinder &out) {
@@ -924,6 +1028,8 @@ bool cylinderOf(const Body &b, const TopoDS_Face &face, bool flipped, Cylinder &
   // Air just beyond an end, at a radius inside the thread's reach: a hole's mouth, a shaft's tip.
   const double probeRadius = out.radius * (out.internal ? 1.1 : 0.75);
   auto isFree = [&](const gp_Pnt &end, const gp_Vec &outward) {
+    const int beyond = endBeyond(b, face, end, outward);
+    if (beyond >= 0) return beyond == 1;
     const gp_Pnt q = end.Translated(gp_Vec(out.radial) * probeRadius + outward * (0.1 * out.radius));
     BRepClass3d_SolidClassifier probe(b.shape, q, 1e-7);
     return probe.State() == TopAbs_OUT;
@@ -952,30 +1058,48 @@ TopoDS_Shape ring(const gp_Ax3 &f, double rIn, double rOut, double z0, double z1
   return revolved(f, {{rIn, z0}, {rOut, z0}, {rOut, z1}, {rIn, z1}});
 }
 
-/// A boolean on a shape and its face names, carrying the names of both operands.
-bool namedBoolean(TopoDS_Shape &shape, std::vector<Named> &names, const TopoDS_Shape &tool, const std::string &toolName,
-                  SKBooleanOp op) {
+/// A solid and the names its faces get when it is used as the tool of a boolean.
+struct NamedTool {
+  TopoDS_Shape shape;
+  std::vector<Named> faces;
+};
+
+/// A tool whose faces all get one name.
+NamedTool namedTool(const TopoDS_Shape &shape, const std::string &name) {
+  NamedTool t{shape, {}};
+  for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) t.faces.push_back({ex.Current(), name});
+  return t;
+}
+
+/// A boolean on a shape and its face names with one or more tools at once, carrying the names of all the operands.
+/// Several tools cost little more than one: what takes the time is going through the shape.
+bool namedBooleanMany(TopoDS_Shape &shape, std::vector<Named> &names, const std::vector<NamedTool> &tools, SKBooleanOp op) {
   std::unique_ptr<BRepAlgoAPI_BooleanOperation> bop;
   switch (op) {
     case SK_FUSE: bop = std::make_unique<BRepAlgoAPI_Fuse>(); break;
     case SK_CUT: bop = std::make_unique<BRepAlgoAPI_Cut>(); break;
     case SK_COMMON: bop = std::make_unique<BRepAlgoAPI_Common>(); break;
   }
-  ShapeList args, tools;
+  ShapeList args, toolList;
   args.Append(shape);
-  tools.Append(tool);
+  for (const NamedTool &t : tools) toolList.Append(t.shape);
   bop->SetArguments(args);
-  bop->SetTools(tools);
+  bop->SetTools(toolList);
   bop->SetRunParallel(true);
   bop->Build();
   if (!bop->IsDone() || bop->HasErrors()) return false;
-  std::vector<Named> toolNames, out;
-  for (TopExp_Explorer ex(tool, TopAbs_FACE); ex.More(); ex.Next()) toolNames.push_back({ex.Current(), toolName});
+  std::vector<Named> out;
   carry(*bop, names, out);  // the body's names first: they win on merged faces
-  carry(*bop, toolNames, out);
+  for (const NamedTool &t : tools) carry(*bop, t.faces, out);
   shape = bop->Shape();
   names = std::move(out);
   return true;
+}
+
+/// A boolean on a shape and its face names, carrying the names of both operands.
+bool namedBoolean(TopoDS_Shape &shape, std::vector<Named> &names, const TopoDS_Shape &tool, const std::string &toolName,
+                  SKBooleanOp op) {
+  return namedBooleanMany(shape, names, {namedTool(tool, toolName)}, op);
 }
 
 /// The solid swept by a thread's groove profile along a helix about the frame's normal, from
@@ -1055,8 +1179,11 @@ std::shared_ptr<const ThreadParts> buildThreadParts(const ThreadSpec &t, const g
   auto parts = std::make_shared<ThreadParts>();
   std::vector<Named> none;
   parts->sweep = TopoDS_Shape();
-  if (!helicalSweep(f, P, t.z0 - P, t.z1 + P, t.leftHanded, groove, parts->sweep) ||
-      !namedBoolean(parts->sweep, none, ring(f, 0, rMajor + P, t.z0, t.z1), "", SK_COMMON)) {
+  if (!helicalSweep(f, P, t.z0 - P, t.z1 + P, t.leftHanded, groove, parts->sweep)) {
+    failure = ThreadFailure::Helix;
+    return nullptr;
+  }
+  if (!namedBoolean(parts->sweep, none, ring(f, 0, rMajor + P, t.z0, t.z1), "", SK_COMMON)) {
     failure = ThreadFailure::Helix;
     return nullptr;
   }
@@ -1103,36 +1230,76 @@ bool placement(const gp_Ax3 &f, gp_Trsf &out) {
   return false;
 }
 
-/// The thread's parts on frame `f`, from the cache when this size has been built before. `sweep` is only moved
-/// when `needSweep` (a hole's thread uses the groove only inside its ring).
+/// The thread's parts moved onto frame `f`. `sweep` is only moved when `needSweep` (a hole's thread uses the groove only
+/// inside its ring).
 struct PlacedThread {
   TopoDS_Shape sweep, fill;
   std::vector<Named> fillNames;  // the ring's faces: "C" and "T" as in ThreadParts
   double fillVolume = 0;
 };
 
-bool threadOn(const ThreadSpec &t, const gp_Ax3 &f, bool needSweep, PlacedThread &out, ThreadFailure &failure) {
+gp_Ax3 originFrame() { return gp_Ax3(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1), gp_Dir(1, 0, 0)); }
+
+using ThreadPartsPtr = std::shared_ptr<const ThreadParts>;
+
+/// The parts of each size in `specs`, from the cache when the size has been built before. The sizes that haven't are
+/// built side by side (each takes a tenth of a second or more, and a thread feature on several holes of different
+/// sizes needs one for each). A size that can't be built comes back null, with the reason in `failures`.
+std::vector<ThreadPartsPtr> threadPartsFor(const std::vector<ThreadSpec> &specs, std::vector<ThreadFailure> &failures) {
   static std::mutex mutex;
-  static std::map<std::array<double, 8>, std::shared_ptr<const ThreadParts>> cache;
-  gp_Trsf move;
-  if (!placement(f, move)) {  // not expected: build it in place
-    auto parts = buildThreadParts(t, f, failure);
-    if (!parts) return false;
-    out = {parts->sweep, parts->fill, parts->fillNames, parts->fillVolume};
-    return true;
-  }
-  std::shared_ptr<const ThreadParts> parts;
+  static std::map<std::array<double, 8>, ThreadPartsPtr> cache;
+  std::vector<ThreadPartsPtr> parts(specs.size());
+  failures.assign(specs.size(), ThreadFailure::None);
+  std::vector<size_t> toBuild;  // the first spec of each size that isn't cached
   {
     std::lock_guard<std::mutex> lock(mutex);
-    auto it = cache.find(t.key());
-    if (it != cache.end()) parts = it->second;
+    for (size_t i = 0; i < specs.size(); ++i) {
+      auto it = cache.find(specs[i].key());
+      if (it != cache.end()) {
+        parts[i] = it->second;
+      } else if (std::none_of(toBuild.begin(), toBuild.end(), [&](size_t j) { return specs[j].key() == specs[i].key(); })) {
+        toBuild.push_back(i);
+      }
+    }
   }
-  if (!parts) {
-    parts = buildThreadParts(t, gp_Ax3(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1), gp_Dir(1, 0, 0)), failure);
-    if (!parts) return false;
+  std::vector<ThreadPartsPtr> built(toBuild.size());
+  std::vector<ThreadFailure> builtFailures(toBuild.size(), ThreadFailure::None);
+  auto buildOne = [&](int k) {
+    try {
+      built[k] = buildThreadParts(specs[toBuild[k]], originFrame(), builtFailures[k]);
+    } catch (...) {  // nothing may escape from a worker thread
+      built[k] = nullptr;
+      builtFailures[k] = ThreadFailure::Helix;
+    }
+    if (!built[k] && builtFailures[k] == ThreadFailure::None) builtFailures[k] = ThreadFailure::Helix;
+  };
+  if (toBuild.size() == 1) buildOne(0);
+  else if (toBuild.size() > 1) OSD_Parallel::For(0, (int)toBuild.size(), buildOne);
+  {
     std::lock_guard<std::mutex> lock(mutex);
-    if (cache.size() >= 32) cache.clear();  // many sizes in one session: start over
-    cache[t.key()] = parts;
+    if (cache.size() + toBuild.size() > 32) cache.clear();  // many sizes in one session: start over
+    for (size_t k = 0; k < toBuild.size(); ++k)
+      if (built[k]) cache[specs[toBuild[k]].key()] = built[k];
+  }
+  for (size_t i = 0; i < specs.size(); ++i) {
+    if (parts[i]) continue;
+    for (size_t k = 0; k < toBuild.size(); ++k) {
+      if (specs[toBuild[k]].key() != specs[i].key()) continue;
+      parts[i] = built[k];
+      failures[i] = builtFailures[k];
+    }
+  }
+  return parts;
+}
+
+bool placeThread(const ThreadPartsPtr &parts, const ThreadSpec &t, const gp_Ax3 &f, bool needSweep, PlacedThread &out,
+                 ThreadFailure &failure) {
+  gp_Trsf move;
+  if (!placement(f, move)) {  // not expected: build it in place
+    auto built = buildThreadParts(t, f, failure);
+    if (!built) return false;
+    out = {built->sweep, built->fill, built->fillNames, built->fillVolume};
+    return true;
   }
   if (needSweep) {
     BRepBuilderAPI_Transform tr(parts->sweep, move, true);
@@ -1147,6 +1314,174 @@ bool threadOn(const ThreadSpec &t, const gp_Ax3 &f, bool needSweep, PlacedThread
     out.fillVolume = parts->fillVolume;
   }
   return true;
+}
+
+/// One round face to thread: where it is and the thread's sizes.
+struct ThreadJob {
+  std::string feat, crest;  // the names of the new faces: "<feat>.thread" and the crest's
+  Cylinder c;
+  ThreadSpec spec;
+  gp_Ax3 frame;  // the axis, from the end the thread starts at
+  double R = 0, rMajor = 0, pitch = 0;
+
+  /// The radius of the ring-shaped tool that bores a hole out (or turns a shaft down) before the thread goes in.
+  double rBore() const { return std::max(R, rMajor) + pitch / 4; }
+  /// The radius that holds all the thread cuts, with a little to spare.
+  double reach() const { return std::max(R, rMajor) + pitch + 1e-3; }
+};
+
+/// Works out the thread to cut into one round face. False, with the error set, if the face is no round face or the
+/// thread does not suit it.
+bool planThread(const Body &b, const char *faceName, double majorDiameter, double pitch, double length, bool flipped,
+                bool leftHanded, const std::string &feat, ThreadJob &job) {
+  auto it = b.faceIndex.find(faceName);
+  if (it == b.faceIndex.end()) {
+    setError(std::string("face not found: ") + faceName);
+    return false;
+  }
+  Cylinder c;
+  if (!cylinderOf(b, TopoDS::Face(b.faces(it->second + 1)), flipped, c)) return false;
+  const double P = pitch, rMajor = majorDiameter / 2;
+  const double rMinor = rMajor - 0.541265877365 * P;  // basic profile: 5/8 of the 60° triangle deep
+  if (!(P > Precision::Confusion()) || !(rMinor > Precision::Confusion())) {
+    setError("the thread's diameter and pitch must be positive, and the pitch small enough for the diameter");
+    return false;
+  }
+  // The thread must suit the face: a bolt thread about as wide as the shaft, a nut thread about
+  // as wide as the hole (between its tap drill and its full size).
+  const double R = c.radius;
+  const bool fits = c.internal ? (R > rMinor * 0.8 && R < rMajor * 1.1) : (R > rMajor * 0.8 && R < rMajor * 1.25);
+  if (!fits) {
+    char msg[200];
+    std::snprintf(msg, sizeof msg, "a %.4g mm thread doesn't fit a %.4g mm %s; pick a size near it", majorDiameter, 2 * R,
+                  c.internal ? "hole" : "shaft");
+    setError(msg);
+    return false;
+  }
+  const bool full = length <= 0 || length >= c.length - 1e-6;
+  const double L = full ? c.length : length;
+  if (length > c.length + 1e-6) {
+    char msg[120];
+    std::snprintf(msg, sizeof msg, "the thread is longer than the round face (%.4g mm)", c.length);
+    setError(msg);
+    return false;
+  }
+  if (L < P) {
+    setError("the thread must be at least one pitch long");
+    return false;
+  }
+  job.feat = feat;
+  job.crest = feat + ".thread.crest";
+  job.c = c;
+  job.frame = gp_Ax3(c.start, c.dir, c.radial);
+  job.R = R;
+  job.rMajor = rMajor;
+  job.pitch = P;
+  job.spec.internal = c.internal;
+  job.spec.leftHanded = leftHanded;
+  job.spec.R = R;
+  job.spec.rMajor = rMajor;
+  job.spec.pitch = P;
+  job.spec.length = L;
+  // Past an open end the thread runs out into the air; at a shoulder or a hole's floor it stops flat.
+  job.spec.z0 = c.freeStart ? -P : 0;
+  job.spec.z1 = full && c.freeEnd ? L + P : L;
+  return true;
+}
+
+/// The shortest distance between the segments p1-q1 and p2-q2.
+double segmentDistance(const gp_Pnt &p1, const gp_Pnt &q1, const gp_Pnt &p2, const gp_Pnt &q2) {
+  const gp_Vec d1(p1, q1), d2(p2, q2), r(p2, p1);
+  const double a = d1.Dot(d1), e = d2.Dot(d2), f = d2.Dot(r);
+  double s = 0, t = 0;
+  if (a <= 1e-18 && e <= 1e-18) return p1.Distance(p2);
+  if (a <= 1e-18) {
+    t = std::clamp(f / e, 0.0, 1.0);
+  } else {
+    const double c = d1.Dot(r);
+    if (e <= 1e-18) {
+      s = std::clamp(-c / a, 0.0, 1.0);
+    } else {
+      const double b = d1.Dot(d2), denom = a * e - b * b;
+      s = denom > 1e-12 * a * e ? std::clamp((b * f - c * e) / denom, 0.0, 1.0) : 0.0;
+      t = (b * s + f) / e;
+      if (t < 0) { t = 0; s = std::clamp(-c / a, 0.0, 1.0); }
+      else if (t > 1) { t = 1; s = std::clamp((b - c) / a, 0.0, 1.0); }
+    }
+  }
+  return p1.Translated(d1 * s).Distance(p2.Translated(d2 * t));
+}
+
+/// Whether no thread's cuts reach those of another, so that they can all be made in one go as if one after the other.
+bool threadsApart(const std::vector<ThreadJob> &jobs) {
+  for (size_t i = 0; i < jobs.size(); ++i)
+    for (size_t j = i + 1; j < jobs.size(); ++j) {
+      auto axis = [](const ThreadJob &t, double z) { return t.c.start.Translated(gp_Vec(t.c.dir) * z); };
+      const double gap = segmentDistance(axis(jobs[i], jobs[i].spec.z0), axis(jobs[i], jobs[i].spec.z1),
+                                         axis(jobs[j], jobs[j].spec.z0), axis(jobs[j], jobs[j].spec.z1));
+      if (gap <= jobs[i].reach() + jobs[j].reach()) return false;
+    }
+  return true;
+}
+
+/// Cuts the threads into the body, all in the same few passes over it: what a thread costs is mostly going through
+/// the whole body (the more threads it has, the longer), and a pass with several rings takes little more than one with
+/// a single ring. The faces of one thread are told apart from the others' by the feature names in `jobs`.
+SKHandle threadsInto(const Body &b, std::vector<ThreadJob> &jobs) {
+  const double tol = 1e-4;
+  std::vector<ThreadSpec> specs;
+  for (const ThreadJob &j : jobs) specs.push_back(j.spec);
+  std::vector<ThreadFailure> failures;
+  const std::vector<ThreadPartsPtr> parts = threadPartsFor(specs, failures);
+  std::vector<PlacedThread> placed(jobs.size());
+  for (size_t i = 0; i < jobs.size(); ++i) {
+    ThreadFailure failure = failures[i];
+    // A hole's groove is only used inside its ring; a shaft's is cut from the shaft itself.
+    if (parts[i] && placeThread(parts[i], jobs[i].spec, jobs[i].frame, !jobs[i].c.internal, placed[i], failure)) continue;
+    setError(failure == ThreadFailure::Helix ? "could not build the thread's helix" : "could not cut the thread");
+    return 0;
+  }
+  TopoDS_Shape shape = b.shape;
+  std::vector<Named> names = namedFaces(b);
+  // Bore the holes out past the major diameter (their rings go back in below) and turn thicker shafts down to it.
+  std::vector<NamedTool> turn, grooves, fills;
+  for (size_t i = 0; i < jobs.size(); ++i) {
+    const ThreadJob &j = jobs[i];
+    if (j.c.internal) turn.push_back(namedTool(ring(j.frame, 0, j.rBore(), j.spec.z0, j.spec.z1), j.crest));
+    else if (j.R > j.rMajor + tol) turn.push_back(namedTool(ring(j.frame, j.rMajor, j.R + j.pitch, j.spec.z0, j.spec.z1), j.crest));
+    if (!j.c.internal) grooves.push_back(namedTool(placed[i].sweep, j.feat + ".thread"));
+    if (!placed[i].fill.IsNull()) {
+      // A thinner shaft is filled out below, a hole's ring is put back.
+      NamedTool fill{placed[i].fill, {}};
+      for (const Named &n : placed[i].fillNames) fill.faces.push_back({n.shape, n.name == "T" ? j.feat + ".thread" : j.crest});
+      fills.push_back(std::move(fill));
+    }
+  }
+  bool ok = true;
+  if (!turn.empty()) ok = namedBooleanMany(shape, names, turn, SK_CUT);
+  if (ok && !grooves.empty()) ok = namedBooleanMany(shape, names, grooves, SK_CUT);
+  if (ok && !fills.empty()) ok = namedBooleanMany(shape, names, fills, SK_FUSE);
+  if (!ok) {
+    setError("could not cut the thread");
+    return 0;
+  }
+  TopoDS_Shape result = unify(shape, names);
+  Body done = makeBody(result, names, jobs.front().feat + ".thread");
+  // OCCT's booleans can quietly give the body back unchanged: every thread has to have left its faces in the result.
+  for (const ThreadJob &j : jobs) {
+    const std::string own = j.feat + ".thread";
+    const bool found = std::any_of(done.faceNames.begin(), done.faceNames.end(),
+                                   [&](const std::string &n) { return n == own || n.rfind(own + "#", 0) == 0; });
+    if (!found) {
+      setError("could not cut the thread");
+      return 0;
+    }
+  }
+  if (!BRepCheck_Analyzer(done.shape, true, true).IsValid()) {
+    setError("the thread produced an invalid solid");
+    return 0;
+  }
+  return store(std::move(done));
 }
 
 }  // namespace
@@ -2265,109 +2600,32 @@ bool sk_body_face_cylinder(SKHandle body, const char *faceName, bool flipped, do
 
 SKHandle sk_thread(SKHandle body, const char *faceName, double majorDiameter, double pitch, double length, bool flipped,
                    bool leftHanded, const char *featureId) {
+  return sk_thread_many(body, 1, &faceName, &majorDiameter, &pitch, length, flipped, leftHanded, featureId);
+}
+
+SKHandle sk_thread_many(SKHandle body, int count, const char *const *faceNames, const double *majorDiameters,
+                        const double *pitches, double length, bool flipped, bool leftHanded, const char *featureId) {
   SK_TRY
   const std::string feat = featureOrDefault(featureId, "thread");
   Body *b;
   auto keep = lookup(body, b);
   if (!b) return 0;
-  auto it = b->faceIndex.find(faceName);
-  if (it == b->faceIndex.end()) {
-    setError(std::string("face not found: ") + faceName);
+  if (count < 1) {
+    setError("no round face to thread");
     return 0;
   }
-  Cylinder c;
-  if (!cylinderOf(*b, TopoDS::Face(b->faces(it->second + 1)), flipped, c)) return 0;
-  const double P = pitch, rMajor = majorDiameter / 2;
-  const double rMinor = rMajor - 0.541265877365 * P;  // basic profile: 5/8 of the 60° triangle deep
-  if (!(P > Precision::Confusion()) || !(rMinor > Precision::Confusion())) {
-    setError("the thread's diameter and pitch must be positive, and the pitch small enough for the diameter");
-    return 0;
-  }
-  // The thread must suit the face: a bolt thread about as wide as the shaft, a nut thread about
-  // as wide as the hole (between its tap drill and its full size).
-  const double R = c.radius;
-  const bool fits = c.internal ? (R > rMinor * 0.8 && R < rMajor * 1.1) : (R > rMajor * 0.8 && R < rMajor * 1.25);
-  if (!fits) {
-    char msg[200];
-    std::snprintf(msg, sizeof msg, "a %.4g mm thread doesn't fit a %.4g mm %s; pick a size near it", majorDiameter, 2 * R,
-                  c.internal ? "hole" : "shaft");
-    setError(msg);
-    return 0;
-  }
-  const bool full = length <= 0 || length >= c.length - 1e-6;
-  const double L = full ? c.length : length;
-  if (length > c.length + 1e-6) {
-    char msg[120];
-    std::snprintf(msg, sizeof msg, "the thread is longer than the round face (%.4g mm)", c.length);
-    setError(msg);
-    return 0;
-  }
-  if (L < P) {
-    setError("the thread must be at least one pitch long");
-    return 0;
-  }
-  const gp_Ax3 f(c.start, c.dir, c.radial);
-  // Past an open end the thread runs out into the air; at a shoulder or a hole's floor it stops flat.
-  const double z0 = c.freeStart ? -P : 0, z1 = full && c.freeEnd ? L + P : L;
-  const double tol = 1e-4;
-  TopoDS_Shape shape = b->shape;
-  std::vector<Named> names = namedFaces(*b);
-  const std::string crest = feat + ".thread.crest";
-  bool ok = true;
-  ThreadSpec spec;
-  spec.internal = c.internal;
-  spec.leftHanded = leftHanded;
-  spec.R = R;
-  spec.rMajor = rMajor;
-  spec.pitch = P;
-  spec.length = L;
-  spec.z0 = z0;
-  spec.z1 = z1;
-  PlacedThread placed;
-  ThreadFailure failure = ThreadFailure::None;
-  // A hole's groove is only used inside its ring; a shaft's is cut from the shaft itself.
-  if (!threadOn(spec, f, !c.internal, placed, failure)) {
-    setError(failure == ThreadFailure::Helix ? "could not build the thread's helix" : "could not cut the thread");
-    return 0;
-  }
-  auto volume = [](const TopoDS_Shape &sh) {
-    GProp_GProps g;
-    BRepGProp::VolumeProperties(sh, g);
-    return g.Mass();
-  };
-  TopoDS_Shape &fill = placed.fill;
-  if (c.internal) {
-    // Bore the hole out past the major diameter; the ring then goes back in (below).
-    const double rBore = std::max(R, rMajor) + P / 4;
-    ok = namedBoolean(shape, names, ring(f, 0, rBore, z0, z1), crest, SK_CUT);
-  } else {
-    // Turn a thicker shaft down to the major diameter and cut the groove; a thinner one is filled out below.
-    if (R > rMajor + tol) ok = namedBoolean(shape, names, ring(f, rMajor, R + P, z0, z1), crest, SK_CUT);
-    const double before = volume(shape);
-    ok = ok && namedBoolean(shape, names, placed.sweep, feat + ".thread", SK_CUT) && volume(shape) < before - 1e-9;
-  }
-  if (!ok) {
-    setError("could not cut the thread");
-    return 0;
-  }
-  if (!fill.IsNull()) {
-    std::vector<Named> fillNames;
-    for (const Named &n : placed.fillNames) fillNames.push_back({n.shape, n.name == "T" ? feat + ".thread" : crest});
-    std::vector<Named> merged;
-    BRepAlgoAPI_Fuse fuse(shape, fill);
-    fuse.SetRunParallel(true);
-    fuse.Build();
-    if (!fuse.IsDone() || fuse.HasErrors() || volume(fuse.Shape()) < volume(shape) + 1e-9) {
-      setError("could not cut the thread");
+  std::vector<ThreadJob> jobs(count);
+  for (int i = 0; i < count; ++i) {
+    // The first face names its new faces after the feature, the rest "<id>.2", "<id>.3"...
+    if (!planThread(*b, faceNames[i], majorDiameters[i], pitches[i], length, flipped, leftHanded,
+                    i == 0 ? feat : feat + "." + std::to_string(i + 1), jobs[i]))
       return 0;
-    }
-    carry(fuse, names, merged);
-    carry(fuse, fillNames, merged);
-    shape = fuse.Shape();
-    names = std::move(merged);
   }
-  TopoDS_Shape result = unify(shape, names);
-  return storeChecked(result, names, feat + ".thread", "the thread produced an invalid solid");
+  if (!threadsApart(jobs)) {
+    setError("the threads are too close together to be cut in one go");
+    return 0;
+  }
+  return threadsInto(*b, jobs);
   SK_CATCH(0)
 }
 
@@ -3385,14 +3643,7 @@ bool sk_body_chamfer_handle(SKHandle body, const char *edgeName, const char *fac
 /// extrusion of a spline of several spans (what a run of merged curves gives), so those solids are measured from
 /// a fine mesh of a copy instead; every other solid gets the exact form.
 static void accurateVolume(const TopoDS_Shape &shape, GProp_GProps &props) {
-  bool spline = false;
-  for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More() && !spline; ex.Next()) {
-    Handle(Geom_SurfaceOfLinearExtrusion) e =
-        Handle(Geom_SurfaceOfLinearExtrusion)::DownCast(BRep_Tool::Surface(TopoDS::Face(ex.Current())));
-    Handle(Geom_BSplineCurve) b = e.IsNull() ? nullptr : Handle(Geom_BSplineCurve)::DownCast(e->BasisCurve());
-    spline = !b.IsNull() && b->NbKnots() > 2;
-  }
-  if (spline) {
+  if (hasSplineExtrusion(shape)) {
     BRepBuilderAPI_Copy copy(shape, true, false);  // meshed on a copy: the body itself may be meshed by another thread
     BRepMesh_IncrementalMesh(copy.Shape(), 0.002, false, 0.1, false);
     BRepGProp::VolumeProperties(copy.Shape(), props, false, false, true);
@@ -3408,6 +3659,20 @@ double sk_body_volume(SKHandle body) {
   accurateVolume(b->shape, props);
   return props.Mass();
   SK_CATCH(0)
+}
+
+bool sk_body_is_empty(SKHandle body) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b || b->faces.Extent() == 0) return true;
+  // Whatever a cut or common leaves of any size has many faces; only a speck can be thinner than the volume's 1e-9,
+  // and a body with a thread has no end of faces to integrate over.
+  if (b->faces.Extent() > 64) return false;
+  GProp_GProps props;
+  accurateVolume(b->shape, props);
+  return props.Mass() <= 1e-9;
+  SK_CATCH(true)
 }
 
 bool sk_body_bounds(SKHandle body, double out[6]) {
@@ -3598,7 +3863,7 @@ bool sk_body_is_valid(SKHandle body) {
   SK_TRY
   Body *b;
   auto keep = lookup(body, b);
-  return b && BRepCheck_Analyzer(b->shape).IsValid();
+  return b && BRepCheck_Analyzer(b->shape, true, true).IsValid();
   SK_CATCH(false)
 }
 

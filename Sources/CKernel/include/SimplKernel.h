@@ -117,6 +117,12 @@ bool sk_body_face_cylinder(SKHandle body, const char *faceName, bool flipped, do
 /// sk_body_face_cylinder names. New faces: "<featureId>.thread", "<featureId>.thread.crest".
 SKHandle sk_thread(SKHandle body, const char *faceName, double majorDiameter, double pitch, double length, bool flipped,
                    bool leftHanded, const char *featureId);
+/// The same for several round faces of one body at once, each with its own diameter and pitch: one pass over the body
+/// instead of one per face, which is much faster on a body that already has threads. The first face's new faces are named
+/// after the feature, the next ones "<featureId>.2", "<featureId>.3"... Fails (leaving it to the caller to thread the faces
+/// one at a time) if the threads would reach each other or any of them can't be made.
+SKHandle sk_thread_many(SKHandle body, int count, const char *const *faceNames, const double *majorDiameters,
+                        const double *pitches, double length, bool flipped, bool leftHanded, const char *featureId);
 
 /// A copy of a body moved by (dx, dy, dz), or turned by `angle` radians about the axis through
 /// (ox, oy, oz) along (ax, ay, az). Face and edge names are kept.
@@ -251,6 +257,9 @@ bool sk_measure_element(SKHandle body, bool isFace, const char *name, SKMeasure 
 bool sk_measure_distance(SKHandle bodyA, bool isFaceA, const char *nameA, SKHandle bodyB, bool isFaceB, const char *nameB,
                          double out[7]);
 double sk_body_volume(SKHandle body);
+/// Whether nothing is left of a body: no faces, or a volume of at most 1e-9 mm³ (the volume is only measured for a
+/// body with up to 64 faces, as one with more is not a speck; measuring one with threads takes long).
+bool sk_body_is_empty(SKHandle body);
 bool sk_body_bounds(SKHandle body, double out[6]);  // xmin ymin zmin xmax ymax zmax
 bool sk_body_is_valid(SKHandle body);
 
