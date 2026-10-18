@@ -355,7 +355,7 @@ public enum Axis3: String, Codable, Hashable, Sendable, CaseIterable {
 }
 
 /// Moves and turns bodies and sketches: first turned by (rx, ry, rz) about axes parallel to X, Y and Z
-/// through the middle of what moves, in that order, then moved by (dx, dy, dz). A moved sketch is moved
+/// through the pivot (the middle of what moves, unless a pivot point is set), in that order, then moved by (dx, dy, dz). A moved sketch is moved
 /// for the features after this one. `arrow` and `rotating` say which value the drag handle's typed
 /// field sets: the distance along `arrow`, or, when `rotating`, the turn about it.
 public struct MoveFeature: Codable, Hashable, Sendable {
@@ -369,14 +369,26 @@ public struct MoveFeature: Codable, Hashable, Sendable {
     public var rz: String
     public var arrow: Axis3
     public var rotating: Bool
+    /// The point (in world coordinates, before the move) the turns are about. All three or none: none means
+    /// the middle of what moves.
+    public var pivotX: String?
+    public var pivotY: String?
+    public var pivotZ: String?
     public init(bodies: [FeatureID], sketches: [FeatureID] = [], dx: String = "0 mm", dy: String = "0 mm",
                 dz: String = "0 mm", rx: String = "0 deg", ry: String = "0 deg", rz: String = "0 deg",
-                arrow: Axis3 = .x, rotating: Bool = false) {
+                arrow: Axis3 = .x, rotating: Bool = false, pivot: [String]? = nil) {
         self.bodies = bodies; self.sketches = sketches; self.dx = dx; self.dy = dy; self.dz = dz
         self.rx = rx; self.ry = ry; self.rz = rz; self.arrow = arrow; self.rotating = rotating
+        self.pivot = pivot
     }
 
-    private enum CodingKeys: String, CodingKey { case bodies, sketches, dx, dy, dz, rx, ry, rz, arrow, rotating }
+    /// The pivot point as three expressions, or nil for the middle of what moves.
+    public var pivot: [String]? {
+        get { if let x = pivotX, let y = pivotY, let z = pivotZ { return [x, y, z] } else { return nil } }
+        set { pivotX = newValue?[0]; pivotY = newValue?[1]; pivotZ = newValue?[2] }
+    }
+
+    private enum CodingKeys: String, CodingKey { case bodies, sketches, dx, dy, dz, rx, ry, rz, arrow, rotating, pivotX, pivotY, pivotZ }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -390,6 +402,9 @@ public struct MoveFeature: Codable, Hashable, Sendable {
         rz = try c.decodeIfPresent(String.self, forKey: .rz) ?? "0 deg"
         arrow = try c.decode(Axis3.self, forKey: .arrow)
         rotating = try c.decodeIfPresent(Bool.self, forKey: .rotating) ?? false
+        pivotX = try c.decodeIfPresent(String.self, forKey: .pivotX)  // older files turn about the middle
+        pivotY = try c.decodeIfPresent(String.self, forKey: .pivotY)
+        pivotZ = try c.decodeIfPresent(String.self, forKey: .pivotZ)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -403,6 +418,7 @@ public struct MoveFeature: Codable, Hashable, Sendable {
         if [rx, ry, rz] != ["0 deg", "0 deg", "0 deg"] { try c.encode(rx, forKey: .rx); try c.encode(ry, forKey: .ry); try c.encode(rz, forKey: .rz) }
         try c.encode(arrow, forKey: .arrow)
         if rotating { try c.encode(rotating, forKey: .rotating) }
+        if let pivot { try c.encode(pivot[0], forKey: .pivotX); try c.encode(pivot[1], forKey: .pivotY); try c.encode(pivot[2], forKey: .pivotZ) }
     }
 
     /// The distance along an axis, or the turn about it, as stored.

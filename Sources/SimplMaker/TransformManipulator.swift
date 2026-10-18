@@ -62,13 +62,35 @@ extension DocumentModel {
         return manipulatedFeature.map { transformValues($0.move) }
     }
 
-    /// Where the manipulator sits: the middle of what the feature moves, as it was before, carried along
-    /// by the move. Turns are about that middle before the move.
-    func manipulatorMiddle(_ id: FeatureID, _ m: MoveFeature) -> SIMD3<Double>? {
+    /// The middle of what the feature moves, as it was before it.
+    func moveInputMiddle(_ id: FeatureID) -> SIMD3<Double>? {
+        moveInputBounds(id).map { ($0.min + $0.max) / 2 }
+    }
+
+    /// The box around what the feature moves, as it was before it.
+    func moveInputBounds(_ id: FeatureID) -> (min: SIMD3<Double>, max: SIMD3<Double>)? {
         guard let result else { return nil }
-        let bodies = Array((result.featureInputs[id] ?? [:]).values), sketches = Array((result.sketchInputs[id] ?? [:]).values)
-        guard let c = Regenerator.center(of: bodies, sketches: sketches) else { return nil }
+        let boxes = (result.featureInputs[id] ?? [:]).values.compactMap(\.bounds) + (result.sketchInputs[id] ?? [:]).values.compactMap(\.bounds)
+        guard let first = boxes.first else { return nil }
+        return (boxes.dropFirst().reduce(first.min) { simd_min($0, $1.min) }, boxes.dropFirst().reduce(first.max) { simd_max($0, $1.max) })
+    }
+
+    /// Where the manipulator sits: the pivot (the pivot point if one is set, else the middle of what the
+    /// feature moves, as it was before), carried along by the move. Turns are about the pivot before the move.
+    func manipulatorMiddle(_ id: FeatureID, _ m: MoveFeature) -> SIMD3<Double>? {
+        let middle = moveInputMiddle(id)
+        guard m.pivot != nil || middle != nil, let c = try? Regenerator.pivot(of: m, parameters: parameterValues, middle: middle) else { return nil }
         return c + (manipulatorLive ?? transformValues(m)).move
+    }
+
+    /// Sets where a move turns (nil: the middle of what moves) as one undo step.
+    func setMovePivot(_ id: FeatureID, _ point: SIMD3<Double>?) {
+        mutate(point == nil ? "Pivot at Middle" : "Set Pivot") { doc in
+            guard let i = doc.index(of: id), case .move(var m) = doc.features[i].kind else { return }
+            m.pivot = point.map { p in [p.x, p.y, p.z].map { formatDimension($0, kind: .length) } }
+            doc.features[i].kind = .move(m)
+        }
+        overlayRevision += 1
     }
 
     var manipulatorMiddle: SIMD3<Double>? { manipulatedFeature.flatMap { manipulatorMiddle($0.id, $0.move) } }

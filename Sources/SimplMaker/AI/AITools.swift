@@ -832,12 +832,13 @@ enum AITools {
                 name: "create_move", title: "Move and turn bodies",
                 description: """
                 Moves and/or turns bodies (and sketches) as a feature in the timeline, like the Move tool. The turns happen first, about the \
-                middle of what moves (rx about X, then ry about Y, then rz about Z), then the move by dx, dy, dz. Use it to place parts \
+                middle of what moves, or about the point px, py, pz when you give one (rx about X, then ry about Y, then rz about Z), then the move by dx, dy, dz. Use it to place parts \
                 next to each other, stand a body on its side, or lay out a print plate. To change where something is later, change this \
                 feature's values with modify_feature rather than adding another.
 
                 Arguments: document_id; bodies and/or sketches (ids; at least one); dx, dy, dz (mm, default 0); rx, ry, rz (degrees, \
-                default 0); at least one value must be non-zero; name, id, expected_revision.
+                default 0); px, py, pz (mm, the world point the turns are about; give all three or none; default the middle of what moves); \
+                at least one value must be non-zero; name, id, expected_revision.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
                 FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
@@ -850,6 +851,8 @@ enum AITools {
                     "rx": ["type": ["number", "string"], "description": "Turn about X, degrees."],
                     "ry": ["type": ["number", "string"], "description": "Turn about Y, degrees."],
                     "rz": ["type": ["number", "string"], "description": "Turn about Z, degrees."],
+                    "px": quantity("Pivot point X: the turns are about this world point (give px, py and pz together)."),
+                    "py": quantity("Pivot point Y."), "pz": quantity("Pivot point Z."),
                     "name": ["type": "string", "description": "A name for the feature (default Move1…)."],
                     "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
                     "expected_revision": expectedRevision,

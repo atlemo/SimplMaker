@@ -1050,13 +1050,44 @@ struct MoveInspector: View {
             edit.row("Rotate X", move.rx, "Rotate X") { $0.rx = $1 }
             edit.row("Rotate Y", move.ry, "Rotate Y") { $0.ry = $1 }
             edit.row("Rotate Z", move.rz, "Rotate Z") { $0.rz = $1 }
-            Text("Turns about the middle of what moves, X then Y then Z, before the move. Drag the arrows, squares and rings in the viewport, or type here.")
+            Text("Turns about the pivot, X then Y then Z, before the move. Drag the arrows, squares and rings in the viewport, or type here.")
                 .font(.caption).foregroundStyle(.secondary)
+            pivotRows
             if !move.bodies.isEmpty { BodiesRow(model: model, ids: move.bodies) }
             if !move.sketches.isEmpty {
                 let names = move.sketches.map { id in model.document.features.first { $0.id == id }?.name ?? "missing" }
                 LabeledContent(names.count == 1 ? "Sketch" : "Sketches", value: names.joined(separator: ", "))
             }
+        }
+    }
+}
+
+extension MoveInspector {
+    /// The pivot the turns are about: the middle of what moves, or a point of the user's choosing.
+    @ViewBuilder var pivotRows: some View {
+        LabeledContent("Pivot") {
+            Menu(move.pivot == nil ? "Middle" : "Point") {
+                Button("Middle of What Moves") { model.setMovePivot(id, nil) }
+                Button("Origin") { model.setMovePivot(id, .zero) }
+                if let b = model.moveInputBounds(id) {
+                    Divider()
+                    let mid = (b.min + b.max) / 2
+                    Button("Bottom Centre") { model.setMovePivot(id, SIMD3(mid.x, mid.y, b.min.z)) }
+                    Button("Top Centre") { model.setMovePivot(id, SIMD3(mid.x, mid.y, b.max.z)) }
+                    Button("Left Side Centre") { model.setMovePivot(id, SIMD3(b.min.x, mid.y, mid.z)) }
+                    Button("Right Side Centre") { model.setMovePivot(id, SIMD3(b.max.x, mid.y, mid.z)) }
+                    Button("Front Side Centre") { model.setMovePivot(id, SIMD3(mid.x, b.min.y, mid.z)) }
+                    Button("Back Side Centre") { model.setMovePivot(id, SIMD3(mid.x, b.max.y, mid.z)) }
+                    Button("Lowest Corner") { model.setMovePivot(id, b.min) }
+                    Button("Highest Corner") { model.setMovePivot(id, b.max) }
+                }
+            }
+            .menuStyle(.borderlessButton).fixedSize()
+        }
+        if let pivot = move.pivot {
+            edit.row("Pivot X", pivot[0], "Pivot X") { $0.pivotX = $1 }
+            edit.row("Pivot Y", pivot[1], "Pivot Y") { $0.pivotY = $1 }
+            edit.row("Pivot Z", pivot[2], "Pivot Z") { $0.pivotZ = $1 }
         }
     }
 }

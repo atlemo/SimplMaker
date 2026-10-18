@@ -1157,13 +1157,13 @@ public enum Regenerator {
         let p = r.parameters
         let d = SIMD3(try p.value(of: f.dx, kind: .length), try p.value(of: f.dy, kind: .length), try p.value(of: f.dz, kind: .length))
         let turn = SIMD3(try p.value(of: f.rx, kind: .angle), try p.value(of: f.ry, kind: .angle), try p.value(of: f.rz, kind: .angle))
-        // Turns are about the middle of what moves, as it was before this feature.
+        // Turns are about the pivot point if one is set, else the middle of what moves, as it was before this feature.
         let inputSketches = try f.sketches.map { id -> SketchResult in
             guard let sk = r.sketches[id] else { throw KernelError(message: "a sketch it moves failed or is missing") }
             return sk
         }
         let inputBodies = f.bodies.compactMap { id in r.bodies.first { $0.id == id }?.body }
-        let pivot = center(of: inputBodies, sketches: inputSketches) ?? .zero
+        let pivot = try pivot(of: f, parameters: p, middle: center(of: inputBodies, sketches: inputSketches))
         let matrix = rotationMatrix(turn)
         for (id, sk) in zip(f.sketches, inputSketches) {
             r.sketchInputs[feature.id, default: [:]][id] = sk
@@ -1181,6 +1181,12 @@ public enum Regenerator {
             }
             r.bodies[i].body = abs(d.x) + abs(d.y) + abs(d.z) > 0 ? try body.translated(d) : body
         }
+    }
+
+    /// Where a move turns: its pivot point, or the middle of what it moves.
+    public static func pivot(of f: MoveFeature, parameters p: ParameterValues, middle: SIMD3<Double>?) throws -> SIMD3<Double> {
+        guard let e = f.pivot else { return middle ?? .zero }
+        return SIMD3(try p.value(of: e[0], kind: .length), try p.value(of: e[1], kind: .length), try p.value(of: e[2], kind: .length))
     }
 
     /// Turning about X, then Y, then Z (all fixed world axes), as one matrix.

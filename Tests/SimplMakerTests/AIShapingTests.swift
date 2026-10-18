@@ -85,6 +85,20 @@ import Testing
         #expect(abs((b.max.x - b.min.x) - 10) < 0.1 && abs((b.max.z - b.min.z) - 40) < 0.1, "\(b)")
     }
 
+    @Test func aTurnCanBeAboutAPivotPoint() async throws {
+        let t = await open()
+        try await box(t, id: "base", 40, 20, 10)
+        let before = try #require(bounds(t, "base"))
+        let pivot = SIMD3(before.max.x, before.max.y, before.min.z)  // a corner of the box
+        _ = try await run(t, "create_move", ["bodies": ["base"], "rz": 90, "px": .double(pivot.x), "py": .double(pivot.y), "pz": .double(pivot.z)])
+        let b = try #require(bounds(t, "base"))
+        // The box was 40 by 20 and lay at x -40…0, y -20…0 from that corner; a quarter turn puts it at x 0…20, y -40…0.
+        #expect(abs(b.min.x - pivot.x) < 0.1 && abs(b.max.x - (pivot.x + 20)) < 0.1, "\(b)")
+        #expect(abs(b.max.y - pivot.y) < 0.1 && abs(b.min.y - (pivot.y - 40)) < 0.1, "\(b)")
+        let partial = await refusal { _ = try await run(t, "create_move", ["bodies": ["base"], "rz": 90, "px": 5]) }
+        #expect(partial?.code == .invalidArguments)
+    }
+
     @Test func aScaleMultipliesTheVolumeByTheCube() async throws {
         let t = await open()
         try await box(t)

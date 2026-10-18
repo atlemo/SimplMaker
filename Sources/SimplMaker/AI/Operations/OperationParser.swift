@@ -248,8 +248,12 @@ enum AIOperationParser {
                                         name: try a.string("name"), id: try a.string("id"))
 
         case "create_move":
-            try a.rejectUnknown(["document_id", "bodies", "sketches", "dx", "dy", "dz", "rx", "ry", "rz", "name", "id", "expected_revision"], in: tool)
-            return CreateMoveOperation(bodies: try ids(a, "bodies"), sketches: try ids(a, "sketches"),
+            try a.rejectUnknown(["document_id", "bodies", "sketches", "dx", "dy", "dz", "rx", "ry", "rz", "px", "py", "pz", "name", "id", "expected_revision"], in: tool)
+            let pivot = [try a.quantity("px", kind: .length), try a.quantity("py", kind: .length), try a.quantity("pz", kind: .length)]
+            guard pivot.allSatisfy({ $0 != nil }) || pivot.allSatisfy({ $0 == nil }) else {
+                throw AIError(.invalidArguments, "px, py and pz go together: a pivot point needs all three.", reason: "Send all three, or none to turn about the middle.")
+            }
+            return CreateMoveOperation(pivot: pivot.contains { $0 != nil } ? pivot.compactMap { $0 } : nil, bodies: try ids(a, "bodies"), sketches: try ids(a, "sketches"),
                                        dx: try a.quantity("dx", kind: .length) ?? "0 mm", dy: try a.quantity("dy", kind: .length) ?? "0 mm", dz: try a.quantity("dz", kind: .length) ?? "0 mm",
                                        rx: try a.quantity("rx", kind: .angle) ?? "0 deg", ry: try a.quantity("ry", kind: .angle) ?? "0 deg", rz: try a.quantity("rz", kind: .angle) ?? "0 deg",
                                        name: try a.string("name"), id: try a.string("id"))

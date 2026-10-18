@@ -50,6 +50,39 @@ import simd
         #expect(simd_length(frame.point(5, 2) - SIMD3(5, 2, 0)) < 1e-9, "the middle stays where it was: \(frame.point(5, 2))")
     }
 
+    @Test func aPivotPointMovesTheCentreOfTheTurn() throws {
+        // The box spans y -5…5 and z 0…5. Turned 90° about X through the origin, z 0…5 becomes y -5…0.
+        let r = Regenerator.regenerate(boxDoc(MoveFeature(bodies: ["b"], rx: "90 deg", pivot: ["0", "0", "0"])))
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let box = try #require(r.body("b")?.bounds)
+        #expect(abs(box.min.y + 5) < 1e-6 && abs(box.max.y) < 1e-6 && abs(box.min.z + 5) < 1e-6 && abs(box.max.z - 5) < 1e-6, "\(box)")
+    }
+
+    @Test func aPivotPointFollowsParametersAndTurnsSketchesToo() throws {
+        var s = Sketch()
+        s.addRectangle(0, 0, 10, 4)
+        var d = CADDocument()
+        d.parameters = [Parameter("px", "10 mm", unit: .length)]
+        d.features = [
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s))),
+            Feature(id: "m", name: "Move1", .move(MoveFeature(bodies: [], sketches: ["sk"], rz: "90 deg", pivot: ["px", "0 mm", "0 mm"]))),
+        ]
+        let r = Regenerator.regenerate(d)
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let frame = try #require(r.sketches["sk"]?.frame)
+        // The sketch's origin (0, 0) turns a quarter about (10, 0): (-10, 0) from the pivot becomes (0, -10).
+        #expect(simd_length(frame.point(0, 0) - SIMD3(10, -10, 0)) < 1e-9, "\(frame.point(0, 0))")
+    }
+
+    @Test func aPivotPointSurvivesSavingAndOldFilesHaveNone() throws {
+        let m = MoveFeature(bodies: ["b"], rz: "30 deg", pivot: ["1 mm", "2 mm", "3 mm"])
+        let back = try JSONDecoder().decode(MoveFeature.self, from: JSONEncoder().encode(m))
+        #expect(back == m && back.pivot == ["1 mm", "2 mm", "3 mm"])
+        let plain = try JSONEncoder().encode(MoveFeature(bodies: ["b"], dx: "5 mm"))
+        #expect(!String(decoding: plain, as: UTF8.self).contains("pivot"))
+        #expect(try JSONDecoder().decode(MoveFeature.self, from: plain).pivot == nil)
+    }
+
     @Test func parametersDriveTheTurn() throws {
         var d = boxDoc(MoveFeature(bodies: ["b"], rz: "turn"))
         d.parameters = [Parameter("turn", "90 deg", unit: .angle)]

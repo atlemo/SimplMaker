@@ -26,14 +26,19 @@ The part you grabbed last is lit, and its value is in the field beside it. Type 
 
 ![The move inspector.](shot:inspector-move)
 
-It is one **Move** feature with six values:
+It is one **Move** feature with six values and a pivot:
 
 | Field | What it does |
 |---|---|
 | **X**, **Y**, **Z** | How far to move |
 | **Rotate X**, **Rotate Y**, **Rotate Z** | How far to turn |
+| **Pivot** | The point the turns are about |
 
-The turns happen about the middle of what moves, X then Y then Z, before the move. A value that comes from a parameter asks before a drag replaces it with a number.
+The turns happen about the pivot, X then Y then Z, before the move. A value that comes from a parameter asks before a drag replaces it with a number.
+
+### Pivot
+
+By default the pivot is the middle of what moves. To turn about another point, open the **Pivot** menu and choose **Origin**, or a centre or corner of what moves, such as **Bottom Centre** or **Lowest Corner**. **Pivot X**, **Pivot Y** and **Pivot Z** appear below it. Type any position there, or a parameter. The manipulator moves to the pivot, so you see where the rings turn. Choose **Middle of What Moves** to go back to the default.
 
 You can also right-click a body or a sketch in the browser and choose **Move or Rotate Body** or **Move or Rotate Sketch**.
 

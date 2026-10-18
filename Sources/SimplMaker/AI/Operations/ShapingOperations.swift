@@ -219,6 +219,7 @@ struct CreatePlaneOperation: AIOperation {
 // MARK: move and scale
 
 struct CreateMoveOperation: AIOperation {
+    var pivot: [String]? = nil
     let bodies: [String]
     let sketches: [String]
     let dx: String, dy: String, dz: String
@@ -240,6 +241,7 @@ struct CreateMoveOperation: AIOperation {
                 throw AIError(.featureNotFound, "sketches: \"\(s)\" is not a sketch.", reason: "Take sketch ids from get_document.")
             }
         }
+        for (field, text) in zip(["px", "py", "pz"], pivot ?? []) { _ = try AIValues.evaluate(text, kind: .length, field: field, positive: false, values: context.values) }
         var total = 0.0
         for (field, text) in [("dx", dx), ("dy", dy), ("dz", dz)] { total += abs(try AIValues.evaluate(text, kind: .length, field: field, positive: false, values: context.values)) }
         for (field, text) in [("rx", rx), ("ry", ry), ("rz", rz)] { total += abs(try AIValues.evaluate(text, kind: .angle, field: field, positive: false, values: context.values)) }
@@ -248,7 +250,7 @@ struct CreateMoveOperation: AIOperation {
         }
         let featureID = try AIValues.newFeatureID(id, in: doc)
         let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("Move")
-        doc.addFeature(Feature(id: featureID, name: featureName, .move(MoveFeature(bodies: bodies, sketches: sketches, dx: dx, dy: dy, dz: dz, rx: rx, ry: ry, rz: rz))))
+        doc.addFeature(Feature(id: featureID, name: featureName, .move(MoveFeature(bodies: bodies, sketches: sketches, dx: dx, dy: dy, dz: dz, rx: rx, ry: ry, rz: rz, pivot: pivot))))
         return OperationOutcome(featureID: featureID,
                                 message: "Created \(featureName): moved \((bodies + sketches).joined(separator: ", ")) by (\(dx), \(dy), \(dz)) after turning by (\(rx), \(ry), \(rz)).")
     }
