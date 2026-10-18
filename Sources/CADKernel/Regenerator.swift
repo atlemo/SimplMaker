@@ -18,6 +18,43 @@ public struct SketchResult: Sendable {
 }
 
 extension SketchResult {
+    /// The text a region is made of: every curve round it (and in it) is a contour of that one text, whose tags are
+    /// "<text id>#<contour>" (see Regenerator.sketchResult). Nil for a region that has other curves too.
+    public func text(ofRegion index: Int) -> SketchText? {
+        guard regions.indices.contains(index) else { return nil }
+        var owner: Substring?
+        for tag in regions[index].tags.split(separator: ",") {
+            guard let hash = tag.firstIndex(of: "#") else { return nil }
+            let id = tag[..<hash]
+            if let owner, owner != id { return nil }
+            owner = id
+        }
+        guard let owner else { return nil }
+        return solved.texts.first { $0.id == owner }
+    }
+
+    /// The regions of a text that are its letters, as indexes into `regions`: the ink, without the counters (the
+    /// inside of an O or a B is a region of its own, which a letter must not fill). A region is ink when an odd
+    /// number of the text's contours enclose it.
+    public func letterRegions(of text: SketchText, parameters: ParameterValues) -> [Int] {
+        let contours = text.contours(in: solved, parameters: parameters).map { contour in
+            contour.flatMap { TextOutline.flatten($0) }
+        }
+        func enclosing(_ p: SIMD2<Double>) -> Int {
+            contours.filter { polygon in
+                var inside = false
+                var j = polygon.count - 1
+                for i in polygon.indices {
+                    let a = polygon[i], b = polygon[j]
+                    if (a.y > p.y) != (b.y > p.y), p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x { inside.toggle() }
+                    j = i
+                }
+                return inside
+            }.count
+        }
+        return regions.indices.filter { text.id == self.text(ofRegion: $0)?.id && enclosing(regions[$0].sample) % 2 == 1 }
+    }
+
     /// World-space box around the sketch's profiles (or its points, when it has none).
     public var bounds: (min: SIMD3<Double>, max: SIMD3<Double>)? {
         var points: [SIMD3<Double>] = regionMeshes.flatMap { m in

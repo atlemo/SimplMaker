@@ -192,6 +192,74 @@ import Testing
         #expect(s.pendingText == nil)
     }
 
+    @Test func aNewTextShowsAsItIsTypedAtItsRealSizeAndPlace() {
+        let s = session()
+        s.setTool(.text)
+        _ = click(s, 5, 5)
+        #expect(s.textPreview().isEmpty, "nothing typed yet")
+        s.setTextDraft("H")
+        let one = s.textPreview().flatMap { $0 }
+        #expect(!one.isEmpty)
+        // A 10 mm capital H starting at (5, 5): as tall as the text will be, standing on the baseline.
+        let ys = one.map(\.y), xs = one.map(\.x)
+        #expect(abs((ys.max()! - ys.min()!) - 10) < 1e-6 && abs(ys.min()! - 5) < 1e-6)
+        #expect(xs.min()! >= 5 - 1e-6)
+        s.setTextDraft("Hi")
+        #expect(s.textPreview().flatMap { $0 }.map(\.x).max()! > xs.max()!, "the next letter makes it longer")
+        _ = s.placeText("Hi")
+        #expect(s.textPreview().isEmpty, "placed: the sketch's own text draws it now")
+        #expect(s.textDraft.isEmpty)
+        #expect(s.sketch.texts.count == 1 && s.sketch.texts[0].height == "10 mm")
+    }
+
+    @Test func theLettersBeingTypedAreDrawnInTheSketchButCannotBePicked() {
+        let s = session()
+        s.setTool(.text)
+        _ = click(s, 5, 5)
+        var before = SketchOverlay()
+        SketchOverlayBuilder.editing(s, into: &before)
+        s.setTextDraft("HI")
+        var typed = SketchOverlay()
+        SketchOverlayBuilder.editing(s, into: &typed)
+        let added = typed.curves.count - before.curves.count
+        #expect(added > 8, "the outline of H and I is in the overlay: \(added) segments")
+        #expect(typed.curves.suffix(added).allSatisfy { $0.id == 0 }, "not there to pick (or drag) until Return")
+        let ys = typed.curves.suffix(added).flatMap { [$0.ay, $0.by] }
+        #expect(abs(Double(ys.max()! - ys.min()!) - 10) < 1e-3, "10 mm tall, the size the text will be")
+        _ = s.placeText("HI")
+        var placed = SketchOverlay()
+        SketchOverlayBuilder.editing(s, into: &placed)
+        #expect(placed.curves.count == typed.curves.count, "after Return the sketch's own text draws the same letters")
+        #expect(placed.curves.suffix(added).allSatisfy { $0.id != 0 }, "and they can be picked now")
+    }
+
+    @Test func escapeDropsTheTextBeingTyped() {
+        let s = session()
+        s.setTool(.text)
+        _ = click(s, 0, 0)
+        s.setTextDraft("Hello")
+        s.cancelText()
+        #expect(s.textPreview().isEmpty && s.sketch.texts.isEmpty && s.textDraft.isEmpty)
+    }
+
+    @Test func aTextBeingChangedShowsTheWordsTypedSoFar() {
+        var sketch = Sketch()
+        let p = sketch.addPoint(0, 0)
+        sketch.texts = [SketchText(id: "T", text: "Hi", position: p, height: "10 mm")]
+        let s = session(sketch)
+        s.setTool(.text)
+        #expect(s.beginEditingText(anchoredAt: p))
+        #expect(s.textDraft == "Hi", "the box starts with the words as they are")
+        let before = s.textOutlines().first?.polylines.count ?? 0
+        s.setTextDraft("Hi there")
+        let after = s.textOutlines().first?.polylines.count ?? 0
+        #expect(after > before, "more letters, more outlines")
+        #expect(s.textPreview().isEmpty, "the existing text is redrawn; no second copy")
+        #expect(s.sketch.texts[0].text == "Hi", "nothing is stored until Return")
+        s.cancelText()
+        #expect(s.textOutlines().first?.polylines.count == before, "Esc: back to the stored words")
+    }
+
     @Test func trimRemovesThePiecePastTheCrossingLine() {
         var sketch = Sketch()
         let a = sketch.addPoint(0, 0), b = sketch.addPoint(10, 0)

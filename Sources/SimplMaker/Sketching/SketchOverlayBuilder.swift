@@ -253,6 +253,8 @@ enum SketchOverlayBuilder {
         for text in session.textOutlines() {
             for line in text.polylines { o.curves += segments(line, frame: f, id: PickID(sketchPoint: text.anchor).raw) }
         }
+        // A new text, as far as it is typed: not there to pick yet.
+        for line in session.textPreview() { o.curves += segments(line, frame: f, id: 0) }
         // An X marks the middle of each closed shape: where the cursor snaps while a point tool draws, and on every shape with Show Shape Centres on.
         if session.tool.placesPoints || showCentres {
             let r = session.snapTolerance

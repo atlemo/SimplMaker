@@ -531,9 +531,23 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         guard let renderer, renderer.hovered != raw else { return }
         renderer.hovered = raw
         model?.hover(raw == 0 ? nil : PickID(raw: raw))
+        updateHoverGroup()
         if let model, model.pendingTool == .thread { renderer.selected = model.highlighted }  // the face it would thread
         if model?.sketchSession != nil { sketchEvent(.moved, at: nil, additive: false) }
         updateCursor()
+        needsDisplay = true
+    }
+
+    /// Lights up the rest of a text with the letter under the cursor, since a click picks them all. ⌥ held: just the letter.
+    private func updateHoverGroup() {
+        guard let renderer else { return }
+        var group: [UInt32] = []
+        if let model, model.sketchSession == nil, let h = model.hovered, h.kind == .region, !NSEvent.modifierFlags.contains(.option) {
+            let picks = model.profileGroup(of: h)
+            if picks.count > 1 { group = picks.map(\.raw) }
+        }
+        guard renderer.hoverGroup != group else { return }
+        renderer.hoverGroup = group
         needsDisplay = true
     }
 
@@ -583,6 +597,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     override func flagsChanged(with event: NSEvent) {
         // ⌥ turns snapping off and on while drawing: update the preview right away.
         if model?.sketchSession != nil { sketchEvent(.moved, at: nil, additive: false) }
+        updateHoverGroup()
         super.flagsChanged(with: event)
     }
 
@@ -794,15 +809,16 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         guard !dragged, event.clickCount < 2, renderer != nil, let model, model.sketchSession == nil else { return }
         let p = location(event)
         let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
+        let single = event.modifierFlags.contains(.option)  // one letter of a text, not all of it
         let pixel = pickPixel(p)
         // The click acts on what is under the pointer now: if the last move's pick hasn't come back (or was for
         // another pixel), ask again and click when it arrives.
         let inside = pixel.x >= 0 && pixel.y >= 0 && p.x <= bounds.width && p.y <= bounds.height
         if pickedPixel == pixel || !inside {
             pendingClick = nil
-            performClick(at: p, additive: additive)
+            performClick(at: p, additive: additive, single: single)
         } else {
-            let action: () -> Void = { [weak self] in self?.performClick(at: p, additive: additive) }
+            let action: () -> Void = { [weak self] in self?.performClick(at: p, additive: additive, single: single) }
             pendingClick = (pixel, action)
             requestPick(at: p)
             // Should the pick never come back, click on what is known.
@@ -814,7 +830,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }
     }
 
-    private func performClick(at p: NSPoint, additive: Bool) {
+    private func performClick(at p: NSPoint, additive: Bool, single: Bool = false) {
         guard let renderer, let model, model.sketchSession == nil else { return }
         let ray = renderer.camera.ray(at: p, viewSize: bounds.size)
         model.clickRay = (SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
@@ -828,7 +844,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
            ray.direction.z.magnitude > 1e-9, -ray.origin.z / ray.direction.z > 0 {
             pick = OriginPlane.xy.pickID
         }
-        model.click(pick, additive: additive)
+        model.click(pick, additive: additive, single: single)
         refreshOverlay()
     }
 
@@ -1216,8 +1232,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let w = session.frame.point(at.x, at.y)
         guard let p = renderer.camera.project(SIMD3(Float(w.x), Float(w.y), Float(w.z)), viewSize: bounds.size) else { return }
         let size = NSSize(width: 220, height: 24)
+        // Below the baseline: the letters appear above it as they are typed, and the box must not hide them.
         field.frame = NSRect(x: min(max(p.x, 0), max(bounds.width - size.width, 0)),
-                             y: min(max(p.y - size.height - 4, 0), max(bounds.height - size.height, 0)),
+                             y: min(max(p.y + 16, 0), max(bounds.height - size.height, 0)),
                              width: size.width, height: size.height)
     }
 
@@ -1563,6 +1580,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             model?.activeHandleSlot = slot
             model?.handleDraft = field.stringValue
             scheduleHandlePreview(field.stringValue, slot: slot)
+        } else if field === textEntryField, let session = model?.sketchSession {
+            session.setTextDraft(field.stringValue)  // the letters appear in the sketch as they are typed
+            refreshOverlay()
         } else if let input = field.input, let session = model?.sketchSession {
             session.setTyped(input, field.stringValue)
             refreshOverlay()
@@ -2020,6 +2040,7 @@ struct ViewportView: NSViewRepresentable {
             c.sceneRevision = sceneRevision
             renderer.setScene(model.visibleMeshes)
             renderer.hovered = 0
+            renderer.hoverGroup = []
         }
         // Every update: a colour being picked changes nothing else.
         renderer.bodyColors = model.visibleMeshes.map { m in

@@ -102,7 +102,7 @@ extension DocumentModel {
 
     private func profileItems(_ pick: PickID) -> [ContextItem] {
         guard let p = profile(of: pick) else { return backgroundItems() }
-        let pickProfile = { if !self.selection.contains(pick) { self.selection = [pick] } }
+        let pickProfile = { if !self.selection.contains(pick) { self.selection = self.profileGroup(of: pick) } }
         var items: [ContextItem] = ([.extrude, .revolve, .sweep, .loft] as [DesignTool]).map { tool in
             .action(tool.rawValue, symbol: tool.symbol) { pickProfile(); self.run(tool) }
         }

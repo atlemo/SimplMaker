@@ -172,6 +172,9 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Whether a click on a letter picks the whole text. The tools that take a single profile pick just that one.
+    var takesWholeTexts: Bool { self != .loft && self != .split && self != .sectionAnalysis }
+
     /// What a click can pick while this tool waits.
     func accepts(_ kind: PickID.Kind) -> Bool {
         switch self {
@@ -238,7 +241,7 @@ extension DocumentModel {
     }
 
     /// A viewport click while a tool waits for input.
-    func toolClick(_ tool: DesignTool, _ pick: PickID?, additive: Bool = false) {
+    func toolClick(_ tool: DesignTool, _ pick: PickID?, additive: Bool = false, single: Bool = false) {
         if tool == .measure {  // stays active: every click is a new measurement
             if pick?.isWholeBody != true || tool.acceptsWholeBody { measureClick(pick) }
             return
@@ -270,7 +273,7 @@ extension DocumentModel {
             return
         }
         guard accepts(pick) else { return }
-        if let i = selection.firstIndex(of: pick) { selection.remove(at: i) } else { selection.append(pick) }
+        toggle(single ? [pick] : profileGroup(of: pick))
         if perform(tool) { pendingTool = nil }
         overlayRevision += 1
     }

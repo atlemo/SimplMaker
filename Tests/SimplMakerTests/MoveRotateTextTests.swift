@@ -1,4 +1,5 @@
 // Copyright © 2026 Atle Mo. All rights reserved.
+import AppKit
 import CADCore
 import CADKernel
 import Foundation
@@ -117,5 +118,64 @@ import Testing
         _ = session.handle(SketchMouse(phase: .moved, uv: SIMD2(40, 40), pick: nil, tolerance: 0.5))
         _ = session.handle(SketchMouse(phase: .down, uv: SIMD2(40, 40), pick: nil, tolerance: 0.5))
         #expect(session.editingText == nil && session.pendingText != nil, "elsewhere starts a new text")
+    }
+}
+
+/// The Text tool's typing box in the viewport: the letters appear in the sketch as they are typed.
+@Suite @MainActor struct LiveTextFieldTests {
+    private func settle(_ model: DocumentModel) async throws {
+        try await Task.sleep(for: .milliseconds(5))
+        for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    private func key(_ window: NSWindow, _ chars: String, code: UInt16) {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                     context: nil, characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code)!
+            window.sendEvent(e)
+        }
+    }
+
+    private func allSubviews(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + allSubviews(of: $0) } }
+
+    @Test func theLettersShowAsTheyAreTypedAndStayOnReturn() async throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: Sketch())))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        model.editSketch("sk")
+        let session = try #require(model.sketchSession)
+        session.setTool(.text)
+        _ = model.sketchMouse(SketchMouse(phase: .moved, uv: SIMD2(5, 5), pick: nil, tolerance: 0.5))
+        _ = model.sketchMouse(SketchMouse(phase: .down, uv: SIMD2(5, 5), pick: nil, tolerance: 0.5))
+        #expect(session.pendingText != nil)
+
+        let view = ViewportMTKView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), device: nil)
+        let renderer = try #require(Renderer())
+        view.device = renderer.device
+        view.renderer = renderer
+        view.model = model
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = view
+        view.draw(view.bounds)  // lays out the typing box
+        try await Task.sleep(for: .milliseconds(100))  // lets it take the focus (queued on the main queue)
+        let frameView = try #require(window.contentView?.superview)
+        let field = try #require(allSubviews(of: frameView).compactMap { $0 as? ValueField }.first { $0.placeholderString?.contains("Type the text") == true })
+        #expect(field.currentEditor() != nil, "the box has the focus, ready to type")
+
+        let none = model.sketchOverlay().curves.count
+        key(window, "H", code: 4)
+        #expect(session.textDraft == "H", "the session hears every keystroke")
+        let one = model.sketchOverlay().curves.count
+        key(window, "I", code: 34)
+        #expect(session.textDraft == "HI")
+        let two = model.sketchOverlay().curves.count
+        #expect(one > none && two > one, "each letter adds its outline to the sketch before Return: \(none), \(one), \(two)")
+        #expect(session.sketch.texts.isEmpty, "nothing is stored until Return")
+
+        key(window, "\r", code: 36)
+        try await settle(model)
+        #expect(session.sketch.texts.map(\.text) == ["HI"] && session.textDraft.isEmpty)
+        #expect(model.sketchOverlay().curves.count == two, "the same letters, now the sketch's own")
     }
 }

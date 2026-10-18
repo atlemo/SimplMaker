@@ -1020,7 +1020,8 @@ final class DocumentModel {
 
     func hover(_ pick: PickID?) { hovered = pick.flatMap { isLockedPick($0) ? nil : $0 } }
 
-    func click(_ pick: PickID?, additive: Bool) {
+    /// `single` (⌥-click) picks one letter of a text instead of the whole text.
+    func click(_ pick: PickID?, additive: Bool, single: Bool = false) {
         let pick = pick.flatMap { isLockedPick($0) ? nil : $0 }  // a locked body or sketch is not there to click
         if isPickingSketchPlane {
             // Only a plane or a face answers the question; anything else keeps asking.
@@ -1035,7 +1036,7 @@ final class DocumentModel {
             return
         }
         if let tool = pendingTool {
-            toolClick(tool, pick, additive: additive)
+            toolClick(tool, pick, additive: additive, single: single)
             return
         }
         if let pick, let id = constructionPlane(of: pick) {  // a construction plane: select it, with its offset handle
@@ -1047,10 +1048,20 @@ final class DocumentModel {
             if !additive { selection = [] }
             return
         }
+        let picks = single ? [pick] : profileGroup(of: pick)
         if additive {
-            if let i = selection.firstIndex(of: pick) { selection.remove(at: i) } else { selection.append(pick) }
+            toggle(picks)
         } else {
-            selection = selection == [pick] ? [] : [pick]
+            selection = Set(selection) == Set(picks) ? [] : picks
+        }
+    }
+
+    /// Adds the picks to the selection, or takes them all out again when they are all in it already.
+    func toggle(_ picks: [PickID]) {
+        if picks.allSatisfy(selection.contains) {
+            selection.removeAll(where: picks.contains)
+        } else {
+            selection += picks.filter { !selection.contains($0) }
         }
     }
 
@@ -1385,6 +1396,19 @@ final class DocumentModel {
                                        hintU: region.sample.x, hintV: region.sample.y))
     }
 
+    /// What a click on a profile stands for. A letter of a text stands for the whole text, so a text is hovered, selected
+    /// and extruded in one click (the clicked letter first, and not the insides of its O, B and the like, which a
+    /// letter must not fill); anything else, and the tools that take a single profile, stand for themselves.
+    func profileGroup(of pick: PickID) -> [PickID] {
+        guard pick.kind == .region, pendingTool?.takesWholeTexts ?? true,
+              let p = profile(of: pick), let sketch = result?.sketches[p.sketch],
+              let text = sketch.text(ofRegion: pick.element) else { return [pick] }
+        let letters = sketch.letterRegions(of: text, parameters: parameterValues)
+        guard !letters.isEmpty else { return [pick] }
+        let picks = letters.map { PickID(region: $0, slot: pick.sketchSlot) }
+        return letters.contains(pick.element) ? [pick] + picks.filter { $0 != pick } : picks
+    }
+
     /// The sketch and curve a curve pick points at (finished sketches only).
     func curve(of pick: PickID) -> (sketch: FeatureID, curve: EntityID)? {
         guard pick.kind == .sketchCurve, pick.sketchSlot > 0, pick.sketchSlot <= sketchSlots.count else { return nil }
@@ -1406,8 +1430,9 @@ final class DocumentModel {
         o.imageBorder = imageBorder()
         if let session = sketchSession {
             SketchOverlayBuilder.editing(session, into: &o, showCentres: showShapeCentres)
-            // The fill is from the last rebuild: while a gear's fields are changing it, it would show the old gear.
-            if !session.hasPendingGearEdit, let r = result?.sketches[session.featureID] { SketchOverlayBuilder.regions(r, slot: 0, into: &o) }
+            // The fill is from the last rebuild: while a gear's fields are changing it, it would show the old gear,
+            // and while a text's words are changing, the old words.
+            if !session.hasPendingGearEdit, session.editingText == nil, let r = result?.sketches[session.featureID] { SketchOverlayBuilder.regions(r, slot: 0, into: &o) }
             return o
         }
         if showsOriginPlanes {

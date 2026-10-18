@@ -24,7 +24,7 @@ enum Shaders {
         float4 viewDir;         // xyz = the way the camera looks; w = 1 when rays run parallel (orthographic)
         uint clipOn;
         float padClip2;
-        uint padClip0;
+        uint hoverGroupCount;   // ids after the selected ones in the selection buffer that light up like the hovered one
         uint padClip1;
     };
 
@@ -335,7 +335,7 @@ enum Shaders {
                                     constant Uniforms& u [[buffer(1)]],
                                     constant uint* sel [[buffer(2)]]) {
         float alpha = u.regionColor.a;
-        if (in.id == u.hovered) alpha *= 2.0;
+        if (in.id == u.hovered || isSelected(in.id, sel + u.selectedCount, u.hoverGroupCount)) alpha *= 2.0;
         if (isSelected(in.id, sel, u.selectedCount)) alpha *= 3.0;
         FragOut o;
         o.color = float4(u.regionColor.rgb, min(alpha, 0.7));

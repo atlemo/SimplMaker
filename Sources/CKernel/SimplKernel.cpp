@@ -2009,39 +2009,69 @@ SKHandle sk_extrude_from(const SKHandle *profiles, int count, double dx, double 
 
   TopoDS_Shape result = solids[0];
   // Pieces that don't touch (the letters of a text, say) need no merging: they go into the body
-  // as they are, which is what merging would give, only much faster.
-  bool touching = false;
-  std::vector<Bnd_Box> boxes(solids.size());
-  for (size_t k = 0; k < solids.size(); ++k) BRepBndLib::Add(solids[k], boxes[k]);
-  for (size_t i = 0; i < solids.size() && !touching; ++i)
-    for (size_t j = i + 1; j < solids.size() && !touching; ++j) {
+  // as they are, which is what merging would give, only much faster. Pieces whose boxes overlap
+  // are told apart from the rest, and only each such group is merged: one pair of kerned letters
+  // must not make the whole line of text pay for a merge.
+  const size_t n = solids.size();
+  std::vector<Bnd_Box> boxes(n);
+  for (size_t k = 0; k < n; ++k) BRepBndLib::Add(solids[k], boxes[k]);
+  std::vector<size_t> group(n);
+  for (size_t k = 0; k < n; ++k) group[k] = k;
+  auto root = [&](size_t k) {
+    while (group[k] != k) k = group[k] = group[group[k]];
+    return k;
+  };
+  for (size_t i = 0; i < n; ++i)
+    for (size_t j = i + 1; j < n; ++j) {
       Bnd_Box bi = boxes[i];
       bi.Enlarge(1e-6);
-      touching = !bi.IsOut(boxes[j]);
+      if (!bi.IsOut(boxes[j])) group[root(j)] = root(i);
     }
-  if (solids.size() > 1 && !touching) {
-    TopoDS_Compound all;
-    BRep_Builder bb;
-    bb.MakeCompound(all);
-    for (const TopoDS_Shape &sol : solids) bb.Add(all, sol);
-    result = all;
-  } else if (solids.size() > 1) {
-    BRepAlgoAPI_Fuse fuse;
-    ShapeList args, tools;
-    args.Append(solids[0]);
-    for (size_t k = 1; k < solids.size(); ++k) tools.Append(solids[k]);
-    fuse.SetArguments(args);
-    fuse.SetTools(tools);
-    fuse.SetRunParallel(true);
-    fuse.Build();
-    if (!fuse.IsDone() || fuse.HasErrors()) {
-      setError("could not merge extruded profiles");
-      return 0;
+  std::vector<std::vector<size_t>> clusters;  // in the order their first piece comes
+  {
+    std::vector<int> slot(n, -1);
+    for (size_t k = 0; k < n; ++k) {
+      const size_t r = root(k);
+      if (slot[r] < 0) {
+        slot[r] = (int)clusters.size();
+        clusters.emplace_back();
+      }
+      clusters[slot[r]].push_back(k);
     }
-    std::vector<Named> carried;
-    carry(fuse, names, carried);
-    names = std::move(carried);
-    result = unify(fuse.Shape(), names);
+  }
+  if (n > 1) {
+    std::vector<TopoDS_Shape> parts;
+    for (const std::vector<size_t> &c : clusters) {
+      if (c.size() == 1) {
+        parts.push_back(solids[c[0]]);
+        continue;
+      }
+      BRepAlgoAPI_Fuse fuse;
+      ShapeList args, tools;
+      args.Append(solids[c[0]]);
+      for (size_t k = 1; k < c.size(); ++k) tools.Append(solids[c[k]]);
+      fuse.SetArguments(args);
+      fuse.SetTools(tools);
+      fuse.SetRunParallel(true);
+      fuse.Build();
+      if (!fuse.IsDone() || fuse.HasErrors()) {
+        setError("could not merge extruded profiles");
+        return 0;
+      }
+      std::vector<Named> carried;
+      carry(fuse, names, carried);
+      names = std::move(carried);
+      parts.push_back(unify(fuse.Shape(), names));
+    }
+    if (parts.size() == 1) {
+      result = parts[0];
+    } else {
+      TopoDS_Compound all;
+      BRep_Builder bb;
+      bb.MakeCompound(all);
+      for (const TopoDS_Shape &part : parts) bb.Add(all, part);
+      result = all;
+    }
   }
   return store(makeBody(result, names, feat));
   SK_CATCH(0)

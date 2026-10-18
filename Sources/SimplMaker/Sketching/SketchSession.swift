@@ -448,6 +448,11 @@ final class SketchSession {
     private(set) var editingText: EntityID?
     /// What the typing box starts with: the words of the text being edited, or nothing for a new one.
     var textEntryInitial: String { editingText.flatMap { id in sketch.texts.first { $0.id == id }?.text } ?? "" }
+    /// What is typed in the box right now: the letters are drawn from it as they are typed (see `textOutlines`, `textPreview`).
+    private(set) var textDraft = ""
+
+    /// A keystroke in the typing box.
+    func setTextDraft(_ string: String) { textDraft = string }
     private var chainPoint: EntityID?
     /// The Curve tool's run of curves so far (nil until its second point is placed).
     private(set) var curveChain: CurveChain?
@@ -557,6 +562,7 @@ final class SketchSession {
         clicks = []
         pendingText = nil
         editingText = nil
+        textDraft = ""
         chainPoint = nil
         curveChain = nil
         curveDown = nil
@@ -1048,6 +1054,7 @@ final class SketchSession {
             // On an existing text (its dot or its letters): change it rather than start another.
             if let anchor = s.point ?? hover, beginEditingText(anchoredAt: anchor) { return nil }
             pendingText = s
+            textDraft = ""
             return nil
         case .select, .dimension, .distance, .fillet, .chamfer, .trim, .extend, .bezier, .projectEdge:
             clicks = []
@@ -2114,6 +2121,7 @@ final class SketchSession {
         guard let t = sketch.texts.first(where: { $0.position == point }), let at = sketch.position(point) else { return false }
         editingText = t.id
         pendingText = SketchSnap(at, point: point)
+        textDraft = t.text
         selection = [point]
         dragEntity = nil
         return true
@@ -2122,7 +2130,7 @@ final class SketchSession {
     /// Return in the text field: the text starts at the clicked point (or the point it snapped to);
     /// when editing, the text's words change instead.
     func placeText(_ string: String) -> String? {
-        defer { pendingText = nil; editingText = nil }
+        defer { pendingText = nil; editingText = nil; textDraft = "" }
         let text = string.trimmingCharacters(in: .whitespacesAndNewlines)
         if let id = editingText {
             guard !text.isEmpty else { message = "A text needs some letters"; return nil }
@@ -2136,7 +2144,7 @@ final class SketchSession {
         return finish("Text")
     }
 
-    func cancelText() { pendingText = nil; editingText = nil }
+    func cancelText() { pendingText = nil; editingText = nil; textDraft = "" }
 
     /// Adds another sketch's shapes (e.g. from an SVG file), selects them and re-solves.
     func merge(_ other: Sketch) {
@@ -2161,14 +2169,27 @@ final class SketchSession {
         return finish("Edit Text")
     }
 
-    /// Letter outlines of the sketch's texts, with the index of each text's anchor point (for picking).
+    /// Letter outlines of the sketch's texts, with the index of each text's anchor point (for picking). A text whose
+    /// words are being changed is drawn with the words typed so far.
     func textOutlines() -> [(anchor: Int, polylines: [[SIMD2<Double>]])] {
         sketch.texts.compactMap { t in
             guard let i = sketch.points.firstIndex(where: { $0.id == t.position }) else { return nil }
-            let polylines = t.contours(in: sketch, parameters: parameters).map { contour in
+            var shown = t
+            if t.id == editingText { shown.text = textDraft }
+            let polylines = shown.contours(in: sketch, parameters: parameters).map { contour in
                 contour.flatMap { TextOutline.flatten($0) }
             }
             return (i, polylines)
+        }
+    }
+
+    /// The letters of a new text as typed so far, at the size and place they will have: drawn live, before Return.
+    func textPreview() -> [[SIMD2<Double>]] {
+        guard editingText == nil, let at = pendingText?.position else { return [] }
+        let new = SketchText(text: textDraft, position: "")
+        guard let height = try? parameters.value(of: new.height, kind: .length) else { return [] }
+        return TextOutline.contours(textDraft, fontName: new.font, height: height, origin: at, angle: new.angle).map { contour in
+            contour.flatMap { TextOutline.flatten($0) }
         }
     }
 

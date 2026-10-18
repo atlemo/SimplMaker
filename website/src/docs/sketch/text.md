@@ -11,7 +11,9 @@ Text in a sketch is made of **profiles** (the letters), so you can use it like a
 2. Click where the text should start.
 3. Type the words and press [[Return]].
 
-To change the words later, click the text with the Text tool, or double-click it with the Select tool.
+The letters appear in the sketch as you type, at the size and place they will have. Press [[Esc]] to drop the text instead.
+
+To change the words later, click the text with the Text tool, or double-click it with the Select tool. The letters follow what you type there too.
 
 ## Size and font
 
@@ -33,5 +35,7 @@ Text moves, scales and turns with the rest of the sketch. See [Move, scale and p
 
 ## Use it
 
-- **Extrude** the letters to raise them, or choose **Cut** to engrave them. See [Extrude](doc:create/extrude).
+Click any letter of a finished text to pick the whole text, and hover to see what a click would pick. [[⇧]]-click adds or removes a whole text, and [[⌥]]-click picks a single letter. The insides of letters such as O and B are not part of the text, so extruding it does not fill them.
+
+- **Extrude** the letters to raise them, or choose **Cut** to engrave them. One click on the text is enough. See [Extrude](doc:create/extrude).
 - **Project** them onto a curved or angled face. See [Project](doc:modify/project).

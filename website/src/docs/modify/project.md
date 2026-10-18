@@ -9,7 +9,7 @@ description: Throw sketch shapes, such as text, onto a body so they follow its s
 
 1. Sketch the shapes on a plane in front of the body. For text, use the [Text tool](doc:sketch/text).
 2. Press [[O]] for **Project**.
-3. Click the **profiles**, such as the letters of a text. [[⇧]]-click for several.
+3. Click the **profiles**. A click on one letter of a text picks the whole text ([[⌥]]-click for a single letter). [[⇧]]-click for several.
 4. Click the **face** to project onto. Or press [[Return]] to use the whole body when it is the only one.
 5. Drag the arrow on the surface, or type the height or depth, and press [[Return]].
 

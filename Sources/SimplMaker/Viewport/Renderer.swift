@@ -165,7 +165,8 @@ struct Uniforms {
     var viewDir: SIMD4<Float> = .zero
     var clipOn: UInt32 = 0
     var padClip2: Float = 0
-    var padClip0: UInt32 = 0
+    /// How many ids follow the selected ones in the selection buffer: profiles lit like the hovered one (see Renderer.hoverGroup).
+    var hoverGroupCount: UInt32 = 0
     var padClip1: UInt32 = 0
 }
 
@@ -493,6 +494,8 @@ final class Renderer {
     /// Sketching with the slice on: the sketch plane, which everything between it and the camera is cut away at.
     var sketchSlice: (origin: SIMD3<Float>, normal: SIMD3<Float>)?
     var hovered: UInt32 = 0
+    /// Other profiles that light up with the hovered one: the rest of a text whose letter is under the cursor.
+    var hoverGroup: [UInt32] = []
     /// A tool is picking bodies: hovering and selecting a face lights up its whole body.
     var wholeBodies = false
     var selected: [UInt32] = []
@@ -970,6 +973,9 @@ final class Renderer {
         }
         let clipStyle: UInt32 = sectioning ? DrawStyle.clipped : 0
         var sel = Array(selected.prefix(256))
+        let group = Array(hoverGroup.prefix(256))
+        sel += group  // after the selected ids, which are the first `selectedCount`
+        uniforms.hoverGroupCount = UInt32(group.count)
         if sel.isEmpty { sel = [0] }
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
 
