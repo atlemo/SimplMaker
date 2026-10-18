@@ -154,8 +154,9 @@ public struct SketchText: Codable, Hashable, Sendable, Identifiable {
     public static let defaultFont = "Helvetica-Bold"
 }
 
-/// A straight edge of the model brought into the sketch: two fixed points and a construction line
-/// between them, put back where the edge is on every rebuild. Other geometry constrained to them
+/// An edge of the model brought into the sketch: two fixed points and a construction line
+/// between them (for a circular edge: its fixed center and ends, and a construction arc or circle), put back where
+/// the edge is on every rebuild. Other geometry constrained to them
 /// (a corner on the line, a point coincident with an end) follows the model when it changes.
 public struct SketchProjection: Codable, Hashable, Sendable, Identifiable {
     public var id: EntityID
@@ -163,10 +164,13 @@ public struct SketchProjection: Codable, Hashable, Sendable, Identifiable {
     /// The edge's two ends, as fixed sketch points.
     public var start: EntityID
     public var end: EntityID
-    /// The construction line between them.
+    /// The construction line between them, or the construction arc or circle of a circular edge. (A full circle has
+    /// one point on it, which is both `start` and `end`.)
     public var line: EntityID
-    public init(id: EntityID = IDs.make(), edge: EdgeRef, start: EntityID, end: EntityID, line: EntityID) {
-        self.id = id; self.edge = edge; self.start = start; self.end = end; self.line = line
+    /// The fixed center point of a circular edge; nil for a straight one.
+    public var center: EntityID?
+    public init(id: EntityID = IDs.make(), edge: EdgeRef, start: EntityID, end: EntityID, line: EntityID, center: EntityID? = nil) {
+        self.id = id; self.edge = edge; self.start = start; self.end = end; self.line = line; self.center = center
     }
 }
 

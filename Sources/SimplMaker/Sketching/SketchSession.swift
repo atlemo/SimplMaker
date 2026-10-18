@@ -221,7 +221,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
         case .extend: return "Click near the end of a line or arc to extend it to the next curve"
         case .dimension: return "Click a line (then click again to place its length), a circle or arc, or two items for a distance or angle · or click any grey size"
-        case .projectEdge: return "Click straight body edges to bring them into the sketch · they follow the body, and their points can be constrained and dimensioned · Esc ends"
+        case .projectEdge: return "Click straight body edges, or circles and arcs facing the sketch, to bring them into the sketch · they follow the body, and their points can be constrained and dimensioned · Esc ends"
         case .distance: return "Click two items (points, lines, circles or arcs), then type the distance between them · a circle is measured from its edge, its center point from the middle"
         }
     }
@@ -311,6 +311,8 @@ struct SketchReferences {
     var pointModels: [ModelSnap?] = []
     /// Every straight body edge, wherever it lies, flattened onto the sketch plane: what Project Edge can bring in.
     var straightEdges: [EdgeRef: ModelSnap] = [:]
+    /// Every circular body edge (a circle or an arc) that faces the sketch plane, with its center, for Project Edge.
+    var roundEdges: [EdgeRef: ModelSnap] = [:]
 
     func segmentModel(_ i: Int) -> ModelSnap? { i < segmentModels.count ? segmentModels[i] : nil }
     func pointModel(_ i: Int) -> ModelSnap? { i < pointModels.count ? pointModels[i] : nil }
@@ -785,19 +787,19 @@ final class SketchSession {
         }
     }
 
-    /// Project Edge: a click on a straight body edge brings it into the sketch as a projection (its ends are fixed
-    /// points, and a construction line joins them). The tool stays on for more edges; Esc ends it.
+    /// Project Edge: a click on a straight body edge, or a circular one facing the sketch, brings it into the sketch as a
+    /// projection (its ends, and a circle's center, are fixed points, and a construction line, arc or circle joins them). The tool stays on for more edges; Esc ends it.
     private func projectEdgeClick(_ edge: EdgeRef?) -> (handled: Bool, commit: String?) {
         guard let edge else {
-            message = "Click a straight body edge to project it into the sketch"
+            message = "Click a body edge to project it into the sketch"
             return (true, nil)
         }
-        guard let model = references.straightEdges[edge] else {
-            message = "Only straight edges can be projected for now"
+        guard let model = references.straightEdges[edge] ?? references.roundEdges[edge] else {
+            message = "Only straight edges, and circles and arcs facing the sketch, can be projected"
             return (true, nil)
         }
         // An edge pointing straight at the sketch plane lands as a point, not a line.
-        guard simdLength(model.end - model.start) > 1e-6 else {
+        guard model.center != nil || simdLength(model.end - model.start) > 1e-6 else {
             message = "That edge points straight at the sketch, so it has no length in it"
             return (true, nil)
         }

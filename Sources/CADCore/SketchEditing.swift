@@ -3,6 +3,7 @@
 // Kept UI-free so it can be unit-tested.
 // Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
+import simd
 
 public enum SketchEntityKind: Sendable, Equatable {
     case point, line, circle, arc, bezier, ellipse
@@ -10,15 +11,23 @@ public enum SketchEntityKind: Sendable, Equatable {
 }
 
 /// Where a tool click landed: a free position, an existing point, or on an existing curve.
-/// A straight model edge the cursor snapped to (its ends in sketch coordinates), or one of its ends.
+/// A model edge the cursor snapped to (its ends in sketch coordinates), or one of its ends. A straight edge is a
+/// line from `start` to `end`. A circular edge seen straight on has a `center`: an arc running counter-clockwise from
+/// `start` to `end`, or a full circle through `start` (and `end` is then the same place).
 public struct ModelSnap: Sendable, Equatable {
     public var edge: EdgeRef
     public var start: SIMD2<Double>
     public var end: SIMD2<Double>
     /// 0 = the start, 1 = the end; nil = somewhere along the edge.
     public var endIndex: Int?
-    public init(edge: EdgeRef, start: SIMD2<Double>, end: SIMD2<Double>, endIndex: Int? = nil) {
+    /// The middle of a circular edge; nil for a straight one.
+    public var center: SIMD2<Double>?
+    /// A circular edge that closes on itself.
+    public var isFullCircle = false
+    public init(edge: EdgeRef, start: SIMD2<Double>, end: SIMD2<Double>, endIndex: Int? = nil, center: SIMD2<Double>? = nil,
+                isFullCircle: Bool = false) {
         self.edge = edge; self.start = start; self.end = end; self.endIndex = endIndex
+        self.center = center; self.isFullCircle = isFullCircle
     }
 }
 
@@ -152,14 +161,35 @@ extension Sketch {
     @discardableResult
     public mutating func project(_ m: ModelSnap) -> SketchProjection {
         if let have = projections.first(where: { $0.edge == m.edge }), point(have.start) != nil, point(have.end) != nil,
-           curve(have.line) != nil {
+           curve(have.line) != nil, have.center.map({ point($0) != nil }) ?? true {
             return have
         }
         projections.removeAll { $0.edge == m.edge }
-        let a = addPoint(m.start.x, m.start.y), b = addPoint(m.end.x, m.end.y)
-        for id in [a, b] { if let i = points.firstIndex(where: { $0.id == id }) { points[i].fixed = true } }
-        let line = addLine(a, b, construction: true)
-        let p = SketchProjection(edge: m.edge, start: a, end: b, line: line)
+        func fixedPoint(_ p: SIMD2<Double>) -> EntityID {
+            let id = addPoint(p.x, p.y)
+            if let i = points.firstIndex(where: { $0.id == id }) { points[i].fixed = true }
+            return id
+        }
+        let a = fixedPoint(m.start)
+        let line: EntityID, b: EntityID, c: EntityID?
+        if let mid = m.center {
+            // A circular edge: its center and ends are fixed, and a construction arc (or circle) joins them.
+            c = fixedPoint(mid)
+            if m.isFullCircle {
+                b = a
+                line = addCircle(center: c!, radius: simd_length(m.start - mid))
+                constrain(.pointOnCurve(point: a, curve: line))
+            } else {
+                b = fixedPoint(m.end)
+                line = addArc(center: c!, start: a, end: b)
+            }
+            if let i = curves.firstIndex(where: { $0.id == line }) { curves[i].construction = true }
+        } else {
+            b = fixedPoint(m.end)
+            c = nil
+            line = addLine(a, b, construction: true)
+        }
+        let p = SketchProjection(edge: m.edge, start: a, end: b, line: line, center: c)
         projections.append(p)
         return p
     }
@@ -177,7 +207,9 @@ extension Sketch {
 
     /// Drops projections whose points or line are gone.
     mutating func dropBrokenProjections() {
-        let kept = projections.filter { p in point(p.start) != nil && point(p.end) != nil && curve(p.line) != nil }
+        let kept = projections.filter { p in
+            point(p.start) != nil && point(p.end) != nil && curve(p.line) != nil && (p.center.map { point($0) != nil } ?? true)
+        }
         projections = kept
     }
 

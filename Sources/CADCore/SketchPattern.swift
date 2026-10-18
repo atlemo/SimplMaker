@@ -121,7 +121,7 @@ extension Sketch {
         for c in curves { points.formUnion(pointIDs(of: c)) }
         if selection.isEmpty {
             // Whole sketch: loose points and text anchors come along, but not the origin or the projected edges' ends.
-            let ends = Set(projections.flatMap { [$0.start, $0.end] })
+            let ends = Set(projections.flatMap { [$0.start, $0.end] + ($0.center.map { [$0] } ?? []) })
             for p in self.points where p.id != "origin" && !ends.contains(p.id) && !Sketch.isGenerated(p.id) { points.insert(p.id) }
         } else {
             for id in selection where point(id) != nil && !Sketch.isGenerated(id) { points.insert(id) }

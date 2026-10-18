@@ -656,21 +656,46 @@ public enum Regenerator {
         return try sketchResult(solved, solve: solve, frame: frame, parameters: r.parameters)
     }
 
+    /// A circular edge of a body as it lands in a sketch frame: an arc running counter-clockwise from `start` to `end`,
+    /// or a full circle through `start`. Nil when the edge isn't circular or isn't seen straight on (a circle turned
+    /// to the plane lands as an ellipse or a line, which a projection doesn't carry).
+    public static func roundEdgeSnap(_ body: KBody, edge: EdgeRef, frame: Frame) -> ModelSnap? {
+        guard let c = try? body.edgeCircle(edge.edge), abs(simd_dot(c.axis, frame.normal)) > 1 - 1e-8 else { return nil }
+        func local(_ w: SIMD3<Double>) -> SIMD2<Double> {
+            SIMD2(simd_dot(w - frame.origin, frame.xAxis), simd_dot(w - frame.origin, frame.yAxis))
+        }
+        // Counter-clockwise about the edge's axis is clockwise on the sketch when the axis points into it.
+        let flip = simd_dot(c.axis, frame.normal) < 0
+        let a = local(c.start), b = local(c.end)
+        let (start, end) = c.isFull ? (a, a) : flip ? (b, a) : (a, b)
+        return ModelSnap(edge: edge, start: start, end: end, center: local(c.center), isFullCircle: c.isFull)
+    }
+
     /// Puts a sketch's projected model edges where the edges are now, so geometry tied to them follows.
     public static func followProjections(_ sketch: inout Sketch, frame: Frame, _ r: RegenResult) throws {
         for p in sketch.projections {
             guard let body = r.body(p.edge.body) else {
                 throw KernelError(message: "the body with the projected edge \(p.edge.edge) is missing")
             }
+            func place(_ id: EntityID, _ uv: SIMD2<Double>) {
+                guard let i = sketch.points.firstIndex(where: { $0.id == id }) else { return }
+                sketch.points[i].x = uv.x; sketch.points[i].y = uv.y; sketch.points[i].fixed = true
+            }
+            if let center = p.center {
+                guard let snap = roundEdgeSnap(body, edge: p.edge, frame: frame), let mid = snap.center else {
+                    throw KernelError(message: "projected edge not found or no longer circular: \(p.edge.edge)")
+                }
+                place(center, mid); place(p.start, snap.start); place(p.end, snap.end)
+                if let i = sketch.curves.firstIndex(where: { $0.id == p.line }), case .circle(let c, _) = sketch.curves[i].geometry {
+                    sketch.curves[i].geometry = .circle(center: c, radius: simd_length(snap.start - mid))
+                }
+                continue
+            }
             guard let ends = try? body.edgeEnds(p.edge.edge) else {
                 throw KernelError(message: "projected edge not found: \(p.edge.edge)")
             }
             func local(_ w: SIMD3<Double>) -> SIMD2<Double> { SIMD2(simd_dot(w - frame.origin, frame.xAxis), simd_dot(w - frame.origin, frame.yAxis)) }
-            for (id, w) in [(p.start, ends.start), (p.end, ends.end)] {
-                guard let i = sketch.points.firstIndex(where: { $0.id == id }) else { continue }
-                let uv = local(w)
-                sketch.points[i].x = uv.x; sketch.points[i].y = uv.y; sketch.points[i].fixed = true
-            }
+            place(p.start, local(ends.start)); place(p.end, local(ends.end))
         }
     }
 

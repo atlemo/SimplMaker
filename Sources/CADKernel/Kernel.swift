@@ -423,6 +423,15 @@ public final class KBody: @unchecked Sendable {
         return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]))
     }
 
+    /// A circular edge, a full circle or an arc: its center, the axis it runs counter-clockwise about from `start` to
+    /// `end`, its radius and its ends; throws for any other edge.
+    public func edgeCircle(_ edge: String) throws -> (center: SIMD3<Double>, axis: SIMD3<Double>, radius: Double,
+                                                     start: SIMD3<Double>, end: SIMD3<Double>, isFull: Bool) {
+        var o = [Double](repeating: 0, count: 14)
+        guard sk_body_edge_circle(handle, edge, &o) else { throw KernelError.last("edge circle") }
+        return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]), o[6], SIMD3(o[7], o[8], o[9]), SIMD3(o[10], o[11], o[12]), o[13] != 0)
+    }
+
     /// Cuts a thread into a round face (see sk_thread); `length` nil = the whole face.
     public func thread(face: String, majorDiameter: Double, pitch: Double, length: Double?, flipped: Bool, leftHanded: Bool,
                        featureID: String) throws -> KBody {
