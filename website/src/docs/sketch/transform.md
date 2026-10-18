@@ -46,7 +46,7 @@ Press [[Return]] or **OK** to keep the pattern as one undo step. [[Esc]] or **Ca
 
 ### Change or remove a pattern
 
-Click one of its copies with the Select tool to change it. **Delete** (or [[⌫]]) in the panel removes the copies and leaves the originals.
+Click one of its copies with the Select tool to change it. Or press **Pattern** while one of its copies is selected, or while the curves it copies are, or when the whole sketch is exactly what it copies: the pattern opens instead of a new one starting. **Delete** (or [[⌫]]) in the panel removes the copies and leaves the originals.
 
 The copies are read-only: you can't draw to them, constrain them or drag them, but you can extrude their profiles like any other. A pattern makes at most 400 copies, and curves added to the sketch later are not part of it.
 

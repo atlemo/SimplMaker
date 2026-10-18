@@ -334,6 +334,10 @@ main { padding-top: 64px; }
 .toolwall-grid svg .g { stroke-width: 6; stroke-linecap: butt; }
 .toolwall-grid a:hover { background: var(--ink); color: var(--accent); }
 .toolwall-grid a:hover svg { transform: translate(-50%, -50%) scale(1.14) rotate(-4deg); }
+.toolwall-more {
+  padding: clamp(14px, 1.6vw, 22px) var(--gutter) clamp(20px, 2.4vw, 32px); text-align: right;
+  font-family: var(--mono); font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+}
 
 /* cells pop in one after another when the wall scrolls into view */
 .js .toolwall-grid.reveal { opacity: 1; transform: none; }

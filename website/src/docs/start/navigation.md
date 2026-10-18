@@ -46,6 +46,7 @@ The cube in the top-right corner of the viewport shows which way you are looking
 - Click an **edge** or a **corner** to look at it from an angle.
 - **Drag** the cube to orbit.
 - Click the **house** to go to the home view, the isometric one.
+- While you sketch, two curved **arrows** beside the cube turn the sketch a quarter turn counter-clockwise or clockwise on the screen.
 
 ## Standard views
 

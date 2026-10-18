@@ -11,9 +11,9 @@ description: Model a metric or inch screw thread on a shaft or in a hole, with a
 2. Click the **side of a shaft** or the **wall of a hole**. If you click a flat face, the round face next to it is used.
 3. The thread appears in the size that suits the face. Adjust it in the inspector and press **OK**.
 
-[[⇧]]-click to pick several faces and thread them together with [[Return]].
+[[⇧]]-click to pick several faces and thread them together with [[Return]]. Holes and shafts of different sizes can be picked together: they are made as one step, and the inspector shows a **Standard** and **Size** for each of them. The tolerance offset, length and direction are shared by all.
 
-The size is chosen from the face's diameter. An 8 mm shaft gets M8. A 6.8 mm hole, which is the tap drill for M8, gets an M8 thread. The face is turned or bored to the thread's diameters first, and the thread uses the basic 60° profile, without tolerance classes.
+The size is chosen from the face's diameter. An 8 mm shaft gets M8. A 6.8 mm hole, which is the tap drill for M8, gets an M8 thread, and so does a hole drawn at the thread's own 8 mm. If no standard size suits the face, it gets a **Custom** thread about as wide as the face. Any round face can be threaded. The face is turned or bored to the thread's diameters first, and the thread uses the basic 60° profile, without tolerance classes.
 
 ![An internal thread in a hole.](shot:thread-result)
 
@@ -24,8 +24,9 @@ The size is chosen from the face's diameter. An 8 mm shaft gets M8. A 6.8 mm hol
 | Field | What it does |
 |---|---|
 | **Kind** | **External** on a shaft, or **Internal** in a hole. Shown for information. |
-| **Standard** | ISO Metric, ISO Metric Fine, UNC or UNF |
+| **Standard** | ISO Metric, ISO Metric Fine, UNC, UNF or Custom |
 | **Size** | The thread size, for example M8 × 1.25 |
+| **Major Ø**, **Pitch** | For a **Custom** thread, you type these: any length or parameter |
 | **Pitch**, **Major Ø**, **Minor Ø** | The numbers for the chosen size, for information |
 | **Tap drill** | For an internal thread, the drill size to use when tapping by hand |
 | **Tolerance offset** | See below |
