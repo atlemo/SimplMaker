@@ -90,6 +90,7 @@ struct FeatureDescriber {
         case .thread(let f):
             out["faces"] = faces(f.faces)
             out["standard"] = .text(f.standard.rawValue); out["size"] = .text(f.size)
+            if f.isMixed { out["sizes"] = .text((0..<f.faces.count).map { "\(f.spec(at: $0).size) (\(f.spec(at: $0).standard.rawValue))" }.joined(separator: ", ")) }
             if let l = f.length { out["length"] = length(l) }
             out["flipped"] = .flag(f.flipped); out["left_handed"] = .flag(f.leftHanded)
             if let t = f.tolerance { out["tolerance"] = f.toleranceUnit == .percent ? number(t) : length(t) }

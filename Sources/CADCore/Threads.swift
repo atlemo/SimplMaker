@@ -131,16 +131,27 @@ public enum ThreadMaterial: String, Codable, Hashable, Sendable, CaseIterable {
     }
 }
 
+/// One thread's standard and size, for a face of a thread feature that is not threaded like the first.
+public struct ThreadSpec: Codable, Hashable, Sendable {
+    public var standard: ThreadStandard
+    public var size: String
+    public init(standard: ThreadStandard, size: String) { self.standard = standard; self.size = size }
+}
+
 /// A screw thread cut into a round face: external on a shaft, internal in a hole (the face says
 /// which). The face is sized to the thread first: a shaft turned to its major diameter, a hole
 /// bored or filled to its minor one.
 public struct ThreadFeature: Codable, Hashable, Sendable {
     public var face: FaceRef
-    /// More round faces (other holes) threaded the same way, in the same size.
+    /// More round faces (other holes), threaded with the same length, direction and tolerance offset.
     public var moreFaces: [FaceRef]
+    /// The standard and size of `face` (and of every other face, unless `moreSpecs` says otherwise).
     public var standard: ThreadStandard
     /// The size's name in the standard ("M8x1.25", "1/4-20").
     public var size: String
+    /// The standard and size of each of `moreFaces`, in step with it, for holes of different sizes picked together;
+    /// empty when they are all threaded like `face`.
+    public var moreSpecs: [ThreadSpec]
     /// How far along the face it runs; nil = all of it.
     public var length: String?
     /// Starts from the other end (by default the end with air beyond it: a shaft's tip, a hole's mouth).
@@ -157,13 +168,30 @@ public struct ThreadFeature: Codable, Hashable, Sendable {
     /// Every face the thread is cut into, `face` first.
     public var faces: [FaceRef] { [face] + moreFaces }
 
-    public init(face: FaceRef, moreFaces: [FaceRef] = [], standard: ThreadStandard = .metric, size: String = "M6x1",
-                length: String? = nil, flipped: Bool = false, leftHanded: Bool = false, tolerance: String? = nil,
+    public init(face: FaceRef, moreFaces: [FaceRef] = [], moreSpecs: [ThreadSpec] = [], standard: ThreadStandard = .metric,
+                size: String = "M6x1", length: String? = nil, flipped: Bool = false, leftHanded: Bool = false, tolerance: String? = nil,
                 toleranceUnit: ThreadToleranceUnit = .percent, toleranceMaterial: ThreadMaterial? = nil) {
-        self.face = face; self.moreFaces = moreFaces; self.standard = standard; self.size = size; self.length = length
+        self.face = face; self.moreFaces = moreFaces; self.moreSpecs = moreSpecs; self.standard = standard; self.size = size
+        self.length = length
         self.flipped = flipped; self.leftHanded = leftHanded; self.tolerance = tolerance; self.toleranceUnit = toleranceUnit
         self.toleranceMaterial = toleranceMaterial
     }
+
+    /// The standard and size of the face at `index` in `faces`.
+    public func spec(at index: Int) -> ThreadSpec {
+        index > 0 && index - 1 < moreSpecs.count ? moreSpecs[index - 1] : ThreadSpec(standard: standard, size: size)
+    }
+
+    /// Sets the standard and size of the face at `index` in `faces`; the specs are kept only while they differ.
+    public mutating func setSpec(_ spec: ThreadSpec, at index: Int) {
+        var all = (0..<faces.count).map { self.spec(at: $0) }
+        all[index] = spec
+        standard = all[0].standard; size = all[0].size
+        moreSpecs = all.dropFirst().contains { $0 != all[0] } ? Array(all.dropFirst()) : []
+    }
+
+    /// The faces are not all threaded in one size.
+    public var isMixed: Bool { moreSpecs.contains { $0 != ThreadSpec(standard: standard, size: size) } }
 
     /// The major diameter to model, mm: the size's own, plus the tolerance offset.
     public func modeledDiameter(of size: ThreadSize, _ parameters: ParameterValues) throws -> Double {
@@ -179,6 +207,7 @@ public struct ThreadFeature: Codable, Hashable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         face = try c.decode(FaceRef.self, forKey: .face)
         moreFaces = try c.decodeIfPresent([FaceRef].self, forKey: .moreFaces) ?? []
+        moreSpecs = try c.decodeIfPresent([ThreadSpec].self, forKey: .moreSpecs) ?? []
         standard = try c.decode(ThreadStandard.self, forKey: .standard)
         size = try c.decode(String.self, forKey: .size)
         length = try c.decodeIfPresent(String.self, forKey: .length)

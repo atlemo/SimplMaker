@@ -734,31 +734,23 @@ extension DocumentModel {
     @discardableResult
     func addThread(on pick: PickID) -> Bool { addThreads(on: [pick]) }
 
-    /// Threads the round faces behind these picks. Faces that suit the same size share one Thread
-    /// feature (a plate of identical holes); others each get their own. False if none is round.
+    /// Threads the round faces behind these picks, each in the size that suits it, as one Thread feature (a plate of
+    /// holes in several sizes is one step, with one tolerance offset). False if none is round.
     @discardableResult
     func addThreads(on picks: [PickID]) -> Bool {
         defer { clickRay = nil; clickRayNext = nil }
-        var groups: [(standard: ThreadStandard, size: ThreadSize, faces: [FaceRef])] = []
+        var faces: [FaceRef] = [], specs: [ThreadSpec] = []
         for pick in picks {
-            guard let ref = roundFace(pick), let cyl = try? result?.body(ref.body)?.faceCylinder(ref.face),
+            guard let ref = roundFace(pick), !faces.contains(ref), let cyl = try? result?.body(ref.body)?.faceCylinder(ref.face),
                   let (standard, size) = ThreadSize.best(forDiameter: 2 * cyl.radius, hole: cyl.isHole) else { continue }
-            if let g = groups.firstIndex(where: { $0.standard == standard && $0.size.name == size.name }) {
-                if !groups[g].faces.contains(ref) { groups[g].faces.append(ref) }
-            } else {
-                groups.append((standard, size, [ref]))
-            }
+            faces.append(ref)
+            specs.append(ThreadSpec(standard: standard, size: size.name))
         }
-        guard !groups.isEmpty else { return false }
-        // One undo step, and while it is set up the tolerance, length and direction change for all of them.
-        var named = document
-        let features = groups.map { g -> Feature in
-            let f = Feature(name: named.nextName("Thread"), .thread(ThreadFeature(
-                face: g.faces[0], moreFaces: Array(g.faces.dropFirst()), standard: g.standard, size: g.size.name)))
-            named.features.append(f)
-            return f
-        }
-        add(features[0], alongside: Array(features.dropFirst()))
+        guard let first = specs.first else { return false }
+        var thread = ThreadFeature(face: faces[0], moreFaces: Array(faces.dropFirst()), moreSpecs: Array(specs.dropFirst()),
+                                   standard: first.standard, size: first.size)
+        if !thread.isMixed { thread.moreSpecs = [] }
+        add(Feature(name: document.nextName("Thread"), .thread(thread)))
         return true
     }
 
@@ -813,9 +805,8 @@ extension DocumentModel {
         if case .draft(let d) = f.kind {  // a draft makes no faces of its own: it shows the ones it leans
             return facePicks { m, name in m.id == d.body && d.faces.contains { $0.face == name } }
         }
-        // The features made in the same step (threads on holes of several sizes) light up with it.
-        let prefixes = (id == newFeature ? [id] + newFeatureGroup : [id]).map { "\($0)." }
-        return facePicks { _, name in prefixes.contains { name.hasPrefix($0) } }
+        let prefix = "\(id)."
+        return facePicks { _, name in name.hasPrefix(prefix) }
     }
 
     /// Pick IDs of the faces (on shown bodies) that pass the test.

@@ -983,12 +983,15 @@ public enum Regenerator {
     }
 
     static func thread(_ f: ThreadFeature, _ feature: Feature, _ r: inout RegenResult) throws {
-        guard let size = f.standard.size(f.size) else { throw KernelError(message: "there is no \(f.standard.rawValue) size \(f.size)") }
         let length = try f.length.map { try r.parameters.value(of: $0, kind: .length) }
         if let length, length <= 0 { throw KernelError(message: "the thread length must be positive") }
-        let diameter = try f.modeledDiameter(of: size, r.parameters)
-        if diameter <= size.pitch * 1.2 { throw KernelError(message: "the tolerance offset leaves the thread too thin") }
         for (n, face) in f.faces.enumerated() {
+            let spec = f.spec(at: n)
+            guard let size = spec.standard.size(spec.size) else {
+                throw KernelError(message: "there is no \(spec.standard.rawValue) size \(spec.size)")
+            }
+            let diameter = try f.modeledDiameter(of: size, r.parameters)
+            if diameter <= size.pitch * 1.2 { throw KernelError(message: "the tolerance offset leaves the thread too thin") }
             guard let i = r.bodies.firstIndex(where: { $0.id == face.body }) else {
                 throw KernelError(message: "the body with the thread's face is missing")
             }
@@ -1003,14 +1006,14 @@ public enum Regenerator {
                                                    length: length, flipped: f.flipped, leftHanded: f.leftHanded,
                                                    featureID: n == 0 ? feature.id : "\(feature.id).\(n + 1)")
             } catch let error as KernelError {
-                throw KernelError(message: error.message + threadSizeHint(f, size, body: body, face: face.face, length: length, r))
+                throw KernelError(message: error.message + threadSizeHint(f, spec, size, body: body, face: face.face, length: length, r))
             }
         }
     }
 
     /// For a thread that couldn't be built: other sizes that do build on the same face (a thread can fail at one
     /// size and not at the next), found by trying the nearest ones. Empty when none is found.
-    private static func threadSizeHint(_ f: ThreadFeature, _ size: ThreadSize, body: KBody, face: String, length: Double?,
+    private static func threadSizeHint(_ f: ThreadFeature, _ spec: ThreadSpec, _ size: ThreadSize, body: KBody, face: String, length: Double?,
                                        _ r: RegenResult) -> String {
         guard let cylinder = try? body.faceCylinder(face, flipped: f.flipped) else { return "" }
         let radius = cylinder.radius
@@ -1020,10 +1023,10 @@ public enum Regenerator {
                 let rMajor = s.diameter / 2, rMinor = s.minorDiameter / 2
                 let fits = cylinder.isHole ? (radius > rMinor * 0.8 && radius < rMajor * 1.1)
                                            : (radius > rMajor * 0.8 && radius < rMajor * 1.25)
-                return fits && !(standard == f.standard && s.name == size.name)
+                return fits && !(standard == spec.standard && s.name == size.name)
             }
             .sorted { a, b in
-                if (a.0 == f.standard) != (b.0 == f.standard) { return a.0 == f.standard }
+                if (a.0 == spec.standard) != (b.0 == spec.standard) { return a.0 == spec.standard }
                 return abs(a.1.diameter - size.diameter) < abs(b.1.diameter - size.diameter)
             }
         var working: [String] = []
@@ -1033,7 +1036,7 @@ public enum Regenerator {
                   (try? body.thread(face: face, majorDiameter: diameter, pitch: candidate.pitch, length: length,
                                     flipped: f.flipped, leftHanded: f.leftHanded, featureID: "hint")) != nil else { continue }
             let label = candidate.label(standard)
-            working.append(standard == f.standard || standard.isInch ? label : "\(label) (\(standard.rawValue))")
+            working.append(standard == spec.standard || standard.isInch ? label : "\(label) (\(standard.rawValue))")
         }
         guard !working.isEmpty else { return "" }
         return ". Sizes that work on this face: " + working.joined(separator: ", ") + "."
