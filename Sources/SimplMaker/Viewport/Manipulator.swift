@@ -59,6 +59,8 @@ struct ManipulatorFrame {
     var dotFollowsScreen = true
     /// Whether the dot in the middle can be grabbed (the Pattern tool's is only a marker).
     var dotGrabs = true
+    /// Whether the arrows are filled in their axis's colour (X red, Y green) instead of the neutral grey.
+    var coloredArrows = false
 
     static let world = ManipulatorFrame()
 
@@ -80,6 +82,7 @@ struct ManipulatorFrame {
         squares = []
         rings = circular ? [.z] : []
         dotGrabs = false
+        coloredArrows = true
     }
 
     /// The Offset tool's: one arrow along `direction` (in the sketch's plane) that sets the distance.

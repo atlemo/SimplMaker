@@ -1147,7 +1147,7 @@ final class SketchSession {
         if tool == .roundedRectangle, field == .radius, typedValue(.radius) != nil, let text = typed[.radius] { roundedRadius = Self.expression(text, .radius) }
         if field.isGear, typedValue(field) != nil, let text = typed[field] { setGear(field, Self.expression(text, field)) }
         if manipulating != nil { previewTyped() }
-        if patternSetup != nil { applyTypedPattern() }
+        if patternSetup != nil { applyTypedPattern(); keepPatternEnds(after: field) }
         if offsetSetup != nil { applyTypedOffset() }
     }
 
@@ -1426,6 +1426,8 @@ final class SketchSession {
                     d.angle = formatDimension(v.turn.z, kind: .angle)
                 }
             }
+            keepPatternEnds(after: .spacingX)
+            keepPatternEnds(after: .spacingY)
             return
         }
         guard let base = manipulatorBase else { return }
@@ -1547,6 +1549,9 @@ final class SketchSession {
     @ObservationIgnored private var patternBase: Sketch?
     /// Whether the pattern is new (else an existing one is being changed).
     private(set) var patternIsNew = true
+    /// How far the last copy of a grid sits from the original along x and y. Changing a count keeps these, so the
+    /// first and last copies stay where they are and the new ones go in between.
+    @ObservationIgnored private var patternSpan = SIMD2<Double>.zero
 
     var isPatterning: Bool { patternSetup != nil }
     var canPattern: Bool { patternSetup != nil || patternToEdit != nil || sketch.canPattern(selection) }
@@ -1627,7 +1632,29 @@ final class SketchSession {
         patternBase = base
         patternIsNew = isNew
         patternSetup = def
+        keepPatternEnds(after: .spacingX)
+        keepPatternEnds(after: .spacingY)
         previewPattern()
+    }
+
+    /// Keeps the ends of a grid where they are: a new spacing becomes the new span, and a new count spreads that
+    /// span over the new number of copies (so a copy is added or taken out in between, not at the far end).
+    private func keepPatternEnds(after field: SketchInput) {
+        guard patternSetup?.kind == .rectangular else { return }
+        let (count, spacing, axis): (SketchInput, SketchInput, Int)
+        switch field {
+        case .spacingX, .countX: (count, spacing, axis) = (.countX, .spacingX, 0)
+        case .spacingY, .countY: (count, spacing, axis) = (.countY, .spacingY, 1)
+        default: return
+        }
+        let n = patternValue(count) ?? 1
+        if field == spacing {
+            patternSpan[axis] = (patternValue(spacing) ?? 0) * max(n - 1, 1)
+        } else if n > 1, abs(patternSpan[axis]) > 1e-9, typedValue(count) != nil {
+            let text = formatDimension(patternSpan[axis] / (n - 1), kind: .length)
+            setPattern { if axis == 0 { $0.spacingX = text } else { $0.spacingY = text } }
+            typed[spacing] = nil  // the field shows the new spacing
+        }
     }
 
     /// Takes the changes back and leaves the sketch as it was.

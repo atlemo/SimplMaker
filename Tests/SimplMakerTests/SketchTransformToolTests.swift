@@ -277,6 +277,20 @@ import Testing
         #expect(session.patternSetup?.spacingY == "6 mm")
     }
 
+    @Test func changingACountKeepsTheFirstAndLastCopyWhereTheyAre() async throws {
+        let (_, session, _) = try await editing()
+        session.beginTransform(.pattern)  // 3 columns 15 mm apart: the last one 30 mm over
+        session.setTyped(.countX, "4")
+        #expect(session.patternSetup?.spacingX == "10 mm", "the new copies go in between")
+        session.setTyped(.countX, "1")
+        session.setTyped(.countX, "7")
+        #expect(session.patternSetup?.spacingX == "5 mm", "one at a time or not, the far end stays")
+        session.setTyped(.spacingX, "20")
+        session.setTyped(.countX, "3")
+        #expect(session.patternSetup?.spacingX == "60 mm", "a new spacing moves the far end, which then stays")
+        #expect(session.patternSetup?.spacingY == "6 mm", "the other direction is untouched")
+    }
+
     @Test func typedCountsAndSpacingsMakeTheCopiesAndReturnKeepsThem() async throws {
         let (model, session, _) = try await editing()
         let undo = UndoManager()

@@ -54,7 +54,12 @@ final class ManipulatorView: NSView {
             shape(ctx, square.corners, fill: fill(for: .plane(square.normal)))
         }
         for arrow in layout.arrows {
-            shape(ctx, arrow.polygon, fill: fill(for: .axis(arrow.axis)))
+            var color = fill(for: .axis(arrow.axis))
+            if layout.frame.coloredArrows {
+                let base = Self.color(of: arrow.axis)
+                color = arrow.axis == .z ? color : (color == body ? base : base.blended(withFraction: 0.45, of: .white) ?? base)
+            }
+            shape(ctx, arrow.polygon, fill: color)
         }
         disc(ctx, layout.center, ManipulatorLayout.dotRadius, fill: fill(for: .center), dot: false)
         for ring in layout.rings {
