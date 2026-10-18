@@ -16,6 +16,7 @@ final class ViewCubeView: NSView {
         didSet {
             guard offersTurning != oldValue else { return }
             turnButtons.forEach { $0.isHidden = !offersTurning }
+            if !offersTurning { hoveredArrow = nil }
         }
     }
     /// The colour of the hovered part (the accent, which while sketching is the system's).
@@ -32,6 +33,8 @@ final class ViewCubeView: NSView {
     private var dragged = false
     private var homeButton: NSButton!
     private(set) var turnButtons: [NSButton] = []
+    /// The turn arrow under the pointer (0: counter-clockwise, 1: clockwise).
+    private var hoveredArrow: Int? { didSet { if hoveredArrow != oldValue { showArrowStates() } } }
 
     /// A face: its outward normal and the directions that are right and up when you look at it.
     private struct Face {
@@ -83,9 +86,9 @@ final class ViewCubeView: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// A turn arrow, drawn like a cube face: the same fill and outline, in the light or dark scheme at the time it is drawn.
+    /// A turn arrow, drawn like a cube face (tinted with the accent while hovered): the same fill and outline, in the light or dark scheme at the time it is drawn.
     /// The outlines are the designer's SVG paths (35×20 pointing left, 20×35 pointing down), scaled down.
-    private static func turnArrow(counterClockwise: Bool) -> NSImage {
+    private static func turnArrow(counterClockwise: Bool, hoveredWith accent: NSColor? = nil) -> NSImage {
         let k: CGFloat = 0.9
         let natural = counterClockwise ? CGSize(width: 35, height: 20) : CGSize(width: 20, height: 35)
         let image = NSImage(size: CGSize(width: natural.width * k, height: natural.height * k), flipped: true) { _ in
@@ -116,12 +119,24 @@ final class ViewCubeView: NSView {
             path.close()
             NSColor(white: dark ? 0.4 : 0.89, alpha: 1).setFill()
             path.fill()
+            if let accent {  // the hovered part of the cube is tinted the same way
+                accent.withAlphaComponent(0.45).setFill()
+                path.fill()
+            }
             NSColor(white: dark ? 0.6 : 0.63, alpha: 1).setStroke()
             path.lineWidth = 0.75
             path.stroke()
             return true
         }
         return image
+    }
+
+    private func showArrowStates() {
+        for (i, b) in turnButtons.enumerated() {
+            let image = Self.turnArrow(counterClockwise: i == 0, hoveredWith: hoveredArrow == i ? accent() : nil)
+            image.accessibilityDescription = b.toolTip
+            b.image = image
+        }
     }
 
     @objc private func goHome() { home() }
@@ -251,8 +266,12 @@ final class ViewCubeView: NSView {
 
     // MARK: mouse
 
-    override func mouseMoved(with event: NSEvent) { hovered = region(at: convert(event.locationInWindow, from: nil)) }
-    override func mouseExited(with event: NSEvent) { hovered = nil }
+    override func mouseMoved(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        hoveredArrow = offersTurning ? turnButtons.firstIndex { $0.frame.contains(p) } : nil
+        hovered = hoveredArrow == nil ? region(at: p) : nil
+    }
+    override func mouseExited(with event: NSEvent) { hovered = nil; hoveredArrow = nil }
 
     override func mouseDown(with event: NSEvent) {
         dragFrom = convert(event.locationInWindow, from: nil)

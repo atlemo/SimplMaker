@@ -144,4 +144,22 @@ import Testing
         cube.offersTurning = false
         #expect(arrows.allSatisfy { $0.isHidden })
     }
+
+    @Test func anArrowChangesLookWhileHovered() {
+        let cube = ViewCubeView(frame: NSRect(origin: .zero, size: ViewCubeView.size))
+        let window = NSWindow(contentRect: cube.frame, styleMask: [], backing: .buffered, defer: false)
+        window.contentView = cube
+        cube.offersTurning = true
+        func move(to p: NSPoint) {
+            cube.mouseMoved(with: NSEvent.mouseEvent(with: .mouseMoved, location: cube.convert(p, to: nil), modifierFlags: [],
+                                                     timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                     eventNumber: 0, clickCount: 0, pressure: 0)!)
+        }
+        func bytes(_ b: NSButton) -> Data { b.image!.tiffRepresentation! }
+        let before = cube.turnButtons.map(bytes)
+        move(to: NSPoint(x: cube.turnButtons[0].frame.midX, y: cube.turnButtons[0].frame.midY))
+        #expect(bytes(cube.turnButtons[0]) != before[0] && bytes(cube.turnButtons[1]) == before[1], "only the hovered arrow changes")
+        move(to: NSPoint(x: 1, y: 1))
+        #expect(cube.turnButtons.map(bytes) == before, "back to normal when the pointer leaves")
+    }
 }
