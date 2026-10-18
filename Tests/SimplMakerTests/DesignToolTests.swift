@@ -207,6 +207,9 @@ import Testing
         #expect(threads.count == 2 && Set(threads.map(\.name)).count == 2, "one thread per size, with names of their own")
         #expect(model.newFeature != nil && model.newFeatureGroup.count == 1)
         let ids = [model.newFeature!] + model.newFeatureGroup
+        try await settle(model)
+        let lit = Set(model.threadHighlight.map { raw in model.meshes[PickID(raw: raw).body].mesh.faceNames[PickID(raw: raw).element] })
+        #expect(ids.allSatisfy { id in lit.contains { $0.hasPrefix("\(id).") } }, "every thread made together shows blue: \(lit)")
         model.updateFeatures(ids, "Change Thread Tolerance") { f in
             if case .thread(var t) = f.kind { t.tolerance = "4"; t.toleranceMaterial = .abs; f.kind = .thread(t) }
         }

@@ -813,8 +813,9 @@ extension DocumentModel {
         if case .draft(let d) = f.kind {  // a draft makes no faces of its own: it shows the ones it leans
             return facePicks { m, name in m.id == d.body && d.faces.contains { $0.face == name } }
         }
-        let prefix = "\(id)."
-        return facePicks { _, name in name.hasPrefix(prefix) }
+        // The features made in the same step (threads on holes of several sizes) light up with it.
+        let prefixes = (id == newFeature ? [id] + newFeatureGroup : [id]).map { "\($0)." }
+        return facePicks { _, name in prefixes.contains { name.hasPrefix($0) } }
     }
 
     /// Pick IDs of the faces (on shown bodies) that pass the test.
