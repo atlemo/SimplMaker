@@ -25,7 +25,7 @@ enum SketchTransformTool: String, CaseIterable, Identifiable {
         switch self {
         case .move: return "Move or rotate the selected curves (or the whole sketch): drag the arrows, the square or the ring, or type a distance or an angle"
         case .scale: return "Make the selected curves (or the whole sketch) bigger or smaller"
-        case .pattern: return "Copy the selected curves (or the whole sketch) in a grid or around a point: drag the arrows or the ring, or type the counts and spacing. Press it again with the same curves selected, or use the ▦ button beside a pattern, to change that pattern"
+        case .pattern: return "Copy the selected curves (or the whole sketch) in a grid or around a point: drag the arrows or the ring, or type the counts and spacing. Press it again with the same curves selected, or use the pattern button beside it, to change that pattern"
         case .mirror: return "Mirror the selected curves (or the whole sketch) across a line, a construction line, a projected edge or an axis; the mirror image stays linked to what it copies"
         }
     }

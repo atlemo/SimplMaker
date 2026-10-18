@@ -13,6 +13,7 @@ import CADCore
 import CADKernel
 import MetalKit
 import SwiftUI
+import SwiftUI
 
 final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// The view's multisampling follows the renderer's, whose pipelines are built for it.
@@ -1777,8 +1778,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             if view.stringValue != g.symbol {
                 view.stringValue = g.symbol
                 view.sizeToFit()
-                view.setFrameSize(NSSize(width: max(view.frame.width, view.isPatternButton ? 24 : 14),
-                                         height: max(view.frame.height, view.isPatternButton ? 22 : 0)))
+                view.setFrameSize(NSSize(width: max(view.frame.width, 14), height: view.frame.height))
             }
             if view.toolTip != tip { view.toolTip = tip }
             view.isSelectedGlyph = g.selected
@@ -1805,14 +1805,31 @@ final class ConstraintGlyphView: NSTextField {
     var onClick: ((_ additive: Bool) -> Void)?
     var isSelectedGlyph = false { didSet { if isSelectedGlyph != oldValue { updateAppearance() } } }
     var dark = false { didSet { if dark != oldValue { updateAppearance() } } }
-    /// A pattern's button: bigger than a constraint's symbol, outlined in the accent colour, so it is easy to spot.
+    /// A pattern's button: the Pattern tool's own icon, bigger than a constraint's symbol and outlined in the accent
+    /// colour, so it is easy to spot.
     var isPatternButton = false {
         didSet {
             guard isPatternButton != oldValue else { return }
-            font = .systemFont(ofSize: isPatternButton ? 15 : 10, weight: .semibold)
             layer?.cornerRadius = isPatternButton ? DS.Radius.sm : DS.Radius.xs
+            setFrameSize(NSSize(width: 28, height: 26))
             updateAppearance()
         }
+    }
+    private var iconImage: NSImage?
+
+    /// The Pattern tool's icon in `color`, drawn from the design system's glyph table like the toolbar's.
+    @MainActor private static func patternIcon(_ color: NSColor) -> NSImage? {
+        let renderer = ImageRenderer(content: Icon("pattern", size: 18, renderedStroke: 1.4).foregroundStyle(Color(nsColor: color)))
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        return renderer.nsImage
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard isPatternButton, let iconImage else { return }
+        let size = iconImage.size
+        iconImage.draw(in: NSRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2,
+                                  width: size.width, height: size.height))
     }
 
     /// Fixed colours (not the system's dynamic ones), so the symbol keeps its contrast over any sketch paper.
@@ -1827,6 +1844,10 @@ final class ConstraintGlyphView: NSTextField {
         layer?.borderColor = (isPatternButton ? NSColor.controlAccentColor
                               : dark ? NSColor(white: 1, alpha: 0.3) : NSColor(white: 0, alpha: 0.3)).cgColor
         layer?.borderWidth = isPatternButton ? 1.5 : 0.5
+        if isPatternButton {
+            iconImage = Self.patternIcon(isSelectedGlyph ? .white : dark ? NSColor(white: 0.9, alpha: 1) : NSColor(white: 0.15, alpha: 1))
+            needsDisplay = true
+        }
     }
 
     override init(frame: NSRect) {

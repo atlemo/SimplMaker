@@ -182,7 +182,7 @@ enum SketchOverlayBuilder {
             guard let box = s.patternBox(def.sources) else { return nil }
             let circular = def.kind == .circular
             return ConstraintGlyph(id: "pattern:\(def.id)", constraint: def.id, world: world(session.frame, box.max), stack: 0,
-                                   symbol: circular ? "↻" : "▦", help: circular ? "Circular pattern" : "Rectangular pattern",
+                                   symbol: "", help: circular ? "Circular pattern" : "Rectangular pattern",
                                    selected: false, pattern: def.id)
         }
     }
