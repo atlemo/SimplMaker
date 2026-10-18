@@ -2010,8 +2010,9 @@ struct SketchToolbar: View {
                     model.sketchCommand { $0.apply(c) }
                     constrainOpen = false
                 } label: {
-                    Label { Text(c.rawValue) } icon: {
+                    HStack(spacing: DS.Spacing.space3) {
                         Icon(c.icon, size: 16, renderedStroke: Icon.toolStroke).opacity(session.canApply(c) ? 1 : 0.4)
+                        Text(c.rawValue)
                     }
                 }
                 .buttonStyle(.borderless)
