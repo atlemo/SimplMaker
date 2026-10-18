@@ -1739,7 +1739,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private func updateGlyphs(avoiding labelFrames: [CGRect] = []) -> Bool {
         guard let renderer, let model else { return false }
         var created = false
-        let wanted = showConstraints ? (model.sketchSession.map { SketchOverlayBuilder.glyphs($0) } ?? []) : []
+        // A pattern's button stays when constraint symbols are hidden: it is the way into the pattern.
+        let wanted = (showConstraints ? (model.sketchSession.map { SketchOverlayBuilder.glyphs($0) } ?? []) : [])
+            + (model.sketchSession.map { SketchOverlayBuilder.patternGlyphs($0) } ?? [])
         let ids = Set(wanted.map(\.id))
         for (id, view) in glyphViews where !ids.contains(id) {
             view.removeFromSuperview()
@@ -1754,20 +1756,29 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 view = ConstraintGlyphView(frame: .zero)
                 view.dark = isDark
                 let constraint = g.constraint
-                view.onClick = { [weak self] additive in
-                    self?.model?.selectSketchItem(constraint, additive: additive)
-                    self?.refreshOverlay()
+                if g.pattern != nil {
+                    view.isPatternButton = true
+                    view.onClick = { [weak self] _ in
+                        self?.model?.beginSketchPattern(editing: constraint)
+                        self?.refreshOverlay()
+                    }
+                } else {
+                    view.onClick = { [weak self] additive in
+                        self?.model?.selectSketchItem(constraint, additive: additive)
+                        self?.refreshOverlay()
+                    }
                 }
                 addSubview(view)
                 created = true
                 glyphViews[g.id] = view
             }
             // Only what changed: this runs for every glyph on every frame.
-            let tip = "\(g.help) constraint · click to select, ⌫ to delete"
+            let tip = g.pattern != nil ? "\(g.help) · click to change it" : "\(g.help) constraint · click to select, ⌫ to delete"
             if view.stringValue != g.symbol {
                 view.stringValue = g.symbol
                 view.sizeToFit()
-                view.setFrameSize(NSSize(width: max(view.frame.width, 14), height: view.frame.height))
+                view.setFrameSize(NSSize(width: max(view.frame.width, view.isPatternButton ? 24 : 14),
+                                         height: max(view.frame.height, view.isPatternButton ? 22 : 0)))
             }
             if view.toolTip != tip { view.toolTip = tip }
             view.isSelectedGlyph = g.selected
@@ -1794,6 +1805,15 @@ final class ConstraintGlyphView: NSTextField {
     var onClick: ((_ additive: Bool) -> Void)?
     var isSelectedGlyph = false { didSet { if isSelectedGlyph != oldValue { updateAppearance() } } }
     var dark = false { didSet { if dark != oldValue { updateAppearance() } } }
+    /// A pattern's button: bigger than a constraint's symbol, outlined in the accent colour, so it is easy to spot.
+    var isPatternButton = false {
+        didSet {
+            guard isPatternButton != oldValue else { return }
+            font = .systemFont(ofSize: isPatternButton ? 15 : 10, weight: .semibold)
+            layer?.cornerRadius = isPatternButton ? DS.Radius.sm : DS.Radius.xs
+            updateAppearance()
+        }
+    }
 
     /// Fixed colours (not the system's dynamic ones), so the symbol keeps its contrast over any sketch paper.
     private func updateAppearance() {
@@ -1804,7 +1824,9 @@ final class ConstraintGlyphView: NSTextField {
             backgroundColor = dark ? NSColor(white: 0.14, alpha: 0.92) : NSColor(white: 1, alpha: 0.92)
             textColor = dark ? NSColor(white: 0.85, alpha: 1) : NSColor(white: 0.2, alpha: 1)
         }
-        layer?.borderColor = (dark ? NSColor(white: 1, alpha: 0.3) : NSColor(white: 0, alpha: 0.3)).cgColor
+        layer?.borderColor = (isPatternButton ? NSColor.controlAccentColor
+                              : dark ? NSColor(white: 1, alpha: 0.3) : NSColor(white: 0, alpha: 0.3)).cgColor
+        layer?.borderWidth = isPatternButton ? 1.5 : 0.5
     }
 
     override init(frame: NSRect) {

@@ -369,7 +369,7 @@ import Testing
         #expect(session.sketch.point("p~2~\(corners[2])")!.position.x == session.sketch.point(corners[2])!.position.x + 30)
     }
 
-    @Test func clickingACopyOpensItsPatternAndDeleteRemovesIt() async throws {
+    @Test func theGlyphOpensThePatternAndClickingACopyOnlyPicksIt() async throws {
         let (model, session, lines) = try await editing()
         session.beginTransform(.pattern)
         model.commitSketchTyped()
@@ -377,13 +377,18 @@ import Testing
         let id = try #require(session.sketch.patterns.first?.id)
         let copy = try #require(session.sketch.curves.first { Sketch.isGenerated($0.id) })
         _ = session.handle(SketchMouse(phase: .down, uv: .zero, pick: session.pickID(for: copy.id)))
+        #expect(!session.isPatterning && session.selection == [copy.id], "a click on a copy only selects it")
+        let glyph = try #require(SketchOverlayBuilder.patternGlyphs(session).first)
+        #expect(glyph.pattern == id && glyph.id == "pattern:\(id)")
+        model.beginSketchPattern(editing: id)  // what the glyph's click does
         #expect(session.isPatterning && !session.patternIsNew && session.patternSetup?.id == id)
+        #expect(SketchOverlayBuilder.patternGlyphs(session).isEmpty, "no glyph while the pattern is open")
         session.setTyped(.countX, "2")
         model.commitSketchTyped()
         #expect(committed(model)?.patterns.first?.countX == "2")
         #expect(committed(model)?.curves.count == 4 * 4, "2 × 2 cells, three copies")
 
-        _ = session.handle(SketchMouse(phase: .down, uv: .zero, pick: session.pickID(for: try #require(session.sketch.curves.first { Sketch.isGenerated($0.id) }).id)))
+        model.beginSketchPattern(editing: id)
         model.commitSketch(session.deletePattern())
         #expect(committed(model)?.patterns.isEmpty == true && committed(model)?.curves.count == lines.count)
     }

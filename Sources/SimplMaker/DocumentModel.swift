@@ -1360,6 +1360,12 @@ final class DocumentModel {
         overlayRevision += 1
     }
 
+    /// A pattern's button in the viewport: opens that pattern to change it.
+    func beginSketchPattern(editing id: EntityID) {
+        sketchSession?.beginPattern(editing: id)
+        overlayRevision += 1
+    }
+
     /// Move turns the manipulator on or off; Scale asks for a factor.
     func beginSketchTransform(_ tool: SketchTransformTool) {
         sketchSession?.beginTransform(tool)

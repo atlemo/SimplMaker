@@ -36,6 +36,8 @@ struct ConstraintGlyph: Identifiable, Equatable {
     var symbol: String
     var help: String
     var selected: Bool
+    /// A pattern's button (not a constraint): a click opens the pattern to change it.
+    var pattern: EntityID?
 }
 
 @MainActor
@@ -169,6 +171,20 @@ enum SketchOverlayBuilder {
             }
         }
         return out
+    }
+
+    /// One button per pattern, at the top right of what it copies: the way into its editor, so that clicking
+    /// a copy only picks it.
+    static func patternGlyphs(_ session: SketchSession) -> [ConstraintGlyph] {
+        let s = session.sketch
+        guard !s.patterns.isEmpty, !session.isPatterning else { return [] }
+        return s.patterns.compactMap { def in
+            guard let box = s.patternBox(def.sources) else { return nil }
+            let circular = def.kind == .circular
+            return ConstraintGlyph(id: "pattern:\(def.id)", constraint: def.id, world: world(session.frame, box.max), stack: 0,
+                                   symbol: circular ? "↻" : "▦", help: circular ? "Circular pattern" : "Rectangular pattern",
+                                   selected: false, pattern: def.id)
+        }
     }
 
     static func world(_ frame: Frame, _ p: SIMD2<Double>) -> SIMD3<Float> {
