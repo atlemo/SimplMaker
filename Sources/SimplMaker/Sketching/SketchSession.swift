@@ -255,6 +255,14 @@ enum SketchInput: String, CaseIterable, Identifiable {
     var isOffset: Bool { [.moveX, .moveY, .turn, .spacingX, .spacingY, .spread, .offsetDistance, .backlash, .bore].contains(self) }
     /// A whole number of copies.
     var isCount: Bool { self == .countX || self == .countY || self == .copies }
+    /// The sketch axis a field is along (its label takes the axis colour), nil for the rest.
+    var axis: Axis3? {
+        switch self {
+        case .moveX, .countX, .spacingX: return .x
+        case .moveY, .countY, .spacingY: return .y
+        default: return nil
+        }
+    }
     /// Short label shown in front of the field.
     var symbol: String {
         switch self {

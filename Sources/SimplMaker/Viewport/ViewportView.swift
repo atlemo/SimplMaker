@@ -1544,13 +1544,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         for input in inputs {
             let label = NSTextField(labelWithString: input.symbol)
             label.font = .systemFont(ofSize: 12, weight: .semibold)
-            label.textColor = .secondaryLabelColor
+            label.textColor = input.axis.map(ManipulatorView.color(of:)) ?? .secondaryLabelColor  // X red, Y green
             label.toolTip = input.rawValue
             let field = ValueField(frame: .zero)
             field.input = input
             field.completions = { [weak self] in self?.model?.completionCandidates() ?? [] }
             field.delegate = self
-            field.toolTip = "\(input.rawValue): type a value or an expression · Tab for the next · Return to place it"
+            field.toolTip = "\(input.rawValue): type a value or an expression · ↑ ↓ change a number (⇧ by ten\(model?.sketchSession?.isPatterning == true ? "" : ", ⌥ by a tenth")) · Tab for the next · Return to place it"
             field.widthAnchor.constraint(equalToConstant: 92).isActive = true
             panel.addArrangedSubview(label)
             panel.addArrangedSubview(field)
@@ -1696,6 +1696,18 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }
         guard let input = field.input, let session = model.sketchSession else { return false }
         let tab = selector == #selector(NSResponder.insertTab(_:)), backtab = selector == #selector(NSResponder.insertBacktab(_:))
+        // ↑ ↓ move a plain number by one (⇧ ten, ⌥ a tenth), as in the parameters; an expression is left alone.
+        if let event = NSApp.currentEvent, event.type == .keyDown, event.keyCode == 126 || event.keyCode == 125 {
+            let flags = event.modifierFlags
+            let size = flags.contains(.shift) ? 10.0 : flags.contains(.option) && !session.isPatterning ? 0.1 : 1.0
+            guard var next = nudgedExpression(field.stringValue, by: event.keyCode == 126 ? size : -size) else { return false }
+            if input.isCount, let n = Double(next), n < 1 { next = "1" }
+            field.stringValue = next
+            session.setTyped(input, next)
+            textView.selectedRange = NSRange(location: (next as NSString).length, length: 0)
+            refreshOverlay()
+            return true
+        }
         if newline {
             session.setTyped(input, field.stringValue)
             if session.typedIsInvalid(input) { NSSound.beep(); return true }
