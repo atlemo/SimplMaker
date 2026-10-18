@@ -2006,18 +2006,24 @@ struct SketchToolbar: View {
                     .padding(.bottom, DS.Spacing.space2)
             }
             ForEach(ConstraintTool.allCases, id: \.self) { c in
+                // One fade for the icon and the name alike (the system's own dimming of a disabled button
+                // leaves the icon's accent parts at full strength), so the row isn't `.disabled`.
+                let available = session.canApply(c)
                 Button {
+                    guard available else { return }
                     model.sketchCommand { $0.apply(c) }
                     constrainOpen = false
                 } label: {
                     HStack(spacing: DS.Spacing.space3) {
-                        Icon(c.icon, size: 16, renderedStroke: Icon.toolStroke).opacity(session.canApply(c) ? 1 : 0.4)
+                        Icon(c.icon, size: 16, renderedStroke: Icon.toolStroke)
                         Text(c.rawValue)
                     }
+                    .opacity(available ? 1 : 0.4)
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.primary)  // a borderless button would draw in the accent, hard to read on the popover
-                .disabled(!session.canApply(c))
+                .allowsHitTesting(available)
+                .focusable(available)
                 .tutorialSpot(c.rawValue)
             }
         }
