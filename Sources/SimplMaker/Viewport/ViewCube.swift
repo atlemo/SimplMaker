@@ -60,15 +60,19 @@ final class ViewCubeView: NSView {
         addSubview(button)
         homeButton = button
         // Curved arrows by the cube's top edge: the sketch turns a quarter on its paper, the way they point.
-        for (i, spec) in [(symbol: "arrow.counterclockwise", tip: "Turn the sketch a quarter counter-clockwise", action: #selector(turnCounterClockwise)),
-                          (symbol: "arrow.clockwise", tip: "Turn the sketch a quarter clockwise", action: #selector(turnClockwise))].enumerated() {
-            let b = NSButton(image: NSImage(systemSymbolName: spec.symbol, accessibilityDescription: spec.tip)!,
-                             target: self, action: spec.action)
+        for (i, spec) in [(counterClockwise: true, tip: "Turn the sketch a quarter counter-clockwise", action: #selector(turnCounterClockwise)),
+                          (counterClockwise: false, tip: "Turn the sketch a quarter clockwise", action: #selector(turnClockwise))].enumerated() {
+            let image = Self.turnArrow(counterClockwise: spec.counterClockwise)
+            image.accessibilityDescription = spec.tip
+            let b = NSButton(image: image, target: self, action: spec.action)
             b.isBordered = false
-            b.contentTintColor = .secondaryLabelColor
+            b.imagePosition = .imageOnly
+            b.imageScaling = .scaleNone
             b.toolTip = spec.tip
             b.isHidden = true
-            b.frame = NSRect(x: Self.size.width - 50 + CGFloat(i) * 24, y: Self.size.height - 24, width: 22, height: 22)
+            // The two arrows have different shapes: centre each in its own 22-point slot.
+            let slot = NSRect(x: Self.size.width - 50 + CGFloat(i) * 24, y: Self.size.height - 24, width: 22, height: 22)
+            b.frame = slot
             addSubview(b)
             turnButtons.append(b)
         }
@@ -76,6 +80,47 @@ final class ViewCubeView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// A turn arrow, drawn like a cube face: the same fill and outline, in the light or dark scheme at the time it is drawn.
+    /// The outlines are the designer's SVG paths (35×20 pointing left, 20×35 pointing down), scaled down.
+    private static func turnArrow(counterClockwise: Bool) -> NSImage {
+        let k: CGFloat = 0.6
+        let natural = counterClockwise ? CGSize(width: 35, height: 20) : CGSize(width: 20, height: 35)
+        let image = NSImage(size: CGSize(width: natural.width * k, height: natural.height * k), flipped: true) { _ in
+            let dark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let path = NSBezierPath()
+            func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * k, y: y * k) }
+            if counterClockwise {
+                path.move(to: p(9.35358, 5.06644))
+                path.curve(to: p(33.6353, 12.905), controlPoint1: p(18.8143, 5.29578), controlPoint2: p(27.5061, 8.14745))
+                path.curve(to: p(33.774, 14.2995), controlPoint1: p(34.0716, 13.2436), controlPoint2: p(34.1275, 13.8752))
+                path.line(to: p(29.9332, 18.9085))
+                path.curve(to: p(28.5101, 19.0558), controlPoint1: p(29.5797, 19.3328), controlPoint2: p(28.9508, 19.3887))
+                path.curve(to: p(9.35358, 13.0684), controlPoint1: p(23.9932, 15.6441), controlPoint2: p(17.1978, 13.2916))
+                path.line(to: p(9.35358, 18.6035))
+                path.line(to: p(0.353577, 9.60355))
+                path.line(to: p(9.35358, 0.603546))
+            } else {
+                path.move(to: p(14.6148, 24.8312))
+                path.curve(to: p(6.57961, 0.613773), controlPoint1: p(14.3088, 15.3726), controlPoint2: p(11.3867, 6.70421))
+                path.curve(to: p(5.18402, 0.486473), controlPoint1: p(6.23744, 0.180258), controlPoint2: p(5.60542, 0.129489))
+                path.line(to: p(0.606275, 4.36447))
+                path.curve(to: p(0.470559, 5.78877), controlPoint1: p(0.184871, 4.72147), controlPoint2: p(0.134124, 5.35078))
+                path.curve(to: p(6.61315, 24.8961), controlPoint1: p(3.91875, 10.2778), controlPoint2: p(6.32632, 17.0539))
+                path.line(to: p(1.07817, 24.941))
+                path.line(to: p(10.1509, 33.8677))
+                path.line(to: p(19.0776, 24.795))
+            }
+            path.close()
+            NSColor(white: dark ? 0.4 : 0.89, alpha: 1).setFill()
+            path.fill()
+            NSColor(white: dark ? 0.6 : 0.63, alpha: 1).setStroke()
+            path.lineWidth = 0.75
+            path.stroke()
+            return true
+        }
+        return image
+    }
 
     @objc private func goHome() { home() }
     @objc private func turnCounterClockwise() { turn(1) }
