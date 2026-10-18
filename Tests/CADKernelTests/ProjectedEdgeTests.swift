@@ -138,4 +138,81 @@ import Testing
         let plain = try JSONDecoder().decode(Sketch.self, from: JSONEncoder().encode(Sketch()))
         #expect(plain.projections.isEmpty)
     }
+
+    // MARK: circular edges
+
+    private func cylinder(diameter: String, sketch: Sketch) -> CADDocument {
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "c", name: "Cylinder1", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, height: "10", diameter: diameter))),
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: sketch))),
+        ]
+        return d
+    }
+
+    /// The cylinder's two circles, as they land on the XY sketch plane (one lies in it, one 10 mm above).
+    private func circles(_ diameter: String) throws -> [ModelSnap] {
+        let r = Regenerator.regenerate(cylinder(diameter: diameter, sketch: Sketch()))
+        let frame = try #require(r.sketches["sk"]?.frame)
+        let body = try #require(r.body("c"))
+        let found = body.edgeNames.compactMap { Regenerator.roundEdgeSnap(body, edge: EdgeRef(body: "c", edge: $0), frame: frame) }
+        #expect(found.count == 2, "a cylinder has a circle at each end")
+        return found
+    }
+
+    @Test func aCircularEdgeFacingTheSketchProjectsAsAFixedCircle() throws {
+        for snap in try circles("20") {
+            #expect(snap.isFullCircle && snap.center != nil)
+            #expect(abs(simd_length(snap.start - snap.center!) - 10) < 1e-6)
+            var s = Sketch()
+            s.project(snap)
+            let p = try #require(s.projections.first)
+            #expect(p.center != nil && p.start == p.end)
+            #expect(s.point(p.center!)?.fixed == true && s.point(p.start)?.fixed == true)
+            let curve = try #require(s.curve(p.line))
+            #expect(curve.construction)
+            guard case .circle = curve.geometry else { Issue.record("expected a circle"); continue }
+            // Projecting it again reuses it.
+            s.project(snap)
+            #expect(s.projections.count == 1 && s.curves.count == 1)
+        }
+    }
+
+    @Test func aProjectedCircleFollowsTheBodyAndSurvivesSaving() throws {
+        var s = Sketch()
+        let top = try #require(try circles("20").max { $0.start.x < $1.start.x } ?? nil)
+        s.project(top)
+        let p = s.projections[0]
+        // Doubling the diameter changes the radius to 20 and the sketch still solves.
+        let r = Regenerator.regenerate(cylinder(diameter: "40", sketch: s))
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let solved = try #require(r.sketches["sk"]?.solved)
+        guard case .circle(let c, let radius) = try #require(solved.curve(p.line)).geometry else { Issue.record("expected a circle"); return }
+        #expect(abs(radius - 20) < 1e-6)
+        let centre = try #require(solved.position(c))
+        #expect(simd_length(centre) < 1e-6, "the circle is still around the origin")
+        #expect(try JSONDecoder().decode(Sketch.self, from: JSONEncoder().encode(s)) == s)
+    }
+
+    @Test func anArcProjectsAsAnArcFromItsStartToItsEnd() throws {
+        // A quarter arc to the left of the XY origin, as the cylinder edge would deliver it.
+        let edge = EdgeRef(body: "c", edge: "c.arc")
+        var s = Sketch()
+        s.project(ModelSnap(edge: edge, start: SIMD2(10, 0), end: SIMD2(0, 10), center: .zero))
+        let p = try #require(s.projections.first)
+        guard case .arc(let c, let a, let b) = try #require(s.curve(p.line)).geometry else { Issue.record("expected an arc"); return }
+        #expect(c == p.center && a == p.start && b == p.end)
+        #expect(s.curve(p.line)?.construction == true)
+        #expect(s.point(c)?.fixed == true && s.point(a)?.fixed == true && s.point(b)?.fixed == true)
+    }
+
+    @Test func aCircleSeenEdgeOnIsNotProjected() throws {
+        // The cylinder's circles seen from a plane standing on edge land as lines, not circles.
+        var d = cylinder(diameter: "20", sketch: Sketch())
+        d.features[1] = Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xz, sketch: Sketch())))
+        let r = Regenerator.regenerate(d)
+        let frame = try #require(r.sketches["sk"]?.frame)
+        let body = try #require(r.body("c"))
+        #expect(body.edgeNames.allSatisfy { Regenerator.roundEdgeSnap(body, edge: EdgeRef(body: "c", edge: $0), frame: frame) == nil })
+    }
 }

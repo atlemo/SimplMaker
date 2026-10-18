@@ -1208,7 +1208,7 @@ final class DocumentModel {
     }
 
     /// Body edges and corners that lie in the sketch plane, for the sketch to snap to, and every straight body
-    /// edge (wherever it is) for Project Edge.
+    /// and circular edge (wherever it is) for Project Edge.
     func updateSketchReferences() {
         guard let session = sketchSession else { return }
         let f = session.frame
@@ -1244,6 +1244,11 @@ final class DocumentModel {
                         ends = (straight.start, straight.end)
                         model = straight
                     }
+                }
+                // A circular edge seen straight on can be projected too (Project Edge), from anywhere on the body.
+                if run.count > 1, let name = edge[first] < m.mesh.edgeNames.count ? m.mesh.edgeNames[Int(edge[first])] : nil,
+                   let body, let round = Regenerator.roundEdgeSnap(body, edge: EdgeRef(body: m.id, edge: name), frame: f) {
+                    refs.roundEdges[round.edge] = round
                 }
                 // Off the plane, nothing below applies: its segments and points are not in the plane to snap to.
                 guard run.contains(where: { abs($0.a.w) < 1e-3 && abs($0.b.w) < 1e-3 }) else { continue }

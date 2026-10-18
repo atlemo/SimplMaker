@@ -3046,6 +3046,34 @@ bool sk_body_edge_ends(SKHandle body, const char *edgeName, double out[6]) {
   SK_CATCH(false)
 }
 
+bool sk_body_edge_circle(SKHandle body, const char *edgeName, double out[14]) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->edgeIndex.find(edgeName);
+  if (it == b->edgeIndex.end()) {
+    setError(std::string("edge not found: ") + edgeName);
+    return false;
+  }
+  BRepAdaptor_Curve c(TopoDS::Edge(b->edges(it->second + 1)));
+  if (c.GetType() != GeomAbs_Circle) {
+    setError("that edge isn't circular");
+    return false;
+  }
+  gp_Circ circ = c.Circle();
+  gp_Pnt m = circ.Location(), p = c.Value(c.FirstParameter()), q = c.Value(c.LastParameter());
+  gp_Dir n = circ.Axis().Direction();
+  out[0] = m.X(); out[1] = m.Y(); out[2] = m.Z();
+  out[3] = n.X(); out[4] = n.Y(); out[5] = n.Z();
+  out[6] = circ.Radius();
+  out[7] = p.X(); out[8] = p.Y(); out[9] = p.Z();
+  out[10] = q.X(); out[11] = q.Y(); out[12] = q.Z();
+  out[13] = std::abs(c.LastParameter() - c.FirstParameter() - 2 * M_PI) < 1e-7 ? 1 : 0;
+  return true;
+  SK_CATCH(false)
+}
+
 SKHandle sk_translate(SKHandle body, double dx, double dy, double dz) {
   SK_TRY
   gp_Trsf t;

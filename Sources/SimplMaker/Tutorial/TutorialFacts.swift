@@ -194,7 +194,7 @@ struct TutorialFacts {
 
         /// Whether a corner of the box is a corner of the floor, which the sketch then follows.
         func followsFloor(_ box: Box) -> Bool {
-            let projected = Set(solved.projections.flatMap { [$0.start, $0.end] }.map(roots))
+            let projected = Set(solved.projections.flatMap { [$0.start, $0.end] + ($0.center.map { [$0] } ?? []) }.map(roots))
             return box.points.contains { projected.contains(roots($0)) }
         }
 

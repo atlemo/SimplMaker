@@ -156,6 +156,10 @@ SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int face
 bool sk_body_edge_line(SKHandle body, const char *edgeName, double out[6]);
 // A straight edge's two ends (out[0..2] = where it starts, out[3..5] = where it ends); false if it's curved.
 bool sk_body_edge_ends(SKHandle body, const char *edgeName, double out[6]);
+// A circular edge (a full circle or an arc of one): out[0..2] = its center, out[3..5] = the axis it turns counter-
+// clockwise about from its start to its end, out[6] = the radius, out[7..9] = where it starts, out[10..12] = where it
+// ends, out[13] = 1 for a full circle, else 0. False if the edge isn't circular.
+bool sk_body_edge_circle(SKHandle body, const char *edgeName, double out[14]);
 
 /// Boolean between two bodies; names from both operands are carried through.
 SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op);

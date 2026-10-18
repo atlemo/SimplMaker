@@ -97,7 +97,7 @@ import Testing
         #expect(session.sketch.projections.isEmpty && session.message != nil)
         _ = session.handle(SketchMouse(phase: .down, uv: nil, pick: nil, edge: EdgeRef(body: "box", edge: "box.nothing")))
         #expect(session.sketch.projections.isEmpty)
-        #expect(session.message == "Only straight edges can be projected for now")
+        #expect(session.message == "Only straight edges, and circles and arcs facing the sketch, can be projected")
     }
 
     @Test func anEdgePointingAtTheSketchIsRefused() async throws {
@@ -117,5 +117,29 @@ import Testing
         model.sketchSession?.setTool(.projectEdge)
         _ = model.sketchMouse(SketchMouse(phase: .down, uv: nil, pick: PickID(body: body, edge: edge)))
         #expect(model.sketchSession?.sketch.projections.map(\.edge) == [EdgeRef(body: "box", edge: "box.left|box.top")])
+    }
+
+    /// Project Edge also takes a circle of the body that faces the sketch: the circle comes in with a fixed center.
+    @Test func projectEdgeBringsInACircularEdge() async throws {
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "c", name: "Cylinder1", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, height: "10", diameter: "20"))),
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: Sketch()))),
+        ]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        model.editSketch("sk")
+        try await settle(model)
+        let session = try #require(model.sketchSession)
+        #expect(session.references.roundEdges.count == 2, "both circles of the cylinder are offered")
+        let edge = try #require(session.references.roundEdges.keys.sorted { $0.edge < $1.edge }.first)
+        session.setTool(.projectEdge)
+        _ = session.handle(SketchMouse(phase: .down, uv: nil, pick: nil, edge: edge))
+        let p = try #require(session.sketch.projections.first, "\(session.message ?? "no message")")
+        #expect(p.edge == edge && p.center != nil)
+        guard case .circle(_, let radius) = try #require(session.sketch.curve(p.line)).geometry else { Issue.record("expected a circle"); return }
+        #expect(abs(radius - 10) < 1e-6)
+        _ = session.handle(SketchMouse(phase: .down, uv: nil, pick: nil, edge: edge))
+        #expect(session.sketch.projections.count == 1, "a second click on the same circle changes nothing")
     }
 }
