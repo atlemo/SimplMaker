@@ -45,6 +45,39 @@ import Testing
         #expect(quarter.label(.unc) == "1/4-20 UNC")
     }
 
+    @Test func aFaceThatSuitsNoSizeGetsACustomThread() {
+        #expect(ThreadSpec.suggested(forDiameter: 8, hole: true) == ThreadSpec(standard: .metric, size: "M8x1.25"))
+        #expect(ThreadSpec.suggested(forDiameter: 6.8, hole: true) == ThreadSpec(standard: .metric, size: "M8x1.25"))
+        #expect(ThreadSpec.suggested(forDiameter: 8.05, hole: false) == ThreadSpec(standard: .metric, size: "M8x1.25"))
+        let odd = ThreadSpec.suggested(forDiameter: 7.3, hole: true)
+        #expect(odd.standard == .custom && odd.diameter == "7.3 mm", "\(odd)")
+        // About the pitch of the next size up, scaled: 1.25 x 7.3 / 8.
+        #expect(odd.pitch == "1.15 mm", "\(odd)")
+        let huge = ThreadSpec.suggested(forDiameter: 70, hole: true)
+        #expect(huge.standard == .custom && huge.diameter == "70 mm")
+    }
+
+    /// Any round face takes a thread: holes and shafts of sizes in no table, tiny and huge.
+    @Test(arguments: [0.8, 1.9, 7.3, 9.0, 13.7, 25.4, 33.3, 55.0, 70.0])
+    func anyHoleDiameterCanBeThreaded(diameter: Double) throws {
+        let block = Feature(id: "b", name: "b", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "150", length: "150", height: "20")))
+        var doc = CADDocument()
+        doc.features = [block]
+        let top = try #require(Regenerator.regenerate(doc).body("b")).faceFrame("b.top")
+        let d = SIMD3<Double>(0, 0, 20) - top.origin
+        doc.features.append(Feature(id: "h", name: "h", .hole(HoleFeature(
+            face: FaceRef(body: "b", face: "b.top"), u: "\((d * top.xAxis).sum())", v: "\((d * top.yAxis).sum())",
+            diameter: "\(diameter)", depth: nil))))
+        let body = try #require(Regenerator.regenerate(doc).body("b"))
+        let wall = try #require(body.faceNames.first { $0.contains(".hole.wall") })
+        let cylinder = try body.faceCylinder(wall)
+        let spec = ThreadSpec.suggested(forDiameter: 2 * cylinder.radius, hole: true)
+        doc.features.append(Feature(id: "t", name: "t", .thread(ThreadFeature(
+            face: FaceRef(body: "b", face: wall), standard: spec.standard, size: spec.size, diameter: spec.diameter, pitch: spec.pitch))))
+        let r = Regenerator.regenerate(doc)
+        #expect(r.errors.isEmpty, "Ø\(diameter) as \(spec): \(r.errors)")
+    }
+
     @Test func theBestSizeSuitsTheFace() {
         #expect(ThreadSize.best(forDiameter: 8, hole: false)?.1.name == "M8x1.25")
         #expect(ThreadSize.best(forDiameter: 6.35, hole: false)?.1.name == "1/4-20")

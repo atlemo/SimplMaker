@@ -9,6 +9,8 @@ public enum ThreadStandard: String, Codable, Hashable, Sendable, CaseIterable {
     case metricFine = "ISO Metric Fine"
     case unc = "UNC"
     case unf = "UNF"
+    /// Any diameter and pitch, for a hole that suits no standard size (the size is typed in, see ThreadSpec).
+    case custom = "Custom"
 
     public var sizes: [ThreadSize] {
         switch self {
@@ -16,6 +18,7 @@ public enum ThreadStandard: String, Codable, Hashable, Sendable, CaseIterable {
         case .metricFine: return ThreadSize.metricFine
         case .unc: return ThreadSize.unc
         case .unf: return ThreadSize.unf
+        case .custom: return []
         }
     }
 
@@ -48,7 +51,7 @@ public struct ThreadSize: Hashable, Sendable {
         ThreadSize(name: "\(name)-\(trim(tpi))", diameter: d * 25.4, pitch: 25.4 / tpi)
     }
 
-    private static func trim(_ x: Double) -> String {
+    static func trim(_ x: Double) -> String {
         x == x.rounded() ? String(Int(x)) : String(format: "%g", x)
     }
 
@@ -133,10 +136,36 @@ public enum ThreadMaterial: String, Codable, Hashable, Sendable, CaseIterable {
 }
 
 /// One thread's standard and size, for a face of a thread feature that is not threaded like the first.
-public struct ThreadSpec: Codable, Hashable, Sendable {
+public struct ThreadSpec: Hashable, Codable, Sendable {
     public var standard: ThreadStandard
+    /// The size's name in the standard; for a custom thread ("Custom") `diameter` and `pitch` say the size.
     public var size: String
-    public init(standard: ThreadStandard, size: String) { self.standard = standard; self.size = size }
+    /// A custom thread's major diameter and pitch: expressions in mm (nil for a standard size).
+    public var diameter: String?
+    public var pitch: String?
+    public init(standard: ThreadStandard, size: String, diameter: String? = nil, pitch: String? = nil) {
+        self.standard = standard; self.size = size; self.diameter = diameter; self.pitch = pitch
+    }
+
+    /// A custom thread's spec, `diameter` mm across with `pitch` mm between turns.
+    public static func custom(diameter: Double, pitch: Double) -> ThreadSpec {
+        ThreadSpec(standard: .custom, size: "Custom", diameter: "\(ThreadSize.trim(diameter)) mm", pitch: "\(ThreadSize.trim(pitch)) mm")
+    }
+
+    /// The thread for a round face `diameter` mm across: the standard size that suits it when one does (within 0.1 mm of
+    /// its own diameter or, for a hole, its tap drill), and otherwise a custom thread about as wide as the face, with
+    /// the pitch of the nearest metric size scaled to it. So any round face can be threaded, in a size or not.
+    public static func suggested(forDiameter diameter: Double, hole: Bool) -> ThreadSpec {
+        if let (standard, size) = ThreadSize.best(forDiameter: diameter, hole: hole) {
+            let near = abs(size.diameter - diameter) <= 0.1 || (hole && abs(size.tapDrill - diameter) <= 0.1)
+            if near { return ThreadSpec(standard: standard, size: size.name) }
+        }
+        let nearest = ThreadSize.metric.min { abs($0.diameter - diameter) < abs($1.diameter - diameter) }
+        let pitch = (nearest.map { $0.pitch * diameter / $0.diameter } ?? 0.5 * diameter / 3)
+        // Rounded to 0.05 mm, but never so coarse that the thread has no depth left.
+        let rounded = max((pitch / 0.05).rounded() * 0.05, 0.05)
+        return .custom(diameter: (diameter * 100).rounded() / 100, pitch: min(rounded, diameter / 3))
+    }
 }
 
 /// A screw thread cut into a round face: external on a shaft, internal in a hole (the face says
@@ -153,6 +182,9 @@ public struct ThreadFeature: Codable, Hashable, Sendable {
     /// The standard and size of each of `moreFaces`, in step with it, for holes of different sizes picked together;
     /// empty when they are all threaded like `face`.
     public var moreSpecs: [ThreadSpec]
+    /// `face`'s custom diameter and pitch (see ThreadSpec).
+    public var diameter: String?
+    public var pitch: String?
     /// How far along the face it runs; nil = all of it.
     public var length: String?
     /// Starts from the other end (by default the end with air beyond it: a shaft's tip, a hole's mouth).
@@ -171,28 +203,44 @@ public struct ThreadFeature: Codable, Hashable, Sendable {
 
     public init(face: FaceRef, moreFaces: [FaceRef] = [], moreSpecs: [ThreadSpec] = [], standard: ThreadStandard = .metric,
                 size: String = "M6x1", length: String? = nil, flipped: Bool = false, leftHanded: Bool = false, tolerance: String? = nil,
-                toleranceUnit: ThreadToleranceUnit = .percent, toleranceMaterial: ThreadMaterial? = nil) {
+                toleranceUnit: ThreadToleranceUnit = .percent, toleranceMaterial: ThreadMaterial? = nil,
+                diameter: String? = nil, pitch: String? = nil) {
         self.face = face; self.moreFaces = moreFaces; self.moreSpecs = moreSpecs; self.standard = standard; self.size = size
         self.length = length
         self.flipped = flipped; self.leftHanded = leftHanded; self.tolerance = tolerance; self.toleranceUnit = toleranceUnit
-        self.toleranceMaterial = toleranceMaterial
+        self.toleranceMaterial = toleranceMaterial; self.diameter = diameter; self.pitch = pitch
     }
 
     /// The standard and size of the face at `index` in `faces`.
     public func spec(at index: Int) -> ThreadSpec {
-        index > 0 && index - 1 < moreSpecs.count ? moreSpecs[index - 1] : ThreadSpec(standard: standard, size: size)
+        index > 0 && index - 1 < moreSpecs.count ? moreSpecs[index - 1] : own
+    }
+
+    /// `face`'s spec.
+    private var own: ThreadSpec { ThreadSpec(standard: standard, size: size, diameter: diameter, pitch: pitch) }
+
+    /// The size a spec stands for: a standard size, or a custom thread's typed diameter and pitch.
+    public func size(of spec: ThreadSpec, _ parameters: ParameterValues) throws -> ThreadSize {
+        if spec.standard == .custom {
+            guard let d = spec.diameter, let p = spec.pitch else { throw ExpressionError("a custom thread needs a diameter and a pitch") }
+            let diameter = try parameters.value(of: d, kind: .length), pitch = try parameters.value(of: p, kind: .length)
+            guard diameter > 0, pitch > 0 else { throw ExpressionError("a custom thread's diameter and pitch must be positive") }
+            return ThreadSize(name: "Custom", diameter: diameter, pitch: pitch)
+        }
+        guard let size = spec.standard.size(spec.size) else { throw ExpressionError("there is no \(spec.standard.rawValue) size \(spec.size)") }
+        return size
     }
 
     /// Sets the standard and size of the face at `index` in `faces`; the specs are kept only while they differ.
     public mutating func setSpec(_ spec: ThreadSpec, at index: Int) {
         var all = (0..<faces.count).map { self.spec(at: $0) }
         all[index] = spec
-        standard = all[0].standard; size = all[0].size
+        standard = all[0].standard; size = all[0].size; diameter = all[0].diameter; pitch = all[0].pitch
         moreSpecs = all.dropFirst().contains { $0 != all[0] } ? Array(all.dropFirst()) : []
     }
 
     /// The faces are not all threaded in one size.
-    public var isMixed: Bool { moreSpecs.contains { $0 != ThreadSpec(standard: standard, size: size) } }
+    public var isMixed: Bool { moreSpecs.contains { $0 != own } }
 
     /// The major diameter to model, mm: the size's own, plus the tolerance offset.
     public func modeledDiameter(of size: ThreadSize, _ parameters: ParameterValues) throws -> Double {
@@ -209,6 +257,8 @@ public struct ThreadFeature: Codable, Hashable, Sendable {
         face = try c.decode(FaceRef.self, forKey: .face)
         moreFaces = try c.decodeIfPresent([FaceRef].self, forKey: .moreFaces) ?? []
         moreSpecs = try c.decodeIfPresent([ThreadSpec].self, forKey: .moreSpecs) ?? []
+        diameter = try c.decodeIfPresent(String.self, forKey: .diameter)
+        pitch = try c.decodeIfPresent(String.self, forKey: .pitch)
         standard = try c.decode(ThreadStandard.self, forKey: .standard)
         size = try c.decode(String.self, forKey: .size)
         length = try c.decodeIfPresent(String.self, forKey: .length)

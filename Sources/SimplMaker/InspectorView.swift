@@ -795,7 +795,7 @@ struct ThreadInspector: View {
         try? model.result?.featureInputs[id]?[thread.face.body]?.faceCylinder(thread.face.face, flipped: thread.flipped)
     }
 
-    private var size: ThreadSize? { thread.standard.size(thread.size) }
+    private var size: ThreadSize? { try? thread.size(of: thread.spec(at: 0), model.parameterValues) }
 
     private func mm(_ x: Double) -> String { formatDimension(x, kind: .length) }
 
@@ -852,23 +852,51 @@ struct ThreadInspector: View {
         return unit ? text + " %" : text
     }
 
-    /// The standard and size pickers for the face at `n` (the only one, or one of several holes).
+    /// The standard and size pickers for the face at `n` (the only one, or one of several holes); a custom thread has
+    /// its diameter and pitch typed instead.
     @ViewBuilder private func sizePickers(_ n: Int, label: String) -> some View {
         let spec = thread.spec(at: n)
-        let current = spec.standard.size(spec.size)
+        let current = try? thread.size(of: spec, model.parameterValues)
         Picker("\(label)Standard", selection: Binding(get: { spec.standard }, set: { standard in
             // Keep about the same diameter in the new standard.
             let d = current?.diameter ?? 6
-            let nearest = standard.sizes.min { abs($0.diameter - d) < abs($1.diameter - d) }
-            edit.update("Change Thread Standard") { $0.setSpec(ThreadSpec(standard: standard, size: nearest?.name ?? spec.size), at: n) }
+            let changed: ThreadSpec
+            if standard == .custom {
+                changed = .custom(diameter: d, pitch: current?.pitch ?? 1)
+            } else {
+                let nearest = standard.sizes.min { abs($0.diameter - d) < abs($1.diameter - d) }
+                changed = ThreadSpec(standard: standard, size: nearest?.name ?? spec.size)
+            }
+            edit.update("Change Thread Standard") { $0.setSpec(changed, at: n) }
         })) {
             ForEach(ThreadStandard.allCases, id: \.self) { Text($0.rawValue).tag($0) }
         }
-        Picker("\(label)Size", selection: Binding(get: { spec.size }, set: { name in
-            edit.update("Change Thread Size") { $0.setSpec(ThreadSpec(standard: spec.standard, size: name), at: n) }
-        })) {
-            ForEach(spec.standard.sizes, id: \.name) { Text($0.label(spec.standard)).tag($0.name) }
-            if current == nil { Text(spec.size).tag(spec.size) }  // from a file with a size we don't list
+        if spec.standard == .custom {
+            LabeledContent("\(label)Major Ø") {
+                ExpressionField(text: spec.diameter ?? "", preview: { v in
+                    var s = spec; s.diameter = v
+                    edit.preview { $0.setSpec(s, at: n) }
+                }) { v in
+                    var s = spec; s.diameter = v
+                    edit.update("Edit Thread Diameter") { $0.setSpec(s, at: n) }
+                }
+            }
+            LabeledContent("\(label)Pitch") {
+                ExpressionField(text: spec.pitch ?? "", preview: { v in
+                    var s = spec; s.pitch = v
+                    edit.preview { $0.setSpec(s, at: n) }
+                }) { v in
+                    var s = spec; s.pitch = v
+                    edit.update("Edit Thread Pitch") { $0.setSpec(s, at: n) }
+                }
+            }
+        } else {
+            Picker("\(label)Size", selection: Binding(get: { spec.size }, set: { name in
+                edit.update("Change Thread Size") { $0.setSpec(ThreadSpec(standard: spec.standard, size: name), at: n) }
+            })) {
+                ForEach(spec.standard.sizes, id: \.name) { Text($0.label(spec.standard)).tag($0.name) }
+                if current == nil { Text(spec.size).tag(spec.size) }  // from a file with a size we don't list
+            }
         }
     }
 
@@ -883,7 +911,7 @@ struct ThreadInspector: View {
                 ForEach(0..<thread.faces.count, id: \.self) { n in
                     Divider()
                     sizePickers(n, label: "Hole \(n + 1) ")
-                    if let size = thread.spec(at: n).standard.size(thread.spec(at: n).size) {
+                    if let size = try? thread.size(of: thread.spec(at: n), model.parameterValues) {
                         let grow = ((try? thread.modeledDiameter(of: size, model.parameterValues)) ?? size.diameter) - size.diameter
                         LabeledContent("Hole \(n + 1) Ø", value: "major \(mm(size.diameter + grow)), minor \(mm(size.minorDiameter + grow))")
                     }
@@ -892,11 +920,13 @@ struct ThreadInspector: View {
             } else {
                 sizePickers(0, label: "")
                 if let size {
+                    if thread.standard != .custom {
                     LabeledContent("Pitch", value: thread.standard.isInch
                                    ? "\(mm(size.pitch)) (\(Int((25.4 / size.pitch).rounded())) per inch)" : mm(size.pitch))
+                    }
                     // As modeled, with the tolerance offset (the nominal sizes when there is none).
                     let grow = ((try? thread.modeledDiameter(of: size, model.parameterValues)) ?? size.diameter) - size.diameter
-                    LabeledContent("Major Ø", value: mm(size.diameter + grow))
+                    LabeledContent(thread.standard == .custom ? "Modeled major Ø" : "Major Ø", value: mm(size.diameter + grow))
                     LabeledContent("Minor Ø", value: mm(size.minorDiameter + grow))
                     if cylinder?.isHole == true { LabeledContent("Tap drill", value: mm(size.tapDrill)) }
                 }

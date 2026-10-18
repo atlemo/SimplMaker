@@ -987,9 +987,8 @@ public enum Regenerator {
         if let length, length <= 0 { throw KernelError(message: "the thread length must be positive") }
         for (n, face) in f.faces.enumerated() {
             let spec = f.spec(at: n)
-            guard let size = spec.standard.size(spec.size) else {
-                throw KernelError(message: "there is no \(spec.standard.rawValue) size \(spec.size)")
-            }
+            let size: ThreadSize
+            do { size = try f.size(of: spec, r.parameters) } catch { throw KernelError(message: "\(error)") }
             let diameter = try f.modeledDiameter(of: size, r.parameters)
             if diameter <= size.pitch * 1.2 { throw KernelError(message: "the tolerance offset leaves the thread too thin") }
             guard let i = r.bodies.firstIndex(where: { $0.id == face.body }) else {

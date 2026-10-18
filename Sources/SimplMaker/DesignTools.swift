@@ -734,21 +734,21 @@ extension DocumentModel {
     @discardableResult
     func addThread(on pick: PickID) -> Bool { addThreads(on: [pick]) }
 
-    /// Threads the round faces behind these picks, each in the size that suits it, as one Thread feature (a plate of
+    /// Threads the round faces behind these picks, each in the size that suits it (a custom one if no standard does), as one Thread feature (a plate of
     /// holes in several sizes is one step, with one tolerance offset). False if none is round.
     @discardableResult
     func addThreads(on picks: [PickID]) -> Bool {
         defer { clickRay = nil; clickRayNext = nil }
         var faces: [FaceRef] = [], specs: [ThreadSpec] = []
         for pick in picks {
-            guard let ref = roundFace(pick), !faces.contains(ref), let cyl = try? result?.body(ref.body)?.faceCylinder(ref.face),
-                  let (standard, size) = ThreadSize.best(forDiameter: 2 * cyl.radius, hole: cyl.isHole) else { continue }
+            guard let ref = roundFace(pick), !faces.contains(ref), let cyl = try? result?.body(ref.body)?.faceCylinder(ref.face)
+            else { continue }
             faces.append(ref)
-            specs.append(ThreadSpec(standard: standard, size: size.name))
+            specs.append(ThreadSpec.suggested(forDiameter: 2 * cyl.radius, hole: cyl.isHole))
         }
         guard let first = specs.first else { return false }
         var thread = ThreadFeature(face: faces[0], moreFaces: Array(faces.dropFirst()), moreSpecs: Array(specs.dropFirst()),
-                                   standard: first.standard, size: first.size)
+                                   standard: first.standard, size: first.size, diameter: first.diameter, pitch: first.pitch)
         if !thread.isMixed { thread.moreSpecs = [] }
         add(Feature(name: document.nextName("Thread"), .thread(thread)))
         return true
