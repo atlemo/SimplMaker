@@ -784,9 +784,11 @@ final class DocumentModel {
         let known = Set(result?.errors.keys.map { $0 } ?? [])
         let threadDraftSeconds = progressiveThreads
         let job: @MainActor () -> Void = {
+            guard KernelActivity.shared.begin() else { return }  // the app is quitting
             self.regenRunning = true
             let started = Date()
             Task.detached(priority: .userInitiated) {
+                defer { KernelActivity.shared.end() }
                 let progress: @Sendable (Int, Int, Feature) -> Void = { done, total, feature in
                     // Quick rebuilds (a drag) never show it; a slow one starts to after a moment.
                     guard Date().timeIntervalSince(started) > 0.3 else { return }

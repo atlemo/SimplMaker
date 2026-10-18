@@ -62,6 +62,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if AIFeature.isAvailable { AIConnection.shared.startIfEnabled() }  // only when the user has turned it on in Settings ▸ AI
     }
 
+    /// A rebuild still inside the geometry kernel when the process exits crashes it (the kernel's static
+    /// destructors run under it), so the quit waits for the rebuild, up to a limit.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard KernelActivity.shared.beginQuit() else { return .terminateNow }
+        Task { @MainActor in
+            let deadline = Date().addingTimeInterval(20)
+            while KernelActivity.shared.isBusy, Date() < deadline { try? await Task.sleep(for: .milliseconds(50)) }
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         if AIFeature.isAvailable { AIConnection.shared.stop() }  // closes the connections and marks the connection file as not running
     }
