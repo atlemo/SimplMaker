@@ -2772,4 +2772,21 @@ func simdLength(_ v: SIMD2<Double>) -> Double { (v.x * v.x + v.y * v.y).squareRo
 extension ConstraintTool {
     /// The glyph shown beside the constraint in the Constrain menu.
     var icon: String { "constraint-" + String(describing: self) }
+
+    /// What the constraint does and what to select for it, shown as the menu row's tooltip.
+    var help: String {
+        switch self {
+        case .coincident: "Make two points one point, or put a point on a curve. Select two points, or a point and a curve."
+        case .horizontal: "Keep the selected lines level. Select one or more lines."
+        case .vertical: "Keep the selected lines upright. Select one or more lines."
+        case .parallel: "Keep two lines parallel. Select two lines."
+        case .perpendicular: "Keep two lines at a right angle. Select two lines."
+        case .tangent: "Make a line, circle or arc touch a circle or arc smoothly, or a line a spline. Select two curves."
+        case .equal: "Give two lines the same length, or two circles or arcs the same radius. Select two of the same kind."
+        case .midpoint: "Keep a point at the middle of a line. Select a point and a line."
+        case .concentric: "Give two circles or arcs the same centre. Select two circles or arcs."
+        case .symmetric: "Mirror two points (or two circle centres) across a line. Select the two, then the line last."
+        case .fix: "Lock points in place so they can't move. Select one or more points."
+        }
+    }
 }

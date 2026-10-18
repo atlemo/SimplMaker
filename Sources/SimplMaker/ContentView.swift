@@ -2024,6 +2024,7 @@ struct SketchToolbar: View {
                 .foregroundStyle(.primary)  // a borderless button would draw in the accent, hard to read on the popover
                 .allowsHitTesting(available)
                 .focusable(available)
+                .toolTip(c.help)
                 .tutorialSpot(c.rawValue)
             }
         }
