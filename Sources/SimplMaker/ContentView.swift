@@ -2011,6 +2011,7 @@ struct SketchToolbar: View {
                     constrainOpen = false
                 }
                 .buttonStyle(.borderless)
+                .foregroundStyle(.primary)  // a borderless button would draw in the accent, hard to read on the popover
                 .disabled(!session.canApply(c))
                 .tutorialSpot(c.rawValue)
             }
