@@ -368,18 +368,22 @@ T *copyOut(const std::vector<T> &v) {
 /// the corner by that much or more folds the cone through its own axis, so the result is no solid. (A fillet that
 /// size builds a valid solid, so fillets aren't held to it.)
 /// Holes don't count: their flat face is outside the circle, so chamfering only widens them. False if there is none.
-bool cornerRadiusLimit(Body &b, const std::vector<TopoDS_Edge> &edges, double &radius) {
+template <class Maker>
+bool cornerRadiusLimitIn(Body &b, Maker &mk, double &radius) {
   try {
-    BRepFilletAPI_MakeChamfer mk(b.shape);
-    for (const TopoDS_Edge &e : edges) mk.Add(Precision::Confusion() * 10, e);  // Add finds each edge's tangent chain
     ShapeToShapes edgeFaces;
-    TopExp::MapShapesAndUniqueAncestors(b.shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    bool mapped = false;  // only a body with a round edge in the chains pays for the map
     bool found = false;
     for (int ic = 1; ic <= mk.NbContours(); ++ic)
       for (int j = 1; j <= mk.NbEdges(ic); ++j) {
         const TopoDS_Edge &e = mk.Edge(ic, j);
         BRepAdaptor_Curve c(e);
-        if (c.GetType() != GeomAbs_Circle || !edgeFaces.Contains(e)) continue;
+        if (c.GetType() != GeomAbs_Circle) continue;
+        if (!mapped) {
+          TopExp::MapShapesAndUniqueAncestors(b.shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+          mapped = true;
+        }
+        if (!edgeFaces.Contains(e)) continue;
         const gp_Circ circ = c.Circle();
         const gp_Pnt at = c.Value(0.5 * (c.FirstParameter() + c.LastParameter()));
         const gp_Vec inward(at, circ.Location());
@@ -402,14 +406,37 @@ bool cornerRadiusLimit(Body &b, const std::vector<TopoDS_Edge> &edges, double &r
   }
 }
 
+bool cornerRadiusLimit(Body &b, const std::vector<TopoDS_Edge> &edges, double &radius) {
+  try {
+    BRepFilletAPI_MakeChamfer mk(b.shape);
+    for (const TopoDS_Edge &e : edges) mk.Add(Precision::Confusion() * 10, e);  // Add finds each edge's tangent chain
+    return cornerRadiusLimitIn(b, mk, radius);
+  } catch (Standard_Failure &) {
+    return false;
+  }
+}
+
+std::string cornerText(double r, const char *kind) {
+  char buf[200];
+  std::snprintf(buf, sizeof buf, "the corner it runs round has a radius of %.4g mm, so a %s has to be smaller than that", r, kind);
+  return buf;
+}
+
 /// How a failed chamfer of `size` along `edges` reads when a rounded corner is the reason (see
 /// cornerRadiusLimit); empty if it isn't, or if `size` is 0 (a chamfer measured two ways has no one size to compare).
 std::string cornerMessage(Body &b, const std::vector<TopoDS_Edge> &edges, const char *kind, double size) {
   double r;
   if (size <= 0 || !cornerRadiusLimit(b, edges, r) || size < r - 1e-6) return "";
-  char buf[200];
-  std::snprintf(buf, sizeof buf, "the corner it runs round has a radius of %.4g mm, so a %s has to be smaller than that", r, kind);
-  return buf;
+  return cornerText(r, kind);
+}
+
+/// The same, from a maker the edges are already added to: adding them again is the longest step of a chamfer on a
+/// body with many edges, and the maker has the tangent chains already.
+template <class Maker>
+std::string cornerMessageIn(Body &b, Maker &mk, const char *kind, double size) {
+  double r;
+  if (size <= 0 || !cornerRadiusLimitIn(b, mk, r) || size < r - 1e-6) return "";
+  return cornerText(r, kind);
 }
 
 /// How a failed round or chamfer along `edges` reads when a short edge in their tangent chains is the reason: a size
@@ -613,6 +640,38 @@ bool healStrips(const Body &b, Body &out, const std::string &fallback) {
   }
 }
 
+/// Whether the faults of `result` are all ones `before` already had. An extrude that left hair-thin slits through its
+/// body is not a valid solid (BRepCheck refuses the faces the slits are cut into), and a round or chamfer of the
+/// outline is not at fault for that: only a face that is bad now and was not bad before, or came from a bad one by
+/// the operation's own history, counts against it. False when `before` was fine, or when `result` has faults that
+/// are not in a face (a shell that does not close), which this does not look at.
+bool onlyOldFaults(const TopoDS_Shape &before, BRepBuilderAPI_MakeShape &op, const TopoDS_Shape &result) {
+  try {
+    ShapeList old;
+    for (TopExp_Explorer ex(before, TopAbs_FACE); ex.More(); ex.Next()) {
+      if (BRepCheck_Analyzer(ex.Current()).IsValid()) continue;
+      old.Append(ex.Current());
+      for (const TopoDS_Shape &m : op.Modified(ex.Current())) old.Append(m);
+    }
+    if (old.IsEmpty()) return false;
+    bool anyBad = false;
+    for (TopExp_Explorer ex(result, TopAbs_FACE); ex.More(); ex.Next()) {
+      if (BRepCheck_Analyzer(ex.Current()).IsValid()) continue;
+      anyBad = true;
+      bool known = false;
+      for (const TopoDS_Shape &o : old)
+        if (o.IsSame(ex.Current())) {
+          known = true;
+          break;
+        }
+      if (!known) return false;
+    }
+    return anyBad;
+  } catch (Standard_Failure &) {
+    return false;
+  }
+}
+
 template <class Maker, class AddFn>
 SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, const std::string &feat,
                             const char *kind, AddFn add, double size = 0, bool healed = false) {
@@ -662,7 +721,7 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
   // A chamfer as big as the radius of a rounded corner it runs round is refused here, not left to OCCT: it
   // sometimes fails, but it also returns bodies that pass BRepCheck and still have the wrong shape.
   if (std::strcmp(kind, "chamfer") == 0) {
-    std::string why = cornerMessage(*b, picked, kind, size);
+    std::string why = cornerMessageIn(*b, mk, kind, size);
     if (!why.empty()) {
       setError(why);
       return 0;
@@ -709,6 +768,11 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
   };
   BRepCheck_Analyzer check(out.shape, true, true);  // in parallel: it takes long on a body with threads
   if (!check.IsValid()) {
+    // The body may have been invalid before this (slits an extrude left): what it did itself is what is judged.
+    if (onlyOldFaults(b->shape, mk, out.shape)) {
+      if (grew(out.shape)) return fail(tooBigMessage());
+      return store(std::move(out));
+    }
     // OCCT sometimes returns a fillet's result with a shell that is not quite closed or with edge tolerances
     // gone loose (after several fillets on one body); repairing it is often enough. Face names follow the repair.
     ShapeFix_Shape fix(mk.Shape());
