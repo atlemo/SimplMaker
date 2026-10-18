@@ -1,6 +1,7 @@
 // Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
 import Foundation
+import Security
 import Testing
 @testable import SimplMaker
 
@@ -75,6 +76,27 @@ private func license(validated: Date = t0, expires: Date? = nil) -> ActivatedLic
         #expect(merged?.license != nil)
         #expect(KeychainLicenseStore().merged(keychain: nil, backup: nil) == nil)
         #expect(KeychainLicenseStore().merged(keychain: nil, backup: b) == b)
+    }
+}
+
+@Suite struct UnsignedBuildKeychainTests {
+    @Test func aBuildWithoutATeamIDKeepsTheLicenseOutOfTheKeychain() throws {
+        let suite = "licenseTest-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var store = KeychainLicenseStore(usesKeychain: false)
+        store.service = "com.simplmaker.test.\(UUID().uuidString)"
+        store.defaults = defaults
+        store.save(LicenseData(trialStart: t0, lastSeen: t0, license: license()))
+        #expect(store.load()?.license != nil)  // round-trips through the defaults copy
+        let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: store.service]
+        #expect(SecItemCopyMatching(query as CFDictionary, nil) == errSecItemNotFound)
+    }
+
+    @Test func theTestProcessIsNotSignedWithATeamID() {
+        // Development and test builds are ad-hoc signed, so they take the keychain-free path.
+        #expect(!KeychainLicenseStore.processHasTeamID)
+        #expect(!KeychainLicenseStore().usesKeychain)
     }
 }
 

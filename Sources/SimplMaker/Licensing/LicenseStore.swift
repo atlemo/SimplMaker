@@ -1,5 +1,7 @@
 // Where the license data is kept between launches. The keychain survives deleting the app (so the trial
 // cannot be restarted by trashing it); a copy in UserDefaults covers a keychain that cannot be read.
+// Builds without a Team ID (ad-hoc signed development builds) never touch the keychain item: macOS ties its
+// "Always Allow" to the signing identity, and each such build would overwrite the release app's approval.
 // Copyright © 2026 Atle Mo. All rights reserved.
 import Foundation
 import Security
@@ -23,22 +25,39 @@ struct KeychainLicenseStore: LicenseStore {
     var account: String
     var defaults = UserDefaults.standard
     var defaultsKey: String
+    /// False for builds that are not signed with a Team ID; they keep the license in `defaults` only.
+    var usesKeychain: Bool
 
-    init(generation: Int = 1) {
+    init(generation: Int = 1, usesKeychain: Bool = Self.processHasTeamID) {
+        self.usesKeychain = usesKeychain
         account = "state-v\(generation)"
         defaultsKey = "licenseStateBackup-v\(generation)"
     }
 
+    /// Whether this process is signed with a Team ID (Developer ID or Apple Development), as the release app is.
+    static let processHasTeamID: Bool = {
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        var info: CFDictionary?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
+              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+              SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let dict = info as? [String: Any] else { return false }
+        return dict[kSecCodeInfoTeamIdentifier as String] is String
+    }()
+
     func load() -> LicenseData? {
-        merged(keychain: readKeychain(), backup: readBackup())
+        merged(keychain: usesKeychain ? readKeychain() : nil, backup: readBackup())
     }
 
     func save(_ data: LicenseData) {
         guard let encoded = try? JSONEncoder.license.encode(data) else { return }
-        let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account]
-        let status = SecItemUpdate(query as CFDictionary, [kSecValueData: encoded] as CFDictionary)
-        if status == errSecItemNotFound {
-            SecItemAdd(query.merging([kSecValueData: encoded]) { $1 } as CFDictionary, nil)
+        if usesKeychain {
+            let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account]
+            let status = SecItemUpdate(query as CFDictionary, [kSecValueData: encoded] as CFDictionary)
+            if status == errSecItemNotFound {
+                SecItemAdd(query.merging([kSecValueData: encoded]) { $1 } as CFDictionary, nil)
+            }
         }
         defaults.set(encoded, forKey: defaultsKey)
     }
