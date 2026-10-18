@@ -3334,9 +3334,8 @@ SKHandle sk_chamfer(SKHandle body, const char *const *edgeNames, int count, doub
 
 /// The two faces at an edge, the one the first chamfer distance is measured on first: the named one when it is
 /// one of them, else the one with the smaller name (so the choice survives a rebuild); `flip` takes the other.
-static bool edgeSides(const Body &b, const TopoDS_Edge &e, const char *named, bool flip, TopoDS_Face &first, TopoDS_Face &second) {
-  ShapeToShapes edgeFaces;
-  TopExp::MapShapesAndUniqueAncestors(b.shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+static bool edgeSides(const Body &b, const ShapeToShapes &edgeFaces, const TopoDS_Edge &e, const char *named, bool flip,
+                      TopoDS_Face &first, TopoDS_Face &second) {
   if (!edgeFaces.Contains(e) || edgeFaces.FindFromKey(e).Extent() != 2) return false;
   std::vector<std::pair<std::string, TopoDS_Face>> sides;
   for (const TopoDS_Shape &fs : edgeFaces.FindFromKey(e)) {
@@ -3349,6 +3348,13 @@ static bool edgeSides(const Body &b, const TopoDS_Edge &e, const char *named, bo
   first = sides[pick].second;
   second = sides[1 - pick].second;
   return true;
+}
+
+/// The same for one edge, when there is no map of the body's edges to hand.
+static bool edgeSides(const Body &b, const TopoDS_Edge &e, const char *named, bool flip, TopoDS_Face &first, TopoDS_Face &second) {
+  ShapeToShapes edgeFaces;
+  TopExp::MapShapesAndUniqueAncestors(b.shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+  return edgeSides(b, edgeFaces, e, named, flip, first, second);
 }
 
 SKHandle sk_chamfer_ex(SKHandle body, const char *const *edgeNames, const char *const *faceNames, int count,
@@ -3368,6 +3374,8 @@ SKHandle sk_chamfer_ex(SKHandle body, const char *const *edgeNames, const char *
   if (!b) return 0;
   // Which face each edge's first distance is on, worked out first: an edge that isn't between two faces is an error.
   std::vector<TopoDS_Face> onFirst;
+  ShapeToShapes edgeFaces;  // once for all the edges, not once for each
+  TopExp::MapShapesAndUniqueAncestors(b->shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
   for (int k = 0; k < count; ++k) {
     auto it = b->edgeIndex.find(edgeNames[k]);
     if (it == b->edgeIndex.end()) {
@@ -3375,7 +3383,7 @@ SKHandle sk_chamfer_ex(SKHandle body, const char *const *edgeNames, const char *
       return 0;
     }
     TopoDS_Face f1, f2;
-    if (!edgeSides(*b, TopoDS::Edge(b->edges(it->second + 1)), faceNames ? faceNames[k] : nullptr, flip, f1, f2)) {
+    if (!edgeSides(*b, edgeFaces, TopoDS::Edge(b->edges(it->second + 1)), faceNames ? faceNames[k] : nullptr, flip, f1, f2)) {
       setError("the edge must join two faces");
       return 0;
     }
