@@ -49,7 +49,8 @@ import Testing
         #expect(ThreadSize.best(forDiameter: 8, hole: false)?.1.name == "M8x1.25")
         #expect(ThreadSize.best(forDiameter: 6.35, hole: false)?.1.name == "1/4-20")
         #expect(ThreadSize.best(forDiameter: 6.8, hole: true)?.1.name == "M8x1.25")  // the M8 tap drill
-        #expect(ThreadSize.best(forDiameter: 5, hole: true)?.1.name == "M6x1")
+        #expect(ThreadSize.best(forDiameter: 5, hole: true)?.1.name == "M5x0.8")  // M6's tap drill too, but the own size wins
+        #expect(ThreadSize.best(forDiameter: 4.2, hole: true)?.1.name == "M5x0.8")  // the M5 tap drill
         #expect(ThreadSize.best(forDiameter: 6, hole: true)?.1.name == "M6x1")
     }
 

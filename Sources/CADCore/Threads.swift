@@ -89,8 +89,9 @@ public struct ThreadSize: Hashable, Sendable {
         func error(_ s: ThreadSize) -> Double {
             guard hole else { return abs(s.diameter - diameter) }
             let tappable = diameter >= s.minorDiameter - 0.05 && diameter <= s.diameter + 0.05
-            // Drawn at the tap drill, or at the thread's own size (the tap drill wins a tie).
-            let match = min(abs(s.tapDrill - diameter), abs(s.diameter - diameter) + 0.01)
+            // Drawn at the thread's own size, or at the tap drill (the own size wins a tie: a Ø5 hole is an M5, not
+            // the M6 whose tap drill it also is).
+            let match = min(abs(s.diameter - diameter), abs(s.tapDrill - diameter) + 0.01)
             return tappable ? match : 1000 + abs(s.diameter - diameter)
         }
         func nearest(_ standard: ThreadStandard) -> (ThreadStandard, ThreadSize, Double)? {
