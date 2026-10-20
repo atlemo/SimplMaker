@@ -246,6 +246,10 @@ public struct SweepFeature: Codable, Hashable, Sendable {
     public var path: CurveRef
     public var operation: BodyOperation
     public var target: FeatureID?
+    /// The bodies a Join, Cut or Intersect works on, picked in the Inspector; it wins over `target`. Nil = automatic,
+    /// as for an extrude: a cut goes through every body it reaches, a join or intersect works on `target` or else the
+    /// newest body. A join with several bodies merges them into the first one.
+    public var targets: [FeatureID]?
     public init(sketch: FeatureID, profiles: [ProfileRef], path: CurveRef, operation: BodyOperation = .newBody,
                 target: FeatureID? = nil) {
         self.sketch = sketch; self.profiles = profiles; self.path = path; self.operation = operation; self.target = target

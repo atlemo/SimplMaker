@@ -956,7 +956,11 @@ public enum Regenerator {
         let sk = try sketchResult(f.sketch, r)
         let profiles = try profiles(f.profiles, in: sk)
         let tool = try KBody.sweep(profiles, along: try path(f.path, r).path, featureID: feature.id)
-        try combine(tool, f.operation, target: f.target, feature, &r)
+        if let targets = f.targets {
+            try combine(tool, f.operation, targets: targets, feature, &r)
+        } else {
+            try combine(tool, f.operation, target: f.target, feature, &r)
+        }
     }
 
     static func loft(_ f: LoftFeature, _ feature: Feature, _ r: inout RegenResult) throws {
