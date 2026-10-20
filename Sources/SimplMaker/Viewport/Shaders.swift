@@ -208,10 +208,16 @@ enum Shaders {
         return lit / 28.0;
     }
 
+    // The way from a point to the viewer. In an orthographic view every ray runs the same way: `eye` is a point near the
+    // model there, not where the rays start, and a face seen at a shallow angle (a cylinder's top) can lie in front of it.
+    static float3 toViewer(float3 world, constant Uniforms& u) {
+        return u.viewDir.w > 0.5 ? -normalize(u.viewDir.xyz) : normalize(u.eye.xyz - world);
+    }
+
     // The side of a face that faces the viewer (the same turning shadeFace does).
     static float3 facing(float3 normal, float3 world, constant Uniforms& u) {
         float3 n = normalize(normal);
-        return dot(n, normalize(u.eye.xyz - world)) < 0.0 ? -n : n;
+        return dot(n, toViewer(world, u)) < 0.0 ? -n : n;
     }
 
     // Lighting, hover and selection colours; `print` gives the surface the look of an FDM print. `lit` is how much of
@@ -219,7 +225,7 @@ enum Shaders {
     static FragOut shadeFace(float3 normal, float3 world, uint id, bool print, float ring,
                              constant Uniforms& u, constant uint* sel, constant DrawParams& p, float lit = 1.0) {
         float3 n = normalize(normal);
-        float3 v = normalize(u.eye.xyz - world);
+        float3 v = toViewer(world, u);
         if (u.evenLight != 0) v = -normalize(u.viewDir.xyz);  // the same for every pixel: a flat face is one shade
         if (dot(n, v) < 0.0) n = -n;
         float groove = 1.0;

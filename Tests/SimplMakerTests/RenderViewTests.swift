@@ -39,7 +39,8 @@ import simd
     }
 
     private func render(_ model: DocumentModel, name: String, settings: RenderSettings?, grid: Bool = true,
-                        yaw: Float = -.pi / 3, pitch: Float = 0.55, orthographic: Bool = true) async throws -> (Picture, Renderer, ViewportMTKView) {
+                        yaw: Float = -.pi / 3, pitch: Float = 0.55, orthographic: Bool = true,
+                        distance: Float = 260) async throws -> (Picture, Renderer, ViewportMTKView) {
         let view = ViewportMTKView(frame: NSRect(x: 0, y: 0, width: 800, height: 560), device: nil)
         let renderer = try #require(Renderer())
         view.device = renderer.device
@@ -57,7 +58,7 @@ import simd
         renderer.sceneBounds = model.sceneBounds
         renderer.camera.orthographic = orthographic
         renderer.camera.target = SIMD3(45, 20, 15)
-        renderer.camera.distance = 260
+        renderer.camera.distance = distance
         renderer.camera.yaw = yaw
         renderer.camera.pitch = pitch
         renderer.setOverlay(model.sketchOverlay())
@@ -120,6 +121,22 @@ import simd
         let (plain, _, _) = try await render(model, name: "plain", settings: nil)
         let (rendered, _, _) = try await render(model, name: "plain-rendered", settings: RenderSettings())
         #expect(abs(plain.color(2, 2).x - rendered.color(2, 2).x) > 0.3, "the usual background, not the floor")
+    }
+
+    /// In an orthographic view the camera's `eye` is only a point near the model, so a top seen at a shallow angle can lie
+    /// above it. The face must still be shaded as one turned toward the viewer, the same at any distance.
+    @Test func aFaceSeenAtAShallowAngleKeepsItsShadeInAnOrthographicView() async throws {
+        let model = try await loaded()
+        let top = SIMD3<Float>(83, 0, 30)  // on the cylinder's top, near its left rim, which stays in view when close
+        func shade(distance: Float) async throws -> Float {
+            let (picture, renderer, view) = try await render(model, name: "shallow-\(Int(distance))", settings: .quiet, yaw: -.pi / 3,
+                                                             pitch: 0.2, distance: distance)
+            #expect(renderer.camera.eye.z < top.z || distance > 100, "the eye is below the top face")
+            let q = pixel(of: top, picture, renderer, view)
+            return picture.color(q.x, q.y).x
+        }
+        let far = try await shade(distance: 260), near = try await shade(distance: 60)
+        #expect(abs(far - near) < 0.03, "the top is \(far) from far away and \(near) from near: it must not turn dark")
     }
 
     @Test func theLightStaysWhereItIsSetWhenTheViewTurns() async throws {
