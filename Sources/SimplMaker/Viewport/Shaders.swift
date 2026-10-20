@@ -31,6 +31,8 @@ enum Shaders {
         float4x4 lightViewProj; // render view: the main light's view, for the shadow map
         float4 shadowParams;    // render view: x = 1 when shadows are on, y = how wide the light is (tan of its angle), w = depth range of the map in mm
         float4 shadowExtent;    // render view: xy = what the map covers in mm, z = a texel in mm, w = height a reflection fades out at
+        float4 cameraRight;     // xyz = the camera's right
+        float4 cameraUp;        // xyz = the camera's up
     };
 
     struct FloorParams {
@@ -222,7 +224,10 @@ enum Shaders {
         if (dot(n, v) < 0.0) n = -n;
         float groove = 1.0;
         if (print) groove = printLook(n, world, max(u.printLayer, 0.01), max(u.printNozzle, 0.05), ring);
-        float3 key = normalize(v + float3(0.25, 0.15, 0.6));
+        // The key light sits up and to the right of the camera. The offset is in the camera's own axes: a world-space
+        // offset added to the view vector swings the light round the model as the camera orbits, so a face seen from
+        // behind the offset lit and darkened from one angle to the next.
+        float3 key = normalize(v + 0.25 * u.cameraRight.xyz + 0.6 * u.cameraUp.xyz);
         float diffuse = max(dot(n, key), 0.0);
         float spec = print ? pow(max(dot(reflect(-key, n), v), 0.0), 14.0) * 0.07
                            : pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;

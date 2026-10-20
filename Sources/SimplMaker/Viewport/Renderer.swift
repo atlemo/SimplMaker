@@ -178,6 +178,9 @@ struct Uniforms {
     var shadowParams: SIMD4<Float> = .zero
     /// xy = what the map covers, in mm, z = a texel of it, in mm, w = the height a reflection fades out at.
     var shadowExtent: SIMD4<Float> = .zero
+    /// The camera's right and up, so the everyday key light can sit at a fixed spot in the view (see shadeFace).
+    var cameraRight: SIMD4<Float> = SIMD4(1, 0, 0, 0)
+    var cameraUp: SIMD4<Float> = SIMD4(0, 0, 1, 0)
 }
 
 /// The Render view's floor, as the shader reads it (see floorVertex).
@@ -1233,6 +1236,8 @@ final class Renderer {
         }
         let forward = camera.forward
         uniforms.viewDir = SIMD4(forward.x, forward.y, forward.z, camera.orthographic ? 1 : 0)
+        uniforms.cameraRight = SIMD4(camera.right, 0)
+        uniforms.cameraUp = SIMD4(camera.up, 0)
         var cutPlane = sectionPlane
         if cutPlane == nil, let s = sketchSlice {
             // The side of the sketch plane the camera is on goes; a hair of room keeps a face lying in the plane.
