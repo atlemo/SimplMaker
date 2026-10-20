@@ -428,6 +428,15 @@ final class Renderer {
     /// The reflection in the floor: its depth first, so each pixel is blended once, then its colour.
     private let reflectDepthPipeline: MTLRenderPipelineState
     private let reflectPipeline: MTLRenderPipelineState
+    /// A blurred reflection: many tilted mirror views added up in a texture (depth first, then colour, per view), then
+    /// laid over the floor.
+    private let blurDepthPipeline: MTLRenderPipelineState
+    private let blurAccumulatePipeline: MTLRenderPipelineState
+    private let blurCompositePipeline: MTLRenderPipelineState
+    private var reflectionTexture: MTLTexture?
+    private var reflectionDepth: MTLTexture?
+    /// How many mirror views make up a blurred reflection.
+    static let reflectionViews = 16
     private var shadowMap: MTLTexture?
     /// Bound where no shadow map is wanted, as the shaders always take one.
     private let emptyShadowMap: MTLTexture
@@ -620,6 +629,26 @@ final class Renderer {
             floorPipeline = try pipeline("floorVertex", "floorFragment", writesID: false)
             reflectDepthPipeline = try pipeline("faceVertex", "faceFragment", writesID: false, writesColor: false)
             reflectPipeline = try pipeline("faceVertex", "faceFragment", blend: true, writesID: false)
+            func offscreen(accumulate: Bool) throws -> MTLRenderPipelineState {
+                let d = MTLRenderPipelineDescriptor()
+                d.vertexFunction = library.makeFunction(name: "faceVertex")
+                d.fragmentFunction = library.makeFunction(name: "reflectionFragment")
+                d.colorAttachments[0].pixelFormat = .rgba16Float
+                if accumulate {
+                    d.colorAttachments[0].isBlendingEnabled = true
+                    d.colorAttachments[0].sourceRGBBlendFactor = .one
+                    d.colorAttachments[0].destinationRGBBlendFactor = .one
+                    d.colorAttachments[0].sourceAlphaBlendFactor = .one
+                    d.colorAttachments[0].destinationAlphaBlendFactor = .one
+                } else {
+                    d.colorAttachments[0].writeMask = []
+                }
+                d.depthAttachmentPixelFormat = .depth32Float
+                return try device.makeRenderPipelineState(descriptor: d)
+            }
+            blurDepthPipeline = try offscreen(accumulate: false)
+            blurAccumulatePipeline = try offscreen(accumulate: true)
+            blurCompositePipeline = try pipeline("floorVertex", "reflectionCompositeFragment", blend: true, writesID: false)
             let shadow = MTLRenderPipelineDescriptor()
             shadow.vertexFunction = library.makeFunction(name: "shadowVertex")
             shadow.depthAttachmentPixelFormat = .depth32Float
@@ -986,6 +1015,71 @@ final class Renderer {
         return (projection * view, SIMD2(w, h), far - near)
     }
 
+    /// The reflection with blur: the bodies drawn upside down, many times with the mirror tilted a little differently
+    /// each time, added up in a texture of half the view's size (see reflectionFragment). A tilt moves a point sideways
+    /// by its height, so what touches the floor stays sharp and the blur grows with height.
+    private func drawBlurredReflection(_ cmd: MTLCommandBuffer, _ uniforms: Uniforms, strength: Float, blur: Float, size: CGSize,
+                                       tints: [BodyTint], shadowing: Bool) {
+        let w = max(Int(size.width) / 2, 1), h = max(Int(size.height) / 2, 1)
+        if reflectionTexture?.width != w || reflectionTexture?.height != h {
+            let c = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false)
+            c.usage = [.renderTarget, .shaderRead]
+            c.storageMode = .private
+            reflectionTexture = device.makeTexture(descriptor: c)
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: w, height: h, mipmapped: false)
+            d.usage = .renderTarget
+            d.storageMode = .private
+            reflectionDepth = device.makeTexture(descriptor: d)
+        }
+        let views = Self.reflectionViews
+        for view in 0..<views {
+            let pass = MTLRenderPassDescriptor()
+            pass.colorAttachments[0].texture = reflectionTexture
+            pass.colorAttachments[0].loadAction = view == 0 ? .clear : .load
+            pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            pass.colorAttachments[0].storeAction = .store
+            pass.depthAttachment.texture = reflectionDepth
+            pass.depthAttachment.loadAction = .clear
+            pass.depthAttachment.clearDepth = 1
+            pass.depthAttachment.storeAction = .dontCare
+            guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
+            // This view's tilt: a point of the disc of tilts, which together make the blur.
+            let r = sqrt((Float(view) + 0.5) / Float(views)), a = Float(view) * 2.39996323
+            let shear = SIMD2(cos(a), sin(a)) * (r * blur * 0.5)
+            var m = uniforms
+            m.viewProj = uniforms.viewProj * simd_float4x4(columns: (SIMD4(1, 0, 0, 0), SIMD4(0, 1, 0, 0),
+                                                                    SIMD4(shear.x, shear.y, -1, 0), SIMD4(0, 0, 0, 1)))
+            m.eye.z = -m.eye.z
+            m.viewDir.z = -m.viewDir.z
+            m.clipPlane = SIMD4(0, 0, -1, 0)  // what stands below the floor is not reflected
+            m.clipOn = 1
+            m.hovered = 0
+            m.selectedCount = 0
+            m.hoverGroupCount = 0
+            m.renderParams.w = strength / Float(views)
+            var none: [UInt32] = [0]
+            enc.setCullMode(.none)
+            enc.setVertexBytes(&m, length: MemoryLayout<Uniforms>.stride, index: 1)
+            enc.setFragmentBytes(&m, length: MemoryLayout<Uniforms>.stride, index: 1)
+            enc.setFragmentBytes(&none, length: MemoryLayout<UInt32>.stride, index: 2)
+            enc.setFragmentTexture(shadowing ? shadowMap : emptyShadowMap, index: 1)
+            for (pipeline, depth) in [(blurDepthPipeline, depthState), (blurAccumulatePipeline, noWriteDepthState)] {
+                enc.setRenderPipelineState(pipeline)
+                enc.setDepthStencilState(depth)
+                for (i, b) in bodies.enumerated() {
+                    guard let faces = b.faces, let indices = b.indices else { continue }
+                    var params = DrawParams(color: tints[i].face, hoverColor: tints[i].faceHover, selectColor: tints[i].faceSelected,
+                                            thickness: 0, depthBias: 0, pickable: 0)
+                    enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
+                    enc.setVertexBuffer(faces, offset: 0, index: 0)
+                    enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
+                                              indexBuffer: indices, indexBufferOffset: 0)
+                }
+            }
+            enc.endEncoding()
+        }
+    }
+
     /// Draws the bodies' depth as the main light sees it, into the shadow map.
     private func drawShadowMap(_ cmd: MTLCommandBuffer, _ uniforms: inout Uniforms) {
         if shadowMap == nil {
@@ -1023,7 +1117,7 @@ final class Renderer {
         var params = FloorParams(centerHalf: SIMD4((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, 0, fadeEnd * 1.1),
                                  lit: SIMD4(look.floorColor, fadeStart),
                                  backdrop: SIMD4(look.backdropColor, fadeEnd),
-                                 shadowed: SIMD4(look.floorShadowColor, 0))
+                                 shadowed: SIMD4(look.floorShadowColor, Float(look.reflectionBlur)))
         enc.setRenderPipelineState(floorPipeline)
         enc.setDepthStencilState(noWriteDepthState)
         enc.setVertexBytes(&params, length: MemoryLayout<FloorParams>.stride, index: 3)
@@ -1128,6 +1222,7 @@ final class Renderer {
             uniforms.clipOn = 1
         }
         let clipStyle: UInt32 = sectioning ? DrawStyle.clipped : 0
+        let tints = bodies.indices.map { Self.tint(bodyColors[safe: $0].flatMap { $0 }, palette: palette) }
         var sel = Array(selected.prefix(256))
         let group = Array(hoverGroup.prefix(256))
         sel += group  // after the selected ids, which are the first `selectedCount`
@@ -1136,6 +1231,13 @@ final class Renderer {
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
 
         if shadowing { drawShadowMap(cmd, &uniforms) }
+        // A reflection with blur is made in its own passes first; without, it is drawn straight into the view.
+        let blurredReflection = look.map { $0.reflectionStrength > 0 && $0.reflectionBlur > 0.02 && !sectioning && !bodies.isEmpty
+                                          && !camera.isBelowGround } ?? false
+        if blurredReflection, let look {
+            drawBlurredReflection(cmd, uniforms, strength: look.reflectionStrength, blur: Float(look.reflectionBlur), size: size,
+                                  tints: tints, shadowing: shadowing)
+        }
         guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
         enc.setFragmentTexture(shadowing ? shadowMap : emptyShadowMap, index: 1)
         enc.setDepthStencilState(depthState)
@@ -1147,7 +1249,6 @@ final class Renderer {
         enc.setCullMode(.none)
         enc.setStencilReferenceValue(1)
         let style = printing || (look != nil && look?.showEdges == false) ? VisualStyle.shaded : visualStyle
-        let tints = bodies.indices.map { Self.tint(bodyColors[safe: $0].flatMap { $0 }, palette: palette) }
         /// Faces: shaded, or in the wireframe styles flat in the background colour (hiding what's
         /// behind them) with hover and selection as a light wash. Wireframe draws them later, unseen.
         func drawFaces(_ pipeline: MTLRenderPipelineState, wireframe: Bool, capsOnly: Bool = false) {
@@ -1241,7 +1342,11 @@ final class Renderer {
         } else if let look {
             if !camera.isBelowGround {
                 drawFloor(enc, look)
-                if look.reflectionStrength > 0, !sectioning, !bodies.isEmpty {
+                if blurredReflection {
+                    enc.setRenderPipelineState(blurCompositePipeline)
+                    enc.setFragmentTexture(reflectionTexture, index: 2)
+                    enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+                } else if look.reflectionStrength > 0, !sectioning, !bodies.isEmpty {
                     // The bodies again, upside down under the floor, over it where nothing stands in their way.
                     var mirrored = uniforms
                     mirrored.viewProj = uniforms.viewProj * simd_float4x4(diagonal: SIMD4(1, 1, -1, 1))

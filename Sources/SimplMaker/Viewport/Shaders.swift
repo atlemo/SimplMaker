@@ -286,6 +286,42 @@ enum Shaders {
         return o;
     }
 
+    // A blurred reflection is made apart, from many mirror views tilted a little differently (each moves what is
+    // reflected sideways by its height, so the foot of a body stays sharp and the top blurs the most), added up in a
+    // texture: premultiplied colour and, in alpha, how much of the floor the reflection takes. This is one view.
+    fragment float4 reflectionFragment(FaceOut in [[stage_in]],
+                                       constant Uniforms& u [[buffer(1)]],
+                                       constant uint* sel [[buffer(2)]],
+                                       constant DrawParams& p [[buffer(3)]],
+                                       depth2d<float> shadowMap [[texture(1)]]) {
+        if (u.clipOn != 0 && dot(in.world, u.clipPlane.xyz) - u.clipPlane.w > 1e-4) discard_fragment();
+        float lit = shadowVisibility(in.world, facing(in.normal, in.world, u), u, shadowMap);
+        float3 color = shadeFace(in.normal, in.world, in.id, false, 1e9, u, sel, p, lit).color.rgb;
+        float a = u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), in.world.z));
+        return float4(color * a, a);
+    }
+
+    // The floor again, over the floor, with the summed reflection (read a little blurred, to blend the steps between views).
+    fragment FragOut reflectionCompositeFragment(FloorOut in [[stage_in]],
+                                                 constant Uniforms& u [[buffer(1)]],
+                                                 constant FloorParams& f [[buffer(3)]],
+                                                 texture2d<float> reflection [[texture(2)]]) {
+        constexpr sampler linearSampler(coord::normalized, filter::linear, address::clamp_to_edge);
+        float2 uv = in.position.xy / u.viewport;
+        float2 texel = 1.0 / float2(reflection.get_width(), reflection.get_height());
+        float radius = 1.0 + 3.0 * f.shadowed.w;
+        float4 sum = reflection.sample(linearSampler, uv);
+        for (int i = 0; i < 8; i++) {
+            float a = float(i) * 0.785398;
+            sum += reflection.sample(linearSampler, uv + float2(cos(a), sin(a)) * radius * texel);
+        }
+        sum /= 9.0;
+        FragOut o;
+        o.color = float4(sum.rgb / max(sum.a, 1e-4), sum.a);
+        o.id = 0;
+        return o;
+    }
+
     // The bodies seen from the main light, for the shadow map: depth only.
     struct ShadowOut {
         float4 position [[position]];

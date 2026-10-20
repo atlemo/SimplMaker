@@ -54,6 +54,8 @@ struct RenderSettings: Codable, Equatable {
     var showEdges = false
     /// How much of the part shows in the floor, 0 (none) to 1.
     var reflection: Double = 0.35
+    /// How blurred the reflection is, 0 (a mirror) to 1: it stays sharp where a body meets the floor and softens with height.
+    var reflectionBlur: Double = 0.25
     /// Bodies cast shadows, and how soft their edges are, 0 (sharp) to 1.
     var shadows = true
     var softness: Double = 0.4
@@ -71,6 +73,7 @@ struct RenderSettings: Codable, Equatable {
         ambient = try c.decodeIfPresent(Double.self, forKey: .ambient) ?? d.ambient
         showEdges = try c.decodeIfPresent(Bool.self, forKey: .showEdges) ?? d.showEdges
         reflection = try c.decodeIfPresent(Double.self, forKey: .reflection) ?? d.reflection
+        reflectionBlur = try c.decodeIfPresent(Double.self, forKey: .reflectionBlur) ?? d.reflectionBlur
         shadows = try c.decodeIfPresent(Bool.self, forKey: .shadows) ?? d.shadows
         softness = try c.decodeIfPresent(Double.self, forKey: .softness) ?? d.softness
     }
@@ -148,6 +151,8 @@ struct RenderPanel: View {
                     }
                 }
                 slider("Reflection", value: $model.renderSettings.reflection, range: 0...1)
+                slider("Blur", value: $model.renderSettings.reflectionBlur, range: 0...1)
+                    .disabled(model.renderSettings.reflection == 0)
             }
             VStack(alignment: .leading, spacing: DS.Spacing.space2) {
                 Text("Light").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)

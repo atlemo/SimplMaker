@@ -174,6 +174,35 @@ import simd
         #expect(mirrored < bare - 0.02, "the floor shows the box: \(mirrored) vs \(bare)")
     }
 
+    /// Blur softens the reflection: along a row through the box's reflection its side edge is a gentler step, while the
+    /// foot of the box (where it meets the floor) stays about as dark.
+    @Test func theReflectionCanBeBlurred() async throws {
+        let model = try await loaded()
+        let lo = try #require(model.sceneBounds).min
+        var settings = RenderSettings()
+        settings.shadows = false
+        settings.reflection = 1
+        func scan(blur: Double, name: String) async throws -> (steepest: Float, foot: Float) {
+            settings.reflectionBlur = blur
+            let (picture, renderer, view) = try await render(model, name: name, settings: settings, yaw: -.pi / 3, pitch: 0.7)
+            let foot = pixel(of: SIMD3(lo.x + 30, lo.y, 0), picture, renderer, view)
+            let corner = pixel(of: SIMD3(lo.x + 60, lo.y, 0), picture, renderer, view)  // the box's lowest point on the screen
+            let row = corner.y + 18  // below the box, well down its reflection, where the blur has grown
+            var steepest: Float = 0, last = picture.color(max(foot.x - 330, 1), row).x
+            for x in max(foot.x - 329, 2)..<min(foot.x + 330, picture.width - 1) {
+                let c = picture.color(x, row).x
+                steepest = max(steepest, abs(c - last))
+                last = c
+            }
+            return (steepest, picture.color(foot.x, foot.y + 4).x)
+        }
+        let sharp = try await scan(blur: 0, name: "blur-0")
+        let soft = try await scan(blur: 1, name: "blur-1")
+        _ = try await scan(blur: 0.5, name: "blur-half")
+        #expect(sharp.steepest > 0.015, "the unblurred reflection has an edge: \(sharp.steepest)")
+        #expect(soft.steepest < sharp.steepest * 0.7, "the blurred one is gentler: \(soft.steepest) vs \(sharp.steepest)")
+    }
+
     @Test func settingsKeptByAnOlderVersionStillLoad() throws {
         let old = #"{"floor":"sand","brightness":1,"direction":-90,"height":40,"ambient":0.3,"showEdges":true}"#
         let s = try JSONDecoder().decode(RenderSettings.self, from: Data(old.utf8))
