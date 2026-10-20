@@ -255,6 +255,55 @@ struct SketchInspector: View {
     }
 }
 
+/// The bodies a Join, Cut or Intersect works on, each one switched on or off, with "Choose Automatically" to go back
+/// to the default. Shared by the features that combine a new shape with existing bodies (extrude, sweep).
+struct AffectedBodiesList: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let operation: BodyOperation
+    /// The bodies picked, or nil while the choice is automatic.
+    let targets: [FeatureID]?
+    let setTargets: ([FeatureID]?) -> Void
+
+    /// The bodies the feature could work on: the ones that exist before it in the timeline.
+    private var candidateBodies: [BodyResult] {
+        let own = model.document.index(of: id) ?? Int.max
+        return model.bodies.filter { b in b.id != id && (model.document.index(of: b.id).map { $0 < own } ?? true) }
+    }
+
+    /// What the feature works on right now: the bodies picked, or else what the automatic choice came to.
+    private var affectedIDs: [FeatureID] { targets ?? model.result?.affectedBodies[id] ?? [] }
+
+    var body: some View {
+        let candidates = candidateBodies
+        if !candidates.isEmpty {
+            let chosen = Set(affectedIDs)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Affected bodies").font(.caption).foregroundStyle(.secondary)
+                ForEach(candidates, id: \.id) { b in
+                    Toggle(b.name, isOn: Binding(get: { chosen.contains(b.id) }, set: { on in
+                        var next = chosen
+                        if on { next.insert(b.id) } else { next.remove(b.id) }
+                        setTargets(candidates.map(\.id).filter { next.contains($0) })
+                    }))
+                    .toggleStyle(.checkbox)
+                }
+            }
+            if targets != nil {
+                Button("Choose Automatically") { setTargets(nil) }
+                    .help(operation == .cut ? "Cut every body the shape passes through" : "Work on the newest body")
+            } else {
+                Text(operation == .cut ? "Chosen automatically: every body the shape passes through. Tick bodies to choose."
+                                       : "Chosen automatically. Tick bodies to choose.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if operation == .join, chosen.count > 1 {
+                Text("The bodies ticked are joined into one.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 struct ExtrudeInspector: View {
     let model: DocumentModel
     let id: FeatureID
@@ -300,42 +349,10 @@ struct ExtrudeInspector: View {
         return model.faceRef(pick)
     }
 
-    /// The bodies this extrude could work on: the ones that exist before it in the timeline.
-    private var candidateBodies: [BodyResult] {
-        let own = model.document.index(of: id) ?? Int.max
-        return model.bodies.filter { b in b.id != id && (model.document.index(of: b.id).map { $0 < own } ?? true) }
-    }
-
-    /// What the extrude works on right now: the bodies picked, or else what the automatic choice came to.
-    private var affectedIDs: [FeatureID] { extrude.targets ?? model.result?.affectedBodies[id] ?? [] }
-
     /// The list of bodies a Join, Cut or Intersect works on, each one switched on or off.
-    @ViewBuilder private var affectedBodies: some View {
-        let candidates = candidateBodies
-        if !candidates.isEmpty {
-            let chosen = Set(affectedIDs)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Affected bodies").font(.caption).foregroundStyle(.secondary)
-                ForEach(candidates, id: \.id) { b in
-                    Toggle(b.name, isOn: Binding(get: { chosen.contains(b.id) }, set: { on in
-                        var next = chosen
-                        if on { next.insert(b.id) } else { next.remove(b.id) }
-                        update("Change Affected Bodies") { $0.targets = candidates.map(\.id).filter { next.contains($0) } }
-                    }))
-                    .toggleStyle(.checkbox)
-                }
-            }
-            if extrude.targets != nil {
-                Button("Choose Automatically") { update("Choose Bodies Automatically") { $0.targets = nil } }
-                    .help(extrude.operation == .cut ? "Cut every body the shape passes through" : "Work on the newest body")
-            } else {
-                Text(extrude.operation == .cut ? "Chosen automatically: every body the shape passes through. Tick bodies to choose."
-                                               : "Chosen automatically. Tick bodies to choose.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if extrude.operation == .join, chosen.count > 1 {
-                Text("The bodies ticked are joined into one.").font(.caption).foregroundStyle(.secondary)
-            }
+    private var affectedBodies: some View {
+        AffectedBodiesList(model: model, id: id, operation: extrude.operation, targets: extrude.targets) { targets in
+            update("Change Affected Bodies") { $0.targets = targets }
         }
     }
 
@@ -677,6 +694,11 @@ struct SweepInspector: View {
             }
             PathSection(model: model, path: sweep.path) { p in edit.update("Change Path") { $0.path = p } }
             edit.operation(sweep.operation) { $0.operation = $1 }
+            if sweep.operation != .newBody {
+                AffectedBodiesList(model: model, id: id, operation: sweep.operation, targets: sweep.targets) { targets in
+                    edit.update("Change Affected Bodies") { $0.targets = targets }
+                }
+            }
         }
     }
 }

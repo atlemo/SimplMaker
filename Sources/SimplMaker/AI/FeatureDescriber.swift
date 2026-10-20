@@ -71,6 +71,7 @@ struct FeatureDescriber {
         case .sweep(let f):
             out["sketch"] = .text(f.sketch); out["profiles"] = profiles(f.profiles, in: f.sketch)
             out["path"] = path(f.path); operation(f.operation); target(f.target)
+            if let targets = f.targets { out["targets"] = .list(targets) }
         case .loft(let f):
             out["sections"] = .list(f.sections.map { AIEntityRef.profile(sketch: $0.sketch, curves: $0.profile.curves, copy: 0).string })
             out["ruled"] = .flag(f.ruled); operation(f.operation); target(f.target)
