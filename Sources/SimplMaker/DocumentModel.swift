@@ -1180,6 +1180,10 @@ final class DocumentModel {
     var cursorPromptAt: CGPoint?
     var cursorPrompt: String? { isPickingSketchPlane ? "Select a plane or planar face" : toolPrompt }
 
+    /// The Render view shows the part alone: finished sketches and the construction planes are left out of it. They come
+    /// back while a tool waits for something to be picked (a profile to extrude, a plane to sketch on), which needs them.
+    var rendersWithoutSketchesAndPlanes: Bool { renderView && sketchSession == nil && pendingTool == nil && !showsOriginPlanes }
+
     /// The origin planes are offered while choosing where to sketch or where to put a primitive.
     var showsOriginPlanes: Bool { isPickingSketchPlane || pendingTool?.showsPlanes == true }
 
@@ -1494,7 +1498,7 @@ final class DocumentModel {
         // Construction planes, always (unless hidden), pickable to sketch on or to select.
         // Their sides can be dragged, except while a plane is being asked for (a click on a side then picks the plane).
         let planeSize = OriginPlane.displaySize(for: sceneBounds)
-        for (slot, f) in planeFeatures.enumerated() where !document.hidden.contains(f.id) {
+        for (slot, f) in planeFeatures.enumerated() where !document.hidden.contains(f.id) && !rendersWithoutSketchesAndPlanes {
             guard let frame = result?.planes[f.id], case .plane(let pf) = f.kind else { continue }
             let edges = showsOriginPlanes || pendingTool != nil ? nil : (0..<4).map { PickID(planeEdge: $0, plane: slot).raw }
             SketchOverlayBuilder.constructionPlane(frame, extent: pf.extent ?? PlaneExtent(side: planeSize),
@@ -1525,7 +1529,7 @@ final class DocumentModel {
             o.moveHandle = [SegmentInstance(ax: f.x, ay: f.y, az: f.z, bx: f.x, by: f.y, bz: f.z, id: id)]
             o.handleInvalid = previewInvalid
         }
-        for (i, id) in sketchSlots.enumerated() where isSketchShown(id) {
+        for (i, id) in sketchSlots.enumerated() where isSketchShown(id) && !rendersWithoutSketchesAndPlanes {
             guard let r = result?.sketches[id] else { continue }
             SketchOverlayBuilder.finished(r, slot: i + 1, parameters: parameterValues, into: &o)
             SketchOverlayBuilder.regions(r, slot: i + 1, into: &o)

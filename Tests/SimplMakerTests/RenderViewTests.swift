@@ -260,6 +260,34 @@ import simd
         #expect(view.framebufferOnly, "the view goes back to only displaying its frames")
     }
 
+    /// The Render view shows the part alone: no sketch curves, profile fills or construction planes, until a tool needs them.
+    @Test func theRenderViewLeavesOutSketchesAndPlanes() async throws {
+        var sketch = Sketch()
+        let r = sketch.addRectangle(0, 0, 10, 10, lineIDs: ["A", "B", "C", "D"])
+        sketch.constrain(.fix(r.corners[0], x: 0, y: 0)); sketch.constrain(.fix(r.corners[2], x: 10, y: 10))
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: sketch))),
+            Feature(id: "p", name: "Plane1", .plane(PlaneFeature(base: .xz, offset: "5 mm"))),
+        ]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let before = model.sketchOverlay()
+        #expect(!before.inactive.isEmpty && !before.regionIndices.isEmpty && !before.planeIndices.isEmpty, "they show as usual")
+
+        model.setRenderView(true)
+        let rendered = model.sketchOverlay()
+        #expect(rendered.inactive.isEmpty && rendered.regionIndices.isEmpty && rendered.planeIndices.isEmpty
+                && rendered.planeOutline.isEmpty && rendered.planeEdges.isEmpty, "the Render view leaves them out")
+
+        model.pendingTool = .extrude   // a tool waiting for a profile needs the sketch
+        #expect(!model.sketchOverlay().regionIndices.isEmpty, "a tool that picks profiles has them back")
+        model.pendingTool = nil
+
+        model.setRenderView(false)
+        #expect(!model.sketchOverlay().inactive.isEmpty, "and they return when the view is off")
+    }
+
     @Test func noiseStartsAtTenPercent() {
         #expect(RenderSettings().noise == 0.1)
     }

@@ -16,6 +16,7 @@ Press the button again to turn the view off. The options panel opens in the top 
 - The view needs a shaded [visual style](doc:start/navigation). If you were in a wireframe style, turning it on switches to **Shaded with Visible Edges**.
 - It does not work together with the [3D Print Preview](doc:print/print-preview). Turning one on turns the other off.
 - While you [sketch](doc:sketch/start) the Render button is greyed out and you see the sketch as usual. The Render view comes back when you finish the sketch.
+- Finished sketches and construction planes are hidden, so the part is shown alone. They come back while a tool is waiting for you to pick something that needs them, such as a profile to extrude or a plane to sketch on. A [canvas](doc:create/canvas) picture stays.
 - You can keep working in it. Clicking and hovering pick faces and edges as always, and picks go through the floor.
 
 ## The floor
