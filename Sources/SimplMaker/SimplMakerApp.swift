@@ -161,8 +161,7 @@ struct SimplMakerCommands: Commands {
             }
             .disabled(model == nil)
             Divider()
-            Button("Export STEP…") { model?.export(stl: false) }.disabled(model == nil)
-            Button("Export STL…") { model?.export(stl: true) }.disabled(model == nil)
+            Button("Export…") { model?.exportWithDialog() }.disabled(model == nil)
         }
         CommandGroup(before: .toolbar) {
             Button("Fit All") { LetterShortcut.perform(model) { model?.fitView() } }

@@ -5,28 +5,29 @@ description: Export STL for your slicer and STEP for other CAD tools. What is ex
 
 ## Export an STL
 
-1. Choose **File → Export STL…**.
-2. Pick a name and a place.
-3. Open the file in your slicer, for example PrusaSlicer, Bambu Studio, Cura or OrcaSlicer.
+1. Choose **File → Export…**.
+2. Set **Format** to **STL** and choose **All bodies as one single part**. Click **Export…**.
+3. Pick a name and a place.
+4. Open the file in your slicer, for example PrusaSlicer, Bambu Studio, Cura or OrcaSlicer.
 
 The numbers in the file are **millimetres**, which is what slicers expect. Your part arrives at the size you modelled it.
 
 | Command | What is exported |
 |---|---|
-| **File → Export STL…** | Every body in the part, in one `.stl` file. Hidden bodies are included. |
-| **File → Export STEP…** | Every body in the part, in one `.step` file |
+| **File → Export…**, *All bodies as one single part* | Every body in the part, in one `.stl` or `.step` file. Hidden bodies are included. |
+| **File → Export…**, *All bodies as individual parts* | One file for each body, named after the body, in a folder you choose. Files already there are never overwritten. |
 | Right-click a body in the browser → **Export Body → STL…** or **STEP…** | Just that body |
 | Right-click a folder in the browser → **Export Folder → STL…** or **STEP…** | Every body in the folder and in the folders inside it, in one file |
 
 The STL is written with a fine surface tolerance (0.02 mm), so curves print smooth.
 
 :::tip
-Making several parts in one file? Give each its own body, and use **Export Body** to write them one at a time. That keeps every STL ready to print. To write a group of bodies as one file, put them in a folder and use **Export Folder**.
+Printing several parts one at a time? Choose **All bodies as individual parts** in the Export dialog, so every STL is ready to print. To write a group of bodies as one file, put them in a folder and use **Export Folder**.
 :::
 
 ## Export a STEP
 
-STEP keeps the real, exact shapes, not a mesh of triangles. Use it to move a part to another CAD tool or to a machine shop. Choose **File → Export STEP…**.
+STEP keeps the real, exact shapes, not a mesh of triangles. Use it to move a part to another CAD tool or to a machine shop. Choose **File → Export…** and set **Format** to **STEP**.
 
 ## Before you slice
 

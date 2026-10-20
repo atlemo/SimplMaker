@@ -82,6 +82,8 @@ final class DocumentModel {
     private(set) var importProgress: ImportProgress?
     /// What to do with an STL that has a lot of triangles: asks the user by default. Tests put their own answer here.
     @ObservationIgnored var meshReduction: @MainActor (String, Int) -> MeshReduction = DocumentModel.askAboutMeshReduction
+    /// Asks what the Export dialog asks (given the number of bodies). Replaced in tests.
+    @ObservationIgnored var exportChoice: @MainActor (Int) -> ExportChoice? = DocumentModel.askExportChoice
 
     var selection: [PickID] = []
     private(set) var hovered: PickID?

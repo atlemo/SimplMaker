@@ -75,7 +75,7 @@ Edit `width` in the browser to `90 mm` and press [[Return]]. The sketch, the pla
 
 ## 8. Export for printing
 
-Choose **File → Export STL…**, pick a place, and open the file in your slicer. The numbers in the file are millimetres. See [Exporting for printing](doc:print/export).
+Choose **File → Export…**, pick **STL** and **All bodies as one single part**, pick a place, and open the file in your slicer. The numbers in the file are millimetres. See [Exporting for printing](doc:print/export).
 
 ## Where next
 

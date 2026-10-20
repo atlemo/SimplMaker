@@ -25,7 +25,7 @@ description: What is in each menu, and where to find every command.
 | **Import ▸ STEP…** ([[⇧⌘I]]) | Add a STEP file as a body |
 | **Import ▸ STL…** | Add a watertight STL mesh as a body |
 | **Import ▸ SVG as Sketch…** | Turn an SVG into a sketch |
-| **Export STEP…**, **Export STL…** | Write all bodies to a file |
+| **Export…** | Write the bodies to STL or STEP files, as one part or as individual parts |
 
 ## Edit
 

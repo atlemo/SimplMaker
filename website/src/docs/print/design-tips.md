@@ -63,4 +63,4 @@ Print a small piece that has just the tricky feature: a thread, a snap fit, a hi
 
 ## Export
 
-Choose **File → Export STL…** and open the file in your slicer. See [Exporting for printing](doc:print/export).
+Choose **File → Export…**, pick **STL**, and open the file in your slicer. See [Exporting for printing](doc:print/export).

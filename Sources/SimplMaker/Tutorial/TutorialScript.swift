@@ -348,7 +348,7 @@ enum TutorialScript {
     static let done = TutorialStep(
         id: "done", chapter: .change,
         title: "You made a desk organizer",
-        text: "You named your numbers, sketched with dimensions and a constraint, and reshaped the whole part with two values. Save it with **⌘S**, or export it for printing with **File ▸ Export STL**. Next, try a **Fillet** on the outer corners, or add a fourth section.",
+        text: "You named your numbers, sketched with dimensions and a constraint, and reshaped the whole part with two values. Save it with **⌘S**, or export it for printing with **File ▸ Export…**. Next, try a **Fillet** on the outer corners, or add a fourth section.",
         kind: .read(button: "Finish"))
 
     // MARK: shared hints
