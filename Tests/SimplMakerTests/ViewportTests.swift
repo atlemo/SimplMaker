@@ -8,8 +8,8 @@ import Testing
     @Test func swiftLayoutsMatchShaderStructs() {
         #expect(MemoryLayout<FaceVertex>.stride == 28)       // packed_float3 ×2 + uint
         #expect(MemoryLayout<SegmentInstance>.stride == 28)  // packed_float3 ×2 + uint
-        #expect(MemoryLayout<Uniforms>.stride == 256)          // …, 4 × float4 colours, wholeBodies + 3 pad uints, then the section plane, camera direction, 4 more scalars, and the render light and parameters
-        #expect(MemoryLayout<FloorParams>.stride == 48)        // 3 × float4
+        #expect(MemoryLayout<Uniforms>.stride == 352)          // …, 4 × float4 colours, wholeBodies + 3 pad uints, then the section plane, camera direction, 4 more scalars, the render light and parameters, the light's matrix, and the shadow's
+        #expect(MemoryLayout<FloorParams>.stride == 64)        // 4 × float4
         #expect(MemoryLayout<DrawParams>.stride == 96)          // 3 × float4, then 10 scalars (thickness … dashLength), padded
     }
 

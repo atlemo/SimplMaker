@@ -27,13 +27,17 @@ enum Shaders {
         uint hoverGroupCount;   // ids after the selected ones in the selection buffer that light up like the hovered one
         uint padClip1;
         float4 lightDir;        // render view: xyz = the way to the main light, w = its strength
-        float4 renderParams;    // render view: x = 1 when on, y = the ambient light
+        float4 renderParams;    // render view: x = 1 when on, y = the ambient light, z = 1 while drawing the reflection, w = its strength
+        float4x4 lightViewProj; // render view: the main light's view, for the shadow map
+        float4 shadowParams;    // render view: x = 1 when shadows are on, y = how wide the light is (tan of its angle), w = depth range of the map in mm
+        float4 shadowExtent;    // render view: xy = what the map covers in mm, z = a texel in mm, w = height a reflection fades out at
     };
 
     struct FloorParams {
         float4 centerHalf;     // xy = the middle of the part, z = the floor's height, w = half the floor's side
         float4 lit;            // rgb = the floor as lit, w = where it starts to fade into the backdrop
         float4 backdrop;       // rgb = the backdrop, w = where the fade ends
+        float4 shadowed;       // rgb = the floor where the main light does not reach
     };
 
     struct FaceVertex { packed_float3 position; packed_float3 normal; uint id; };
@@ -160,9 +164,58 @@ enum Shaders {
                    - 0.1 * divider * flatness;
     }
 
-    // Lighting, hover and selection colours; `print` gives the surface the look of an FDM print.
+    // The render view's shadow map: depth seen from the main light. A pixel is lit when nothing nearer the light is
+    // in its way. The edge of a shadow is as soft as the light is wide: sharp where the shadow starts at the thing
+    // casting it, softer the farther away it falls (a search for what blocks the light, then a filter as wide as
+    // its distance asks for). The samples are turned by a different amount at every spot, so no pattern shows.
+    static float2 vogelDisc(int i, int count, float turn) {
+        float r = sqrt((float(i) + 0.5) / float(count));
+        float a = float(i) * 2.39996323 + turn;
+        return r * float2(cos(a), sin(a));
+    }
+
+    static float shadowVisibility(float3 world, float3 n, constant Uniforms& u, depth2d<float> map) {
+        if (u.shadowParams.x < 0.5) return 1.0;
+        float3 L = normalize(u.lightDir.xyz);
+        float nl = dot(n, L);
+        if (nl <= 0.0) return 1.0;  // turned away from the light: unlit already
+        float texel = u.shadowExtent.z;
+        float slope = clamp(sqrt(max(1.0 - nl * nl, 0.0)) / max(nl, 0.05), 0.0, 6.0);
+        float4 c = u.lightViewProj * float4(world + n * texel * (1.5 + slope), 1.0);
+        float2 uv = c.xy * float2(0.5, -0.5) + 0.5;
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
+        float range = u.shadowParams.w;
+        float bias = texel * 2.0 / range;
+        float zr = min(c.z, 0.9999);  // beyond the map's far plane: still behind everything in it, and in front of nothing
+        constexpr sampler nearest(coord::normalized, filter::nearest, address::clamp_to_edge);
+        constexpr sampler compare(coord::normalized, filter::linear, address::clamp_to_edge, compare_func::less_equal);
+        float width = u.shadowParams.y;
+        float2 extent = u.shadowExtent.xy;
+        float turn = 6.2831853 * fract(sin(dot(world, float3(12.9898, 78.233, 37.719))) * 43758.5453);
+        float2 search = min(width * range, 0.25 * min(extent.x, extent.y)) / extent;
+        float blocked = 0.0, count = 0.0;
+        for (int i = 0; i < 16; i++) {
+            float z = map.sample(nearest, uv + vogelDisc(i, 16, turn) * search);
+            if (z < zr - bias) { blocked += z; count += 1.0; }
+        }
+        if (count < 0.5) return 1.0;
+        float penumbra = max((zr - blocked / count) * range * width, texel * 1.5);
+        float2 radius = penumbra / extent;
+        float lit = 0.0;
+        for (int i = 0; i < 28; i++) lit += map.sample_compare(compare, uv + vogelDisc(i, 28, turn + 1.0) * radius, zr - bias);
+        return lit / 28.0;
+    }
+
+    // The side of a face that faces the viewer (the same turning shadeFace does).
+    static float3 facing(float3 normal, float3 world, constant Uniforms& u) {
+        float3 n = normalize(normal);
+        return dot(n, normalize(u.eye.xyz - world)) < 0.0 ? -n : n;
+    }
+
+    // Lighting, hover and selection colours; `print` gives the surface the look of an FDM print. `lit` is how much of
+    // the main light of the render view reaches the point (1 without shadows).
     static FragOut shadeFace(float3 normal, float3 world, uint id, bool print, float ring,
-                             constant Uniforms& u, constant uint* sel, constant DrawParams& p) {
+                             constant Uniforms& u, constant uint* sel, constant DrawParams& p, float lit = 1.0) {
         float3 n = normalize(normal);
         float3 v = normalize(u.eye.xyz - world);
         if (u.evenLight != 0) v = -normalize(u.viewDir.xyz);  // the same for every pixel: a flat face is one shade
@@ -183,8 +236,8 @@ enum Shaders {
             float3 fillDir = normalize(float3(h / max(length(h), 1e-4), 0.35));
             float mainLight = max(dot(n, L), 0.0);
             float fill = max(dot(n, fillDir), 0.0);
-            lighting = u.renderParams.y * (0.7 + 0.3 * n.z) + u.lightDir.w * (0.7 * mainLight + 0.3 * fill);
-            spec = pow(max(dot(reflect(-L, n), v), 0.0), 40.0) * 0.2 * u.lightDir.w * step(0.001, mainLight);
+            lighting = u.renderParams.y * (0.7 + 0.3 * n.z) + u.lightDir.w * (0.7 * mainLight * lit + 0.3 * fill);
+            spec = pow(max(dot(reflect(-L, n), v), 0.0), 40.0) * 0.2 * u.lightDir.w * step(0.001, mainLight) * lit;
         }
         if (u.evenLight != 0) spec = 0.0;
         // The body's colour (its own from the Appearance panel, or the palette's), with hover and
@@ -199,6 +252,8 @@ enum Shaders {
             base = p.selectColor.rgb;
         FragOut o;
         o.color = (p.style & 4u) != 0 ? float4(base, 1.0) : float4(base * lighting * groove + spec, 1.0);
+        // The reflection in the floor: opaque only where the body meets the floor, and fading out with the height.
+        if (u.renderParams.z > 0.5) o.color.a = u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), world.z));
         o.id = id;
         return o;
     }
@@ -220,20 +275,38 @@ enum Shaders {
     }
 
     fragment FragOut floorFragment(FloorOut in [[stage_in]],
-                                   constant FloorParams& f [[buffer(3)]]) {
+                                   constant Uniforms& u [[buffer(1)]],
+                                   constant FloorParams& f [[buffer(3)]],
+                                   depth2d<float> shadowMap [[texture(1)]]) {
+        float lit = shadowVisibility(float3(in.xy, f.centerHalf.z), float3(0.0, 0.0, 1.0), u, shadowMap);
         float t = smoothstep(f.lit.w, f.backdrop.w, length(in.xy - f.centerHalf.xy));
         FragOut o;
-        o.color = float4(mix(f.lit.rgb, f.backdrop.rgb, t), 1.0);
+        o.color = float4(mix(mix(f.shadowed.rgb, f.lit.rgb, lit), f.backdrop.rgb, t), 1.0);
         o.id = 0;
+        return o;
+    }
+
+    // The bodies seen from the main light, for the shadow map: depth only.
+    struct ShadowOut {
+        float4 position [[position]];
+    };
+
+    vertex ShadowOut shadowVertex(uint vid [[vertex_id]],
+                                  device const FaceVertex* verts [[buffer(0)]],
+                                  constant Uniforms& u [[buffer(1)]]) {
+        ShadowOut o;
+        o.position = u.lightViewProj * float4(float3(verts[vid].position), 1.0);
         return o;
     }
 
     fragment FragOut faceFragment(FaceOut in [[stage_in]],
                                   constant Uniforms& u [[buffer(1)]],
                                   constant uint* sel [[buffer(2)]],
-                                  constant DrawParams& p [[buffer(3)]]) {
+                                  constant DrawParams& p [[buffer(3)]],
+                                  depth2d<float> shadowMap [[texture(1)]]) {
         if (u.clipOn != 0 && dot(in.world, u.clipPlane.xyz) - u.clipPlane.w > 1e-4) discard_fragment();
-        return shadeFace(in.normal, in.world, in.id, false, 1e9, u, sel, p);
+        float lit = u.renderParams.x > 0.5 ? shadowVisibility(in.world, facing(in.normal, in.world, u), u, shadowMap) : 1.0;
+        return shadeFace(in.normal, in.world, in.id, false, 1e9, u, sel, p, lit);
     }
 
     // The print preview draws each triangle on its own, with what it takes to tell how far a point is from the

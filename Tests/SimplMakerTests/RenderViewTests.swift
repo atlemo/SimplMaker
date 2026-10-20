@@ -142,6 +142,60 @@ import simd
         #expect(b.lit > b.dark + 0.1, "and from another side too: \(b)")
     }
 
+    /// A box's shadow falls on the floor away from the light, and not at all without shadows; the floor under the box shows it upside down.
+    @Test func bodiesCastShadowsAndShowInTheFloor() async throws {
+        let model = try await loaded()
+        let lo = try #require(model.sceneBounds).min
+        var settings = RenderSettings()
+        settings.direction = 0   // the light comes from the +X side: the shadow falls toward -X
+        settings.height = 40
+        settings.softness = 0.1
+        settings.reflection = 0
+        func floorBrightness(_ settings: RenderSettings, at p: SIMD3<Float>, name: String) async throws -> Float {
+            let (picture, renderer, view) = try await render(model, name: name, settings: settings, yaw: -.pi / 3, pitch: 0.7)
+            let q = pixel(of: p, picture, renderer, view)
+            return picture.color(q.x, q.y).x
+        }
+        let inShadow = SIMD3<Float>(lo.x - 12, lo.y + 20, 0), clear = SIMD3<Float>(lo.x + 30, lo.y + 120, 0)
+        let shaded = try await floorBrightness(settings, at: inShadow, name: "shadow")
+        let open = try await floorBrightness(settings, at: clear, name: "shadow-open")
+        #expect(shaded < open - 0.15, "the floor beside the box, away from the light, is in its shadow: \(shaded) vs \(open)")
+        settings.shadows = false
+        let none = try await floorBrightness(settings, at: inShadow, name: "no-shadow")
+        #expect(abs(none - open) < 0.03, "no shadow without shadows: \(none) vs \(open)")
+
+        // The reflection: the floor just in front of the box's foot is darker with it than without.
+        settings.shadows = false
+        let foot = SIMD3<Float>(lo.x + 30, lo.y - 3, 0)
+        settings.reflection = 0
+        let bare = try await floorBrightness(settings, at: foot, name: "no-reflection")
+        settings.reflection = 1
+        let mirrored = try await floorBrightness(settings, at: foot, name: "reflection")
+        #expect(mirrored < bare - 0.02, "the floor shows the box: \(mirrored) vs \(bare)")
+    }
+
+    @Test func settingsKeptByAnOlderVersionStillLoad() throws {
+        let old = #"{"floor":"sand","brightness":1,"direction":-90,"height":40,"ambient":0.3,"showEdges":true}"#
+        let s = try JSONDecoder().decode(RenderSettings.self, from: Data(old.utf8))
+        #expect(s.floor == .sand && s.showEdges && s.brightness == 1)
+        #expect(s.shadows && s.reflection == RenderSettings().reflection, "the newer settings keep their defaults")
+    }
+
+    @Test func theLightMatrixTakesInTheWholePartAndTheFloorUnderIt() {
+        let lo = SIMD3<Float>(0, 0, 0), hi = SIMD3<Float>(60, 40, 30)
+        let light = SIMD3<Float>(0.5, -0.4, 0.77)
+        let m = Renderer.lightProjection(toward: light, lo: lo, hi: hi)
+        for i in 0..<8 {
+            let p = SIMD4<Float>(i & 1 == 0 ? lo.x : hi.x, i & 2 == 0 ? lo.y : hi.y, i & 4 == 0 ? lo.z : hi.z, 1)
+            let c = m.matrix * p
+            #expect(abs(c.x) <= 1.001 && abs(c.y) <= 1.001 && c.z >= -0.001 && c.z <= 1.001, "corner \(i) lands in the map: \(c)")
+        }
+        // Floor under the part, along the light, is inside the depth range too.
+        let floor = m.matrix * SIMD4<Float>(0, 0, 0, 1)
+        #expect(floor.z >= -0.001 && floor.z <= 1.001)
+        #expect(m.depth > 30 && m.extent.x > 40)
+    }
+
     @Test func theRenderViewIsOffInSketchAndExclusiveWithThePrintPreview() async throws {
         let model = try await loaded()
         model.setRenderView(true)
@@ -161,5 +215,18 @@ import simd
         #expect(s.brightness > RenderSettings().brightness && s.ambient < RenderSettings().ambient)
         s.apply(.studio)
         #expect(s == RenderSettings())
+    }
+
+    /// Only for looking at: a harsh low light on a dark floor, in perspective, as a picture.
+    @Test func dramaticLightOnADarkFloor() async throws {
+        let model = try await loaded()
+        var settings = RenderSettings()
+        settings.apply(.dramatic)
+        settings.floor = .charcoal
+        _ = try await render(model, name: "dramatic", settings: settings, yaw: -.pi / 4, pitch: 0.4, orthographic: false)
+        settings.apply(.soft)
+        settings.floor = .sand
+        settings.showEdges = true
+        _ = try await render(model, name: "soft", settings: settings, yaw: -.pi / 3, pitch: 0.9)
     }
 }

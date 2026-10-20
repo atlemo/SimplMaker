@@ -170,8 +170,14 @@ struct Uniforms {
     var padClip1: UInt32 = 0
     /// The Render view's main light: xyz = the unit vector toward it, w = its strength.
     var lightDir: SIMD4<Float> = .zero
-    /// The Render view: x = 1 when it is on, y = the ambient light.
+    /// The Render view: x = 1 when it is on, y = the ambient light, z = 1 while the reflection is drawn, w = its strength.
     var renderParams: SIMD4<Float> = .zero
+    /// The Render view's shadow map: the main light's view of the bodies.
+    var lightViewProj = matrix_identity_float4x4
+    /// x = 1 when shadows are on, y = how wide the light is, w = the depth the map covers, in mm.
+    var shadowParams: SIMD4<Float> = .zero
+    /// xy = what the map covers, in mm, z = a texel of it, in mm, w = the height a reflection fades out at.
+    var shadowExtent: SIMD4<Float> = .zero
 }
 
 /// The Render view's floor, as the shader reads it (see floorVertex).
@@ -182,6 +188,8 @@ struct FloorParams {
     var lit: SIMD4<Float>
     /// rgb = the backdrop, w = where the fade ends.
     var backdrop: SIMD4<Float>
+    /// rgb = the floor where the main light does not reach.
+    var shadowed: SIMD4<Float>
 }
 
 /// The grid drawn in the plane of the sketch being edited: minor and major lines over the visible
@@ -415,6 +423,15 @@ final class Renderer {
     private let imagePipeline: MTLRenderPipelineState
     /// The Render view's floor: colour only, so it never hides what is picked.
     private let floorPipeline: MTLRenderPipelineState
+    /// The shadow map: the bodies' depth from the main light.
+    private let shadowPipeline: MTLRenderPipelineState
+    /// The reflection in the floor: its depth first, so each pixel is blended once, then its colour.
+    private let reflectDepthPipeline: MTLRenderPipelineState
+    private let reflectPipeline: MTLRenderPipelineState
+    private var shadowMap: MTLTexture?
+    /// Bound where no shadow map is wanted, as the shaders always take one.
+    private let emptyShadowMap: MTLTexture
+    static let shadowMapSize = 2048
     private let depthState: MTLDepthStencilState
     /// Body edges while the section analysis cuts: not where its cut face shows (stencil 1, set by `capState`).
     private let depthCutState: MTLDepthStencilState
@@ -543,8 +560,13 @@ final class Renderer {
     }
 
     init?() {
+        let emptyDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: 1, height: 1, mipmapped: false)
+        emptyDescriptor.usage = .shaderRead
+        emptyDescriptor.storageMode = .private
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
-              let pickBuffer = device.makeBuffer(length: 16, options: .storageModeShared) else { return nil }
+              let pickBuffer = device.makeBuffer(length: 16, options: .storageModeShared),
+              let empty = device.makeTexture(descriptor: emptyDescriptor) else { return nil }
+        self.emptyShadowMap = empty
         let samples = Self.sampleCount(for: device)
         self.sampleCount = samples
         self.device = device
@@ -596,6 +618,12 @@ final class Renderer {
             hiddenPlanePipeline = try pipeline("regionVertex", "planeFragment", blend: true, writesID: false)
             imagePipeline = try pipeline("imageVertex", "imageFragment", blend: true, premultiplied: true, writesID: false)
             floorPipeline = try pipeline("floorVertex", "floorFragment", writesID: false)
+            reflectDepthPipeline = try pipeline("faceVertex", "faceFragment", writesID: false, writesColor: false)
+            reflectPipeline = try pipeline("faceVertex", "faceFragment", blend: true, writesID: false)
+            let shadow = MTLRenderPipelineDescriptor()
+            shadow.vertexFunction = library.makeFunction(name: "shadowVertex")
+            shadow.depthAttachmentPixelFormat = .depth32Float
+            shadowPipeline = try device.makeRenderPipelineState(descriptor: shadow)
         } catch {
             print("SimplMaker: Metal setup failed: \(error)")
             return nil
@@ -916,6 +944,76 @@ final class Renderer {
         var face, faceHover, faceSelected, edgeHover, edgeSelected: SIMD4<Float>
     }
 
+    /// The main light's view of the bodies: a square (orthographic) view along the light that takes in every body,
+    /// its size in mm, and the depth it covers. (The matrix maps the part to Metal's clip space, depth 0 to 1.)
+    static func lightProjection(toward light: SIMD3<Float>, lo: SIMD3<Float>, hi: SIMD3<Float>)
+        -> (matrix: simd_float4x4, extent: SIMD2<Float>, depth: Float) {
+        let f = -simd_normalize(light)
+        let s = simd_normalize(simd_cross(f, abs(f.z) > 0.99 ? SIMD3<Float>(0, 1, 0) : SIMD3<Float>(0, 0, 1)))
+        let u = simd_cross(s, f)
+        let c = (lo + hi) / 2
+        var mn = SIMD3<Float>(repeating: .infinity), mx = SIMD3<Float>(repeating: -.infinity)
+        func seen(_ p: SIMD3<Float>) -> SIMD3<Float> {
+            let d = p - c
+            return SIMD3(simd_dot(s, d), simd_dot(u, d), -simd_dot(f, d))  // as the light sees it: it looks down -Z
+        }
+        for i in 0..<8 {
+            let q = seen(SIMD3(i & 1 == 0 ? lo.x : hi.x, i & 2 == 0 ? lo.y : hi.y, i & 4 == 0 ? lo.z : hi.z))
+            mn = simd_min(mn, q)
+            mx = simd_max(mx, q)
+        }
+        // The floor under it is in the depth range too, as far as the map's width reaches along the light.
+        var deepest = mn.z, nearest = mx.z
+        for i in 0..<4 {
+            let x = i & 1 == 0 ? lo.x : hi.x, y = i & 2 == 0 ? lo.y : hi.y
+            for z in [Float(0), lo.z, hi.z] {
+                let q = seen(SIMD3(x, y, z))
+                deepest = min(deepest, q.z)
+                nearest = max(nearest, q.z)
+            }
+        }
+        mn.z = deepest
+        mx.z = nearest
+        let pad = max(simd_length(hi - lo) * 0.05, 2)
+        mn -= pad
+        mx += pad
+        let near = -mx.z, far = -mn.z
+        let w = mx.x - mn.x, h = mx.y - mn.y
+        let view = simd_float4x4(columns: (SIMD4(s.x, u.x, -f.x, 0), SIMD4(s.y, u.y, -f.y, 0), SIMD4(s.z, u.z, -f.z, 0),
+                                           SIMD4(-simd_dot(s, c), -simd_dot(u, c), simd_dot(f, c), 1)))
+        let projection = simd_float4x4(columns: (SIMD4(2 / w, 0, 0, 0), SIMD4(0, 2 / h, 0, 0), SIMD4(0, 0, 1 / (near - far), 0),
+                                                 SIMD4(-(mx.x + mn.x) / w, -(mx.y + mn.y) / h, near / (near - far), 1)))
+        return (projection * view, SIMD2(w, h), far - near)
+    }
+
+    /// Draws the bodies' depth as the main light sees it, into the shadow map.
+    private func drawShadowMap(_ cmd: MTLCommandBuffer, _ uniforms: inout Uniforms) {
+        if shadowMap == nil {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: Self.shadowMapSize,
+                                                             height: Self.shadowMapSize, mipmapped: false)
+            d.usage = [.renderTarget, .shaderRead]
+            d.storageMode = .private
+            shadowMap = device.makeTexture(descriptor: d)
+        }
+        let pass = MTLRenderPassDescriptor()
+        pass.depthAttachment.texture = shadowMap
+        pass.depthAttachment.loadAction = .clear
+        pass.depthAttachment.clearDepth = 1
+        pass.depthAttachment.storeAction = .store
+        guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
+        enc.setRenderPipelineState(shadowPipeline)
+        enc.setDepthStencilState(depthState)
+        enc.setCullMode(.none)
+        enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+        for b in bodies {
+            guard let faces = b.faces, let indices = b.indices else { continue }
+            enc.setVertexBuffer(faces, offset: 0, index: 0)
+            enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
+                                      indexBuffer: indices, indexBufferOffset: 0)
+        }
+        enc.endEncoding()
+    }
+
     /// The Render view's floor: a square on the XY plane around the part that fades into the backdrop, drawn behind
     /// nothing and in front of everything below it (it writes no depth and no ID, so picking goes through).
     private func drawFloor(_ enc: MTLRenderCommandEncoder, _ look: RenderSettings) {
@@ -924,7 +1022,8 @@ final class Renderer {
         let fadeStart = size * 1.2, fadeEnd = size * 3.2
         var params = FloorParams(centerHalf: SIMD4((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, 0, fadeEnd * 1.1),
                                  lit: SIMD4(look.floorColor, fadeStart),
-                                 backdrop: SIMD4(look.backdropColor, fadeEnd))
+                                 backdrop: SIMD4(look.backdropColor, fadeEnd),
+                                 shadowed: SIMD4(look.floorShadowColor, 0))
         enc.setRenderPipelineState(floorPipeline)
         enc.setDepthStencilState(noWriteDepthState)
         enc.setVertexBytes(&params, length: MemoryLayout<FloorParams>.stride, index: 3)
@@ -999,9 +1098,20 @@ final class Renderer {
                                 wholeBodies: wholeBodies ? 1 : 0,
                                 printLayer: printLayer, printNozzle: printNozzle)
         uniforms.evenLight = sketchGrid != nil ? 1 : 0
+        var shadowing = false
         if let look {
             uniforms.lightDir = SIMD4(look.lightDirection, Float(look.brightness))
-            uniforms.renderParams = SIMD4(1, Float(look.ambient), 0, 0)
+            uniforms.renderParams = SIMD4(1, Float(look.ambient), 0, look.reflectionStrength)
+            if look.shadows, let b = sceneBounds, !bodies.isEmpty {
+                let light = Self.lightProjection(toward: look.lightDirection, lo: b.min, hi: b.max)
+                uniforms.lightViewProj = light.matrix
+                uniforms.shadowParams = SIMD4(1, look.lightWidth, 0, light.depth)
+                uniforms.shadowExtent = SIMD4(light.extent.x, light.extent.y, max(light.extent.x, light.extent.y) / Float(Self.shadowMapSize),
+                                              max(b.max.z - b.min.z, 10) * 0.8)
+                shadowing = true
+            } else {
+                uniforms.shadowExtent.w = max((sceneBounds.map { $0.max.z - $0.min.z } ?? 0), 10) * 0.8
+            }
         }
         let forward = camera.forward
         uniforms.viewDir = SIMD4(forward.x, forward.y, forward.z, camera.orthographic ? 1 : 0)
@@ -1025,7 +1135,9 @@ final class Renderer {
         if sel.isEmpty { sel = [0] }
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
 
+        if shadowing { drawShadowMap(cmd, &uniforms) }
         guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
+        enc.setFragmentTexture(shadowing ? shadowMap : emptyShadowMap, index: 1)
         enc.setDepthStencilState(depthState)
         enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
         enc.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
@@ -1127,7 +1239,28 @@ final class Renderer {
             line(b.axisU, 1, p.sketchAxisU, 1.2)
             line(b.axisV, 1, p.sketchAxisV, 1.2)
         } else if let look {
-            if !camera.isBelowGround { drawFloor(enc, look) }
+            if !camera.isBelowGround {
+                drawFloor(enc, look)
+                if look.reflectionStrength > 0, !sectioning, !bodies.isEmpty {
+                    // The bodies again, upside down under the floor, over it where nothing stands in their way.
+                    var mirrored = uniforms
+                    mirrored.viewProj = uniforms.viewProj * simd_float4x4(diagonal: SIMD4(1, 1, -1, 1))
+                    mirrored.eye.z = -mirrored.eye.z
+                    mirrored.viewDir.z = -mirrored.viewDir.z
+                    mirrored.clipPlane = SIMD4(0, 0, -1, 0)  // what stands below the floor is not reflected
+                    mirrored.clipOn = 1
+                    mirrored.renderParams.z = 1
+                    enc.setVertexBytes(&mirrored, length: MemoryLayout<Uniforms>.stride, index: 1)
+                    enc.setFragmentBytes(&mirrored, length: MemoryLayout<Uniforms>.stride, index: 1)
+                    enc.setDepthStencilState(depthState)
+                    drawFaces(reflectDepthPipeline, wireframe: false)
+                    enc.setDepthStencilState(noWriteDepthState)
+                    drawFaces(reflectPipeline, wireframe: false)
+                    enc.setDepthStencilState(depthState)
+                    enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+                    enc.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+                }
+            }
         } else if showGrid, !camera.isBelowGround, let g = worldGrid {  // seen from under the floor the grid would only be in the way
             // Seen almost edge-on the lines pile up into moiré, so the grid fades out as the view flattens. Blended
             // (fadePipeline) so the opacity shows; at full opacity it is the same as drawing it solid.

@@ -52,12 +52,34 @@ struct RenderSettings: Codable, Equatable {
     var ambient: Double = 0.5
     /// The body edges stay drawn (off: bodies are drawn as plain shapes, as in a picture).
     var showEdges = false
+    /// How much of the part shows in the floor, 0 (none) to 1.
+    var reflection: Double = 0.35
+    /// Bodies cast shadows, and how soft their edges are, 0 (sharp) to 1.
+    var shadows = true
+    var softness: Double = 0.4
+
+    init() {}
+
+    /// Settings kept by an older version lack the newer ones: those keep their defaults.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = RenderSettings()
+        floor = try c.decodeIfPresent(Floor.self, forKey: .floor) ?? d.floor
+        brightness = try c.decodeIfPresent(Double.self, forKey: .brightness) ?? d.brightness
+        direction = try c.decodeIfPresent(Double.self, forKey: .direction) ?? d.direction
+        height = try c.decodeIfPresent(Double.self, forKey: .height) ?? d.height
+        ambient = try c.decodeIfPresent(Double.self, forKey: .ambient) ?? d.ambient
+        showEdges = try c.decodeIfPresent(Bool.self, forKey: .showEdges) ?? d.showEdges
+        reflection = try c.decodeIfPresent(Double.self, forKey: .reflection) ?? d.reflection
+        shadows = try c.decodeIfPresent(Bool.self, forKey: .shadows) ?? d.shadows
+        softness = try c.decodeIfPresent(Double.self, forKey: .softness) ?? d.softness
+    }
 
     mutating func apply(_ preset: Preset) {
         switch preset {
-        case .studio: brightness = 0.8; direction = -100; height = 50; ambient = 0.5
-        case .soft: brightness = 0.5; direction = -100; height = 65; ambient = 0.7
-        case .dramatic: brightness = 1.2; direction = -130; height = 25; ambient = 0.22
+        case .studio: brightness = 0.8; direction = -100; height = 50; ambient = 0.5; softness = 0.4
+        case .soft: brightness = 0.5; direction = -100; height = 65; ambient = 0.7; softness = 0.85
+        case .dramatic: brightness = 1.2; direction = -130; height = 25; ambient = 0.22; softness = 0.15
         }
     }
 
@@ -67,17 +89,26 @@ struct RenderSettings: Codable, Equatable {
         return SIMD3(cos(el) * cos(az), cos(el) * sin(az), sin(el))
     }
 
-    /// How light the floor is, the same sum the shader makes for a face turned straight up (see shadeFace).
-    var floorShade: Float {
+    /// How light the floor is, the same sum the shader makes for a face turned straight up (see shadeFace), with
+    /// or without the main light (in a shadow it is left out).
+    private func shade(mainLight: Bool) -> Float {
         let l = lightDirection
         let across = simd_length(SIMD2(l.x, l.y))
         let fillUp: Float = across > 1e-4 ? 0.35 / (1 + 0.35 * 0.35).squareRoot() : 1  // the fill's Z, as the shader makes it
-        return Float(ambient) + Float(brightness) * (0.7 * max(l.z, 0) + 0.3 * fillUp)
+        return Float(ambient) + Float(brightness) * ((mainLight ? 0.7 * max(l.z, 0) : 0) + 0.3 * fillUp)
     }
+    var floorShade: Float { shade(mainLight: true) }
 
-    /// The floor as it is lit, and the backdrop it fades into (a little darker, so the model sits in a pool of light).
+    /// The floor as it is lit, in a shadow, and the backdrop it fades into (a little darker, so the model sits in a pool of light).
     var floorColor: SIMD3<Float> { simd_clamp(floor.rgb * floorShade, SIMD3(repeating: 0), SIMD3(repeating: 1)) }
+    var floorShadowColor: SIMD3<Float> { shadows ? simd_clamp(floor.rgb * shade(mainLight: false), SIMD3(repeating: 0), SIMD3(repeating: 1)) : floorColor }
     var backdropColor: SIMD3<Float> { floorColor * 0.86 }
+
+    /// How strongly the floor shows the part, as the opacity of the reflection at the foot of a body.
+    var reflectionStrength: Float { Float(reflection) * 0.5 }
+    /// How wide the light is, as the tangent of the angle it spans: a shadow's edge grows by this much for every mm of
+    /// distance between the thing casting it and where it falls.
+    var lightWidth: Float { 0.01 + 0.14 * Float(softness) }
 
     static let key = "renderSettings"
 
@@ -116,6 +147,7 @@ struct RenderPanel: View {
                         .help(floor.title)
                     }
                 }
+                slider("Reflection", value: $model.renderSettings.reflection, range: 0...1)
             }
             VStack(alignment: .leading, spacing: DS.Spacing.space2) {
                 Text("Light").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
@@ -129,6 +161,11 @@ struct RenderPanel: View {
                 slider("Direction", value: $model.renderSettings.direction, range: -180...180, unit: "°")
                 slider("Height", value: $model.renderSettings.height, range: 5...90, unit: "°")
                 slider("Ambient", value: $model.renderSettings.ambient, range: 0...1)
+                Toggle("Shadows", isOn: $model.renderSettings.shadows)
+                    .toggleStyle(.switch)
+                    .help("The bodies cast shadows on the floor and on each other")
+                slider("Softness", value: $model.renderSettings.softness, range: 0...1)
+                    .disabled(!model.renderSettings.shadows)
             }
             Toggle("Show edges", isOn: $model.renderSettings.showEdges)
                 .toggleStyle(.switch)
