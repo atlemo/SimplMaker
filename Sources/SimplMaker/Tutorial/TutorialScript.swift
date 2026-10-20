@@ -29,7 +29,7 @@ enum TutorialScript {
     static let welcome = TutorialStep(
         id: "welcome", chapter: .start,
         title: "Make a desk organizer",
-        text: "We'll build one together, a step at a time. It takes about ten minutes, and you can leave whenever you like.",
+        text: "We'll build one together, a step at a time. It takes about ten minutes, and you can leave whenever you like. No hard feelings.",
         kind: .read(button: "Let's start"))
 
     static let look = TutorialStep(
@@ -348,7 +348,7 @@ enum TutorialScript {
     static let done = TutorialStep(
         id: "done", chapter: .change,
         title: "You made a desk organizer",
-        text: "You named your numbers, sketched with dimensions and a constraint, and reshaped the whole part with two values. Save it with **⌘S**, or export it for printing with **File ▸ Export…**. Next, try a **Fillet** on the outer corners, or add a fourth section.",
+        text: "You named your numbers, sketched with dimensions and a constraint, and reshaped the whole part with two values. Save it with **⌘S**, or export it for printing with **File ▸ Export…**. Next, try a **Fillet** on the outer corners, or add a fourth section. Your desk has been a mess long enough.",
         kind: .read(button: "Finish"))
 
     // MARK: shared hints

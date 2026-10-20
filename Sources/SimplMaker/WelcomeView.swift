@@ -80,7 +80,7 @@ struct WelcomeView: View {
                 if !tutorialCompleted { tutorialAction }
                 WelcomeAction(title: "Create a new part", subtitle: "Start with an empty part and sketch on a plane.",
                               systemImage: "plus.square") { newDocument { CADFile() } }
-                WelcomeAction(title: "Open the demo part", subtitle: "A plate with a hole, fillets and a chamfer to explore.",
+                WelcomeAction(title: "Open the demo part", subtitle: "A plate with a hole, fillets and a chamfer to poke at.",
                               systemImage: "cube") { newDocument { CADFile(document: .demo()) } }
                 WelcomeAction(title: "Open an existing part…", subtitle: "Open a .simplmaker file on your Mac.",
                               systemImage: "folder") { NSDocumentController.shared.openDocument(nil) }
@@ -119,7 +119,7 @@ struct WelcomeView: View {
         if recents.isEmpty {
             VStack(spacing: 6) {
                 Text("No Recent Parts").font(.title3).foregroundStyle(.secondary)
-                Text("Parts you open or save will appear here.").font(.callout).foregroundStyle(.tertiary)
+                Text("Parts you open or save will show up here. For now it is very quiet.").font(.callout).foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
