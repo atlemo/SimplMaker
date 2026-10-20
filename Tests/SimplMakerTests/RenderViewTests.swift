@@ -3,6 +3,7 @@ import AppKit
 import CADCore
 import Foundation
 import ImageIO
+import SwiftUI
 import Testing
 import UniformTypeIdentifiers
 import simd
@@ -236,6 +237,63 @@ import simd
         model.visualStyle = .wireframe
         model.setRenderView(true)
         #expect(model.visualStyle.isShaded, "the render view needs a shaded style")
+    }
+
+    @Test func theDialsBearingIsACompassAngleFromAbove() {
+        var s = RenderSettings()
+        s.direction = 90      // toward +Y: straight up on a dial seen from above
+        #expect(abs(s.bearing - 0) < 1e-9)
+        s.direction = 0       // toward +X: a quarter turn clockwise
+        #expect(abs(s.bearing - 90) < 1e-9)
+        s.direction = -90
+        #expect(abs(s.bearing - 180) < 1e-9)
+        s.direction = 180
+        #expect(abs(s.bearing - 270) < 1e-9)
+        for b in stride(from: 0.0, to: 360.0, by: 37.0) {   // and back again
+            s.bearing = b
+            #expect(abs(s.bearing - b) < 1e-9, "\(b)")
+            #expect(s.direction > -180 && s.direction <= 180)
+        }
+    }
+
+    @Test func adjustingALightLeavesThePresetForCustom() {
+        var s = RenderSettings()
+        #expect(s.matchingPreset == .studio)
+        s.apply(.soft)
+        #expect(s.matchingPreset == .soft)
+        s.brightness += 0.1
+        #expect(s.matchingPreset == nil, "Custom")
+        s.apply(.dramatic)
+        #expect(s.matchingPreset == .dramatic)
+        s.softness = 0.9
+        #expect(s.matchingPreset == .dramatic, "the shadows' softness is not part of the light")
+        s.floor = .sand
+        s.reflection = 0
+        #expect(s.matchingPreset == .dramatic, "the floor and reflection are not the light")
+    }
+
+    /// Only for looking at: the panel drawn to a picture.
+    @Test func thePanelAsAPicture() throws {
+        guard let dir = ProcessInfo.processInfo.environment["RENDER_DUMP_DIR"] else { return }
+        let model = DocumentModel(document: CADDocument())
+        model.renderSettings.floor = .mid
+        model.renderSettings.softness = 0.95
+        let content = RenderPanel(model: model)
+            .padding(30)
+            .background(Color(white: 0.16))
+            .environment(\.colorScheme, .dark)
+        let host = NSHostingView(rootView: content)
+        host.appearance = NSAppearance(named: .darkAqua)
+        let size = host.fittingSize
+        host.frame = NSRect(origin: .zero, size: size)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: dir + "/panel.png"))
+        withExtendedLifetime(window) {}
     }
 
     @Test func thePresetsSetTheLight() {

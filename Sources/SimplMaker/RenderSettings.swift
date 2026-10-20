@@ -14,11 +14,11 @@ struct RenderSettings: Codable, Equatable {
         var title: String {
             switch self {
             case .white: return "White"
-            case .light: return "Light Grey"
-            case .mid: return "Grey"
+            case .light: return "Silver"
+            case .mid: return "Graphite"
             case .charcoal: return "Charcoal"
             case .sand: return "Sand"
-            case .slate: return "Slate Blue"
+            case .slate: return "Slate"
             }
         }
 
@@ -86,6 +86,27 @@ struct RenderSettings: Codable, Equatable {
         }
     }
 
+    /// The preset the light is exactly set to, if any (else it is the user's own: "Custom").
+    var matchingPreset: Preset? {
+        Preset.allCases.first { preset in
+            var t = self
+            t.apply(preset)
+            // The softness of the shadows is the shadows' own setting: it is set by a preset but leaving it is not leaving the preset.
+            return abs(t.brightness - brightness) < 0.005 && abs(t.direction - direction) < 0.5 && abs(t.height - height) < 0.5
+                && abs(t.ambient - ambient) < 0.005
+        }
+    }
+
+    /// The light's direction as a compass bearing seen from above, for the dial: 0° at the top (+Y), clockwise, 0 to 360.
+    var bearing: Double {
+        get { (90 - direction).truncatingRemainder(dividingBy: 360) + (90 - direction < 0 ? 360 : 0) }
+        set {
+            var d = (90 - newValue).truncatingRemainder(dividingBy: 360)
+            if d > 180 { d -= 360 } else if d <= -180 { d += 360 }
+            direction = d
+        }
+    }
+
     /// The way to the main light, as a unit vector (Z up).
     var lightDirection: SIMD3<Float> {
         let az = Float(direction * .pi / 180), el = Float(height * .pi / 180)
@@ -126,71 +147,210 @@ struct RenderSettings: Codable, Equatable {
     }
 }
 
-/// The Render view's options, at the top left of the view while it is on.
+/// The Render view's options, at the top left of the view while it is on: four groups (floor, lighting, shadows, display)
+/// on one grid of label, control and value. Orange marks values and the selection, nothing else. A double-click on a
+/// control puts it back to its default, Reset puts back all of them, and the Render button in the toolbar closes it.
 struct RenderPanel: View {
     @Bindable var model: DocumentModel
-    static let width: CGFloat = 270
+    @Environment(\.accent) private var accent
+    static let width: CGFloat = 324
+    private let labelWidth: CGFloat = 90
+    private let valueWidth: CGFloat = 44
+    private let defaults = RenderSettings()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space5) {
-            HStack {
-                Text("Render").font(.headline)
-                Spacer()
-                HeaderIconButton(systemImage: "xmark", help: "Close these options (the render view stays on)") { model.showRenderOptions = false }
-            }
-            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                Text("Floor").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                HStack(spacing: DS.Spacing.space2) {
-                    ForEach(RenderSettings.Floor.allCases) { floor in
-                        let c = floor.rgb
-                        ColorSwatch(color: Color(.sRGB, red: Double(c.x), green: Double(c.y), blue: Double(c.z)),
-                                    name: floor.title, current: model.renderSettings.floor == floor) {
-                            model.renderSettings.floor = floor
-                        }
-                        .help(floor.title)
-                    }
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: DS.Spacing.space6) {
+                HStack {
+                    Text("Render").font(.headline)
+                    Spacer()
+                    Button("Reset") { model.renderSettings = RenderSettings() }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .disabled(model.renderSettings == defaults)
+                        .help("Put every render setting back to its default")
                 }
-                slider("Reflection", value: $model.renderSettings.reflection, range: 0...1)
-                slider("Blur", value: $model.renderSettings.reflectionBlur, range: 0...1)
-                    .disabled(model.renderSettings.reflection == 0)
+                floorGroup
+                Divider()
+                lightingGroup
+                Divider()
+                shadowsGroup
+                Divider()
+                switchRow("Show edges", isOn: $model.renderSettings.showEdges, help: "Draw the lines along the edges of the bodies")
             }
-            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                Text("Light").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                HStack(spacing: DS.Spacing.space2) {
-                    ForEach(RenderSettings.Preset.allCases) { preset in
-                        Button(preset.title) { model.renderSettings.apply(preset) }
-                            .controlSize(.small)
-                    }
-                }
-                slider("Brightness", value: $model.renderSettings.brightness, range: 0.2...1.5)
-                slider("Direction", value: $model.renderSettings.direction, range: -180...180, unit: "°")
-                slider("Height", value: $model.renderSettings.height, range: 5...90, unit: "°")
-                slider("Ambient", value: $model.renderSettings.ambient, range: 0...1)
-                Toggle("Shadows", isOn: $model.renderSettings.shadows)
-                    .toggleStyle(.switch)
-                    .help("The bodies cast shadows on the floor and on each other")
-                slider("Softness", value: $model.renderSettings.softness, range: 0...1)
-                    .disabled(!model.renderSettings.shadows)
-            }
-            Toggle("Show edges", isOn: $model.renderSettings.showEdges)
-                .toggleStyle(.switch)
-                .help("Draw the lines along the edges of the bodies")
-            Text("The grid is replaced by a floor. Turn the view off with the Render button.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            .padding(DS.Spacing.space6)
+            Divider()
+            Text("While rendering, the floor replaces the grid. Double-click any control to reset it.")
+                .font(.callout)
+                .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(DS.Spacing.space6)
         }
-        .padding(DS.Spacing.space6)
         .frame(width: Self.width)
         .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
     }
 
-    private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, unit: String = "") -> some View {
-        HStack {
-            Text(title).font(.callout).frame(width: 78, alignment: .leading)
-            Slider(value: value, in: range)
-                .controlSize(.small)
+    // MARK: groups
+
+    private var floorGroup: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space5) {
+            header("Floor", detail: model.renderSettings.floor.title)
+            HStack(spacing: DS.Spacing.space2) {
+                ForEach(RenderSettings.Floor.allCases) { floor in
+                    let c = floor.rgb
+                    ColorSwatch(color: Color(.sRGB, red: Double(c.x), green: Double(c.y), blue: Double(c.z)),
+                                name: floor.title, current: model.renderSettings.floor == floor) {
+                        model.renderSettings.floor = floor
+                    }
+                    .help(floor.title)
+                }
+            }
+            sliderRow("Reflection", value: $model.renderSettings.reflection, range: 0...1, reset: defaults.reflection, show: percent)
+            sliderRow("Blur", value: $model.renderSettings.reflectionBlur, range: 0...1, reset: defaults.reflectionBlur, show: percent)
+                .disabled(model.renderSettings.reflection == 0)
+                .opacity(model.renderSettings.reflection == 0 ? DS.opacityDisabled : 1)
         }
-        .help(unit.isEmpty ? title : "\(title): \(Int(value.wrappedValue.rounded()))\(unit)")
+    }
+
+    private var lightingGroup: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space5) {
+            header("Lighting")
+            PresetPicker(current: model.renderSettings.matchingPreset) { model.renderSettings.apply($0) }
+            row("Direction") {
+                DirectionDial(bearing: $model.renderSettings.bearing, reset: defaults.bearing)
+                Text("Drag to rotate").foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+                Text("\(Int(model.renderSettings.bearing.rounded()) % 360)°").monospacedDigit().foregroundStyle(.secondary)
+                    .frame(width: valueWidth, alignment: .trailing)
+            }
+            .help("Which way the main light shines from, seen from above (0° is the far side of the part)")
+            sliderRow("Brightness", value: $model.renderSettings.brightness, range: 0.2...1.5, reset: defaults.brightness, show: percent)
+            sliderRow("Height", value: $model.renderSettings.height, range: 5...90, reset: defaults.height) { "\(Int($0.rounded()))°" }
+            sliderRow("Ambient", value: $model.renderSettings.ambient, range: 0...1, reset: defaults.ambient, show: percent)
+        }
+    }
+
+    private var shadowsGroup: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space5) {
+            HStack {
+                header("Shadows")
+                Spacer()
+                Toggle("Shadows", isOn: $model.renderSettings.shadows)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .help("The bodies cast shadows on the floor and on each other")
+            }
+            sliderRow("Softness", value: $model.renderSettings.softness, range: 0...1, reset: defaults.softness, show: percent)
+                .disabled(!model.renderSettings.shadows)
+                .opacity(model.renderSettings.shadows ? 1 : DS.opacityDisabled)
+        }
+    }
+
+    // MARK: pieces
+
+    private func percent(_ v: Double) -> String { "\(Int((v * 100).rounded()))%" }
+
+    /// A group's name, quieter than the controls under it, and optionally what is chosen in it.
+    private func header(_ title: String, detail: String? = nil) -> some View {
+        HStack {
+            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            if let detail {
+                Spacer()
+                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// One row of the grid: the label column, then whatever the control needs.
+    private func row<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: DS.Spacing.space4) {
+            Text(title).frame(width: labelWidth, alignment: .leading)
+            content()
+        }
+    }
+
+    private func sliderRow(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, reset: Double,
+                           show: @escaping (Double) -> String) -> some View {
+        row(title) {
+            Slider(value: value, in: range).tint(accent)
+            Text(show(value.wrappedValue)).monospacedDigit().foregroundStyle(.secondary)
+                .frame(width: valueWidth, alignment: .trailing)
+        }
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture(count: 2).onEnded { value.wrappedValue = reset })
+    }
+
+    private func switchRow(_ title: String, isOn: Binding<Bool>, help: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Toggle(title, isOn: isOn).labelsHidden().toggleStyle(.switch)
+        }
+        .help(help)
+    }
+}
+
+/// The light presets as a segmented control. The selected one is plain to see; "Custom" is where the settings are once
+/// one of the lights has been adjusted, and is not something to click.
+private struct PresetPicker: View {
+    let current: RenderSettings.Preset?
+    let choose: (RenderSettings.Preset) -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(RenderSettings.Preset.allCases) { preset in
+                segment(preset.title, selected: current == preset) { choose(preset) }
+            }
+            segment("Custom", selected: current == nil, action: nil)
+        }
+        .padding(2)
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.lg))
+        .overlay { RoundedRectangle(cornerRadius: DS.Radius.lg).strokeBorder(Color.primary.opacity(0.1), lineWidth: 1) }
+    }
+
+    private func segment(_ title: String, selected: Bool, action: (() -> Void)?) -> some View {
+        Text(title)
+            .foregroundStyle(selected ? Color.primary : action == nil ? Color.secondary.opacity(0.6) : Color.primary.opacity(0.85))
+            .frame(maxWidth: .infinity, minHeight: DS.ControlHeight.large)
+            .background {
+                if selected { RoundedRectangle(cornerRadius: DS.Radius.md).fill(Color.primary.opacity(0.2)) }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { action?() }
+            .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// An angle as a dial, for the light's direction: 0° at the top, clockwise, as seen from above. Drag it round.
+private struct DirectionDial: View {
+    @Binding var bearing: Double
+    let reset: Double
+    @Environment(\.accent) private var accent
+    private let size: CGFloat = 34
+
+    var body: some View {
+        let radius = size / 2 - 7
+        let a = bearing * .pi / 180
+        let dot = CGPoint(x: size / 2 + radius * sin(a), y: size / 2 - radius * cos(a))
+        ZStack {
+            Circle().strokeBorder(Color.primary.opacity(0.3), lineWidth: 1)
+            Path { p in
+                p.move(to: CGPoint(x: size / 2, y: size / 2))
+                p.addLine(to: dot)
+            }
+            .stroke(Color.primary.opacity(0.45), lineWidth: 1.5)
+            Circle().fill(accent).frame(width: 7, height: 7).position(dot)
+        }
+        .frame(width: size, height: size)
+        .contentShape(Circle())
+        .gesture(DragGesture(minimumDistance: 0).onChanged { g in
+            let dx = g.location.x - size / 2, dy = g.location.y - size / 2
+            guard hypot(dx, dy) > 2 else { return }
+            let b = atan2(dx, -dy) * 180 / .pi
+            bearing = b < 0 ? b + 360 : b
+        })
+        .simultaneousGesture(TapGesture(count: 2).onEnded { bearing = reset })
+        .accessibilityLabel("Light direction")
+        .accessibilityValue("\(Int(bearing.rounded())) degrees")
     }
 }
