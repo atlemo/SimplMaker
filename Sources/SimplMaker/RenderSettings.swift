@@ -53,7 +53,7 @@ struct RenderSettings: Codable, Equatable {
     /// The body edges stay drawn (off: bodies are drawn as plain shapes, as in a picture).
     var showEdges = false
     /// A little grain over everything in the view (the backdrop, the floor and the bodies), 0 (none) to 1.
-    var noise: Double = 0.2
+    var noise: Double = 0.1
     /// How much of the part shows in the floor, 0 (none) to 1.
     var reflection: Double = 0.35
     /// How blurred the reflection is, 0 (a mirror) to 1: it stays sharp where a body meets the floor and softens with height.
@@ -152,7 +152,8 @@ struct RenderSettings: Codable, Equatable {
 
 /// The Render view's options, at the top left of the view while it is on: four groups (floor, lighting, shadows, display)
 /// on one grid of label, control and value. Orange marks values and the selection, nothing else. A double-click on a
-/// control puts it back to its default, Reset puts back all of them, and the Render button in the toolbar closes it.
+/// control puts it back to its default and Reset puts back all of them. The X hides the panel (the view stays on); the
+/// Render button in the toolbar turns the view off.
 struct RenderPanel: View {
     @Bindable var model: DocumentModel
     @Environment(\.accent) private var accent
@@ -172,6 +173,9 @@ struct RenderPanel: View {
                         .foregroundStyle(.secondary)
                         .disabled(model.renderSettings == defaults)
                         .help("Put every render setting back to its default")
+                    HeaderIconButton(systemImage: "xmark", help: "Close these options (the Render view stays on; View ▸ Render Options brings them back)") {
+                        model.showRenderOptions = false
+                    }
                 }
                 floorGroup
                 Divider()
@@ -183,11 +187,19 @@ struct RenderPanel: View {
             }
             .padding(DS.Spacing.space6)
             Divider()
-            Text("While rendering, the floor replaces the grid. Double-click any control to reset it.")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(DS.Spacing.space6)
+            VStack(alignment: .leading, spacing: DS.Spacing.space6) {
+                Text("While rendering, the floor replaces the grid. Double-click any control to reset it.")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { model.exportRender() } label: {
+                    Label("Export render", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .controlSize(.large)
+                .help("Save what the view shows as a PNG picture")
+            }
+            .padding(DS.Spacing.space6)
         }
         .frame(width: Self.width)
         .panelGlass(in: .rect(cornerRadius: DS.Radius.window))

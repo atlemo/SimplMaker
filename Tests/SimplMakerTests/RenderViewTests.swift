@@ -237,6 +237,33 @@ import simd
         #expect(grainy.body > 0.015, "and so is the body: \(grainy.body)")
     }
 
+    /// Export render: the view's picture as PNG data, at the view's full size, the same as what it drew.
+    @Test func theViewCanHandOverItsPictureAsAPNG() async throws {
+        let model = try await loaded()
+        var settings = RenderSettings.quiet
+        settings.shadows = false
+        let (picture, _, view) = try await render(model, name: "export-source", settings: settings)
+        let png: Data? = await withCheckedContinuation { continuation in
+            view.exportPNG { continuation.resume(returning: $0) }
+        }
+        let data = try #require(png, "a picture came back")
+        if let dir = ProcessInfo.processInfo.environment["RENDER_DUMP_DIR"] { try data.write(to: URL(fileURLWithPath: dir + "/export.png")) }
+        let rep = try #require(NSBitmapImageRep(data: data))
+        #expect(rep.pixelsWide == picture.width && rep.pixelsHigh == picture.height, "full size: \(rep.pixelsWide) x \(rep.pixelsHigh)")
+        // The middle of the box and a spot of floor are the same colours in the PNG as in the view's own frame.
+        for (x, y) in [(picture.width / 4, picture.height / 2), (10, 10), (picture.width - 10, picture.height - 10)] {
+            var raw = [Int](repeating: 0, count: 5)
+            rep.getPixel(&raw, atX: x, y: y)
+            let seen = picture.color(x, y)
+            #expect(abs(Float(raw[0]) / 255 - seen.x) < 0.01 && abs(Float(raw[2]) / 255 - seen.z) < 0.01, "pixel \(x),\(y): \(raw) vs \(seen)")
+        }
+        #expect(view.framebufferOnly, "the view goes back to only displaying its frames")
+    }
+
+    @Test func noiseStartsAtTenPercent() {
+        #expect(RenderSettings().noise == 0.1)
+    }
+
     @Test func settingsKeptByAnOlderVersionStillLoad() throws {
         let old = #"{"floor":"sand","brightness":1,"direction":-90,"height":40,"ambient":0.3,"showEdges":true}"#
         let s = try JSONDecoder().decode(RenderSettings.self, from: Data(old.utf8))

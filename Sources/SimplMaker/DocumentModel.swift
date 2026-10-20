@@ -200,6 +200,27 @@ final class DocumentModel {
         didSet { renderSettings.save() }
     }
     var showRenderOptions = false
+    /// The 3D view, for the one thing the model asks of it: a picture of what it shows (Export render).
+    @ObservationIgnored weak var viewportView: ViewportMTKView?
+
+    /// Saves what the viewport shows as a PNG: asks for the picture first, so it is of the view as it is now, then for where to put it.
+    func exportRender() {
+        guard let view = viewportView else { return }
+        view.exportPNG { [weak self] png in
+            guard let self else { return }
+            guard let png else {
+                alert = AlertInfo(title: "The render could not be saved", message: "The picture of the view could not be made. Try again.")
+                return
+            }
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.png]
+            panel.nameFieldStringValue = (fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled") + " render.png"
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            do { try png.write(to: url) } catch {
+                alert = AlertInfo(title: "The render could not be saved", message: "\(error.localizedDescription)")
+            }
+        }
+    }
 
     /// Turns the Render view on or off; on, it opens its options, leaves the print preview and needs a shaded style.
     func setRenderView(_ on: Bool) {

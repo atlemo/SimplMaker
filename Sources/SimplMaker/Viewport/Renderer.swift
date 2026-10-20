@@ -550,6 +550,9 @@ final class Renderer {
     var selected: [UInt32] = []
     /// Pixel (in drawable coordinates, origin top-left) to read from the ID buffer on the next frame.
     var pickRequest: SIMD2<Int>?
+    /// Asks the next frame to hand over its picture, as PNG data (nil if it could not be made): the Render view's
+    /// Export render. The view must allow reading its drawable (framebufferOnly off) for that frame.
+    var captureHandler: (@MainActor @Sendable (Data?) -> Void)?
     /// Called with the ID under a requested pixel, and that pixel (a result can arrive after the pointer moved on).
     var onPick: (@MainActor @Sendable (UInt32, SIMD2<Int>) -> Void)?
 
@@ -1655,6 +1658,25 @@ final class Renderer {
             cmd.addCompletedHandler { _ in
                 let id = buffer.contents().load(as: UInt32.self)
                 Task { @MainActor in callback?(id, pick) }
+            }
+        }
+        if let handler = captureHandler {
+            captureHandler = nil
+            let texture = drawable.texture
+            let (w, h) = (texture.width, texture.height)
+            if let buffer = device.makeBuffer(length: w * h * 4, options: .storageModeShared), let blit = cmd.makeBlitCommandEncoder() {
+                blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                          sourceSize: MTLSize(width: w, height: h, depth: 1), to: buffer, destinationOffset: 0,
+                          destinationBytesPerRow: w * 4, destinationBytesPerImage: w * h * 4)
+                blit.endEncoding()
+                nonisolated(unsafe) let pixels = buffer
+                cmd.addCompletedHandler { _ in
+                    let bytes = [UInt8](UnsafeBufferPointer(start: pixels.contents().assumingMemoryBound(to: UInt8.self), count: w * h * 4))
+                    let png = ViewportSnapshot.png(bgra: bytes, width: w, height: h)
+                    Task { @MainActor in handler(png) }
+                }
+            } else {
+                Task { @MainActor in handler(nil) }
             }
         }
         cmd.present(drawable)

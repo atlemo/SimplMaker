@@ -50,7 +50,7 @@ With **Shadows** on, the bodies cast shadows on the floor and on each other. Und
 
 **Show edges** draws the lines along the edges of the bodies. They are off in the Render view so the part looks like a picture. Turn them on if you want an outlined look.
 
-**Noise** adds a little grain over the whole picture: the backdrop, the floor, the reflection and the bodies. A touch of it takes the flat, digital look off smooth colours and hides banding in the soft shadows. It starts at 20%, which is subtle. At 100% it is plainly grainy, and at 0% it is off. The grain does not cover the lines of the edges or what you select, and it stays still on the screen while you turn the view.
+**Noise** adds a little grain over the whole picture: the backdrop, the floor, the reflection and the bodies. A touch of it takes the flat, digital look off smooth colours and hides banding in the soft shadows. It starts at 10%, which is subtle. At 100% it is plainly grainy, and at 0% it is off. The grain does not cover the lines of the edges or what you select, and it stays still on the screen while you turn the view.
 
 ## Reset and double-click
 
@@ -61,15 +61,17 @@ The settings are kept between launches, and they are the same for every part. Th
 
 ## Make a picture
 
-1. Put the part on the floor and set the view you want. [[⌘0]] fits it in the window.
-2. Choose **View → Render Options** to hide the panel, and click an empty place to clear any selection.
-3. Hide the browser, inspector and timeline if you like, and take a screenshot ([[⇧⌘5]]).
+Press **Export render** at the bottom of the panel to save what the view shows as a PNG file. It is the view alone, at its full pixel size, without the panels, the toolbar and the navigation cube. Anything drawn in the view goes in it, including a selection and the edge lines if they are on.
+
+1. Put the part on the floor and set the view you want. [[⌘0]] fits it in the window. A bigger window makes a bigger picture.
+2. Click an empty place to clear any selection, and move the pointer off the part so nothing is lit up.
+3. Press **Export render**, and choose where to save it.
 
 The picture an AI assistant makes of a part is not changed by the Render view. See [Work with AI](doc:ai/assistant).
 
 ## Good to know
 
-- **View → Render Options** shows and hides the panel while the Render view stays on. The Render button turns the whole view off.
+- **View → Render Options** shows and hides the panel while the Render view stays on. The **×** in the panel's title row hides it too. The Render button turns the whole view off. Right-click in the viewport and choose **Show Render Options** to bring the panel back.
 - With [Section Analysis](doc:modify/section-analysis) on, the cut bodies show without shadows. The floor shadows stay.
 - The shadows cover the area around the part. With a very low light (a small Height), a long shadow can be cut off where that area ends.
 - Colours you gave bodies in [Appearance](doc:modify/appearance) show in the Render view too, under the new light.

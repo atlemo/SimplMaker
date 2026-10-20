@@ -225,6 +225,20 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         layoutViewCube()
     }
 
+    /// The picture of what the view shows now (what is drawn in it, not the panels and buttons over it), as PNG data at
+    /// the view's full pixel size. Draws one frame for it; nil if the frame could not be read.
+    func exportPNG(_ done: @escaping @MainActor @Sendable (Data?) -> Void) {
+        guard let renderer else { done(nil); return }
+        framebufferOnly = false  // the drawable is read back, which a view that only displays it does not allow
+        renderer.captureHandler = done
+        draw(bounds)
+        framebufferOnly = true
+        if let unused = renderer.captureHandler {  // nothing was drawn (the view has no size)
+            renderer.captureHandler = nil
+            unused(nil)
+        }
+    }
+
     // MARK: view cube
 
     private var viewCube: ViewCubeView?
@@ -878,6 +892,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if model.sketchSession == nil, model.pendingTool == nil {
             items += [.separator, .action(model.renderView ? "Leave Render View" : "Render View",
                                           symbol: "sun.max") { model.setRenderView(!model.renderView) }]
+            if model.renderView, !model.showRenderOptions {
+                items += [.action("Show Render Options", symbol: "slider.horizontal.3") { model.showRenderOptions = true }]
+            }
         }
         if model.sketchSession == nil, model.pendingTool == nil, model.visualStyle.isShaded {
             items += [.separator, .action(model.printPreview ? "Leave 3D Print Preview" : "FDM 3D Print Preview",
@@ -2117,6 +2134,7 @@ struct ViewportView: NSViewRepresentable {
         view.device = renderer.device
         view.renderer = renderer
         view.model = model
+        model.viewportView = view
         view.colorPixelFormat = Renderer.colorFormat
         view.depthStencilPixelFormat = Renderer.depthFormat
         view.applyAppearance()
