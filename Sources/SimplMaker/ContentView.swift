@@ -249,6 +249,9 @@ struct DocumentWindow: View {
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
+            // With both panels closed the row holds only a Spacer, which has no height: without this the
+            // stack would shrink to the timeline and float in the middle of the window.
+            .frame(maxHeight: .infinity, alignment: .top)
             if model.showTimeline {
                 TimelineBar(model: model)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
