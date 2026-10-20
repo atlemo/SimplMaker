@@ -27,5 +27,5 @@ If the plane you pick does not pass through the model (a face on the outside of 
 ## Good to know
 
 - You can keep working while the cut is on: sketch on the cut plane, measure, or pick faces. Clicks go to the faces that are left, and the hatched cut face itself cannot be picked.
-- The cut works with every visual style and with the 3D Print Preview. In the wireframe styles the edges are cut, without a filled face.
+- The cut works with every visual style, with the 3D Print Preview and with the [Render view](doc:modify/render) (the cut bodies show without shadows there). In the wireframe styles the edges are cut, without a filled face.
 - A body has to be a closed solid for the cut face to be filled.

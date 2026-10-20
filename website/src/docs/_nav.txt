@@ -54,6 +54,7 @@ modify/mirror-pattern
 modify/measure
 modify/section-analysis
 modify/appearance
+modify/render
 
 ## For 3D printing
 print/export

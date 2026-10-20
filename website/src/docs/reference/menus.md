@@ -42,6 +42,8 @@ Standard **Undo** ([[⌘Z]]), **Redo** ([[⇧⌘Z]]), **Cut**, **Copy**, **Paste
 | **Orthographic Projection** | Switches between perspective and orthographic |
 | **Visual Style** | Shaded, wireframe and hidden-edge styles |
 | **FDM 3D Print Preview** | Draw the bodies like a printed part, with layer lines. Shaded styles only. See [3D Print Preview](doc:print/print-preview). |
+| **Render** | Show the part on a solid floor with a light you set, shadows and a reflection. See [Render view](doc:modify/render). |
+| **Render Options** | Show or hide the Render view's panel while the view is on |
 | **Section Analysis** | Turn the cut through the bodies on or off (see [Section Analysis](doc:modify/section-analysis)) |
 | **Show Grid**, **Show Axes** | Toggle the reference lines |
 | **Show Constraints** | Show or hide sketch constraint symbols |

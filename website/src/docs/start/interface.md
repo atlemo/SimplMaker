@@ -15,7 +15,7 @@ Each part opens as a tab, with five areas.
 | **Inspector** | Right | The settings of the feature you selected |
 | **Timeline** | Bottom | Every step, in the order it was built |
 
-Hide the browser, inspector and timeline when you want more room: **View → Hide Browser** ([[⌃⌘S]]), **Hide Inspector** ([[⌥⌘I]]) and **Hide Timeline** ([[⌥⌘T]]). The buttons at the left and right ends of the title bar do the first two.
+Hide the browser, inspector and timeline when you want more room: **View → Hide Browser** ([[⌃⌘S]]), **Hide Inspector** ([[⌥⌘I]]) and **Hide Timeline** ([[⌥⌘T]]). The buttons at the left and right ends of the title bar do the first two. The sun button next to the inspector button turns on the [Render view](doc:modify/render).
 
 ## The toolbar
 

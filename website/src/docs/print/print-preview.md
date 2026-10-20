@@ -32,6 +32,8 @@ The start is 0.20 mm and a 0.4 mm nozzle. The close button on the panel hides it
 - **Top surfaces** show the diagonal skin, so you can see how a flat top will look.
 - **Edges of flat faces** show two perimeter lines, the width of the nozzle you chose. A wall or rib that is only as thick as these lines is a sign it may be too thin to print well. See the [design tips](doc:print/design-tips).
 
+The [Render view](doc:modify/render) restyles the bodies too, so the two do not work together: turning one on turns the other off.
+
 ## Combine it with a cut
 
 The preview works together with [Section Analysis](doc:modify/section-analysis), so you can cut a part open and still see the layers on the outside.
