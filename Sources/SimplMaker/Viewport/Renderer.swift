@@ -433,6 +433,9 @@ final class Renderer {
     private let blurDepthPipeline: MTLRenderPipelineState
     private let blurAccumulatePipeline: MTLRenderPipelineState
     private let blurCompositePipeline: MTLRenderPipelineState
+    /// The Render view's grain: added to what is there, and taken away from it.
+    private let noiseAddPipeline: MTLRenderPipelineState
+    private let noiseTakePipeline: MTLRenderPipelineState
     private var reflectionTexture: MTLTexture?
     private var reflectionDepth: MTLTexture?
     /// How many mirror views make up a blurred reflection.
@@ -649,6 +652,24 @@ final class Renderer {
             blurDepthPipeline = try offscreen(accumulate: false)
             blurAccumulatePipeline = try offscreen(accumulate: true)
             blurCompositePipeline = try pipeline("floorVertex", "reflectionCompositeFragment", blend: true, writesID: false)
+            func grain(_ operation: MTLBlendOperation) throws -> MTLRenderPipelineState {
+                let d = MTLRenderPipelineDescriptor()
+                d.rasterSampleCount = samples
+                d.vertexFunction = library.makeFunction(name: "noiseVertex")
+                d.fragmentFunction = library.makeFunction(name: "noiseFragment")
+                d.colorAttachments[0].pixelFormat = Renderer.colorFormat
+                d.colorAttachments[0].isBlendingEnabled = true
+                d.colorAttachments[0].rgbBlendOperation = operation
+                d.colorAttachments[0].sourceRGBBlendFactor = .one
+                d.colorAttachments[0].destinationRGBBlendFactor = .one
+                d.colorAttachments[1].pixelFormat = .r32Uint
+                d.colorAttachments[1].writeMask = []
+                d.depthAttachmentPixelFormat = Renderer.depthFormat
+                d.stencilAttachmentPixelFormat = Renderer.depthFormat
+                return try device.makeRenderPipelineState(descriptor: d)
+            }
+            noiseAddPipeline = try grain(.add)
+            noiseTakePipeline = try grain(.reverseSubtract)
             let shadow = MTLRenderPipelineDescriptor()
             shadow.vertexFunction = library.makeFunction(name: "shadowVertex")
             shadow.depthAttachmentPixelFormat = .depth32Float
@@ -1365,6 +1386,17 @@ final class Renderer {
                     enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
                     enc.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
                 }
+            }
+            // Grain over all of it: the backdrop, the floor, the bodies and the reflection (not what is drawn after, like edges).
+            if look.noise > 0 {
+                enc.setDepthStencilState(overEverythingDepthState)
+                for (pipeline, sign) in [(noiseAddPipeline, Float(1)), (noiseTakePipeline, Float(-1))] {
+                    var grain = SIMD4<Float>(Float(look.noise) * 0.1, Float(view.window?.backingScaleFactor ?? 2), sign, 0)
+                    enc.setRenderPipelineState(pipeline)
+                    enc.setFragmentBytes(&grain, length: MemoryLayout<SIMD4<Float>>.stride, index: 3)
+                    enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                }
+                enc.setDepthStencilState(depthState)
             }
         } else if showGrid, !camera.isBelowGround, let g = worldGrid {  // seen from under the floor the grid would only be in the way
             // Seen almost edge-on the lines pile up into moiré, so the grid fades out as the view flattens. Blended

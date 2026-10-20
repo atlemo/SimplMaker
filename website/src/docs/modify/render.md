@@ -46,9 +46,11 @@ A weak second light from the side keeps the faces turned away from the main ligh
 
 With **Shadows** on, the bodies cast shadows on the floor and on each other. Under it, **Softness** sets how soft the edges are. A shadow is sharp where it starts at the part and gets softer the farther it falls, as with a real light. Softness is greyed out when Shadows are off. The presets set it too.
 
-## Show edges
+## Show edges and noise
 
 **Show edges** draws the lines along the edges of the bodies. They are off in the Render view so the part looks like a picture. Turn them on if you want an outlined look.
+
+**Noise** adds a little grain over the whole picture: the backdrop, the floor, the reflection and the bodies. A touch of it takes the flat, digital look off smooth colours and hides banding in the soft shadows. It starts at 20%, which is subtle. At 100% it is plainly grainy, and at 0% it is off. The grain does not cover the lines of the edges or what you select, and it stays still on the screen while you turn the view.
 
 ## Reset and double-click
 

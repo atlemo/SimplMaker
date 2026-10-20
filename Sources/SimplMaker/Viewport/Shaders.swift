@@ -322,6 +322,38 @@ enum Shaders {
         return o;
     }
 
+    // Grain over the whole view, drawn twice, once adding the light grains and once taking away the dark ones, so it
+    // is as strong on a white floor as on a dark one. It is fixed to the screen, one grain to a point.
+    struct NoiseParams {
+        float amount;
+        float grain;       // pixels to a grain
+        float sign;        // 1 adds, -1 takes away
+        float pad;
+    };
+
+    struct NoiseOut {
+        float4 position [[position]];
+    };
+
+    vertex NoiseOut noiseVertex(uint vid [[vertex_id]]) {
+        NoiseOut o;
+        o.position = float4(vid == 1 ? 3.0 : -1.0, vid == 2 ? 3.0 : -1.0, 0.0, 1.0);
+        return o;
+    }
+
+    fragment FragOut noiseFragment(NoiseOut in [[stage_in]], constant NoiseParams& n [[buffer(3)]]) {
+        uint2 cell = uint2(floor(in.position.xy / max(n.grain, 1.0)));
+        uint h = cell.x * 1664525u + cell.y * 1013904223u + 12345u;
+        h ^= h >> 16; h *= 2246822519u;
+        h ^= h >> 13; h *= 3266489917u;
+        h ^= h >> 16;
+        float v = (float(h) / 4294967295.0 - 0.5) * 2.0 * n.sign;   // -1 to 1, mirrored for the taking-away pass
+        FragOut o;
+        o.color = float4(float3(max(v, 0.0) * n.amount), 1.0);
+        o.id = 0;
+        return o;
+    }
+
     // The bodies seen from the main light, for the shadow map: depth only.
     struct ShadowOut {
         float4 position [[position]];

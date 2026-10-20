@@ -102,7 +102,7 @@ import simd
 
     @Test func theFloorReplacesTheGridAndTheBackdropIsTheFloorsOwnColour() async throws {
         let model = try await loaded()
-        var settings = RenderSettings()
+        var settings = RenderSettings.quiet
         settings.floor = .white
         let (picture, renderer, view) = try await render(model, name: "studio", settings: settings)
         // A spot of floor well away from the bodies, where the grid used to have its lines, is the floor's lit colour, everywhere the same.
@@ -124,7 +124,7 @@ import simd
 
     @Test func theLightStaysWhereItIsSetWhenTheViewTurns() async throws {
         let model = try await loaded()
-        var settings = RenderSettings()
+        var settings = RenderSettings.quiet
         settings.direction = 0     // from the +X side
         settings.height = 20
         settings.brightness = 1.2
@@ -147,7 +147,7 @@ import simd
     @Test func bodiesCastShadowsAndShowInTheFloor() async throws {
         let model = try await loaded()
         let lo = try #require(model.sceneBounds).min
-        var settings = RenderSettings()
+        var settings = RenderSettings.quiet
         settings.direction = 0   // the light comes from the +X side: the shadow falls toward -X
         settings.height = 40
         settings.softness = 0.1
@@ -180,7 +180,7 @@ import simd
     @Test func theReflectionCanBeBlurred() async throws {
         let model = try await loaded()
         let lo = try #require(model.sceneBounds).min
-        var settings = RenderSettings()
+        var settings = RenderSettings.quiet
         settings.shadows = false
         settings.reflection = 1
         func scan(blur: Double, name: String) async throws -> (steepest: Float, foot: Float) {
@@ -202,6 +202,39 @@ import simd
         _ = try await scan(blur: 0.5, name: "blur-half")
         #expect(sharp.steepest > 0.015, "the unblurred reflection has an edge: \(sharp.steepest)")
         #expect(soft.steepest < sharp.steepest * 0.7, "the blurred one is gentler: \(soft.steepest) vs \(sharp.steepest)")
+    }
+
+    /// Noise is grain over the floor, the backdrop and the bodies alike: flat colour turns grainy, and none at 0.
+    @Test func noiseGrainsTheWholeView() async throws {
+        let model = try await loaded()
+        let lo = try #require(model.sceneBounds).min
+        var settings = RenderSettings.quiet
+        settings.shadows = false
+        settings.reflection = 0
+        func grain(_ noise: Double, name: String) async throws -> (floor: Float, body: Float) {
+            settings.noise = noise
+            let (picture, renderer, view) = try await render(model, name: name, settings: settings, yaw: -.pi / 3, pitch: 0.7)
+            /// How much a patch of flat colour varies, as the mean step between neighbouring pixels.
+            func roughness(_ centre: (x: Int, y: Int)) -> Float {
+                var total: Float = 0, count: Float = 0
+                for y in (centre.y - 12)..<(centre.y + 12) {
+                    for x in (centre.x - 12)..<(centre.x + 12) {
+                        total += abs(picture.color(x + 1, y).x - picture.color(x, y).x)
+                        count += 1
+                    }
+                }
+                return total / count
+            }
+            let floorSpot = pixel(of: SIMD3(lo.x - 40, lo.y + 100, 0), picture, renderer, view)
+            let bodySpot = pixel(of: SIMD3(lo.x + 30, lo.y + 20, 30), picture, renderer, view)  // the middle of the box's top
+            return (roughness(floorSpot), roughness(bodySpot))
+        }
+        let quiet = try await grain(0, name: "noise-0")
+        let grainy = try await grain(1, name: "noise-1")
+        _ = try await grain(0.2, name: "noise-default")
+        #expect(quiet.floor < 0.004 && quiet.body < 0.004, "no grain without noise: \(quiet)")
+        #expect(grainy.floor > 0.015, "the floor is grainy: \(grainy.floor)")
+        #expect(grainy.body > 0.015, "and so is the body: \(grainy.body)")
     }
 
     @Test func settingsKeptByAnOlderVersionStillLoad() throws {
@@ -307,7 +340,7 @@ import simd
     /// Only for looking at: a harsh low light on a dark floor, in perspective, as a picture.
     @Test func dramaticLightOnADarkFloor() async throws {
         let model = try await loaded()
-        var settings = RenderSettings()
+        var settings = RenderSettings.quiet
         settings.apply(.dramatic)
         settings.floor = .charcoal
         _ = try await render(model, name: "dramatic", settings: settings, yaw: -.pi / 4, pitch: 0.4, orthographic: false)
@@ -315,5 +348,14 @@ import simd
         settings.floor = .sand
         settings.showEdges = true
         _ = try await render(model, name: "soft", settings: settings, yaw: -.pi / 3, pitch: 0.9)
+    }
+}
+
+private extension RenderSettings {
+    /// The default settings without grain, so the pictures' flat colours stay flat for the tests that compare pixels.
+    static var quiet: RenderSettings {
+        var s = RenderSettings()
+        s.noise = 0
+        return s
     }
 }

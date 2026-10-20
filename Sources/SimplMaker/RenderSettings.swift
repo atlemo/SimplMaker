@@ -52,6 +52,8 @@ struct RenderSettings: Codable, Equatable {
     var ambient: Double = 0.5
     /// The body edges stay drawn (off: bodies are drawn as plain shapes, as in a picture).
     var showEdges = false
+    /// A little grain over everything in the view (the backdrop, the floor and the bodies), 0 (none) to 1.
+    var noise: Double = 0.2
     /// How much of the part shows in the floor, 0 (none) to 1.
     var reflection: Double = 0.35
     /// How blurred the reflection is, 0 (a mirror) to 1: it stays sharp where a body meets the floor and softens with height.
@@ -72,6 +74,7 @@ struct RenderSettings: Codable, Equatable {
         height = try c.decodeIfPresent(Double.self, forKey: .height) ?? d.height
         ambient = try c.decodeIfPresent(Double.self, forKey: .ambient) ?? d.ambient
         showEdges = try c.decodeIfPresent(Bool.self, forKey: .showEdges) ?? d.showEdges
+        noise = try c.decodeIfPresent(Double.self, forKey: .noise) ?? d.noise
         reflection = try c.decodeIfPresent(Double.self, forKey: .reflection) ?? d.reflection
         reflectionBlur = try c.decodeIfPresent(Double.self, forKey: .reflectionBlur) ?? d.reflectionBlur
         shadows = try c.decodeIfPresent(Bool.self, forKey: .shadows) ?? d.shadows
@@ -176,7 +179,7 @@ struct RenderPanel: View {
                 Divider()
                 shadowsGroup
                 Divider()
-                switchRow("Show edges", isOn: $model.renderSettings.showEdges, help: "Draw the lines along the edges of the bodies")
+                displayGroup
             }
             .padding(DS.Spacing.space6)
             Divider()
@@ -243,6 +246,14 @@ struct RenderPanel: View {
             sliderRow("Softness", value: $model.renderSettings.softness, range: 0...1, reset: defaults.softness, show: percent)
                 .disabled(!model.renderSettings.shadows)
                 .opacity(model.renderSettings.shadows ? 1 : DS.opacityDisabled)
+        }
+    }
+
+    private var displayGroup: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space5) {
+            switchRow("Show edges", isOn: $model.renderSettings.showEdges, help: "Draw the lines along the edges of the bodies")
+            sliderRow("Noise", value: $model.renderSettings.noise, range: 0...1, reset: defaults.noise, show: percent)
+                .help("A little grain over the backdrop, the floor and the bodies")
         }
     }
 
