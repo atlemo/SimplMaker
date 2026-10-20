@@ -168,6 +168,20 @@ struct Uniforms {
     /// How many ids follow the selected ones in the selection buffer: profiles lit like the hovered one (see Renderer.hoverGroup).
     var hoverGroupCount: UInt32 = 0
     var padClip1: UInt32 = 0
+    /// The Render view's main light: xyz = the unit vector toward it, w = its strength.
+    var lightDir: SIMD4<Float> = .zero
+    /// The Render view: x = 1 when it is on, y = the ambient light.
+    var renderParams: SIMD4<Float> = .zero
+}
+
+/// The Render view's floor, as the shader reads it (see floorVertex).
+struct FloorParams {
+    /// xy = the middle of the part, z = the floor's height, w = half the floor's side.
+    var centerHalf: SIMD4<Float>
+    /// rgb = the floor's colour as lit, w = where it starts to fade into the backdrop (distance from the middle).
+    var lit: SIMD4<Float>
+    /// rgb = the backdrop, w = where the fade ends.
+    var backdrop: SIMD4<Float>
 }
 
 /// The grid drawn in the plane of the sketch being edited: minor and major lines over the visible
@@ -399,6 +413,8 @@ final class Renderer {
     private let regionPipeline: MTLRenderPipelineState
     private let planePipeline: MTLRenderPipelineState
     private let imagePipeline: MTLRenderPipelineState
+    /// The Render view's floor: colour only, so it never hides what is picked.
+    private let floorPipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
     /// Body edges while the section analysis cuts: not where its cut face shows (stencil 1, set by `capState`).
     private let depthCutState: MTLDepthStencilState
@@ -488,6 +504,10 @@ final class Renderer {
     /// The print preview's layer height and nozzle width, in mm.
     var printLayer: Float = 0.2
     var printNozzle: Float = 0.4
+    /// The Render view's floor and light; nil: not rendering. Only for the shaded styles, and not while sketching.
+    var renderSettings: RenderSettings?
+    /// What the bodies take up, for the size of the Render view's floor.
+    var sceneBounds: (min: SIMD3<Float>, max: SIMD3<Float>)?
     /// Section analysis: the plane the bodies are cut by, as its unit normal and its distance from the origin along
     /// it; what lies on the side the normal points to is cut away. Nil: not cutting.
     var sectionPlane: SIMD4<Float>?
@@ -575,6 +595,7 @@ final class Renderer {
             planePipeline = try pipeline("regionVertex", "planeFragment", blend: true)
             hiddenPlanePipeline = try pipeline("regionVertex", "planeFragment", blend: true, writesID: false)
             imagePipeline = try pipeline("imageVertex", "imageFragment", blend: true, premultiplied: true, writesID: false)
+            floorPipeline = try pipeline("floorVertex", "floorFragment", writesID: false)
         } catch {
             print("SimplMaker: Metal setup failed: \(error)")
             return nil
@@ -895,6 +916,22 @@ final class Renderer {
         var face, faceHover, faceSelected, edgeHover, edgeSelected: SIMD4<Float>
     }
 
+    /// The Render view's floor: a square on the XY plane around the part that fades into the backdrop, drawn behind
+    /// nothing and in front of everything below it (it writes no depth and no ID, so picking goes through).
+    private func drawFloor(_ enc: MTLRenderCommandEncoder, _ look: RenderSettings) {
+        let lo = sceneBounds?.min ?? SIMD3(-50, -50, 0), hi = sceneBounds?.max ?? SIMD3(50, 50, 0)
+        let size = max(hi.x - lo.x, hi.y - lo.y, hi.z - lo.z, 20)
+        let fadeStart = size * 1.2, fadeEnd = size * 3.2
+        var params = FloorParams(centerHalf: SIMD4((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, 0, fadeEnd * 1.1),
+                                 lit: SIMD4(look.floorColor, fadeStart),
+                                 backdrop: SIMD4(look.backdropColor, fadeEnd))
+        enc.setRenderPipelineState(floorPipeline)
+        enc.setDepthStencilState(noWriteDepthState)
+        enc.setVertexBytes(&params, length: MemoryLayout<FloorParams>.stride, index: 3)
+        enc.setFragmentBytes(&params, length: MemoryLayout<FloorParams>.stride, index: 3)
+        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+    }
+
     /// How much of the ground grid to draw, 0...1, from the view direction: full while the view looks down at
     /// the floor at 25° of elevation or more, gone by 5°. `forward` is the unit direction the camera looks in,
     /// so its Z is minus the sine of the elevation (the same in perspective and orthographic).
@@ -947,8 +984,13 @@ final class Renderer {
         pass.colorAttachments[1].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
 
         let aspect = Float(size.width / size.height)
-        if (showGrid || showAxes) && sketchGrid == nil { updateWorldGrid(viewSize: view.bounds.size) }
+        if (showGrid || showAxes) && sketchGrid == nil && renderSettings == nil { updateWorldGrid(viewSize: view.bounds.size) }
         let printing = printPreview && visualStyle.isShaded
+        let look = visualStyle.isShaded && sketchGrid == nil && !printing ? renderSettings : nil
+        if let look {
+            let c = look.backdropColor
+            pass.colorAttachments[0].clearColor = MTLClearColor(red: Double(c.x), green: Double(c.y), blue: Double(c.z), alpha: 1)
+        }
         var uniforms = Uniforms(viewProj: camera.projectionMatrix(aspect: aspect) * camera.viewMatrix(),
                                 eye: SIMD4(camera.eye, 1), viewport: SIMD2(Float(size.width), Float(size.height)),
                                 hovered: hovered, selectedCount: UInt32(min(selected.count, 256)),
@@ -957,6 +999,10 @@ final class Renderer {
                                 wholeBodies: wholeBodies ? 1 : 0,
                                 printLayer: printLayer, printNozzle: printNozzle)
         uniforms.evenLight = sketchGrid != nil ? 1 : 0
+        if let look {
+            uniforms.lightDir = SIMD4(look.lightDirection, Float(look.brightness))
+            uniforms.renderParams = SIMD4(1, Float(look.ambient), 0, 0)
+        }
         let forward = camera.forward
         uniforms.viewDir = SIMD4(forward.x, forward.y, forward.z, camera.orthographic ? 1 : 0)
         var cutPlane = sectionPlane
@@ -988,7 +1034,7 @@ final class Renderer {
 
         enc.setCullMode(.none)
         enc.setStencilReferenceValue(1)
-        let style = printing ? VisualStyle.shaded : visualStyle
+        let style = printing || (look != nil && look?.showEdges == false) ? VisualStyle.shaded : visualStyle
         let tints = bodies.indices.map { Self.tint(bodyColors[safe: $0].flatMap { $0 }, palette: palette) }
         /// Faces: shaded, or in the wireframe styles flat in the background colour (hiding what's
         /// behind them) with hover and selection as a light wash. Wireframe draws them later, unseen.
@@ -1080,6 +1126,8 @@ final class Renderer {
             line(b.major, b.majorCount, p.grid, 1)
             line(b.axisU, 1, p.sketchAxisU, 1.2)
             line(b.axisV, 1, p.sketchAxisV, 1.2)
+        } else if let look {
+            if !camera.isBelowGround { drawFloor(enc, look) }
         } else if showGrid, !camera.isBelowGround, let g = worldGrid {  // seen from under the floor the grid would only be in the way
             // Seen almost edge-on the lines pile up into moiré, so the grid fades out as the view flattens. Blended
             // (fadePipeline) so the opacity shows; at full opacity it is the same as drawing it solid.
@@ -1142,7 +1190,7 @@ final class Renderer {
             enc.setDepthStencilState(depthState)
         }
 
-        for (i, (buffer, _)) in axes.enumerated() where showAxes {
+        for (i, (buffer, _)) in axes.enumerated() where showAxes && look == nil {
             let color = i == 0 ? p.axes.x : i == 1 ? p.axes.y : p.axes.z
             segments(buffer, 1, DrawParams(color: color, hoverColor: color, selectColor: color,
                                            thickness: 1.5 * scale, depthBias: 0.0001, pickable: 0))

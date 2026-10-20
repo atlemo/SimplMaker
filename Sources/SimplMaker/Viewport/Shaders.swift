@@ -26,6 +26,14 @@ enum Shaders {
         float padClip2;
         uint hoverGroupCount;   // ids after the selected ones in the selection buffer that light up like the hovered one
         uint padClip1;
+        float4 lightDir;        // render view: xyz = the way to the main light, w = its strength
+        float4 renderParams;    // render view: x = 1 when on, y = the ambient light
+    };
+
+    struct FloorParams {
+        float4 centerHalf;     // xy = the middle of the part, z = the floor's height, w = half the floor's side
+        float4 lit;            // rgb = the floor as lit, w = where it starts to fade into the backdrop
+        float4 backdrop;       // rgb = the backdrop, w = where the fade ends
     };
 
     struct FaceVertex { packed_float3 position; packed_float3 normal; uint id; };
@@ -165,6 +173,19 @@ enum Shaders {
         float diffuse = max(dot(n, key), 0.0);
         float spec = print ? pow(max(dot(reflect(-key, n), v), 0.0), 14.0) * 0.07
                            : pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
+        float lighting = 0.32 + 0.68 * diffuse;
+        if (u.renderParams.x > 0.5 && u.evenLight == 0) {
+            // The render view: a main light that stays where it is set in the world, a weaker fill from the side, and ambient light that is stronger on faces turned up. (RenderSettings.floorShade is this sum
+            // for a face turned straight up.)
+            float3 L = normalize(u.lightDir.xyz);
+            // The fill stands 100° round from the main light and low, so it reaches the side the main light misses.
+            float2 h = float2(L.x * -0.1736 - L.y * 0.9848, L.x * 0.9848 - L.y * 0.1736);
+            float3 fillDir = normalize(float3(h / max(length(h), 1e-4), 0.35));
+            float mainLight = max(dot(n, L), 0.0);
+            float fill = max(dot(n, fillDir), 0.0);
+            lighting = u.renderParams.y * (0.7 + 0.3 * n.z) + u.lightDir.w * (0.7 * mainLight + 0.3 * fill);
+            spec = pow(max(dot(reflect(-L, n), v), 0.0), 40.0) * 0.2 * u.lightDir.w * step(0.001, mainLight);
+        }
         if (u.evenLight != 0) spec = 0.0;
         // The body's colour (its own from the Appearance panel, or the palette's), with hover and
         // selection colours made from it (see Renderer.tint).
@@ -177,8 +198,33 @@ enum Shaders {
         if (isSelected(id, sel, u.selectedCount) || isSelected(bodyBits | 0xFFFFFu, sel, u.selectedCount))
             base = p.selectColor.rgb;
         FragOut o;
-        o.color = (p.style & 4u) != 0 ? float4(base, 1.0) : float4(base * (0.32 + 0.68 * diffuse) * groove + spec, 1.0);
+        o.color = (p.style & 4u) != 0 ? float4(base, 1.0) : float4(base * lighting * groove + spec, 1.0);
         o.id = id;
+        return o;
+    }
+
+    struct FloorOut {
+        float4 position [[position]];
+        float2 xy;
+    };
+
+    vertex FloorOut floorVertex(uint vid [[vertex_id]],
+                                constant Uniforms& u [[buffer(1)]],
+                                constant FloorParams& f [[buffer(3)]]) {
+        float2 corner = float2((vid & 1) != 0 ? 1.0 : -1.0, (vid & 2) != 0 ? 1.0 : -1.0);
+        float2 xy = f.centerHalf.xy + corner * f.centerHalf.w;
+        FloorOut o;
+        o.position = u.viewProj * float4(xy, f.centerHalf.z, 1.0);
+        o.xy = xy;
+        return o;
+    }
+
+    fragment FragOut floorFragment(FloorOut in [[stage_in]],
+                                   constant FloorParams& f [[buffer(3)]]) {
+        float t = smoothstep(f.lit.w, f.backdrop.w, length(in.xy - f.centerHalf.xy));
+        FragOut o;
+        o.color = float4(mix(f.lit.rgb, f.backdrop.rgb, t), 1.0);
+        o.id = 0;
         return o;
     }
 

@@ -875,6 +875,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 model.setSectionAnalysis(!model.sectionActive)
             }]
         }
+        if model.sketchSession == nil, model.pendingTool == nil {
+            items += [.separator, .action(model.renderView ? "Leave Render View" : "Render View",
+                                          symbol: "sun.max") { model.setRenderView(!model.renderView) }]
+        }
         if model.sketchSession == nil, model.pendingTool == nil, model.visualStyle.isShaded {
             items += [.separator, .action(model.printPreview ? "Leave 3D Print Preview" : "FDM 3D Print Preview",
                                           symbol: "square.stack.3d.up") { model.setPrintPreview(!model.printPreview) }]
@@ -2083,6 +2087,8 @@ struct ViewportView: NSViewRepresentable {
     var printPreview = false
     var printLayer = 0.2
     var printNozzle = 0.4
+    /// The Render view's floor and light; nil: not rendering.
+    var renderSettings: RenderSettings?
     /// Section analysis: the cutting plane (see Renderer.sectionPlane).
     var sectionPlane: SIMD4<Float>?
     /// Sketching with the slice on: the sketch plane (see Renderer.sketchSlice).
@@ -2154,6 +2160,8 @@ struct ViewportView: NSViewRepresentable {
         renderer.printPreview = printPreview
         renderer.printLayer = Float(printLayer)
         renderer.printNozzle = Float(printNozzle)
+        renderer.renderSettings = renderSettings
+        renderer.sceneBounds = model.sceneBounds
         renderer.sectionPlane = sectionPlane
         renderer.sketchSlice = sketchSlice
         renderer.showGrid = showGrid

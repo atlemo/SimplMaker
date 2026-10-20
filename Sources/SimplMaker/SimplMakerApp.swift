@@ -185,6 +185,9 @@ struct SimplMakerCommands: Commands {
             Toggle("FDM 3D Print Preview", isOn: Binding(get: { model?.printPreview ?? false },
                                                          set: { model?.setPrintPreview($0) }))
                 .disabled(model == nil || !(model?.visualStyle.isShaded ?? true))
+            Toggle("Render", isOn: Binding(get: { model?.renderView ?? false },
+                                           set: { model?.setRenderView($0) }))
+                .disabled(model == nil)
             Toggle("Section Analysis", isOn: Binding(get: { model?.sectionActive ?? false },
                                                      set: { model?.setSectionAnalysis($0) }))
                 .disabled(model == nil)

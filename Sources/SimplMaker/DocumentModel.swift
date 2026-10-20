@@ -187,10 +187,28 @@ final class DocumentModel {
     /// The cutting plane's arrow being dragged: the offset it started from, and where along the arrow the grab was.
     @ObservationIgnored var sectionDrag: (offset: Double, base: SIMD3<Double>, direction: SIMD3<Double>, grab: Double)?
 
-    /// Turns the print preview on or off; on, it opens its options.
+    /// Turns the print preview on or off; on, it opens its options (and the render view, which restyles the bodies too, goes off).
     func setPrintPreview(_ on: Bool) {
         printPreview = on
-        if on { showPrintOptions = true }
+        if on { showPrintOptions = true; renderView = false }
+    }
+
+    /// The Render view (the Render button): a solid floor and a light you set, for presentation. Not saved.
+    var renderView = false
+    /// Its floor and light, kept between launches, and whether its options panel is open.
+    var renderSettings = RenderSettings.load() {
+        didSet { renderSettings.save() }
+    }
+    var showRenderOptions = false
+
+    /// Turns the Render view on or off; on, it opens its options, leaves the print preview and needs a shaded style.
+    func setRenderView(_ on: Bool) {
+        renderView = on
+        if on {
+            showRenderOptions = true
+            printPreview = false
+            if !visualStyle.isShaded { visualStyle = .standard }
+        }
     }
     var fileURL: URL?
     var alert: AlertInfo?

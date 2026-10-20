@@ -184,6 +184,9 @@ struct DocumentWindow: View {
             }
             .sharedBackgroundHidden(sketchTint)
             ToolbarItemGroup(placement: .primaryAction) {
+                PanelToggle(title: "Render", systemImage: model.renderView ? "sun.max.fill" : "sun.max", ink: panelToggleInk,
+                            help: "Show the part on a floor with a light you set, for presentation") { model.setRenderView(!model.renderView) }
+                    .disabled(model.sketchSession != nil)
                 PanelToggle(title: "Inspector", systemImage: "sidebar.right", ink: panelToggleInk,
                             help: helpWithShortcut("Show or hide the inspector", .inspector)) { model.showInspector.toggle() }
             }
@@ -222,6 +225,7 @@ struct DocumentWindow: View {
                          cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
                          visualStyle: model.visualStyle, printPreview: model.printPreview,
                          printLayer: model.printLayer, printNozzle: model.printNozzle,
+                         renderSettings: model.renderView ? model.renderSettings : nil,
                          sectionPlane: model.sectionClip, sketchSlice: model.sketchSlicePlane,
                          showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
@@ -311,6 +315,10 @@ struct DocumentWindow: View {
                     PrintPreviewPanel(model: model)
                         .transition(.opacity)
                 }
+                if model.renderView, model.showRenderOptions, model.sketchSession == nil {
+                    RenderPanel(model: model)
+                        .transition(.opacity)
+                }
                 // The Section Analysis tool's options go under it.
                 if model.section != nil, model.sketchSession == nil {
                     SectionPanel(model: model)
@@ -321,6 +329,7 @@ struct DocumentWindow: View {
             .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.showPrintOptions && model.printPreview)
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.showRenderOptions && model.renderView)
         .animation(.easeOut(duration: DS.Duration.fast), value: model.section != nil)
         // The Measure tool's readout floats in the same corner.
         .overlay(alignment: .topTrailing) {

@@ -152,6 +152,7 @@ enum ViewportSnapshot {
         renderer.showAxes = axes
         renderer.visualStyle = .standard
         renderer.printPreview = false
+        renderer.renderSettings = nil
         renderer.sectionPlane = nil
         var sectionNote: String?
         renderer.hovered = 0
