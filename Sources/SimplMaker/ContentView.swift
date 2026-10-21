@@ -226,7 +226,7 @@ struct DocumentWindow: View {
                          visualStyle: model.visualStyle, printPreview: model.printPreview,
                          printLayer: model.printLayer, printNozzle: model.printNozzle,
                          renderSettings: model.renderView ? model.renderSettings : nil,
-                         sectionPlane: model.sectionClip, sketchSlice: model.sketchSlicePlane,
+                         sectionPlane: model.sectionClip, explodeOffsets: model.explodeOffsets, sketchSlice: model.sketchSlicePlane,
                          showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
                          panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                        model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
@@ -322,6 +322,10 @@ struct DocumentWindow: View {
                     RenderPanel(model: model)
                         .transition(.opacity)
                 }
+                if model.explodeOn, model.showExplodeOptions {
+                    ExplodePanel(model: model)
+                        .transition(.opacity)
+                }
                 // The Section Analysis tool's options go under it.
                 if model.section != nil, model.sketchSession == nil {
                     SectionPanel(model: model)
@@ -334,6 +338,7 @@ struct DocumentWindow: View {
         .animation(.easeOut(duration: DS.Duration.fast), value: model.showPrintOptions && model.printPreview)
         .animation(.easeOut(duration: DS.Duration.fast), value: model.showRenderOptions && model.renderView)
         .animation(.easeOut(duration: DS.Duration.fast), value: model.section != nil)
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.explodeOn && model.showExplodeOptions)
         // The Measure tool's readout floats in the same corner.
         .overlay(alignment: .topTrailing) {
             if model.pendingTool == .measure, model.sketchSession == nil {

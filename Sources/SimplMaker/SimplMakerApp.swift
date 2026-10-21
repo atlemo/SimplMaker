@@ -194,6 +194,9 @@ struct SimplMakerCommands: Commands {
             Toggle("Section Analysis", isOn: Binding(get: { model?.sectionActive ?? false },
                                                      set: { model?.setSectionAnalysis($0) }))
                 .disabled(model == nil)
+            Toggle("Exploded View", isOn: Binding(get: { model?.explodeOn ?? false },
+                                                  set: { model?.setExplodedView($0) }))
+                .disabled(model == nil)
             Divider()
             Toggle("Show Grid", isOn: $showGrid)
                 .shortcut(.showGrid)

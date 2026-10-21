@@ -890,6 +890,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             }]
         }
         if model.sketchSession == nil, model.pendingTool == nil {
+            items += [.separator, .action(model.explodeOn ? "Leave Exploded View" : "Exploded View",
+                                          symbol: "arrow.up.left.and.arrow.down.right") { model.setExplodedView(!model.explodeOn) }]
             items += [.separator, .action(model.renderView ? "Leave Render View" : "Render View",
                                           symbol: "sun.max") { model.setRenderView(!model.renderView) }]
             if model.renderView, !model.showRenderOptions {
@@ -2108,6 +2110,8 @@ struct ViewportView: NSViewRepresentable {
     var renderSettings: RenderSettings?
     /// Section analysis: the cutting plane (see Renderer.sectionPlane).
     var sectionPlane: SIMD4<Float>?
+    /// The exploded view: how far each shown body is shifted; empty: in place.
+    var explodeOffsets: [SIMD3<Float>] = []
     /// Sketching with the slice on: the sketch plane (see Renderer.sketchSlice).
     var sketchSlice: (origin: SIMD3<Float>, normal: SIMD3<Float>)?
     let showGrid: Bool
@@ -2121,6 +2125,7 @@ struct ViewportView: NSViewRepresentable {
 
     final class Coordinator {
         var sceneRevision = -1
+        var explodeOffsets: [SIMD3<Float>] = []
         var fitRevision = -1
         var cameraRevision = 0
         var sketchCamera = SketchCameraMemory()
@@ -2151,9 +2156,10 @@ struct ViewportView: NSViewRepresentable {
         // Closing a sketch turns the flat view back to the one it was opened from. Noted before any camera
         // command below, which moves the camera to the new sketch.
         let before = c.sketchCamera.update(sketching: model.sketchSession != nil, camera: renderer.camera.pose)
-        if c.sceneRevision != sceneRevision {
+        if c.sceneRevision != sceneRevision || c.explodeOffsets != explodeOffsets {
             c.sceneRevision = sceneRevision
-            renderer.setScene(model.visibleMeshes)
+            c.explodeOffsets = explodeOffsets
+            renderer.setScene(model.visibleMeshes, offsets: explodeOffsets)
             renderer.hovered = 0
             renderer.hoverGroup = []
         }
@@ -2179,7 +2185,7 @@ struct ViewportView: NSViewRepresentable {
         renderer.printLayer = Float(printLayer)
         renderer.printNozzle = Float(printNozzle)
         renderer.renderSettings = renderSettings
-        renderer.sceneBounds = model.sceneBounds
+        renderer.sceneBounds = model.explodedSceneBounds
         renderer.sectionPlane = sectionPlane
         renderer.sketchSlice = sketchSlice
         renderer.showGrid = showGrid

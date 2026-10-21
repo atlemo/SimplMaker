@@ -743,8 +743,9 @@ final class Renderer {
         cmd.waitUntilCompleted()
     }
 
-    func setScene(_ meshes: [BodyMesh]) {
-        bodies = meshes.map { upload($0) }
+    /// `offsets` shifts each body (same order) as the exploded view asks; empty: every body in place.
+    func setScene(_ meshes: [BodyMesh], offsets: [SIMD3<Float>] = []) {
+        bodies = meshes.enumerated().map { upload($1, shift: offsets[safe: $0] ?? .zero) }
     }
 
     func setOverlay(_ o: SketchOverlay) {
@@ -807,7 +808,7 @@ final class Renderer {
         return texture
     }
 
-    private func upload(_ m: BodyMesh) -> GPUBody {
+    private func upload(_ m: BodyMesh, shift: SIMD3<Float> = .zero) -> GPUBody {
         let mesh = m.mesh
         var vertexFace = [UInt32](repeating: 0, count: mesh.positions.count / 3)
         for t in 0..<mesh.triangleFace.count {
@@ -817,7 +818,7 @@ final class Renderer {
         verts.reserveCapacity(vertexFace.count)
         for v in 0..<vertexFace.count {
             let p = v * 3
-            verts.append(FaceVertex(px: mesh.positions[p], py: mesh.positions[p + 1], pz: mesh.positions[p + 2],
+            verts.append(FaceVertex(px: mesh.positions[p] + shift.x, py: mesh.positions[p + 1] + shift.y, pz: mesh.positions[p + 2] + shift.z,
                                     nx: mesh.normals[p], ny: mesh.normals[p + 1], nz: mesh.normals[p + 2],
                                     id: PickID(body: m.index, face: Int(vertexFace[v])).raw))
         }
@@ -825,8 +826,8 @@ final class Renderer {
         segs.reserveCapacity(mesh.segmentEdge.count)
         for s in 0..<mesh.segmentEdge.count {
             let q = s * 6
-            segs.append(SegmentInstance(ax: mesh.segments[q], ay: mesh.segments[q + 1], az: mesh.segments[q + 2],
-                                        bx: mesh.segments[q + 3], by: mesh.segments[q + 4], bz: mesh.segments[q + 5],
+            segs.append(SegmentInstance(ax: mesh.segments[q] + shift.x, ay: mesh.segments[q + 1] + shift.y, az: mesh.segments[q + 2] + shift.z,
+                                        bx: mesh.segments[q + 3] + shift.x, by: mesh.segments[q + 4] + shift.y, bz: mesh.segments[q + 5] + shift.z,
                                         id: PickID(body: m.index, edge: Int(mesh.segmentEdge[s])).raw))
         }
         var g = GPUBody()

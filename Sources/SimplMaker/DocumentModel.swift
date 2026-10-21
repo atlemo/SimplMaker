@@ -184,6 +184,13 @@ final class DocumentModel {
         let o = f.origin, n = simd_normalize(f.normal)
         return (SIMD3(Float(o.x), Float(o.y), Float(o.z)), SIMD3(Float(n.x), Float(n.y), Float(n.z)))
     }
+    /// The Exploded View (View menu): the bodies slide apart from the middle of the part by `explodeAmount` (0...1),
+    /// all ways or along one axis. Not saved.
+    var explodeOn = false
+    var explodeAmount = 0.5
+    var explodeDirection = ExplodeDirection.radial
+    var showExplodeOptions = false
+    @ObservationIgnored var bodyBoxesCache: (revision: Int, hidden: Set<FeatureID>, value: [(min: SIMD3<Float>, max: SIMD3<Float>)])?
     /// The cutting plane's arrow being dragged: the offset it started from, and where along the arrow the grab was.
     @ObservationIgnored var sectionDrag: (offset: Double, base: SIMD3<Double>, direction: SIMD3<Double>, grab: Double)?
 
