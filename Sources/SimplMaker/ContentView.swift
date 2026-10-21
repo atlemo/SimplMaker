@@ -883,22 +883,41 @@ struct BrowserList: View {
     /// feature that made it (that one opens on double-click). Folder rows are "folder:<id>".
     private static let bodyTag = "body:"
     private static let folderTag = "folder:"
-    private var listSelection: Binding<FeatureID?> {
-        Binding(get: {
-                    if let f = selectedFolder, model.selectedBody == nil, model.selectedFeature == nil { return Self.folderTag + f }
-                    return model.selectedBody.map { Self.bodyTag + $0 } ?? model.selectedFeature
-                },
-                set: { tag in
-                    if let tag, tag.hasPrefix(Self.folderTag) {
-                        selectedFolder = String(tag.dropFirst(Self.folderTag.count))
-                        model.clearSelection()
+    private var listSelection: Binding<Set<FeatureID>> {
+        Binding(get: { currentTags },
+                set: { tags in
+                    let current = currentTags
+                    let added = tags.subtracting(current)
+                    // Bodies can be selected together (⌘- or ⇧-click); anything else is selected alone, and the
+                    // latest click decides which of the two it is.
+                    if let tag = added.first(where: { !$0.hasPrefix(Self.bodyTag) }) {
+                        if let fid = folderID(tag) {
+                            selectedFolder = fid
+                            model.clearSelection()
+                            model.selectedFeature = nil
+                        } else {
+                            selectedFolder = nil
+                            if model.selectedBodies.isEmpty == false { model.clearSelection() }
+                            model.selectedFeature = tag
+                        }
+                        return
+                    }
+                    selectedFolder = nil
+                    let bodies = model.bodies.map(\.id).filter { tags.contains(Self.bodyTag + $0) }
+                    if bodies.isEmpty {
+                        if model.pendingTool == nil, !model.selectedBodies.isEmpty { model.clearSelection() }
                         model.selectedFeature = nil
                     } else {
-                        selectedFolder = nil
-                        if let tag, tag.hasPrefix(Self.bodyTag) { model.selectBody(String(tag.dropFirst(Self.bodyTag.count))) }
-                        else { model.selectedFeature = tag }
+                        model.selectBodies(bodies, replacing: model.selectedBodies)
                     }
                 })
+    }
+    /// The tags of the selected rows: the bodies selected whole, else the folder or feature selected.
+    private var currentTags: Set<FeatureID> {
+        let bodies = model.selectedBodies
+        if !bodies.isEmpty { return Set(bodies.map { Self.bodyTag + $0 }) }
+        if let f = selectedFolder, model.selectedFeature == nil { return [Self.folderTag + f] }
+        return model.selectedFeature.map { [$0] } ?? []
     }
     private func featureID(_ tag: FeatureID) -> FeatureID {
         tag.hasPrefix(Self.bodyTag) ? String(tag.dropFirst(Self.bodyTag.count)) : tag
@@ -916,7 +935,7 @@ struct BrowserList: View {
                 ForEach(model.document.subfolders(of: nil)) { folder in
                     BrowserFolderNode(model: model, folder: folder, closed: $closedFolders, renaming: $renaming,
                                       row: { AnyView(row($0)) }, drop: drop, itemIDs: model.bodies.map(\.id),
-                                      selection: listSelection.wrappedValue)
+                                      selection: currentTags)
                 }
                 ForEach(looseBodies, id: \.self) { row($0) }
             } label: {
@@ -971,7 +990,7 @@ struct BrowserList: View {
                 Image(systemName: "cylinder")
             }
             .tag(Self.bodyTag + b.id)
-            .listRowBackground(SelectedRowBackground(on: listSelection.wrappedValue == Self.bodyTag + b.id, highlighted: model.browserHighlights.contains(b.id)))
+            .listRowBackground(SelectedRowBackground(on: currentTags.contains(Self.bodyTag + b.id), highlighted: model.browserHighlights.contains(b.id)))
             .draggable(BrowserDrag(items: [b.id]))
         } else if let f = model.document.features.first(where: { $0.id == id }) {
             switch f.kind {
@@ -985,7 +1004,7 @@ struct BrowserList: View {
                                failed: model.result?.errors[f.id] != nil)
                 }
                 .tag(f.id)
-                .listRowBackground(SelectedRowBackground(on: listSelection.wrappedValue == f.id, highlighted: model.browserHighlights.contains(f.id)))
+                .listRowBackground(SelectedRowBackground(on: currentTags.contains(f.id), highlighted: model.browserHighlights.contains(f.id)))
             case .plane:
                 BrowserRow(name: f.name, hidden: model.isHidden(f.id),
                            toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
@@ -993,7 +1012,7 @@ struct BrowserList: View {
                     Icon("plane", size: 14)
                 }
                 .tag(f.id)
-                .listRowBackground(SelectedRowBackground(on: listSelection.wrappedValue == f.id))
+                .listRowBackground(SelectedRowBackground(on: currentTags.contains(f.id)))
             case .image:
                 BrowserRow(name: f.name, hidden: model.isHidden(f.id),
                            toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
@@ -1001,7 +1020,7 @@ struct BrowserList: View {
                     Icon("image", size: 14)
                 }
                 .tag(f.id)
-                .listRowBackground(SelectedRowBackground(on: listSelection.wrappedValue == f.id))
+                .listRowBackground(SelectedRowBackground(on: currentTags.contains(f.id)))
             default:
                 EmptyView()
             }
@@ -1041,18 +1060,18 @@ struct BrowserList: View {
     }
 
     /// "Move to Folder": every folder, indented by how deep it is, a new one, and out of the folder it is in.
-    @ViewBuilder private func moveMenu(_ id: FeatureID) -> some View {
+    @ViewBuilder private func moveMenu(_ ids: [FeatureID]) -> some View {
         Menu("Move to Folder") {
             ForEach(folderList(), id: \.folder.id) { entry in
                 Button(String(repeating: "    ", count: entry.depth) + entry.folder.name) {
-                    model.move(items: [id], toFolder: entry.folder.id)
+                    model.move(items: ids, toFolder: entry.folder.id)
                 }
-                .disabled(model.document.folder(of: id) == entry.folder.id)
+                .disabled(ids.allSatisfy { model.document.folder(of: $0) == entry.folder.id })
             }
             if !model.document.folders.isEmpty { Divider() }
-            Button("New Folder") { makeFolder(holding: [id]) }
-            if model.document.folder(of: id) != nil {
-                Button("Out of the Folder") { model.move(items: [id], toFolder: nil) }
+            Button("New Folder") { makeFolder(holding: ids) }
+            if ids.contains(where: { model.document.folder(of: $0) != nil }) {
+                Button("Out of the Folder") { model.move(items: ids, toFolder: nil) }
             }
         }
     }
@@ -1119,7 +1138,7 @@ struct BrowserList: View {
                 Button("Scale Body") { model.scale(bodies: [id]) }.disabled(model.isLocked(id))
                 Button("Rename Body") { renaming = id }
                 Button("Appearance…") { model.openAppearance(for: id) }
-                moveMenu(id)
+                moveMenu([id])
                 Menu("Export Body") {
                     Button("STEP…") { model.export(bodies: [id], stl: false) }
                     Button("STL…") { model.export(bodies: [id], stl: true) }
@@ -1132,6 +1151,23 @@ struct BrowserList: View {
             .disabled(model.isLocked(id))
             Button("Delete \(f.name)", role: .destructive) { model.deleteFeature(id) }
                 .disabled(model.isLocked(id))
+        } else if ids.count > 1, ids.allSatisfy({ id in model.bodies.contains { $0.id == id } }) {
+            // Several bodies: what works on them together.
+            let list = model.bodies.map(\.id).filter(ids.contains)
+            let free = list.filter { !model.isLocked($0) }
+            Button("Move or Rotate Bodies") { model.move(bodies: free) }.disabled(free.isEmpty)
+            Button("Scale Bodies") { model.scale(bodies: free) }.disabled(free.isEmpty)
+            Button("Appearance…") { model.openAppearance(for: free) }.disabled(free.isEmpty)
+            Divider()
+            Button("Hide Bodies") { model.setHidden(list, true) }
+            Button("Show Bodies") { model.setHidden(list, false) }
+            Button("Lock Bodies") { model.setLocked(list, true) }
+            Button("Unlock Bodies") { model.setLocked(list, false) }
+            moveMenu(list)
+            Menu("Export Bodies") {
+                Button("STEP…") { model.export(bodies: list, stl: false) }
+                Button("STL…") { model.export(bodies: list, stl: true) }
+            }
         } else if !ids.isEmpty {
             Button("Hide") { model.setHidden(Array(ids), true) }
             Button("Show") { model.setHidden(Array(ids), false) }
@@ -1151,8 +1187,8 @@ struct BrowserFolderNode: View {
     let drop: ([BrowserDrag], String?) -> Bool
     /// Every item the browser lists, in its order (a folder's items follow it).
     let itemIDs: [FeatureID]
-    /// The tag of the selected browser row, which may be this folder's.
-    let selection: FeatureID?
+    /// The tags of the selected browser rows, which may include this folder's.
+    let selection: Set<FeatureID>
 
     private var expanded: Binding<Bool> {
         Binding(get: { !closed.contains(folder.id) },
@@ -1191,7 +1227,7 @@ struct BrowserFolderNode: View {
             .browserDropDestination { drop($0, folder.id) }
         }
         .tag("folder:" + folder.id)
-        .listRowBackground(SelectedRowBackground(on: selection == "folder:" + folder.id))
+        .listRowBackground(SelectedRowBackground(on: selection.contains("folder:" + folder.id)))
     }
 }
 

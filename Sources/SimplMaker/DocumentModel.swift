@@ -416,6 +416,26 @@ final class DocumentModel {
         return meshes[safe: pick.body]?.id
     }
 
+    /// Every body selected as a whole (from the browser), in the order they were picked; empty when anything
+    /// else (a face, an edge, a profile) is selected too.
+    var selectedBodies: [FeatureID] {
+        guard !selection.isEmpty, selection.allSatisfy(\.isWholeBody) else { return [] }
+        return selection.compactMap { meshes[safe: $0.body]?.id }
+    }
+
+    /// The browser's selection changed to these bodies (⌘- or ⇧-click, or ⌘A in the list). While a tool waits for
+    /// bodies, each body that was added or taken out is a click for the tool; otherwise they become the selection.
+    func selectBodies(_ ids: [FeatureID], replacing current: [FeatureID]) {
+        let ids = ids.filter { !isLocked($0) }
+        if pendingTool != nil {
+            for id in Set(ids).symmetricDifference(current) { selectBody(id) }
+            return
+        }
+        if sketchSession != nil { finishSketch() }
+        selectedFeature = nil
+        selection = ids.compactMap { id in meshes.firstIndex { $0.id == id }.map { PickID(wholeBody: $0) } }
+    }
+
     /// A body clicked in the browser: selected whole, with no tool or handle, the way a click on it
     /// in the viewport would. While a tool waits for bodies, it picks the body for the tool instead.
     /// `additive` (⇧-click) adds the body to the selection, or takes it out again.
@@ -665,6 +685,13 @@ final class DocumentModel {
     func openAppearance(for body: FeatureID) {
         if pendingTool != nil { cancelTool() }
         if !appearanceTargets.contains(body) { selectBody(body) }
+        showAppearance = true
+    }
+
+    /// "Appearance…" on several bodies at once: selects them all whole and opens the panel for them.
+    func openAppearance(for ids: [FeatureID]) {
+        if pendingTool != nil { cancelTool() }
+        if Set(appearanceTargets) != Set(ids) { selectBodies(ids, replacing: []) }
         showAppearance = true
     }
 
