@@ -2157,6 +2157,7 @@ final class DocumentModel {
     /// Moves the handle to the point on its axis closest to the mouse ray, and previews the result.
     /// `pointsPerMM`: how long 1 mm along the arrow looks on screen. The size then goes in round
     /// steps (1, 2 or 5 × 10ⁿ mm or degrees) of about 6 points, not in whatever fraction the pointer lands on.
+    /// A length step is never more than 1 mm, however far out the view is zoomed.
     func dragHandle(rayOrigin o: SIMD3<Double>, direction d: SIMD3<Double>, pointsPerMM: Double? = nil) {
         guard let start = handleDragStart, let h = dragHandle else { return }
         if let dial = h.dial {
@@ -2191,7 +2192,8 @@ final class DocumentModel {
             // In the feature's own units: mm, or degrees for angles (radians underneath).
             let degrees = h.unit == .angle ? 180 / Double.pi : 1
             let perPoint = degrees / (ppm * h.lengthPerUnit)
-            let step = ViewportMTKView.niceStep(6 * perPoint) / degrees
+            var step = ViewportMTKView.niceStep(6 * perPoint) / degrees
+            if h.unit == .length { step = min(step, 1) }  // zoomed out, a step never jumps more than 1 mm
             let value = (length / h.lengthPerUnit / step).rounded() * step
             if value != 0 || h.allowsNegative == false { length = value * h.lengthPerUnit }
             if !h.allowsNegative { length = max(length, step * h.lengthPerUnit) }
