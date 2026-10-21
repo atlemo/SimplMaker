@@ -188,7 +188,7 @@ final class DocumentModel {
     /// all ways or along one axis. Not saved.
     var explodeOn = false
     var explodeAmount = 0.5
-    var explodeDirection = ExplodeDirection.radial
+    var explodeDirection = ExplodeDirection.all
     var showExplodeOptions = false
     @ObservationIgnored var bodyBoxesCache: (revision: Int, hidden: Set<FeatureID>, value: [(min: SIMD3<Float>, max: SIMD3<Float>)])?
     /// The cutting plane's arrow being dragged: the offset it started from, and where along the arrow the grab was.

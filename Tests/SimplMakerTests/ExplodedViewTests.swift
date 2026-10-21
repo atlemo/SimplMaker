@@ -6,26 +6,39 @@ import simd
 @testable import SimplMaker
 
 @Suite struct ExplodedViewTests {
-    let centers: [SIMD3<Float>] = [SIMD3(0, 0, 0), SIMD3(0, 0, 10), SIMD3(0, 0, 20)]
+    private func box(_ lo: SIMD3<Float>, _ hi: SIMD3<Float>) -> (min: SIMD3<Float>, max: SIMD3<Float>) { (lo, hi) }
+
+    /// Three plates stacked on Z, thick, thin and thick, 100 mm tall in all.
+    let stack = [(min: SIMD3<Float>(0, 0, 0), max: SIMD3<Float>(10, 10, 40)),
+                 (min: SIMD3<Float>(0, 0, 40), max: SIMD3<Float>(10, 10, 45)),
+                 (min: SIMD3<Float>(0, 0, 45), max: SIMD3<Float>(10, 10, 100))]
 
     @Test func nothingMovesAtZeroOrWithOneBody() {
-        #expect(ExplodedView.offsets(centers: centers, amount: 0, direction: .radial).allSatisfy { $0 == .zero })
-        #expect(ExplodedView.offsets(centers: [SIMD3(5, 5, 5)], amount: 1, direction: .radial) == [.zero])
+        #expect(ExplodedView.offsets(boxes: stack, amount: 0, direction: .all).allSatisfy { $0 == .zero })
+        #expect(ExplodedView.offsets(boxes: [stack[0]], amount: 1, direction: .all) == [.zero])
     }
 
-    @Test func bodiesMoveAwayFromTheMiddle() {
-        let o = ExplodedView.offsets(centers: centers, amount: 0.5, direction: .radial)
-        #expect(o[0] == SIMD3(0, 0, -10))  // 10 below the middle, moved by 1x that
-        #expect(o[1] == .zero)             // on the middle: stays
-        #expect(o[2] == SIMD3(0, 0, 10))
+    @Test func layersOpenByTheSameDistanceWhateverTheirSize() {
+        let o = ExplodedView.offsets(boxes: stack, amount: 0.5, direction: .z)
+        // The middle layer stays; the others move one equal step each way (0.5 x 100 mm / 2 gaps = 25 mm).
+        #expect(o[1] == .zero)
+        #expect(o[0] == SIMD3(0, 0, -25) && o[2] == SIMD3(0, 0, 25))
+        #expect(o[1].z - o[0].z == o[2].z - o[1].z)
+    }
+
+    @Test func bodiesAtOneLevelMoveTogether() {
+        let boxes = [stack[0], stack[2], (min: SIMD3<Float>(20, 0, 0), max: SIMD3<Float>(30, 10, 40)), stack[1]]
+        let o = ExplodedView.offsets(boxes: boxes, amount: 1, direction: .z)
+        #expect(o[0] == o[2], "two bodies at the bottom share a layer")
+        #expect(o[0].z < o[3].z && o[3].z < o[1].z)
     }
 
     @Test func anAxisKeepsTheOtherDirectionsStill() {
-        let spread: [SIMD3<Float>] = [SIMD3(-4, 0, 0), SIMD3(4, 6, 8)]
-        let z = ExplodedView.offsets(centers: spread, amount: 0.5, direction: .z)
-        #expect(z[0] == SIMD3(0, 0, -4) && z[1] == SIMD3(0, 0, 4))
-        let x = ExplodedView.offsets(centers: spread, amount: 0.5, direction: .x)
-        #expect(x[0] == SIMD3(-4, 0, 0) && x[1] == SIMD3(4, 0, 0))
+        let o = ExplodedView.offsets(boxes: stack, amount: 1, direction: .x)
+        #expect(o.allSatisfy { $0 == .zero }, "all in one layer on X: nothing to open")
+        let all = ExplodedView.offsets(boxes: stack, amount: 1, direction: .all)
+        #expect(all.allSatisfy { $0.x == 0 && $0.y == 0 })
+        #expect(all[0].z < 0 && all[2].z > 0)
     }
 }
 

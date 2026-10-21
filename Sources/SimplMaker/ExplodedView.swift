@@ -1,4 +1,4 @@
-// The Exploded View (View menu): every body slides away from the middle of the part, a little or a lot, to show
+// The Exploded View (View menu): the bodies slide apart in equal steps, a little or a lot, to show
 // how it is built up. A view setting like the section analysis: it reads the model without changing it, so no
 // feature, no undo step, nothing saved. The renderer draws each body shifted by its offset (see Renderer.setScene).
 // Copyright © 2026 Atle Mo. All rights reserved.
@@ -8,13 +8,13 @@ import SwiftUI
 
 /// Which way the bodies move apart.
 enum ExplodeDirection: String, CaseIterable, Identifiable {
-    case radial, x, y, z
+    case all, x, y, z
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .radial: return "All"
+        case .all: return "All"
         case .x: return "X"
         case .y: return "Y"
         case .z: return "Z"
@@ -24,7 +24,7 @@ enum ExplodeDirection: String, CaseIterable, Identifiable {
     /// The axis a body moves along; nil: away from the middle in every direction.
     var axis: SIMD3<Float>? {
         switch self {
-        case .radial: return nil
+        case .all: return nil
         case .x: return SIMD3(1, 0, 0)
         case .y: return SIMD3(0, 1, 0)
         case .z: return SIMD3(0, 0, 1)
@@ -33,24 +33,34 @@ enum ExplodeDirection: String, CaseIterable, Identifiable {
 }
 
 enum ExplodedView {
-    /// How far apart the bodies end up with the slider at its end, as a multiple of their distance from the middle.
-    static let reach: Float = 2
+    /// Bodies whose middles lie this close along an axis (as a share of the part's length on it) are one layer.
+    static let layerTolerance: Float = 0.02
 
-    /// How far each body moves, given the middle of each one. The part's middle is the middle of the box around all
-    /// the bodies; a body moves along the line from there to its own middle, `amount * reach` times as far as it
-    /// already lies from it. With an axis, only the part of that line along the axis counts (a stack of layers
-    /// opens up like an accordion). A body that lies on the middle stays where it is.
-    static func offsets(centers: [SIMD3<Float>], amount: Double, direction: ExplodeDirection) -> [SIMD3<Float>] {
-        guard centers.count > 1, amount > 0 else { return centers.map { _ in .zero } }
-        var lo = centers[0], hi = centers[0]
-        for c in centers { lo = simd_min(lo, c); hi = simd_max(hi, c) }
-        let middle = (lo + hi) / 2
-        let scale = Float(amount) * reach
-        return centers.map { c in
-            let away = c - middle
-            if let axis = direction.axis { return axis * simd_dot(away, axis) * scale }
-            return away * scale
+    /// How far each body moves, given the box around each one. Along an axis the bodies are sorted into layers by
+    /// the middle of their boxes (bodies side by side at one level share a layer), and each layer moves one equal
+    /// step further from the next: the part grows by `amount` times its own length on that axis, the middle layer
+    /// stays, and every gap between layers opens by the same distance. "All" does this on X, Y and Z at once.
+    static func offsets(boxes: [(min: SIMD3<Float>, max: SIMD3<Float>)], amount: Double, direction: ExplodeDirection) -> [SIMD3<Float>] {
+        guard boxes.count > 1, amount > 0 else { return boxes.map { _ in .zero } }
+        let axes: [Int] = direction.axis.map { [$0.x != 0 ? 0 : $0.y != 0 ? 1 : 2] } ?? [0, 1, 2]
+        var out = [SIMD3<Float>](repeating: .zero, count: boxes.count)
+        for axis in axes {
+            let span = boxes.map(\.max[axis]).max()! - boxes.map(\.min[axis]).min()!
+            guard span > 1e-6 else { continue }
+            let centers = boxes.map { ($0.min[axis] + $0.max[axis]) / 2 }
+            let order = centers.indices.sorted { centers[$0] < centers[$1] }
+            // Layers, in order: a body joins the last one when its middle is near that layer's first.
+            var layerOf = [Int](repeating: 0, count: boxes.count)
+            var layers = 0, layerStart = centers[order[0]]
+            for (n, i) in order.enumerated() {
+                if n > 0, centers[i] - layerStart > layerTolerance * span { layers += 1; layerStart = centers[i] }
+                layerOf[i] = layers
+            }
+            guard layers > 0 else { continue }
+            let step = Float(amount) * span / Float(layers)
+            for i in boxes.indices { out[i][axis] = (Float(layerOf[i]) - Float(layers) / 2) * step }
         }
+        return out
     }
 }
 
@@ -79,7 +89,7 @@ extension DocumentModel {
     /// at work: their handles and previews are drawn where the bodies really are.
     var explodeOffsets: [SIMD3<Float>] {
         guard explodeOn, sketchSession == nil, pendingTool == nil else { return [] }
-        return ExplodedView.offsets(centers: bodyBoxes.map { ($0.min + $0.max) / 2 }, amount: explodeAmount, direction: explodeDirection)
+        return ExplodedView.offsets(boxes: bodyBoxes, amount: explodeAmount, direction: explodeDirection)
     }
 
     /// What the bodies take up as drawn now, shifted apart; nil for an empty scene.
@@ -125,10 +135,10 @@ struct ExplodePanel: View {
                     ForEach(ExplodeDirection.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                .help("All: away from the middle in every direction. X, Y or Z: along that axis only")
+                .help("All: along X, Y and Z. X, Y or Z: along that axis only")
                 Text(model.sketchSession != nil || model.pendingTool != nil
                      ? "The bodies sit back in place while you sketch or use a tool."
-                     : "Bodies move away from the middle of the part. Nothing in the part is changed.")
+                     : "The bodies move apart in equal steps. Nothing in the part is changed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
