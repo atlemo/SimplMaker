@@ -891,7 +891,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }
         if model.sketchSession == nil, model.pendingTool == nil {
             items += [.separator, .action(model.explodeOn ? "Leave Exploded View" : "Exploded View",
-                                          symbol: "arrow.up.left.and.arrow.down.right") { model.setExplodedView(!model.explodeOn) }]
+                                          symbol: "rectangle.expand.vertical") { model.setExplodedView(!model.explodeOn) }]
             items += [.separator, .action(model.renderView ? "Leave Render View" : "Render View",
                                           symbol: "sun.max") { model.setRenderView(!model.renderView) }]
             if model.renderView, !model.showRenderOptions {
@@ -2174,7 +2174,7 @@ struct ViewportView: NSViewRepresentable {
         // added later doesn't pull the camera to itself.
         if c.fitRevision != fitRevision {
             c.fitRevision = fitRevision
-            if let b = model.sceneBounds {
+            if let b = model.explodedSceneBounds {
                 view.updateCameraInsets()
                 renderer.camera.fit(min: b.min, max: b.max, aspect: view.viewAspect)
             }
@@ -2213,7 +2213,7 @@ struct ViewportView: NSViewRepresentable {
                 renderer.camera.fit(min: lo, max: hi, aspect: view.viewAspect)
             case .standard(let v):
                 renderer.camera.setStandard(v)
-                if let b = model.sceneBounds {
+                if let b = model.explodedSceneBounds {
                     view.updateCameraInsets()
                     renderer.camera.fit(min: b.min, max: b.max, aspect: view.viewAspect)
                 }

@@ -45,6 +45,7 @@ Standard **Undo** ([[⌘Z]]), **Redo** ([[⇧⌘Z]]), **Cut**, **Copy**, **Paste
 | **Render** | Show the part on a solid floor with a light you set, shadows and a reflection. See [Render view](doc:modify/render). |
 | **Render Options** | Show or hide the Render view's panel while the view is on |
 | **Section Analysis** | Turn the cut through the bodies on or off (see [Section Analysis](doc:modify/section-analysis)) |
+| **Exploded View** | Slide the bodies apart with a slider, to show how the part is built up. See [Exploded view](doc:modify/exploded-view). |
 | **Show Grid**, **Show Axes** | Toggle the reference lines |
 | **Show Constraints** | Show or hide sketch constraint symbols |
 | **Snap to Grid** | Toggle grid snapping in sketches |
