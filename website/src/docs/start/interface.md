@@ -67,7 +67,7 @@ The browser lists what is in the part.
 - The eye beside a row shows or hides it. The eye on a folder shows or hides everything in it.
 - Make your own folders inside **Bodies** with the folder button in the browser header, or right-click **Bodies** and choose **New Folder**. A body's right-click menu has **Move to Folder**. Drag bodies onto a folder to fill it.
 - The **padlock** beside the eye locks a body or a sketch, so it cannot be picked or changed by accident. See [Lock bodies and sketches](doc:concepts/selecting).
-- Click a body to select it. **Double-click** to edit the feature that made it. Double-click a sketch to edit the sketch.
+- Click a body to select it. [[⌘]]-click or [[⇧]]-click selects several bodies, and a right-click then moves, scales, recolours, hides, locks or exports them together. **Double-click** to edit the feature that made it. Double-click a sketch to edit the sketch.
 - Right-click a row for more: rename, hide, lock, suppress, move, appearance, export and delete.
 - The browser and the parameters are two separate panels. Each can be collapsed, and the divider between them can be dragged.
 - Below the folders are the **Parameters**. See [Parameters and expressions](doc:concepts/parameters).
