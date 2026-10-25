@@ -3304,16 +3304,26 @@ SKHandle sk_fillet(SKHandle body, const char *const *edgeNames, int count, doubl
     setError("fillet radius must be positive");
     return 0;
   }
-  auto round = [&](double r) {
+  // OCCT ends a round at a vertex only when the two faces there are tangent to within `tangency` (0.01 radian by
+  // default), and takes anything else for a corner it cannot finish. A crease that fades out where two faces run into
+  // each other almost tangent (a swept round that misses the side wall by a hundredth of a millimetre leaves one,
+  // with the faces 4 degrees apart at its end) fails at every size, so a wider tangency is tried after the default.
+  auto round = [&](double r, double tangency) {
     return edgeFeature<BRepFilletAPI_MakeFillet>(body, edgeNames, count, featureOrDefault(featureId, "fillet"), "fillet",
-                                                 [&](BRepFilletAPI_MakeFillet &mk, const TopoDS_Edge &e) { mk.Add(r, e); });
+                                                 [&](BRepFilletAPI_MakeFillet &mk, const TopoDS_Edge &e) {
+                                                   if (tangency > 0) mk.SetParams(tangency, 1.0e-4, 1.e-5, 1.e-4, 1.e-5, 1.e-3);
+                                                   mk.Add(r, e);
+                                                 });
   };
-  SKHandle made = round(radius);
+  constexpr double kFadingCreaseTangency = 0.15;  // about 8.6 degrees
+  SKHandle made = round(radius, 0);
   // A round that uses up a whole face (1 mm on a 2 mm strip) meets itself exactly, and OCCT can fail there on
   // spline faces although a hair less builds. A millionth less is the same round for any real part.
   if (!made) {
     const std::string why = g_error;
-    made = round(radius * (1 - 1e-6));
+    made = round(radius * (1 - 1e-6), 0);
+    if (!made) made = round(radius, kFadingCreaseTangency);
+    if (!made) made = round(radius * (1 - 1e-6), kFadingCreaseTangency);
     if (!made) setError(why);
   }
   return made;
