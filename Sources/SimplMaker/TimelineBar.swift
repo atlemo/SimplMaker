@@ -45,6 +45,33 @@ extension Feature {
     }
 }
 
+/// A timeline item's right-click menu. A view of its own, so working out which moves are allowed (not cheap on a
+/// long timeline) happens when the menu is built, not each time the bar is drawn.
+private struct TimelineItemMenu: View {
+    let model: DocumentModel
+    let feature: Feature
+    let index: Int
+
+    var body: some View {
+        let f = feature
+        Button("Edit \(f.name)") { model.editFeature(f.id) }
+        if model.profileSource(f.id) != nil {
+            Button("Reselect Profiles…") { model.reselectProfiles(f.id) }
+        }
+        Button(f.suppressed ? "Unsuppress" : "Suppress") {
+            model.updateFeature(f.id, f.suppressed ? "Unsuppress" : "Suppress") { $0.suppressed.toggle() }
+        }
+        Button("Roll Back to Here") { model.setMarker(index) }
+        Divider()
+        Button("Move Earlier") { model.moveFeature(f.id, to: index - 1) }
+            .disabled(index == 0 || model.reorderProblem(f.id, to: index - 1) != nil)
+        Button("Move Later") { model.moveFeature(f.id, to: index + 1) }
+            .disabled(index + 1 >= model.document.features.count || model.reorderProblem(f.id, to: index + 1) != nil)
+        Divider()
+        Button("Delete \(f.name)", role: .destructive) { model.deleteFeature(f.id) }
+    }
+}
+
 struct TimelineBar: View {
     @Environment(\.accent) private var accent
     let model: DocumentModel
@@ -156,23 +183,7 @@ struct TimelineBar: View {
                     let steps = Int((g.translation.width / Self.step).rounded())
                     if steps != 0 { model.moveFeature(f.id, to: index + steps) }
                 })
-            .contextMenu {
-                Button("Edit \(f.name)") { model.editFeature(f.id) }
-                if model.profileSource(f.id) != nil {
-                    Button("Reselect Profiles…") { model.reselectProfiles(f.id) }
-                }
-                Button(f.suppressed ? "Unsuppress" : "Suppress") {
-                    model.updateFeature(f.id, f.suppressed ? "Unsuppress" : "Suppress") { $0.suppressed.toggle() }
-                }
-                Button("Roll Back to Here") { model.setMarker(index) }
-                Divider()
-                Button("Move Earlier") { model.moveFeature(f.id, to: index - 1) }
-                    .disabled(index == 0 || model.document.reorderProblem(f.id, to: index - 1) != nil)
-                Button("Move Later") { model.moveFeature(f.id, to: index + 1) }
-                    .disabled(index + 1 >= model.document.features.count || model.document.reorderProblem(f.id, to: index + 1) != nil)
-                Divider()
-                Button("Delete \(f.name)", role: .destructive) { model.deleteFeature(f.id) }
-            }
+            .contextMenu { TimelineItemMenu(model: model, feature: f, index: index) }
             .id(f.id)
             .accessibilityLabel(f.name)
     }

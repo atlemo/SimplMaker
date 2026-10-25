@@ -233,20 +233,27 @@ extension CADDocument {
         let to = Swift.min(Swift.max(index, 0), order.count)
         order.insert(f, at: to)
         func name(_ id: FeatureID) -> String { features.first { $0.id == id }?.name ?? "a missing feature" }
-        for (i, g) in order.enumerated() {
-            let before = Set(order[..<i].map(\.id))
+        // Looked up once, not per feature: this runs for every item of the timeline's menus.
+        let inOrder = Set(order.map(\.id))
+        let position = Dictionary(features.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let changed = features.map(\.changedBodies)
+        var before = Set<FeatureID>()
+        for g in order {
+            let usesBodies = g.references
             // What it's built from must come first…
-            if let missing = g.references.first(where: { r in !before.contains(r) && order.contains { $0.id == r } }) {
+            if let missing = usesBodies.first(where: { r in !before.contains(r) && inOrder.contains(r) }) {
                 return g.id == id ? "\(g.name) is built from \(name(missing)), so it has to come after it"
                                   : "\(g.name) is built from \(f.name), so \(f.name) has to come before it"
             }
             // …and so must whatever changes a body it uses before it did.
-            let usesBodies = g.references
-            for (j, h) in features.enumerated() where j < features.firstIndex(where: { $0.id == g.id })! {
-                guard !h.changedBodies.isDisjoint(with: usesBodies), !before.contains(h.id) else { continue }
-                return h.id == id ? "\(g.name) uses the body as \(h.name) leaves it, so \(h.name) has to stay before it"
-                                  : "\(g.name) uses the body as \(h.name) leaves it, so it has to stay after \(h.name)"
+            if !usesBodies.isEmpty, let own = position[g.id] {
+                for j in 0..<own where !changed[j].isDisjoint(with: usesBodies) && !before.contains(features[j].id) {
+                    let h = features[j]
+                    return h.id == id ? "\(g.name) uses the body as \(h.name) leaves it, so \(h.name) has to stay before it"
+                                      : "\(g.name) uses the body as \(h.name) leaves it, so it has to stay after \(h.name)"
+                }
             }
+            before.insert(g.id)
         }
         return nil
     }
