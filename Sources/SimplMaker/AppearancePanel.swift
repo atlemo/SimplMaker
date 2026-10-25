@@ -1,4 +1,4 @@
-// The Appearance panel: gives bodies colours. Opens with A, or View ▸ Show Appearance.
+// The Appearance panel: gives bodies colours and materials. Opens with A, or View ▸ Show Appearance.
 // Copyright © 2026 Atle Mo. All rights reserved.
 import AppKit
 import CADCore
@@ -90,6 +90,7 @@ struct AppearancePanel: View {
                         Text(c.hex).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                 }
+                materialRow
             }
             .disabled(targets.isEmpty)
             Divider()
@@ -105,6 +106,25 @@ struct AppearancePanel: View {
             commit(p)
         }
         .onDisappear { if let p = pending { commit(p) } }
+    }
+
+    /// Plain, metal, glass or wood for the selected bodies. Materials show in the Render view.
+    private var materialRow: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            Text("Material").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(spacing: DS.Spacing.space2) {
+                MaterialTile(material: nil, baseColor: sharedColor?.color ?? defaultColor, current: isCurrentMaterial(nil)) { model.setBodyMaterial(nil, of: targets) }
+                ForEach(BodyMaterial.allCases, id: \.self) { m in
+                    MaterialTile(material: m, baseColor: sharedColor?.color ?? defaultColor, current: isCurrentMaterial(m)) { model.setBodyMaterial(m, of: targets) }
+                }
+            }
+            Text("Materials show in the Render view.").font(.caption).foregroundStyle(.tertiary)
+        }
+    }
+
+    /// Whether every selected body has this material (nil = plain).
+    private func isCurrentMaterial(_ material: BodyMaterial?) -> Bool {
+        !targets.isEmpty && targets.allSatisfy { model.displayMaterial(of: $0) == material }
     }
 
     /// Every body, to select from without hunting for it in the view. ⇧- or ⌘-click adds to the selection.
@@ -211,6 +231,93 @@ struct ColorSwatch: View {
         .help(isDefault ? "Default colour" : name)
         .accessibilityLabel(isDefault ? "Default colour" : name)
         .accessibilityAddTraits(current ? .isSelected : [])
+    }
+}
+
+private extension Color {
+    /// This colour moved part of the way toward another (macOS 14 has no Color.mix).
+    func shifted(toward other: NSColor, by fraction: Double) -> Color {
+        guard let c = NSColor(self).usingColorSpace(.sRGB),
+              let m = c.blended(withFraction: fraction, of: other) else { return self }
+        return Color(nsColor: m)
+    }
+}
+
+/// One material to pick: a small picture of it in the body's colour, ringed when the selected bodies have it.
+struct MaterialTile: View {
+    @Environment(\.accent) private var accent
+    let material: BodyMaterial?
+    let baseColor: Color
+    let current: Bool
+    let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    private var name: String {
+        switch material {
+        case nil: "Plain"
+        case .metal: "Metal"
+        case .glass: "Glass"
+        case .wood: "Wood"
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                preview
+                    .frame(height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay { RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.primary.opacity(0.18), lineWidth: 1) }
+                    .padding(2)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(current ? accent : hovering && isEnabled ? Color.primary.opacity(0.3) : .clear, lineWidth: 2)
+                    }
+                Text(name).font(.caption)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? 1 : DS.opacityDisabled)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: DS.Duration.instant), value: hovering)
+        .help(material == nil ? "Plain colour" : name)
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(current ? .isSelected : [])
+    }
+
+    @ViewBuilder private var preview: some View {
+        switch material {
+        case nil:
+            baseColor
+        case .metal:
+            LinearGradient(stops: [.init(color: baseColor.shifted(toward: NSColor.white, by: 0.55), location: 0),
+                                   .init(color: baseColor, location: 0.35),
+                                   .init(color: baseColor.shifted(toward: NSColor.black, by: 0.45), location: 0.55),
+                                   .init(color: baseColor.shifted(toward: NSColor.white, by: 0.3), location: 0.8),
+                                   .init(color: baseColor.shifted(toward: NSColor.black, by: 0.2), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+        case .glass:
+            ZStack {
+                Color.primary.opacity(0.06)
+                baseColor.opacity(0.45)
+                LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0)], startPoint: .topLeading, endPoint: .center)
+            }
+        case .wood:
+            Canvas { context, size in
+                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(baseColor))
+                for i in 0..<9 {
+                    let y = size.height * (CGFloat(i) + 0.5) / 9
+                    var line = Path()
+                    line.move(to: CGPoint(x: 0, y: y))
+                    line.addCurve(to: CGPoint(x: size.width, y: y + (i % 2 == 0 ? 2 : -2)),
+                                  control1: CGPoint(x: size.width * 0.3, y: y - 3), control2: CGPoint(x: size.width * 0.7, y: y + 3))
+                    context.stroke(line, with: .color(.black.opacity(0.18)), lineWidth: 1)
+                }
+            }
+        }
     }
 }
 

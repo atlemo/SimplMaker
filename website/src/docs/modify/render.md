@@ -11,7 +11,7 @@ The **Render view** gives a part a presentation look. The grid gives way to a so
 
 Press the **Render** button (a sun) at the right end of the toolbar, left of the Inspector button. You can also choose **View → Render**, or right-click in the viewport and choose **Render View**.
 
-Press the button again to turn the view off. The options panel opens in the top left corner of the view while the view is on.
+Press the button again to turn the view off. The options panel opens in the top left corner of the view while the view is on. The browser and the Inspector close when the view comes on, to give the part the whole window. The buttons in the toolbar bring them back, and they come back by themselves when the view goes off.
 
 - The view needs a shaded [visual style](doc:start/navigation). If you were in a wireframe style, turning it on switches to **Shaded with Visible Edges**.
 - It does not work together with the [3D Print Preview](doc:print/print-preview). Turning one on turns the other off.

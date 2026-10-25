@@ -197,7 +197,7 @@ final class DocumentModel {
     /// Turns the print preview on or off; on, it opens its options (and the render view, which restyles the bodies too, goes off).
     func setPrintPreview(_ on: Bool) {
         printPreview = on
-        if on { showPrintOptions = true; renderView = false }
+        if on { showPrintOptions = true; renderView = false; restorePanelsHiddenByRender() }
     }
 
     /// The Render view (the Render button): a solid floor and a light you set, for presentation. Not saved.
@@ -229,10 +229,28 @@ final class DocumentModel {
         }
     }
 
-    /// Turns the Render view on or off; on, it opens its options, leaves the print preview and needs a shaded style.
+    /// The browser and inspector the Render view hid when it came on (they were open), to bring back when it goes off
+    /// (unless they have been opened since).
+    @ObservationIgnored private var panelsHiddenByRender = (sidebar: false, inspector: false)
+
+    private func restorePanelsHiddenByRender() {
+        if panelsHiddenByRender.sidebar { showSidebar = true }
+        if panelsHiddenByRender.inspector { showInspector = true }
+        panelsHiddenByRender = (false, false)
+    }
+
+    /// Turns the Render view on or off; on, it opens its options, hides the browser and inspector (the toolbar buttons
+    /// bring them back), leaves the print preview and needs a shaded style.
     func setRenderView(_ on: Bool) {
+        let wasOn = renderView
         renderView = on
+        if !on { restorePanelsHiddenByRender() }
         if on {
+            if !wasOn {
+                panelsHiddenByRender = (showSidebar, showInspector)
+                showSidebar = false
+                showInspector = false
+            }
             showRenderOptions = true
             printPreview = false
             if !visualStyle.isShaded { visualStyle = .standard }
@@ -668,6 +686,29 @@ final class DocumentModel {
         }
     }
 
+    /// The material a body is drawn in (in the Render view); a piece of a split body has its parent's until given its own.
+    func displayMaterial(of id: FeatureID) -> BodyMaterial? {
+        document.bodyMaterials[id] ?? document.bodyMaterials[Regenerator.rootBody(id)]
+    }
+
+    /// Makes bodies of a material (nil = plain), as one undo step. Needs no rebuild. A material looks wrong over the
+    /// default grey, so bodies without a colour of their own are given one that suits it.
+    func setBodyMaterial(_ material: BodyMaterial?, of ids: [FeatureID]) {
+        guard !ids.isEmpty else { return }
+        let fallback: BodyColor? = material.flatMap { BodyColor(hex: Self.materialColors[$0] ?? "") }
+        let noun = ids.count == 1 ? "Material" : "Materials"
+        colorPreview = nil
+        mutate(material == nil ? "Reset \(noun)" : "Change \(noun)") { doc in
+            for id in ids {
+                doc.bodyMaterials[id] = material
+                if let fallback, doc.bodyColors[id] == nil, doc.bodyColors[Regenerator.rootBody(id)] == nil { doc.bodyColors[id] = fallback }
+            }
+        }
+    }
+
+    /// The colour a body gets with a material when it has none of its own.
+    static let materialColors: [BodyMaterial: String] = [.metal: "#C9CDD2", .glass: "#BFDDEA", .wood: "#B5834F"]
+
     /// Shows a colour on bodies while it's being picked, without changing the document.
     func previewBodyColor(_ color: BodyColor, of ids: [FeatureID]) {
         colorPreview = ids.isEmpty ? nil : (ids, color)
@@ -705,13 +746,30 @@ final class DocumentModel {
         }
     }
 
+    /// The timeline menus ask this for every feature each time the bar is drawn (a selection redraws it), and it is
+    /// not cheap on a long timeline: kept until the document changes.
+    @ObservationIgnored private var reorderProblems: (revision: Int, byMove: [String: String?]) = (-1, [:])
+    /// How many of those were worked out rather than remembered (for tests).
+    @ObservationIgnored private(set) var reorderChecksMade = 0
+
+    /// Why a feature can't move to `index` in the timeline, or nil if it can (`CADDocument.reorderProblem`).
+    func reorderProblem(_ id: FeatureID, to index: Int) -> String? {
+        if reorderProblems.revision != documentRevision { reorderProblems = (documentRevision, [:]) }
+        let key = "\(id)|\(index)"
+        if let known = reorderProblems.byMove[key] { return known }
+        reorderChecksMade += 1
+        let problem = document.reorderProblem(id, to: index)
+        reorderProblems.byMove[key] = .some(problem)
+        return problem
+    }
+
     /// Moves a feature to another place in the timeline (`index` is its new position), unless it
     /// would then come before what it's built from; the reason shows in an alert.
     func moveFeature(_ id: FeatureID, to index: Int) {
         guard let from = document.index(of: id) else { return }
         let to = min(max(index, 0), document.features.count - 1)
         guard to != from else { return }
-        if let problem = document.reorderProblem(id, to: to) {
+        if let problem = reorderProblem(id, to: to) {
             alert = AlertInfo(title: "\(featureName(id)) can't go there", message: problem)
             return
         }

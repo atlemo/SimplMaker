@@ -181,6 +181,8 @@ struct Uniforms {
     /// The camera's right and up, so the everyday key light can sit at a fixed spot in the view (see shadeFace).
     var cameraRight: SIMD4<Float> = SIMD4(1, 0, 0, 0)
     var cameraUp: SIMD4<Float> = SIMD4(0, 0, 1, 0)
+    /// The Render view: xyz = the middle of the part, w = the size of the room a shiny face reflects (see shadeFace).
+    var sceneCenter: SIMD4<Float> = SIMD4(0, 0, 0, 100)
 }
 
 /// The Render view's floor, as the shader reads it (see floorVertex).
@@ -339,6 +341,8 @@ struct DrawParams {
     /// dash's width and `grow` the reach of its outline.
     var dashPitch: Float = 0
     var dashLength: Float = 0
+    /// The Render view's material: 0 plain, 1 metal, 2 glass, 3 wood (see shadeFace).
+    var material: UInt32 = 0
 }
 
 /// Ways of drawing, as DrawParams.style bits.
@@ -363,6 +367,9 @@ enum DrawStyle {
     static let fade: UInt32 = 512
     /// A line that fades in along each segment, from nothing at its start to full strength toward its end (an arrow's shaft).
     static let fadeAlong: UInt32 = 1024
+    /// Glass: only the faces turned away from the viewer (the far wall), or only those turned toward it.
+    static let glassBack: UInt32 = 2048
+    static let glassFront: UInt32 = 4096
 }
 
 /// How bodies are drawn (View ▸ Visual Style), as in Fusion.
@@ -394,6 +401,8 @@ final class Renderer {
     let device: MTLDevice
     private let queue: MTLCommandQueue
     private let facePipeline: MTLRenderPipelineState
+    /// Glass: the faces blended over what is behind them, after the floor.
+    private let glassPipeline: MTLRenderPipelineState
     private let printFacePipeline: MTLRenderPipelineState
     /// The faces again with the section analysis's cut face (and its own depth), plain and as a print preview.
     private let sectionFacePipeline: MTLRenderPipelineState
@@ -477,6 +486,10 @@ final class Renderer {
     /// Each body's own colour, in the order of setScene's meshes; nil = the palette's face colour.
     /// Set apart from the meshes, so a colour change doesn't upload them again.
     var bodyColors: [SIMD4<Float>?] = []
+    /// Each body's material (0 plain, 1 metal, 2 glass, 3 wood), in the same order. Only the Render view shows them.
+    var bodyMaterials: [UInt32] = []
+    /// How long the GPU took over the last frame, in seconds (for timing tests).
+    nonisolated(unsafe) private(set) var lastGPUSeconds: Double = 0
     /// The ground grid (the XY plane when not sketching): rebuilt as the view moves, to cover what's in view.
     private var worldGrid: (key: WorldGridKey, minor: MTLBuffer?, minorCount: Int, major: MTLBuffer?, majorCount: Int)?
     private var axes: [(MTLBuffer, SIMD4<Float>)] = []
@@ -616,6 +629,7 @@ final class Renderer {
                 return try device.makeRenderPipelineState(descriptor: d)
             }
             facePipeline = try pipeline("faceVertex", "faceFragment")
+            glassPipeline = try pipeline("faceVertex", "faceFragment", blend: true, writesID: false)
             printFacePipeline = try pipeline("printFaceVertex", "printFaceFragment")
             sectionFacePipeline = try pipeline("faceVertex", "sectionFaceFragment")
             sectionPrintPipeline = try pipeline("printFaceVertex", "sectionPrintFragment")
@@ -1047,7 +1061,7 @@ final class Renderer {
     /// each time, added up in a texture of half the view's size (see reflectionFragment). A tilt moves a point sideways
     /// by its height, so what touches the floor stays sharp and the blur grows with height.
     private func drawBlurredReflection(_ cmd: MTLCommandBuffer, _ uniforms: Uniforms, strength: Float, blur: Float, size: CGSize,
-                                       tints: [BodyTint], shadowing: Bool) {
+                                       tints: [BodyTint], materials: [UInt32], shadowing: Bool) {
         let w = max(Int(size.width) / 2, 1), h = max(Int(size.height) / 2, 1)
         if reflectionTexture?.width != w || reflectionTexture?.height != h {
             let c = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false)
@@ -1097,7 +1111,7 @@ final class Renderer {
                 for (i, b) in bodies.enumerated() {
                     guard let faces = b.faces, let indices = b.indices else { continue }
                     var params = DrawParams(color: tints[i].face, hoverColor: tints[i].faceHover, selectColor: tints[i].faceSelected,
-                                            thickness: 0, depthBias: 0, pickable: 0)
+                                            thickness: 0, depthBias: 0, pickable: 0, material: materials[i])
                     enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
                     enc.setVertexBuffer(faces, offset: 0, index: 0)
                     enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
@@ -1109,7 +1123,7 @@ final class Renderer {
     }
 
     /// Draws the bodies' depth as the main light sees it, into the shadow map.
-    private func drawShadowMap(_ cmd: MTLCommandBuffer, _ uniforms: inout Uniforms) {
+    private func drawShadowMap(_ cmd: MTLCommandBuffer, _ uniforms: inout Uniforms, materials: [UInt32]) {
         if shadowMap == nil {
             let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: Self.shadowMapSize,
                                                              height: Self.shadowMapSize, mipmapped: false)
@@ -1127,8 +1141,8 @@ final class Renderer {
         enc.setDepthStencilState(depthState)
         enc.setCullMode(.none)
         enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
-        for b in bodies {
-            guard let faces = b.faces, let indices = b.indices else { continue }
+        for (i, b) in bodies.enumerated() {
+            guard let faces = b.faces, let indices = b.indices, materials[i] != 2 else { continue }  // glass casts no shadow
             enc.setVertexBuffer(faces, offset: 0, index: 0)
             enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
                                       indexBuffer: indices, indexBufferOffset: 0)
@@ -1224,6 +1238,9 @@ final class Renderer {
         if let look {
             uniforms.lightDir = SIMD4(look.lightDirection, Float(look.brightness))
             uniforms.renderParams = SIMD4(1, Float(look.ambient), 0, look.reflectionStrength)
+            if let b = sceneBounds {
+                uniforms.sceneCenter = SIMD4((b.min + b.max) * 0.5, max(simd_length(b.max - b.min), 20) * 1.2)
+            }
             if look.shadows, let b = sceneBounds, !bodies.isEmpty {
                 let light = Self.lightProjection(toward: look.lightDirection, lo: b.min, hi: b.max)
                 uniforms.lightViewProj = light.matrix
@@ -1253,6 +1270,8 @@ final class Renderer {
         }
         let clipStyle: UInt32 = sectioning ? DrawStyle.clipped : 0
         let tints = bodies.indices.map { Self.tint(bodyColors[safe: $0].flatMap { $0 }, palette: palette) }
+        // Materials show in the Render view only, and not in the section analysis or print preview, which draw their own way.
+        let materials: [UInt32] = bodies.indices.map { look != nil && !sectioning && !printing ? bodyMaterials[safe: $0] ?? 0 : 0 }
         var sel = Array(selected.prefix(256))
         let group = Array(hoverGroup.prefix(256))
         sel += group  // after the selected ids, which are the first `selectedCount`
@@ -1260,13 +1279,13 @@ final class Renderer {
         if sel.isEmpty { sel = [0] }
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
 
-        if shadowing { drawShadowMap(cmd, &uniforms) }
+        if shadowing { drawShadowMap(cmd, &uniforms, materials: materials) }
         // A reflection with blur is made in its own passes first; without, it is drawn straight into the view.
         let blurredReflection = look.map { $0.reflectionStrength > 0 && $0.reflectionBlur > 0.02 && !sectioning && !bodies.isEmpty
                                           && !camera.isBelowGround } ?? false
         if blurredReflection, let look {
             drawBlurredReflection(cmd, uniforms, strength: look.reflectionStrength, blur: Float(look.reflectionBlur), size: size,
-                                  tints: tints, shadowing: shadowing)
+                                  tints: tints, materials: materials, shadowing: shadowing)
         }
         guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
         enc.setFragmentTexture(shadowing ? shadowMap : emptyShadowMap, index: 1)
@@ -1281,11 +1300,15 @@ final class Renderer {
         let style = printing || (look != nil && look?.showEdges == false) ? VisualStyle.shaded : visualStyle
         /// Faces: shaded, or in the wireframe styles flat in the background colour (hiding what's
         /// behind them) with hover and selection as a light wash. Wireframe draws them later, unseen.
-        func drawFaces(_ pipeline: MTLRenderPipelineState, wireframe: Bool, capsOnly: Bool = false) {
+        /// Glass is left to its own pass after the floor (`glassOnly`), unless `withGlass` (the reflection draws it too).
+        func drawFaces(_ pipeline: MTLRenderPipelineState, wireframe: Bool, capsOnly: Bool = false,
+                       glassOnly: Bool = false, withGlass: Bool = false, glassSide: UInt32 = 0) {
             enc.setRenderPipelineState(pipeline)
             let bg = palette.background
             for (i, b) in bodies.enumerated() {
                 guard let faces = b.faces, let indices = b.indices else { continue }
+                let glass = materials[i] == 2
+                if glass ? !(glassOnly || withGlass) : glassOnly { continue }
                 if printing && !wireframe {
                     if b.printFaces == nil, b.printVertexCount == 0 { makePrintFaces(of: i) }
                     guard let printFaces = bodies[i].printFaces else { continue }
@@ -1303,7 +1326,8 @@ final class Renderer {
                                  selectColor: simd_mix(bg, t.faceSelected, SIMD4(repeating: 0.45)),
                                  thickness: 0, depthBias: 0, pickable: 1, style: DrawStyle.flat)
                     : DrawParams(color: t.face, hoverColor: t.faceHover, selectColor: t.faceSelected,
-                                 thickness: 0, depthBias: 0, pickable: 1, style: capsOnly ? DrawStyle.capsOnly : 0)
+                                 thickness: 0, depthBias: 0, pickable: 1, style: (capsOnly ? DrawStyle.capsOnly : 0) | glassSide,
+                                 material: materials[i])
                 enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
                 enc.setVertexBuffer(faces, offset: 0, index: 0)
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
@@ -1388,13 +1412,23 @@ final class Renderer {
                     enc.setVertexBytes(&mirrored, length: MemoryLayout<Uniforms>.stride, index: 1)
                     enc.setFragmentBytes(&mirrored, length: MemoryLayout<Uniforms>.stride, index: 1)
                     enc.setDepthStencilState(depthState)
-                    drawFaces(reflectDepthPipeline, wireframe: false)
+                    drawFaces(reflectDepthPipeline, wireframe: false, withGlass: true)
                     enc.setDepthStencilState(noWriteDepthState)
-                    drawFaces(reflectPipeline, wireframe: false)
+                    drawFaces(reflectPipeline, wireframe: false, withGlass: true)
                     enc.setDepthStencilState(depthState)
                     enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
                     enc.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
                 }
+            }
+            // Glass, over the floor and what stands behind it: the far wall, then a depth pass, so only the nearest surface is blended over it.
+            if materials.contains(2) {
+                enc.setDepthStencilState(noWriteDepthState)
+                drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassBack)
+                enc.setDepthStencilState(depthState)
+                drawFaces(faceIDPipeline, wireframe: false, glassOnly: true)
+                enc.setDepthStencilState(noWriteDepthState)
+                drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassFront)
+                enc.setDepthStencilState(depthState)
             }
             // Grain over all of it: the backdrop, the floor, the bodies and the reflection (not what is drawn after, like edges).
             if look.noise > 0 {
@@ -1685,6 +1719,7 @@ final class Renderer {
                 Task { @MainActor in handler(nil) }
             }
         }
+        cmd.addCompletedHandler { [weak self] c in self?.lastGPUSeconds = c.gpuEndTime - c.gpuStartTime }
         cmd.present(drawable)
         cmd.commit()
     }

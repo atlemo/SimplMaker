@@ -890,6 +890,12 @@ public struct BodyColor: Codable, Hashable, Sendable {
     }
 }
 
+/// What a body is made of in the Render view. Without one a body is plain, lit by its colour alone; the colour still
+/// tints a material (the metal's colour, the glass's tint, the wood's base shade).
+public enum BodyMaterial: String, Codable, CaseIterable, Hashable, Sendable {
+    case metal, glass, wood
+}
+
 /// A folder in the browser. Folders hold bodies, sketches, planes and canvases, and other folders.
 public struct BrowserFolder: Codable, Hashable, Sendable, Identifiable {
     public var id: String
@@ -917,6 +923,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
     public var bodyNames: [FeatureID: String] = [:]
     /// Colours given to bodies, by the id of the feature that made them (others use the default).
     public var bodyColors: [FeatureID: BodyColor] = [:]
+    /// Materials given to bodies, by the id of the feature that made them (others are plain).
+    public var bodyMaterials: [FeatureID: BodyMaterial] = [:]
     /// Folders the user made in the browser, with their sub-folders (a folder lists its parent).
     public var folders: [BrowserFolder] = []
     /// The folder each body, sketch, plane or canvas sits in, by the id of the feature that made it. Anything
@@ -927,7 +935,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, folders, folderOf }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, folders, folderOf }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -939,6 +947,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         locked = try c.decodeIfPresent(Set<FeatureID>.self, forKey: .locked) ?? []
         bodyNames = try c.decodeIfPresent([FeatureID: String].self, forKey: .bodyNames) ?? [:]
         bodyColors = try c.decodeIfPresent([FeatureID: BodyColor].self, forKey: .bodyColors) ?? [:]
+        bodyMaterials = try c.decodeIfPresent([FeatureID: BodyMaterial].self, forKey: .bodyMaterials) ?? [:]
         folders = try c.decodeIfPresent([BrowserFolder].self, forKey: .folders) ?? []
         folderOf = try c.decodeIfPresent([FeatureID: String].self, forKey: .folderOf) ?? [:]
     }
@@ -953,17 +962,19 @@ public struct CADDocument: Codable, Hashable, Sendable {
         if !locked.isEmpty { try c.encode(locked.sorted(), forKey: .locked) }
         if !bodyNames.isEmpty { try c.encode(bodyNames, forKey: .bodyNames) }  // sorted keys when encoded()
         if !bodyColors.isEmpty { try c.encode(bodyColors, forKey: .bodyColors) }
+        if !bodyMaterials.isEmpty { try c.encode(bodyMaterials, forKey: .bodyMaterials) }
         if !folders.isEmpty { try c.encode(folders, forKey: .folders) }
         if !folderOf.isEmpty { try c.encode(folderOf, forKey: .folderOf) }
     }
 
-    /// The same design with visibility, names and colours ignored: changing those needs no rebuild.
+    /// The same design with visibility, names, colours and materials ignored: changing those needs no rebuild.
     public var ignoringPresentation: CADDocument {
         var d = self
         d.hidden = []
         d.locked = []
         d.bodyNames = [:]
         d.bodyColors = [:]
+        d.bodyMaterials = [:]
         d.folders = []
         d.folderOf = [:]
         for i in d.features.indices {

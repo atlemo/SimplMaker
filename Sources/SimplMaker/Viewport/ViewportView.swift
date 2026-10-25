@@ -2170,6 +2170,14 @@ struct ViewportView: NSViewRepresentable {
                 return SIMD4(Float(r), Float(g), Float(b), 1)
             }
         }
+        renderer.bodyMaterials = model.visibleMeshes.map { m in
+            switch model.displayMaterial(of: m.id) {
+            case nil: 0
+            case .metal: 1
+            case .glass: 2
+            case .wood: 3
+            }
+        }
         // A fit asked for while the part is empty (a new document, at launch) is used up here, so the first body
         // added later doesn't pull the camera to itself.
         if c.fitRevision != fitRevision {
