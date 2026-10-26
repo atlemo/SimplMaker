@@ -263,7 +263,8 @@ enum ViewportSnapshot {
         return true
     }
 
-    static func png(bgra: [UInt8], width: Int, height: Int) -> Data? {
+    /// Not on the main actor: the renderer calls it from the GPU's completion handler.
+    nonisolated static func png(bgra: [UInt8], width: Int, height: Int) -> Data? {
         var rgba = bgra
         for i in stride(from: 0, to: rgba.count, by: 4) { rgba.swapAt(i, i + 2) }
         guard let provider = CGDataProvider(data: Data(rgba) as CFData),

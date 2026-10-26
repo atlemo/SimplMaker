@@ -670,8 +670,6 @@ extension Sketch {
                     created.append(nid)
                     from = to
                 }
-            case .circle:
-                continue
             }
         }
         return created
