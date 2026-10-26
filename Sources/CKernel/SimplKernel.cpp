@@ -121,6 +121,7 @@
 #include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
+#include <TopoDS_Iterator.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shell.hxx>
@@ -634,6 +635,47 @@ bool healStrips(const Body &b, Body &out, const std::string &fallback) {
     BRepGProp::VolumeProperties(healed, after);
     if (std::abs(after.Mass() - before.Mass()) > 1e-4 * before.Mass()) return false;
     out = std::move(candidate);
+    return true;
+  } catch (Standard_Failure &) {
+    return false;
+  }
+}
+
+/// The same body with each solid built again from its faces taken in the opposite order. Nothing about the shape
+/// changes, but OCCT's round and chamfer builders walk the faces in the order the shell holds them, and a few
+/// vertices (a crease that fades out into near-tangent faces) only come out right when a particular edge comes first.
+/// The face merge after a boolean can leave the order the wrong way round, so a round that fails is tried once more
+/// on this. False when the body holds anything but solids.
+bool reverseFaceOrder(const Body &b, Body &out) {
+  try {
+    BRep_Builder builder;
+    auto rebuilt = [&](const TopoDS_Shape &solid) {
+      std::vector<TopoDS_Shape> faces;
+      for (TopExp_Explorer ex(solid, TopAbs_FACE); ex.More(); ex.Next()) faces.push_back(ex.Current());
+      std::reverse(faces.begin(), faces.end());
+      TopoDS_Shell shell;
+      builder.MakeShell(shell);
+      for (const TopoDS_Shape &f : faces) builder.Add(shell, f);
+      TopoDS_Solid made;
+      builder.MakeSolid(made);
+      builder.Add(made, shell);
+      return made;
+    };
+    TopoDS_Shape shape;
+    if (b.shape.ShapeType() == TopAbs_SOLID) {
+      shape = rebuilt(b.shape);
+    } else if (b.shape.ShapeType() == TopAbs_COMPOUND) {
+      TopoDS_Compound compound;
+      builder.MakeCompound(compound);
+      for (TopoDS_Iterator it(b.shape); it.More(); it.Next()) {
+        if (it.Value().ShapeType() != TopAbs_SOLID) return false;
+        builder.Add(compound, rebuilt(it.Value()));
+      }
+      shape = compound;
+    } else {
+      return false;
+    }
+    out = makeBody(shape, namedFaces(b), "reordered");
     return true;
   } catch (Standard_Failure &) {
     return false;
@@ -3308,22 +3350,35 @@ SKHandle sk_fillet(SKHandle body, const char *const *edgeNames, int count, doubl
   // default), and takes anything else for a corner it cannot finish. A crease that fades out where two faces run into
   // each other almost tangent (a swept round that misses the side wall by a hundredth of a millimetre leaves one,
   // with the faces 4 degrees apart at its end) fails at every size, so a wider tangency is tried after the default.
-  auto round = [&](double r, double tangency) {
-    return edgeFeature<BRepFilletAPI_MakeFillet>(body, edgeNames, count, featureOrDefault(featureId, "fillet"), "fillet",
+  auto round = [&](SKHandle on, double r, double tangency) {
+    return edgeFeature<BRepFilletAPI_MakeFillet>(on, edgeNames, count, featureOrDefault(featureId, "fillet"), "fillet",
                                                  [&](BRepFilletAPI_MakeFillet &mk, const TopoDS_Edge &e) {
                                                    if (tangency > 0) mk.SetParams(tangency, 1.0e-4, 1.e-5, 1.e-4, 1.e-5, 1.e-3);
                                                    mk.Add(r, e);
                                                  });
   };
   constexpr double kFadingCreaseTangency = 0.15;  // about 8.6 degrees
-  SKHandle made = round(radius, 0);
+  SKHandle made = round(body, radius, 0);
   // A round that uses up a whole face (1 mm on a 2 mm strip) meets itself exactly, and OCCT can fail there on
   // spline faces although a hair less builds. A millionth less is the same round for any real part.
   if (!made) {
     const std::string why = g_error;
-    made = round(radius * (1 - 1e-6), 0);
-    if (!made) made = round(radius, kFadingCreaseTangency);
-    if (!made) made = round(radius * (1 - 1e-6), kFadingCreaseTangency);
+    made = round(body, radius * (1 - 1e-6), 0);
+    if (!made) made = round(body, radius, kFadingCreaseTangency);
+    if (!made) made = round(body, radius * (1 - 1e-6), kFadingCreaseTangency);
+    if (!made) {
+      // Last, the same body with its faces in the opposite order (see reverseFaceOrder).
+      Body *b;
+      auto keep = lookup(body, b);
+      Body reordered;
+      if (b && reverseFaceOrder(*b, reordered)) {
+        const SKHandle h = store(std::move(reordered));
+        made = round(h, radius, 0);
+        if (!made) made = round(h, radius, kFadingCreaseTangency);
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_objects.erase(h);
+      }
+    }
     if (!made) setError(why);
   }
   return made;
