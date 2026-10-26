@@ -15,6 +15,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <csetjmp>
+#include <csignal>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -210,6 +212,48 @@ std::shared_ptr<Object> lookup(SKHandle h, T *&out) {
   out = obj ? std::get_if<T>(obj.get()) : nullptr;
   if (!out) setError("invalid handle " + std::to_string(h));
   return obj;
+}
+
+// OpenCASCADE's round and chamfer builders can fault outright on some geometry (a null curve deep in the blend, found
+// on a body with a swept cove: the whole app went down with it), and a fault is no C++ exception, so nothing in
+// SK_CATCH sees it. Its own conversion to an exception needs OCCT built with OCC_CONVERT_SIGNALS, which ours is not.
+// So the builders run under runGuarded: a SIGSEGV or SIGBUS on this thread while a guard is up jumps back to it, and
+// the call fails like any other round that cannot be built. The builder is left as it fell (the caller must not
+// destroy it), and a fault with no guard up goes on to whatever handler was there before.
+thread_local sigjmp_buf *g_faultJump = nullptr;
+struct sigaction g_previousSegv, g_previousBus;
+
+void faultHandler(int sig, siginfo_t *, void *) {
+  if (g_faultJump) siglongjmp(*g_faultJump, 1);
+  sigaction(sig, sig == SIGSEGV ? &g_previousSegv : &g_previousBus, nullptr);  // not ours: fault again into the old handler
+}
+
+void installFaultHandler() {
+  static std::once_flag once;
+  std::call_once(once, [] {
+    struct sigaction action;
+    sigemptyset(&action.sa_mask);
+    action.sa_sigaction = faultHandler;
+    action.sa_flags = SA_SIGINFO | SA_NODEFER;
+    sigaction(SIGSEGV, &action, &g_previousSegv);
+    sigaction(SIGBUS, &action, &g_previousBus);
+  });
+}
+
+/// Runs `body`; false when it faulted instead (nothing it built can be trusted, nor anything it was holding).
+template <class F>
+bool runGuarded(F &&body) {
+  installFaultHandler();
+  sigjmp_buf jump;
+  sigjmp_buf *outer = g_faultJump;
+  if (sigsetjmp(jump, 1) == 0) {
+    g_faultJump = &jump;
+    body();
+    g_faultJump = outer;
+    return true;
+  }
+  g_faultJump = outer;
+  return false;
 }
 
 #define SK_TRY try {
@@ -724,7 +768,9 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
     setError(std::string(kind) + " needs at least one edge");
     return 0;
   }
-  Maker mk(b->shape);
+  // On the heap so that a builder that faulted (see runGuarded) can be left alone instead of destroyed.
+  std::unique_ptr<Maker> builder(new Maker(b->shape));
+  Maker &mk = *builder;
   std::vector<std::pair<TopoDS_Shape, std::string>> used;
   for (int k = 0; k < count; ++k) {
     auto it = b->edgeIndex.find(edgeNames[k]);
@@ -769,7 +815,11 @@ SKHandle edgeFeature(SKHandle body, const char *const *edgeNames, int count, con
       return 0;
     }
   }
-  mk.Build();
+  if (!runGuarded([&] { mk.Build(); })) {
+    builder.release();  // leaked: it is in no state to be taken apart
+    setError(std::string(kind) + " could not be built: OpenCascade failed inside it. A slightly different size may work");
+    return 0;
+  }
   if (!mk.IsDone()) {
     std::string why = failureMessage(*b, picked, kind, size);
     return fail(why.empty() ? std::string(kind) + " failed (size too large for the adjacent faces?)" : why);
