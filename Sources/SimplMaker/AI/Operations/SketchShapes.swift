@@ -21,6 +21,8 @@ enum SketchShape: Sendable {
     case polygon(id: String?, center: SketchPoint2, radius: String, sides: Int, rotation: String?)
     case line(id: String?, from: SketchPoint2, to: SketchPoint2)
     case polyline(id: String?, points: [SketchPoint2], closed: Bool)
+    /// A smooth curve through the points (cubic Béziers, as the Curve tool draws them): closed, it comes back round to the first.
+    case spline(id: String?, points: [SketchPoint2], closed: Bool)
     case arc(id: String?, from: SketchPoint2, through: SketchPoint2, to: SketchPoint2)
     case text(id: String?, text: String, at: SketchPoint2, height: String, font: String?, angle: String?, centered: Bool)
 
@@ -31,6 +33,7 @@ enum SketchShape: Sendable {
         case .polygon: return "polygon"
         case .line: return "line"
         case .polyline: return "polyline"
+        case .spline: return "spline"
         case .arc: return "arc"
         case .text: return "text"
         }
@@ -39,7 +42,7 @@ enum SketchShape: Sendable {
     var requestedID: String? {
         switch self {
         case .rectangle(let id, _, _, _, _, _), .circle(let id, _, _, _), .polygon(let id, _, _, _, _), .line(let id, _, _),
-             .polyline(let id, _, _), .arc(let id, _, _, _), .text(let id, _, _, _, _, _, _): return id
+             .polyline(let id, _, _), .spline(let id, _, _), .arc(let id, _, _, _), .text(let id, _, _, _, _, _, _): return id
         }
     }
 
@@ -50,6 +53,7 @@ enum SketchShape: Sendable {
         case .polygon: return "polygon"
         case .line: return "line"
         case .polyline: return "path"
+        case .spline: return "spline"
         case .arc: return "arc"
         case .text: return "text"
         }
@@ -265,6 +269,30 @@ enum SketchBuilder {
                 addAlignment(name, values2[i], values2[j], in: &sk)
                 result.curves.append(name)
             }
+
+        case .spline(_, let points, let closed):
+            guard points.count >= (closed ? 3 : 2) else {
+                throw AIError(.invalidArguments, closed ? "A closed spline needs at least 3 points." : "A spline needs at least 2 points.")
+            }
+            let values2 = try points.enumerated().map { try point($1, "points[\($0)]", values) }
+            for i in 0..<(closed ? values2.count : values2.count - 1) {
+                let j = (i + 1) % values2.count
+                guard simd_length(values2[j] - values2[i]) > 1e-9 else {
+                    throw AIError(.invalidValue, "Points \(i + 1) and \(j + 1) of the spline are the same point.")
+                }
+            }
+            // The same curves, handles and layout as the Curve tool makes by hand, so the spline can be edited like one.
+            let anchors = values2.map { sk.addPoint($0.x, $0.y) }
+            var chain = CurveChain(anchors: anchors)
+            chain.closed = closed
+            for i in 0..<(closed ? anchors.count : anchors.count - 1) {
+                let c1 = sk.addPoint(0, 0), c2 = sk.addPoint(0, 0)
+                let name = "\(id).\(i + 1)"
+                sk.addBezier(start: anchors[i], control1: c1, control2: c2, end: anchors[(i + 1) % anchors.count], id: name)
+                chain.segments.append(.init(curve: name, control1: c1, control2: c2))
+                result.curves.append(name)
+            }
+            sk.layOutHandles(of: chain)
 
         case .arc(_, let from, let through, let to):
             let a = try point(from, "from", values), m = try point(through, "through", values), b = try point(to, "to", values)

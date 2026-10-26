@@ -39,7 +39,7 @@ enum AITools {
 
     Building: for a plain block use create_box. For anything else draw first and extrude after: create_sketch on a plane or on \
     a flat face (get_body shows each face's "facing", "+z" is a top face), edit_sketch to add shapes (rectangle, circle, polygon, \
-    line, polyline, arc, text; a rectangle with corner_radius of half its shorter side is a slot), then create_extrude of the \
+    line, polyline, spline, arc, text; a rectangle with corner_radius of half its shorter side is a slot), then create_extrude of the \
     profiles. Text is a shape: centre it with anchor "center" and check the profile bounds that come back to be sure it fits. \
     Give the things you create your own short ids ("outline", "hole"), and size them with the parameters you made (see above), so a \
     later "make it longer" is a single change. Anything made of several steps goes in ONE batch: the user gets one Undo, and a failing step \
@@ -343,6 +343,9 @@ enum AITools {
                 - circle: center, and exactly one of diameter or radius. Dimensions: <id>.diameter (or .radius), <id>.x, <id>.y. Use it for holes.
                 - polygon: center, radius (to the corners), sides (3–64), optional rotation (degrees).
                 - line: from, to. polyline: points (a list of positions), closed (default false). arc: from, through, to (three points on it).
+                - spline: points (a list of positions the smooth curve passes through), closed (default false: true comes back round to the \
+                  first point). Use it for any organic outline (a sole, a leaf, a handle) instead of many short lines: a curve traced with \
+                  dozens of short straight pieces cannot be rounded (fillet) or chamfered, a spline can. 8 to 40 points are enough.
                 - text: text, at, height (cap height, default 5 mm), optional font (PostScript name, default Helvetica-Bold), angle, and \
                   anchor: "start" (default: at is where the baseline begins) or "center" (at is the middle of the letters, which is how to \
                   centre a name on a plate). Dimensions: <id>.x, <id>.y (where it starts), <id>.height (its size, via modify_feature).
@@ -364,7 +367,7 @@ enum AITools {
                     "add": ["type": "array", "description": "Shapes to draw.", "items": [
                         "type": "object",
                         "properties": [
-                            "type": ["type": "string", "enum": ["rectangle", "circle", "polygon", "line", "polyline", "arc", "text"]],
+                            "type": ["type": "string", "enum": ["rectangle", "circle", "polygon", "line", "polyline", "spline", "arc", "text"]],
                             "id": ["type": "string"],
                             "center": position("Where the middle is."), "corner": position("A rectangle's lower left corner."),
                             "width": quantity("A rectangle's width."), "height": quantity("A rectangle's height, or a text's cap height."),

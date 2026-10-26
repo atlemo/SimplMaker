@@ -394,7 +394,7 @@ enum AIOperationParser {
         let a = AIArguments(v)
         guard v.object != nil, let type = try a.string("type") else {
             throw AIError(.invalidArguments, "add[\(index)] must be an object with a \"type\".",
-                          reason: "Types: rectangle, circle, polygon, line, polyline, arc, text.")
+                          reason: "Types: rectangle, circle, polygon, line, polyline, spline, arc, text.")
         }
         let id = try a.string("id")
         let context = "add[\(index)] (\(type))"
@@ -422,6 +422,10 @@ enum AIOperationParser {
             try a.rejectUnknown(["type", "id", "points", "closed"], in: context)
             guard let points = try a.array("points") else { throw AIError(.invalidArguments, "\(context): points is required: a list of [x, y] positions.") }
             return .polyline(id: id, points: try points.enumerated().map { try AIArguments.point($1, field: "points[\($0)]") }, closed: try a.bool("closed") ?? false)
+        case "spline":
+            try a.rejectUnknown(["type", "id", "points", "closed"], in: context)
+            guard let points = try a.array("points") else { throw AIError(.invalidArguments, "\(context): points is required: a list of [x, y] positions the curve passes through.") }
+            return .spline(id: id, points: try points.enumerated().map { try AIArguments.point($1, field: "points[\($0)]") }, closed: try a.bool("closed") ?? false)
         case "arc":
             try a.rejectUnknown(["type", "id", "from", "through", "to"], in: context)
             return .arc(id: id, from: try a.requiredPoint("from"), through: try a.requiredPoint("through"), to: try a.requiredPoint("to"))
@@ -434,7 +438,7 @@ enum AIOperationParser {
             return .text(id: id, text: try a.requiredString("text"), at: try a.point("at") ?? origin, height: try a.quantity("height", kind: .length) ?? "5 mm",
                          font: try a.string("font"), angle: try a.quantity("angle", kind: .angle), centered: anchor == "center")
         default:
-            throw AIError(.invalidArguments, "\(context): \"\(type)\" is not a shape type.", reason: "Types: rectangle, circle, polygon, line, polyline, arc, text.")
+            throw AIError(.invalidArguments, "\(context): \"\(type)\" is not a shape type.", reason: "Types: rectangle, circle, polygon, line, polyline, spline, arc, text.")
         }
     }
 }

@@ -515,9 +515,48 @@ std::string sliverMessage(Body &b, const std::vector<TopoDS_Edge> &edges, const 
   }
 }
 
+/// How a failed round or chamfer along `edges` reads when they are part of an outline cut into many short straight
+/// pieces (a curve traced with a few dozen lines). OpenCascade takes two walls that meet at less than about 6 degrees
+/// for one smooth surface, so such an outline becomes a single chain of near-tangent edges that it cannot follow, at
+/// any size; the same outline drawn as a spline or arcs rounds. Empty when no chain of the edges looks like that.
+std::string polygonMessage(Body &b, const std::vector<TopoDS_Edge> &edges, const char *kind) {
+  try {
+    BRepFilletAPI_MakeChamfer mk(b.shape);
+    for (const TopoDS_Edge &e : edges) mk.Add(Precision::Confusion() * 10, e);  // Add finds each edge's tangent chain
+    for (int ic = 1; ic <= mk.NbContours(); ++ic) {
+      const int n = mk.NbEdges(ic);
+      if (n < 10) continue;
+      std::vector<gp_Vec> along;
+      double shortest = 1e30;
+      for (int j = 1; j <= n; ++j) {
+        const TopoDS_Edge &e = mk.Edge(ic, j);
+        if (BRepAdaptor_Curve(e).GetType() != GeomAbs_Line) break;
+        const gp_Vec v(BRep_Tool::Pnt(TopExp::FirstVertex(e, true)), BRep_Tool::Pnt(TopExp::LastVertex(e, true)));
+        if (v.Magnitude() < 1e-9) break;
+        along.push_back(v);
+        shortest = std::min(shortest, v.Magnitude());
+      }
+      if ((int)along.size() < n) continue;  // some piece is curved: this is not a polygon
+      double turned = 0;
+      for (int j = 0; j + 1 < n; ++j) turned += along[j].Angle(along[j + 1]);
+      if (turned < 0.2) continue;  // straight on: nothing the kernel has to follow round a bend
+      char buf[330];
+      std::snprintf(buf, sizeof buf,
+                    "the edge is part of an outline of %d short straight pieces (the shortest %.2g mm) that bend %.0f degrees in all. The kernel cannot follow "
+                    "a curve cut into pieces like that, whatever the %s size: draw the outline as a spline or as arcs instead",
+                    n, shortest, turned * 180 / M_PI, kind);
+      return buf;
+    }
+    return "";
+  } catch (Standard_Failure &) {
+    return "";
+  }
+}
+
 /// Why a round or chamfer failed, when something the body has (a rounded corner, a very short edge) explains it.
 std::string failureMessage(Body &b, const std::vector<TopoDS_Edge> &edges, const char *kind, double size) {
   std::string why = cornerMessage(b, edges, kind, size);
+  if (why.empty()) why = polygonMessage(b, edges, kind);
   return why.empty() ? sliverMessage(b, edges, kind, size) : why;
 }
 

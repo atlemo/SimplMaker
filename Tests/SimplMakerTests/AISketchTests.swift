@@ -115,6 +115,37 @@ import Testing
         #expect(half.profiles.count == 1 && abs(half.profiles[0].area - .pi * 50) < 0.1, "\(half.profiles.map(\.area))")
     }
 
+    @Test func aClosedSplineIsASmoothOutlineThatCanBeRounded() async throws {
+        let t = await open()
+        // An ellipse (40 × 25) through 24 points: close to its true area, and a profile of its own.
+        let points = (0..<24).map { i -> SketchPoint2 in
+            let a = 2 * Double.pi * Double(i) / 24
+            return pt(40 * cos(a), 25 * sin(a))
+        }
+        let info = try await draw([.spline(id: "sole", points: points, closed: true)], in: t)
+        #expect(info.profiles.count == 1 && abs(info.profiles[0].area - .pi * 40 * 25) < 0.01 * .pi * 40 * 25, "\(info.profiles.map(\.area))")
+        _ = try await t.service.createExtrude(documentID: t.id, sketchID: "s", profiles: [.at(pt(0, 0))], distance: "6")
+
+        // The reason for a spline: its outline rounds, where the same outline of many short lines could not.
+        let body = try await t.service.getBody(documentID: t.id, bodyID: try #require(t.model.document.features.last).id)
+        let top = try #require(body.faces.first { $0.facing == "+z" }).id
+        let edge = try #require(body.edges.first { $0.faces.contains(top) })
+        let before = volume(t.model)
+        let r = try await t.service.createEdgeFinish(documentID: t.id, fillet: true, edges: [edge.id], size: "0.5", id: "round")
+        #expect(r.feature?.status == "ok", "\(r.message)")
+        #expect(volume(t.model) < before, "the round took material off")
+    }
+
+    @Test func aSplineIsAskedForThroughTheToolArguments() async throws {
+        let args: JSONValue = ["sketch_id": "s", "add": [["type": "spline", "id": "leaf", "points": [[0, 0], [10, 6], [20, 0], [10, -6]], "closed": true]]]
+        let op = try AIOperationParser.parse(tool: "edit_sketch", arguments: args)
+        let edit = try #require(op as? EditSketchOperation)
+        guard case .spline(let id, let points, let closed)? = edit.add.first else { Issue.record("not a spline: \(edit.add)"); return }
+        #expect(id == "leaf" && points.count == 4 && closed)
+        let e = await refusal { _ = try AIOperationParser.parse(tool: "edit_sketch", arguments: ["sketch_id": "s", "add": [["type": "spline", "points": [[0, 0], [1, 1]], "radius": 3]]]) }
+        #expect(e?.code == .invalidArguments, "an unknown setting is refused")
+    }
+
     @Test func aRoundedRectangleKeepsItsSizesAndExtrudesRight() async throws {
         let t = await open()
         _ = try await draw([.rectangle(id: "r", center: nil, corner: nil, width: "40", height: "20", cornerRadius: "4")], in: t)
@@ -195,6 +226,9 @@ import Testing
         #expect(await problem(.polyline(id: nil, points: [pt(0, 0)], closed: false))?.code == .invalidArguments)
         #expect(await problem(.polyline(id: nil, points: [pt(0, 0), pt(1, 0)], closed: true))?.code == .invalidArguments)
         #expect(await problem(.polyline(id: nil, points: [pt(0, 0), pt(0, 0), pt(1, 1)], closed: false))?.code == .invalidValue)
+        #expect(await problem(.spline(id: nil, points: [pt(0, 0)], closed: false))?.code == .invalidArguments)
+        #expect(await problem(.spline(id: nil, points: [pt(0, 0), pt(1, 0)], closed: true))?.code == .invalidArguments)
+        #expect(await problem(.spline(id: nil, points: [pt(0, 0), pt(0, 0), pt(1, 1)], closed: false))?.code == .invalidValue)
         #expect(await problem(.line(id: nil, from: pt(1, 1), to: pt(1, 1)))?.code == .invalidValue)
         #expect(await problem(.arc(id: nil, from: pt(0, 0), through: pt(1, 1), to: pt(2, 2)))?.message.contains("straight line") == true)
         #expect(await problem(.circle(id: "bad id", center: pt(0, 0), diameter: "4", radius: nil))?.code == .invalidArguments)

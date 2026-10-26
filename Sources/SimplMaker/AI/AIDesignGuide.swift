@@ -354,8 +354,10 @@ enum AIDesignGuide {
         and describe the differences you can see honestly. Fix the largest first.
         6) Tell the user what you assumed and what the photo could not tell you (thickness, hidden sides, hole depths), and ask for \
         those numbers rather than guessing silently. An approximate model that says so is better than a confident wrong one.
-        For a flat outline, a sketch of lines, arcs and polylines extruded gets the shape; do not try to trace curves by many tiny lines: \
-        use arcs through three points.
+        For a flat outline, a sketch of lines, arcs, polylines and splines extruded gets the shape; do not try to trace curves by many \
+        tiny lines: use arcs through three points, or one closed spline through 8 to 40 points for an organic outline (a sole, a leaf). \
+        An outline of many short straight lines cannot be rounded or chamfered later (the corners between them are too shallow for the \
+        kernel to follow), a spline can.
         """)
 
     static let fixingErrors = DesignTopic(
