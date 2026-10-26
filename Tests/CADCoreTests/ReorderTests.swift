@@ -21,6 +21,56 @@ import Testing
         return d
     }
 
+    /// The first version of `reorderProblem`, kept as the oracle for the faster one.
+    private func oldReorderProblem(_ d: CADDocument, _ id: FeatureID, to index: Int) -> String? {
+        let features = d.features
+        guard let from = d.index(of: id) else { return "That feature is missing" }
+        var order = features
+        let f = order.remove(at: from)
+        let to = Swift.min(Swift.max(index, 0), order.count)
+        order.insert(f, at: to)
+        func name(_ id: FeatureID) -> String { features.first { $0.id == id }?.name ?? "a missing feature" }
+        for (i, g) in order.enumerated() {
+            let before = Set(order[..<i].map(\.id))
+            if let missing = g.references.first(where: { r in !before.contains(r) && order.contains { $0.id == r } }) {
+                return g.id == id ? "\(g.name) is built from \(name(missing)), so it has to come after it"
+                                  : "\(g.name) is built from \(f.name), so \(f.name) has to come before it"
+            }
+            let usesBodies = g.references
+            for (j, h) in features.enumerated() where j < features.firstIndex(where: { $0.id == g.id })! {
+                guard !h.changedBodies.isDisjoint(with: usesBodies), !before.contains(h.id) else { continue }
+                return h.id == id ? "\(g.name) uses the body as \(h.name) leaves it, so \(h.name) has to stay before it"
+                                  : "\(g.name) uses the body as \(h.name) leaves it, so it has to stay after \(h.name)"
+            }
+        }
+        return nil
+    }
+
+    @Test func theFasterCheckAgreesWithTheFirstVersionEverywhere() {
+        for d in [doc(), .manifoldDemo()] {
+            for f in d.features {
+                for index in -1...(d.features.count + 1) {
+                    // Whether it can move (the wording may name another of several culprits: a Set has no order).
+                    #expect((d.reorderProblem(f.id, to: index) == nil) == (oldReorderProblem(d, f.id, to: index) == nil), "\(f.name) to \(index)")
+                }
+            }
+        }
+    }
+
+    @Test func aLongTimelineIsCheckedQuicklyForEveryMenu() {
+        var d = CADDocument()
+        d.features = [Feature(id: "base", name: "Box", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "10", length: "10", height: "10")))]
+        for i in 0..<150 {
+            d.features.append(Feature(id: "f\(i)", name: "Fillet\(i)", .fillet(EdgeFeature(edges: [EdgeRef(body: "base", edge: "e\(i)")], size: "1 mm"))))
+        }
+        let start = Date()
+        for f in d.features {  // what the timeline's context menus ask on every redraw
+            _ = d.reorderProblem(f.id, to: d.index(of: f.id)! - 1)
+            _ = d.reorderProblem(f.id, to: d.index(of: f.id)! + 1)
+        }
+        #expect(Date().timeIntervalSince(start) < 0.5, "300 checks on 150 features")
+    }
+
     @Test func whatMayMove() {
         let d = doc()
         #expect(d.reorderProblem("s2", to: 0) == nil, "a sketch on an origin plane can go first")

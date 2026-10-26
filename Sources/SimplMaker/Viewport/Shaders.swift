@@ -33,6 +33,7 @@ enum Shaders {
         float4 shadowExtent;    // render view: xy = what the map covers in mm, z = a texel in mm, w = height a reflection fades out at
         float4 cameraRight;     // xyz = the camera's right
         float4 cameraUp;        // xyz = the camera's up
+        float4 sceneCenter;     // render view: xyz = the middle of the part, w = how far a shiny face's reflection reaches (the room's size)
     };
 
     struct FloorParams {
@@ -59,6 +60,7 @@ enum Shaders {
         float growSide;        // pixels; like grow, along an arrowhead's slanted sides (it fades to grow at the back)
         float dashPitch;       // pixels; a dashed line's dashes start this far apart
         float dashLength;      // pixels; (radius is half a dash's width, grow its outline)
+        uint material;         // render view: 0 plain, 1 metal, 2 glass, 3 wood
     };
 
     struct FaceOut {
@@ -214,6 +216,51 @@ enum Shaders {
         return u.viewDir.w > 0.5 ? -normalize(u.viewDir.xyz) : normalize(u.eye.xyz - world);
     }
 
+    // A plain studio for shiny things to reflect: a bright sky, a band of light along the horizon, a darker floor, and
+    // the main light as a soft box (as far as it reaches the point, `lit`).
+    static float3 studioEnv(float3 r, float3 L, float key, float lit, float sharp) {
+        float up = r.z;
+        float az = atan2(r.y, r.x);
+        // A dim room with bright things in it, which is what makes a metal read as one: sky overhead, a darker band at
+        // the horizon, the floor below (mostly light in the render view, darker straight down).
+        float3 sky = mix(float3(0.34, 0.37, 0.43), float3(1.05, 1.07, 1.1), smoothstep(0.15, 0.95, up));
+        float3 ground = mix(float3(0.62, 0.63, 0.65), float3(0.2, 0.21, 0.24), smoothstep(-0.1, -0.85, up));
+        float3 c = mix(ground, sky, smoothstep(-0.12, 0.12, up));
+        // Tall soft boxes round the room, so faces turned different ways pick up different light.
+        float strips = smoothstep(0.86, 0.96, cos(az * 2.5 + 0.7));
+        c += 1.5 * strips * smoothstep(-0.05, 0.2, up) * smoothstep(0.85, 0.5, up);
+        c += key * lit * 2.2 * pow(max(dot(r, L), 0.0), sharp);
+        return c;
+    }
+
+    static float hash31(float3 p) {
+        p = fract(p * 0.1031);
+        p += dot(p, p.zyx + 31.32);
+        return fract((p.x + p.y) * p.z);
+    }
+
+    static float valueNoise(float3 p) {
+        float3 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = mix(hash31(i), hash31(i + float3(1, 0, 0)), f.x);
+        float b = mix(hash31(i + float3(0, 1, 0)), hash31(i + float3(1, 1, 0)), f.x);
+        float c = mix(hash31(i + float3(0, 0, 1)), hash31(i + float3(1, 0, 1)), f.x);
+        float d = mix(hash31(i + float3(0, 1, 1)), hash31(i + float3(1, 1, 1)), f.x);
+        return mix(mix(a, b, f.y), mix(c, d, f.y), f.z);
+    }
+
+    // Wood grain, 0 (dark) to 1 (light): growth rings round an axis along x that lies off to one side of the part, so a
+    // cut through it shows arcs, bent by slow waves, with fine fibres along the grain. It is fixed in the world.
+    static float woodGrain(float3 w) {
+        float wave = valueNoise(float3(w.x * 0.012, w.y * 0.05, w.z * 0.05));
+        float r = length(w.yz - float2(-40.0, -70.0)) + wave * 7.0;
+        float ring = fract(r / 3.2);
+        float rings = ring * ring * (1.0 - 0.6 * smoothstep(0.85, 1.0, ring));
+        float fibre = valueNoise(float3(w.x * 0.04, w.y * 3.2, w.z * 3.2));
+        float blotch = valueNoise(w * 0.12);
+        return clamp(0.5 * rings + 0.32 * fibre + 0.18 * blotch, 0.0, 1.0);
+    }
+
     // The side of a face that faces the viewer (the same turning shadeFace does).
     static float3 facing(float3 normal, float3 world, constant Uniforms& u) {
         float3 n = normalize(normal);
@@ -227,7 +274,11 @@ enum Shaders {
         float3 n = normalize(normal);
         float3 v = toViewer(world, u);
         if (u.evenLight != 0) v = -normalize(u.viewDir.xyz);  // the same for every pixel: a flat face is one shade
-        if (dot(n, v) < 0.0) n = -n;
+        // Glass is drawn in two passes: the faces turned away from the viewer first, then those turned toward it.
+        bool turnedAway = dot(n, v) < 0.0;
+        if ((p.style & 2048u) != 0u && !turnedAway) discard_fragment();
+        if ((p.style & 4096u) != 0u && turnedAway) discard_fragment();
+        if (turnedAway) n = -n;
         float groove = 1.0;
         if (print) groove = printLook(n, world, max(u.printLayer, 0.01), max(u.printNozzle, 0.05), ring);
         // The key light sits up and to the right of the camera. The offset is in the camera's own axes: a world-space
@@ -263,8 +314,43 @@ enum Shaders {
             base = p.selectColor.rgb;
         FragOut o;
         o.color = (p.style & 4u) != 0 ? float4(base, 1.0) : float4(base * lighting * groove + spec, 1.0);
+        float opacity = 1.0;
+        if (p.material != 0u && (p.style & 4u) == 0 && !print && u.renderParams.x > 0.5 && u.evenLight == 0) {
+            // Materials (render view). The colour is the metal's colour, the glass's tint, the wood's base shade.
+            float3 L = normalize(u.lightDir.xyz);
+            float ndv = clamp(dot(n, v), 0.0, 1.0);
+            float fresnel = pow(1.0 - ndv, 5.0);
+            float3 r = reflect(-v, n);
+            if (p.material == 1u) {
+                // The studio is a room round the part, not at infinity, so a big flat face reflects a gradient (the lookup runs from the room's middle).
+                float3 env = studioEnv(normalize((world - u.sceneCenter.xyz) + normalize(mix(r, n, 0.2)) * u.sceneCenter.w), L, u.lightDir.w, lit, 28.0) * mix(0.6, 1.0, lit);
+                float3 F = base + (1.0 - base) * fresnel;
+                o.color.rgb = F * env * 0.9 + base * lighting * 0.1;
+            } else if (p.material == 3u) {
+                float3 wood = base * mix(0.6, 1.12, woodGrain(world));
+                o.color.rgb = wood * lighting + spec * 0.8;
+            } else {
+                // Glass: see-through and tinted, with the studio mirrored in it (a little head-on, a lot at grazing angles), a hard
+                // highlight from the main light, and the inside of the far wall seen through the near one (drawn first, `glassBack`).
+                float3 rr = normalize((world - u.sceneCenter.xyz) + r * u.sceneCenter.w);
+                float3 room = studioEnv(rr, L, 0.0, 1.0, 1.0) * 1.35;
+                float F = 0.11 + 0.89 * pow(1.0 - ndv, 3.5);
+                float highlight = clamp(u.lightDir.w * lit * 2.5 * pow(max(dot(rr, L), 0.0), 220.0), 0.0, 0.9);
+                float3 tint = base * (0.55 + 0.45 * lighting);
+                if ((p.style & 2048u) != 0u) {
+                    // The far wall: tinted light that has come through the glass, with a dimmer reflection of the room.
+                    float a = clamp(0.2 + 0.45 * F, 0.0, 0.9);
+                    o.color = float4((tint * 0.7 * 0.2 + room * F * 0.55 + highlight * 0.5) / max(a, 0.001), a);
+                } else {
+                    float absorbed = 0.14;
+                    float a = clamp(absorbed + F + highlight, 0.0, 0.97);
+                    o.color = float4((tint * absorbed + room * F + highlight) / a, a);
+                }
+                opacity = 0.35;
+            }
+        }
         // The reflection in the floor: opaque only where the body meets the floor, and fading out with the height.
-        if (u.renderParams.z > 0.5) o.color.a = u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), world.z));
+        if (u.renderParams.z > 0.5) o.color.a = opacity * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), world.z));
         o.id = id;
         return o;
     }
@@ -308,7 +394,7 @@ enum Shaders {
         if (u.clipOn != 0 && dot(in.world, u.clipPlane.xyz) - u.clipPlane.w > 1e-4) discard_fragment();
         float lit = shadowVisibility(in.world, facing(in.normal, in.world, u), u, shadowMap);
         float3 color = shadeFace(in.normal, in.world, in.id, false, 1e9, u, sel, p, lit).color.rgb;
-        float a = u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), in.world.z));
+        float a = (p.material == 2u ? 0.35 : 1.0) * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), in.world.z));
         return float4(color * a, a);
     }
 

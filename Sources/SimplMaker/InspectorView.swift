@@ -83,6 +83,22 @@ struct InspectorView: View {
                 }
             }
             .formStyle(.grouped)
+        } else if model.selectedBodies.count > 1 {
+            // Several bodies picked in the browser: what can be done to all of them at once.
+            let ids = model.selectedBodies
+            let names = model.bodies.filter { ids.contains($0.id) }.map(\.name)
+            Form {
+                Section("\(ids.count) Bodies") {
+                    Text(ListFormatter.localizedString(byJoining: names)).foregroundStyle(.secondary)
+                    Button("Move or Rotate") { model.move(bodies: ids) }
+                    Button("Scale") { model.scale(bodies: ids) }
+                    Button("Appearance…") { model.openAppearance(for: ids) }
+                    Button(ids.allSatisfy(model.isHidden) ? "Show Bodies" : "Hide Bodies") {
+                        model.setHidden(ids, !ids.allSatisfy(model.isHidden))
+                    }
+                }
+            }
+            .formStyle(.grouped)
         } else {
             ContentUnavailableView("No Feature Selected", systemImage: "cursorarrow.click",
                                    description: Text("Select a feature in the timeline to edit it, or pick a tool in the toolbar to create one."))

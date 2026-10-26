@@ -40,7 +40,8 @@ import simd
 
     private func render(_ model: DocumentModel, name: String, settings: RenderSettings?, grid: Bool = true,
                         yaw: Float = -.pi / 3, pitch: Float = 0.55, orthographic: Bool = true,
-                        distance: Float = 260) async throws -> (Picture, Renderer, ViewportMTKView) {
+                        distance: Float = 260, materials: [UInt32] = [], colors: [SIMD4<Float>?] = [],
+                        target: SIMD3<Float> = SIMD3(45, 20, 15)) async throws -> (Picture, Renderer, ViewportMTKView) {
         let view = ViewportMTKView(frame: NSRect(x: 0, y: 0, width: 800, height: 560), device: nil)
         let renderer = try #require(Renderer())
         view.device = renderer.device
@@ -55,9 +56,11 @@ import simd
         renderer.showGrid = grid
         renderer.showAxes = grid
         renderer.renderSettings = settings
+        renderer.bodyMaterials = materials
+        renderer.bodyColors = colors
         renderer.sceneBounds = model.sceneBounds
         renderer.camera.orthographic = orthographic
-        renderer.camera.target = SIMD3(45, 20, 15)
+        renderer.camera.target = target
         renderer.camera.distance = distance
         renderer.camera.yaw = yaw
         renderer.camera.pitch = pitch
@@ -398,6 +401,219 @@ import simd
         let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: rep)
         try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: dir + "/panel.png"))
+        withExtendedLifetime(window) {}
+    }
+
+    /// Only for looking at: the Appearance panel with its material row.
+    @Test func theAppearancePanelAsAPicture() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["RENDER_DUMP_DIR"] else { return }
+        let model = try await loaded()
+        model.selectBody("a")
+        model.setBodyMaterial(.wood, of: ["a"])
+        for scheme in [(ColorScheme.light, NSAppearance.Name.aqua), (.dark, .darkAqua)] {
+            let content = AppearancePanel(model: model)
+                .padding(30)
+                .background(Color(white: scheme.0 == .dark ? 0.16 : 0.9))
+                .environment(\.colorScheme, scheme.0)
+            let host = NSHostingView(rootView: content)
+            host.appearance = NSAppearance(named: scheme.1)
+            host.frame = NSRect(origin: .zero, size: host.fittingSize)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: scheme.1)
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: dir + "/appearance-\(scheme.0 == .dark ? "dark" : "light").png"))
+            withExtendedLifetime(window) {}
+        }
+    }
+
+    @Test func theRenderViewHidesTheBrowserAndInspectorAndBringsThemBack() async throws {
+        let model = try await loaded()
+        model.setRenderView(true)
+        #expect(!model.showSidebar && !model.showInspector)
+        model.showInspector = true  // the user brings one back
+        model.setRenderView(true)   // asking again changes nothing
+        #expect(model.showInspector)
+        model.setRenderView(false)
+        #expect(model.showSidebar && model.showInspector, "what the render view hid is back when it goes off")
+        model.showSidebar = false   // closed by the user before
+        model.setRenderView(true)
+        model.setRenderView(false)
+        #expect(!model.showSidebar, "a panel the user had closed stays closed")
+    }
+
+    @Test func aMaterialIsKeptWithAColourThatSuitsIt() async throws {
+        let model = try await loaded()
+        #expect(model.displayColor(of: "a") == nil)
+        model.setBodyMaterial(.wood, of: ["a"])
+        #expect(model.displayMaterial(of: "a") == .wood)
+        #expect(model.displayColor(of: "a") == BodyColor(hex: "#B5834F"))
+        #expect(model.displayMaterial(of: "c") == nil)
+        model.setBodyColor(BodyColor(hex: "#112233"), of: ["c"])
+        model.setBodyMaterial(.metal, of: ["c"])
+        #expect(model.displayColor(of: "c") == BodyColor(hex: "#112233"), "a colour of its own is kept")
+        let back = try JSONDecoder().decode(CADDocument.self, from: JSONEncoder().encode(model.document))
+        #expect(back.bodyMaterials == ["a": .wood, "c": .metal])
+        model.setBodyMaterial(nil, of: ["c"])
+        #expect(model.displayMaterial(of: "c") == nil)
+        #expect(!model.isRegenerating, "a material rebuilds nothing")
+    }
+
+    @Test func aMaterialIsOneUndoStep() async throws {
+        let model = try await loaded()
+        let undo = UndoManager()
+        model.undoManager = undo
+        model.setBodyMaterial(.glass, of: ["a", "c"])
+        #expect(model.displayMaterial(of: "a") == .glass && model.displayMaterial(of: "c") == .glass)
+        undo.undo()
+        #expect(model.displayMaterial(of: "a") == nil && model.displayMaterial(of: "c") == nil)
+        #expect(model.displayColor(of: "a") == nil, "the colour that came with it goes too")
+    }
+
+    /// Metal, glass, wood and a plain box side by side, each in a colour of its own: looked at as a picture, and checked
+    /// for the one thing each must be (metal not flat, glass see-through, wood grained).
+    @Test func theMaterialsAsPictures() async throws {
+        var d = CADDocument()
+        let names = ["plain", "metal", "glass", "wood", "round"]
+        d.features = names.enumerated().map { i, n in
+            i == 4 ? Feature(id: n, name: n, .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, u: "\(i * 70 + 25) mm", v: "25 mm", height: "40", diameter: "40")))
+                   : Feature(id: n, name: n, .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "\(i * 70) mm", width: "50 mm", length: "50 mm", height: "40 mm")))
+        }
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let tan = SIMD4<Float>(0.71, 0.51, 0.31, 1)
+        let colors: [SIMD4<Float>?] = [SIMD4(0.75, 0.78, 0.82, 1), SIMD4(0.79, 0.8, 0.82, 1), SIMD4(0.75, 0.87, 0.92, 1), tan, SIMD4(0.79, 0.8, 0.82, 1)]
+        var settings = RenderSettings.quiet
+        settings.reflection = 0
+        let plainOnly = try await render(model, name: "materials-off", settings: settings, yaw: -.pi / 5, pitch: 0.5, orthographic: false,
+                                         distance: 560, materials: [0, 0, 0, 0, 0], colors: colors, target: SIMD3(150, 25, 15))
+        let made = try await render(model, name: "materials", settings: settings, yaw: -.pi / 5, pitch: 0.5, orthographic: false,
+                                    distance: 560, materials: [0, 1, 2, 3, 1], colors: colors, target: SIMD3(150, 25, 15))
+        func spread(_ shot: (Picture, Renderer, ViewportMTKView), body: Int) -> Float {
+            let c = shot.0, r = shot.1, v = shot.2
+            let x0 = Float(body * 70)
+            var lo = Float.greatestFiniteMagnitude, hi: Float = 0
+            // Along the top face of the box.
+            for i in 0..<12 {
+                let p = SIMD3<Float>(x0 + 5 + Float(i) * 3.5, 25, 40)
+                let q = pixel(of: p, c, r, v)
+                let l = c.color(q.x, q.y)
+                let lum = 0.3 * l.x + 0.59 * l.y + 0.11 * l.z
+                lo = min(lo, lum); hi = max(hi, lum)
+            }
+            return hi - lo
+        }
+        #expect(spread(made, body: 3) > spread(plainOnly, body: 3) + 0.02, "wood has grain over its top")
+        // Glass lets the floor show: a point on the glass box's face is not the colour of the opaque one.
+        let g = SIMD3<Float>(2 * 70 + 25, 0, 20)
+        let a = pixel(of: g, plainOnly.0, plainOnly.1, plainOnly.2), b = pixel(of: g, made.0, made.1, made.2)
+        let opaque = plainOnly.0.color(a.x, a.y), glass = made.0.color(b.x, b.y)
+        #expect(simd_length(opaque - glass) > 0.05, "glass is not painted like a plain body")
+        let m = pixel(of: SIMD3(70 + 25, 0, 20), made.0, made.1, made.2)
+        let mp = pixel(of: SIMD3(70 + 25, 0, 20), plainOnly.0, plainOnly.1, plainOnly.2)
+        #expect(simd_length(made.0.color(m.x, m.y) - plainOnly.0.color(mp.x, mp.y)) > 0.05, "metal is not painted like a plain body")
+    }
+
+    /// Only for looking at: glass boxes and a glass cylinder in front of a dark box and a wooden one.
+    @Test func theGlassAsAPicture() async throws {
+        guard ProcessInfo.processInfo.environment["RENDER_DUMP_DIR"] != nil else { return }
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "back", name: "back", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "0 mm", width: "40 mm", length: "120 mm", height: "50 mm"))),
+            Feature(id: "wood", name: "wood", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "100 mm", width: "40 mm", length: "40 mm", height: "30 mm"))),
+            Feature(id: "slab", name: "slab", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "20 mm", v: "-40 mm", width: "90 mm", length: "20 mm", height: "60 mm"))),
+            Feature(id: "cyl", name: "cyl", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, u: "70 mm", v: "50 mm", height: "45", diameter: "50"))),
+        ]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let colors: [SIMD4<Float>?] = [SIMD4(0.15, 0.17, 0.2, 1), SIMD4(0.71, 0.51, 0.31, 1), SIMD4(0.75, 0.87, 0.92, 1), SIMD4(0.75, 0.87, 0.92, 1)]
+        var settings = RenderSettings.quiet
+        settings.showEdges = true
+        _ = try await render(model, name: "glass", settings: settings, yaw: -.pi / 5, pitch: 0.45, orthographic: false,
+                             distance: 330, materials: [0, 3, 2, 2], colors: colors, target: SIMD3(60, 30, 20))
+        settings.apply(.dramatic)
+        settings.floor = .charcoal
+        _ = try await render(model, name: "glass-dark", settings: settings, yaw: -.pi / 4, pitch: 0.35, orthographic: false,
+                             distance: 330, materials: [0, 3, 2, 2], colors: colors, target: SIMD3(60, 30, 20))
+    }
+
+    /// Only for timing (RENDER_TIMING=1): GPU time per frame of the render view, by material, on the threaded manifold example.
+    @Test func timeTheMaterials() async throws {
+        guard ProcessInfo.processInfo.environment["RENDER_TIMING"] != nil else { return }
+        let model = DocumentModel(document: .manifoldDemo())
+        try await settle(model)
+        let count = model.visibleMeshes.count
+        let triangles = model.visibleMeshes.reduce(into: 0) { $0 += $1.mesh.indices.count / 3 }
+        print("TIMING bodies \(count), triangles \(triangles)")
+        let bounds = try #require(model.sceneBounds)
+        let middle = (bounds.min + bounds.max) * 0.5
+        let size = simd_length(bounds.max - bounds.min)
+        for (label, blur) in [("default look", 0.25), ("no blur", 0.0)] {
+            var settings = RenderSettings()
+            settings.reflectionBlur = blur
+            for (name, kind) in [("plain", UInt32(0)), ("metal", 1), ("glass", 2), ("wood", 3)] {
+                let (_, renderer, view) = try await render(model, name: "timing", settings: settings, yaw: -.pi / 5, pitch: 0.5,
+                                                           orthographic: false, distance: size * 2, materials: Array(repeating: kind, count: count),
+                                                           colors: Array(repeating: SIMD4(0.7, 0.5, 0.3, 1), count: count), target: middle)
+                var times: [Double] = []
+                for _ in 0..<15 {
+                    view.draw(view.bounds)
+                    try await Task.sleep(for: .milliseconds(150))
+                    times.append(renderer.lastGPUSeconds * 1000)
+                }
+                times.sort()
+                print("TIMING \(label) \(name): median \(String(format: "%.1f", times[times.count / 2])) ms, worst \(String(format: "%.1f", times.last!)) ms")
+            }
+        }
+    }
+
+    /// Only for timing (RENDER_TIMING=1): selecting a body while the Appearance panel is open.
+    @Test func timeSelectingWithTheAppearancePanel() async throws {
+        guard ProcessInfo.processInfo.environment["RENDER_TIMING"] != nil else { return }
+        let model = DocumentModel(document: .manifoldDemo())
+        try await settle(model)
+        model.showAppearance = true
+        let host = NSHostingView(rootView: AppearancePanel(model: model).environment(\.colorScheme, .light))
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        let ids = model.bodies.map(\.id)
+        var times: [Double] = []
+        for i in 0..<20 {
+            let t = Date()
+            model.selectBody(ids[i % ids.count])
+            try await Task.sleep(for: .milliseconds(1))
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+            times.append(Date().timeIntervalSince(t) * 1000)
+        }
+        print("TIMING select with panel (\(ids.count) bodies): \(times.map { String(format: "%.0f", $0) }.joined(separator: " ")) ms")
+        withExtendedLifetime(window) {}
+    }
+
+    @Test func theTimelineMenusAreNotWorkedOutWhenTheBarIsDrawn() async throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "base", name: "Box", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "10", length: "10", height: "10")))]
+        for i in 0..<30 {
+            d.features.append(Feature(id: "f\(i)", name: "Fillet\(i)", .fillet(EdgeFeature(edges: [EdgeRef(body: "base", edge: "e\(i)")], size: "1 mm"))))
+        }
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let host = NSHostingView(rootView: TimelineBar(model: model).frame(width: 1200))
+        host.frame = NSRect(x: 0, y: 0, width: 1200, height: 60)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        for i in 0..<5 {
+            model.selection = []
+            model.selectedFeature = "f\(i)"
+            try await Task.sleep(for: .milliseconds(20))
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+        }
+        #expect(model.reorderChecksMade == 0, "drawing the bar worked out \(model.reorderChecksMade) menu checks")
         withExtendedLifetime(window) {}
     }
 

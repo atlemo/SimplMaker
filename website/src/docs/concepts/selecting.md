@@ -18,7 +18,9 @@ The status bar at the bottom of the viewport always reminds you.
 
 ## Selecting from the browser
 
-Click a body, sketch, plane or canvas in the browser to select it. [[⇧]]-click adds more. Tools that work on whole bodies, such as Move, Combine, Mirror and Pattern, accept bodies picked here.
+Click a body, sketch, plane or canvas in the browser to select it. [[⌘]]-click or [[⇧]]-click adds more bodies, or takes one out again. Tools that work on whole bodies, such as Move, Combine, Mirror and Pattern, accept bodies picked here.
+
+With several bodies selected, right-click one of them (or look in the inspector) to move or rotate, scale, recolour, hide, show, lock, put in a folder or export them together. Select the bodies first and then choose the tool, because a tool that is already waiting takes the first body you click.
 
 ## Tools that wait for you
 

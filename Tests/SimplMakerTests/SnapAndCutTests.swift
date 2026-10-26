@@ -130,6 +130,21 @@ import Testing
         try await settle(model)
     }
 
+    @Test func zoomedOutAnArrowNeverStepsMoreThanOneMillimetre() async throws {
+        let model = DocumentModel(document: bossDoc())
+        try await settle(model)
+        model.selectedFeature = "e"
+        let h = try #require(model.dragHandle)
+        model.beginHandleDrag()
+        // 1 mm looks 1 point long: round steps of 6 points would be 10 mm.
+        let above = h.base + 7.4 * h.direction
+        model.dragHandle(rayOrigin: above + SIMD3(0, -100, 0), direction: SIMD3(0, 1, 0), pointsPerMM: 1)
+        #expect(abs((model.handlePreviewValue ?? 0) - 7) < 1e-6, "\(String(describing: model.handlePreviewValue))")
+        try await settle(model)
+        model.endHandleDrag()
+        try await settle(model)
+    }
+
     @Test func aCutWithNoTargetCutsEveryBodyItCrosses() throws {
         var s = Sketch()
         let r = s.addRectangle(-30, -2, 30, 2, lineIDs: ["A", "B", "C", "D"])

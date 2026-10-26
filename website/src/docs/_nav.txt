@@ -53,6 +53,7 @@ modify/move-scale
 modify/mirror-pattern
 modify/measure
 modify/section-analysis
+modify/exploded-view
 modify/appearance
 modify/render
 
