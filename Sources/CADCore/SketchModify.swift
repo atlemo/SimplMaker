@@ -366,7 +366,7 @@ extension Sketch {
         let chainable = ids.filter { id in
             switch curve(id)?.geometry {
             case .line?, .arc?, .bezier?: return true
-            default: return false  // circles are offset on their own
+            default: return false  // circles and ellipses are offset on their own
             }
         }
         // Circles: concentric copies.
@@ -383,11 +383,44 @@ extension Sketch {
             dimension(.radialOffset(from: id, to: nid), expression)
             created.append(nid)
         }
+        for id in ids {
+            guard case .ellipse(let center, let u, let v)? = geometry(of: id) else { continue }
+            created += offsetEllipse(center: center, major: u, minor: v, distance: distance)
+        }
         var madeFrom: [EntityID: [EntityID]] = [:]
         for chain in chains(chainable) {
             created += offsetChain(chain, distance: distance, expression: expression, madeFrom: &madeFrom)
         }
         adoptImageOffsets(madeFrom, created: &created)
+        return created
+    }
+
+    /// An ellipse's offset is not an ellipse: it is made as a closed ring of Béziers fitted to it, one run per
+    /// quarter (an approximation, so it carries no dimension). Positive goes outward; nothing is made where the
+    /// inward offset folds over itself.
+    private mutating func offsetEllipse(center: SIMD2<Double>, major u: SIMD2<Double>, minor v: SIMD2<Double>,
+                                        distance: Double) -> [EntityID] {
+        let kappa = 0.5522847498
+        let left = vcross(u, v) > 0 ? -distance : distance  // the curve runs counter-clockwise when u × v > 0
+        var runs: [[[SIMD2<Double>]]] = []
+        for q in 0..<4 {
+            let t0 = Double(q) * .pi / 2, t1 = t0 + .pi / 2
+            let p0 = center + u * cos(t0) + v * sin(t0), p3 = center + u * cos(t1) + v * sin(t1)
+            let d0 = -u * sin(t0) + v * cos(t0), d1 = -u * sin(t1) + v * cos(t1)
+            guard let run = Bezier.offset([p0, p0 + d0 * kappa, p3 - d1 * kappa, p3], by: left) else { return [] }
+            runs.append(run)
+        }
+        let joints = runs.map { addPoint($0[0][0].x, $0[0][0].y) }
+        var created: [EntityID] = []
+        for (q, run) in runs.enumerated() {
+            var from = joints[q]
+            for (j, c) in run.enumerated() {
+                let to = j == run.count - 1 ? joints[(q + 1) % 4] : addPoint(c[3].x, c[3].y)
+                let c1 = addPoint(c[1].x, c[1].y), c2 = addPoint(c[2].x, c[2].y)
+                created.append(addBezier(start: from, control1: c1, control2: c2, end: to))
+                from = to
+            }
+        }
         return created
     }
 
@@ -542,6 +575,11 @@ extension Sketch {
         }
         for id in ids {
             if case .circle(let c, let r)? = geometry(of: id) { return (c + SIMD2(r, 0), SIMD2(1, 0)) }
+            if case .ellipse(let c, let u, let v)? = geometry(of: id) {
+                var n = SIMD2(-v.y, v.x) / max(vlen(v), 1e-300)  // across the curve where it crosses the major axis
+                if n.x * u.x + n.y * u.y < 0 { n = -n }
+                return (c + u, n)
+            }
         }
         return nil
     }

@@ -135,4 +135,24 @@ import Testing
         let ch = c.offsetHandle([id])!
         #expect(vlen(ch.origin - SIMD2(8, 4)) < 1e-9 && vlen(ch.direction - SIMD2(1, 0)) < 1e-9)
     }
+
+    @Test func anEllipseOffsetStaysTheDistanceAwayOnBothSides() {
+        for distance in [3.0, -3.0] {
+            var s = Sketch()
+            let c = SketchSnap(SIMD2(0, 0)), m = SketchSnap(SIMD2(20, 0)), n = SketchSnap(SIMD2(0, 10))
+            guard let ellipse = s.addEllipse(center: c, major: m, minor: n)?.curve,
+                  case .ellipse(let center, let u, let v)? = s.geometry(of: ellipse) else { Issue.record("no ellipse"); return }
+            var original: [SIMD2<Double>] = []
+            for k in 0..<2000 {
+                let t: Double = Double(k) / 2000 * 2 * Double.pi
+                original.append(center + u * cos(t) + v * sin(t))
+            }
+            let made = s.offset([ellipse], distance: distance, expression: "3 mm")
+            #expect(made.count >= 4)
+            for q in samples(s, made) {
+                #expect(abs(self.distance(q, to: original) - 3) < 0.1)
+            }
+            #expect(s.offsetHandle([ellipse]) != nil)
+        }
+    }
 }
