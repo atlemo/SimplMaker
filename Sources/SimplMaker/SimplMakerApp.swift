@@ -140,7 +140,7 @@ struct SimplMakerCommands: Commands {
         }
         CommandGroup(after: .saveItem) {
             Button("Rename…") { RenameDocument.shared.rename() }
-                .disabled(model == nil)
+                .disabled(model?.fileURL == nil)  // there is no file to rename until it is saved
         }
         CommandGroup(replacing: .pasteboard) {
             Button("Cut") { EditCommands.send("cut:") }

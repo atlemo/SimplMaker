@@ -16,7 +16,7 @@ final class RenameDocument: NSObject {
         center.addObserver(self, selector: #selector(hideStockItem), name: NSMenu.didBeginTrackingNotification, object: nil)
         center.addObserver(self, selector: #selector(hideStockItem), name: NSWindow.didBecomeKeyNotification, object: nil)
         center.addObserver(self, selector: #selector(hideStockItem), name: NSApplication.didBecomeActiveNotification, object: nil)
-        center.addObserver(self, selector: #selector(hideStockItem), name: NSMenu.didAddItemNotification, object: nil)
+        center.addObserver(self, selector: #selector(hideNow), name: NSMenu.didAddItemNotification, object: nil)
         for delay in [0.5, 2.0] {  // the menu is built just after launch
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.hideStockItem() }
         }
@@ -25,6 +25,13 @@ final class RenameDocument: NSObject {
     /// The File menu lists the stock Rename… first and ours (SimplMakerCommands) after it; the stock one's action
     /// isn't one we can match, so hide every Rename… but the last.
     @objc private func hideStockItem() {
+        hideNow()
+        for delay in [0.05, 0.3] {  // SwiftUI rebuilds the menu just after a window changes
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.hideNow() }
+        }
+    }
+
+    @objc private func hideNow() {
         guard let file = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == "File" })?.submenu else { return }
         let renames = file.items.filter { $0.title.hasPrefix("Rename") }
         for item in renames.dropLast() { item.isHidden = true }
