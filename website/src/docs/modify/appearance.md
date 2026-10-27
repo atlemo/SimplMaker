@@ -27,6 +27,8 @@ Under the colours, the **Material** row makes the selected bodies **Metal**, **G
 - **Glass** is see-through, tinted by the body's colour, with a bright edge at grazing angles. Glass casts no shadow, so a glass lid doesn't blot out the floor.
 - **Wood** draws grain rings and fibres in the body's colour. The grain is fixed in space, so a body that moves slides through it, as if cut from the same log.
 
+![A wooden block, a glass spring and a metal ring in the Render view, with the Material row in the Appearance panel.](shot:appearance-materials)
+
 Materials show in the [Render view](doc:modify/render) only. In the everyday view a body is drawn in its colour, as before. A body with no colour of its own gets one that suits the material (a wood brown, a light blue for glass, aluminium for metal) when you pick it. A colour you chose is kept.
 
 ## Good to know

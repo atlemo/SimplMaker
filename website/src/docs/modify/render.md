@@ -9,7 +9,7 @@ The **Render view** gives a part a presentation look. The grid gives way to a so
 
 ## Turn it on
 
-Press the **Render** button (a sun) at the right end of the toolbar, left of the Inspector button. You can also choose **View → Render**, or right-click in the viewport and choose **Render View**.
+Press the **Render** button (a camera) at the right end of the toolbar, left of the Inspector button. You can also choose **View → Render**, or right-click in the viewport and choose **Render View**.
 
 Press the button again to turn the view off. The options panel opens in the top left corner of the view while the view is on. The browser and the Inspector close when the view comes on, to give the part the whole window. The buttons in the toolbar bring them back, and they come back by themselves when the view goes off.
 

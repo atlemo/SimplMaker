@@ -184,7 +184,7 @@ struct DocumentWindow: View {
             }
             .sharedBackgroundHidden(sketchTint)
             ToolbarItemGroup(placement: .primaryAction) {
-                PanelToggle(title: "Render", systemImage: model.renderView ? "sun.max.fill" : "sun.max", ink: panelToggleInk,
+                PanelToggle(title: "Render", systemImage: model.renderView ? "camera.fill" : "camera", ink: panelToggleInk,
                             help: "Show the part on a floor with a light you set, for presentation") { model.setRenderView(!model.renderView) }
                     .disabled(model.sketchSession != nil)
                 PanelToggle(title: "Inspector", systemImage: "sidebar.right", ink: panelToggleInk,

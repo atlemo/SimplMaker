@@ -893,7 +893,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             items += [.separator, .action(model.explodeOn ? "Leave Exploded View" : "Exploded View",
                                           symbol: "rectangle.expand.vertical") { model.setExplodedView(!model.explodeOn) }]
             items += [.separator, .action(model.renderView ? "Leave Render View" : "Render View",
-                                          symbol: "sun.max") { model.setRenderView(!model.renderView) }]
+                                          symbol: "camera") { model.setRenderView(!model.renderView) }]
             if model.renderView, !model.showRenderOptions {
                 items += [.action("Show Render Options", symbol: "slider.horizontal.3") { model.showRenderOptions = true }]
             }
