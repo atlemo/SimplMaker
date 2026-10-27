@@ -15,6 +15,8 @@ extension NSPasteboard.PasteboardType {
 struct CopiedBody: Codable {
     var name: String
     var color: BodyColor?
+    /// Metal, glass or wood (absent when it was plain, and in anything copied before materials existed).
+    var material: BodyMaterial?
     /// The body as a STEP file.
     var step: Data
 }
@@ -43,7 +45,7 @@ extension DocumentModel {
         guard !wanted.isEmpty else { return false }
         do {
             let copied = try wanted.map { b in
-                CopiedBody(name: b.name, color: document.bodyColors[b.id], step: try Self.stepData(of: b.body))
+                CopiedBody(name: b.name, color: document.bodyColors[b.id], material: document.bodyMaterials[b.id], step: try Self.stepData(of: b.body))
             }
             pasteboard.clearContents()
             pasteboard.setData(try JSONEncoder().encode(copied), forType: .simplMakerBodies)
@@ -78,6 +80,7 @@ extension DocumentModel {
                                            .importBody(ImportFeature(fileName: "\(body.name).step", data: body.step))))
                 doc.bodyNames[id] = name
                 if let color = body.color { doc.bodyColors[id] = color }
+                if let material = body.material { doc.bodyMaterials[id] = material }
             }
         }
         guard let last = pasted.last?.id, document.index(of: last) != nil else { return false }  // editing was locked

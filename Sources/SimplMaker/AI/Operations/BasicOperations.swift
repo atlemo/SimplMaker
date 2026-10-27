@@ -205,11 +205,11 @@ struct DeleteFeatureOperation: AIOperation {
             if let r = doc.rollback, i < r { doc.rollback = r - 1 }  // the marker stays after the same features
         }
         if doc.rollback == doc.features.count { doc.rollback = nil }
-        // Sketches that were hidden because what was deleted used them show again; the removed things lose their names and colours.
+        // Sketches that were hidden because what was deleted used them show again; the removed things lose their names, colours and materials.
         let stillUsed = Set(doc.features.flatMap(\.sketchesUsed))
         for f in removed {
             for sketch in f.sketchesUsed where !stillUsed.contains(sketch) { doc.hidden.remove(sketch) }
-            doc.hidden.remove(f.id); doc.bodyNames[f.id] = nil; doc.bodyColors[f.id] = nil
+            doc.hidden.remove(f.id); doc.bodyNames[f.id] = nil; doc.bodyColors[f.id] = nil; doc.bodyMaterials[f.id] = nil
         }
         return OperationOutcome(message: "Deleted " + removed.map(\.name).joined(separator: ", ") + ".")
     }

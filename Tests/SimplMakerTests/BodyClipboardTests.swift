@@ -15,12 +15,13 @@ import Testing
 
     private func board() -> NSPasteboard { NSPasteboard(name: NSPasteboard.Name("simplmaker.test.\(UUID().uuidString)")) }
 
-    @Test func aCopiedBodyPastesAsAnotherBodyWithItsNameAndColour() async throws {
+    @Test func aCopiedBodyPastesAsAnotherBodyWithItsNameColourAndMaterial() async throws {
         let model = DocumentModel(document: .demo())
         try await settle(model)
         let plate = try #require(model.bodies.first)
         let volume = try #require(model.result?.body(plate.id)?.volume)
         model.setBodyColor(BodyColor(red: UInt8(200), green: UInt8(30), blue: UInt8(30)), of: [plate.id])
+        model.setBodyMaterial(.metal, of: [plate.id])
         let pasteboard = board()
 
         #expect(!model.copyBodies(to: pasteboard), "nothing is selected")
@@ -36,6 +37,7 @@ import Testing
         #expect(pasted.name == "\(plate.name) copy")
         #expect(abs((model.result?.body(pasted.id)?.volume ?? 0) - volume) < 1e-3)
         #expect(model.document.bodyColors[pasted.id] == BodyColor(red: UInt8(200), green: UInt8(30), blue: UInt8(30)))
+        #expect(model.document.bodyMaterials[pasted.id] == .metal, "the material goes with the colour")
         // The Move tool is open on the pasted body, ready to slide it off the original.
         let moveID = try #require(model.selectedFeature)
         guard case .move(let move)? = model.document.features.first(where: { $0.id == moveID })?.kind else {

@@ -122,7 +122,11 @@ import simd
     @Test func withoutRenderSettingsTheViewIsAsItWas() async throws {
         let model = try await loaded()
         let (plain, _, _) = try await render(model, name: "plain", settings: nil)
-        let (rendered, _, _) = try await render(model, name: "plain-rendered", settings: RenderSettings())
+        // The usual background is light in a light appearance and dark in a dark one: take the floor from the other end, so
+        // that the two pictures differ whichever this Mac is in.
+        var settings = RenderSettings()
+        settings.floor = plain.color(2, 2).x > 0.5 ? .charcoal : .white
+        let (rendered, _, _) = try await render(model, name: "plain-rendered", settings: settings)
         #expect(abs(plain.color(2, 2).x - rendered.color(2, 2).x) > 0.3, "the usual background, not the floor")
     }
 
