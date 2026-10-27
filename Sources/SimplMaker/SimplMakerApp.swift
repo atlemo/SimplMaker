@@ -57,6 +57,7 @@ struct SimplMakerApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Updater.shared.start()
+        RenameDocument.shared.start()
         Telemetry.start()
         LicenseManager.shared.start()
         if AIFeature.isAvailable { AIConnection.shared.startIfEnabled() }  // only when the user has turned it on in Settings ▸ AI
