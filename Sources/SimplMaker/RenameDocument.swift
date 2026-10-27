@@ -15,25 +15,26 @@ final class RenameDocument: NSObject {
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(hideStockItem), name: NSMenu.didBeginTrackingNotification, object: nil)
         center.addObserver(self, selector: #selector(hideStockItem), name: NSWindow.didBecomeKeyNotification, object: nil)
-    }
-
-    @objc private func hideStockItem() {
-        if let menu = NSApp.mainMenu { hideRename(in: menu) }
-    }
-
-    private func hideRename(in menu: NSMenu) {
-        for item in menu.items {
-            if item.action == NSSelectorFromString("renameDocument:") || item.action == NSSelectorFromString("rename:") {
-                item.isHidden = true
-            }
-            if let submenu = item.submenu { hideRename(in: submenu) }
+        center.addObserver(self, selector: #selector(hideStockItem), name: NSApplication.didBecomeActiveNotification, object: nil)
+        center.addObserver(self, selector: #selector(hideStockItem), name: NSMenu.didAddItemNotification, object: nil)
+        for delay in [0.5, 2.0] {  // the menu is built just after launch
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.hideStockItem() }
         }
     }
 
-    private var document: NSDocument? { NSApp.keyWindow?.windowController?.document as? NSDocument }
+    /// The File menu lists the stock Rename… first and ours (SimplMakerCommands) after it; the stock one's action
+    /// isn't one we can match, so hide every Rename… but the last.
+    @objc private func hideStockItem() {
+        guard let file = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == "File" })?.submenu else { return }
+        let renames = file.items.filter { $0.title.hasPrefix("Rename") }
+        for item in renames.dropLast() { item.isHidden = true }
+    }
+
+    private var document: NSDocument? { NSDocumentController.shared.currentDocument }
 
     func rename() {
-        guard let document, let window = NSApp.keyWindow, let url = document.fileURL else { return NSSound.beep() }
+        guard let document, let url = document.fileURL,
+              let window = document.windowControllers.first?.window ?? NSApp.keyWindow else { return NSSound.beep() }
         let alert = NSAlert()
         alert.messageText = "Rename"
         alert.informativeText = "Enter a new name for this document."
