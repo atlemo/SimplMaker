@@ -44,6 +44,14 @@ The last two show an arrow and a size field for each value. [[Tab]] moves betwee
 
 A fillet or chamfer that is too big for its neighbouring faces shows an error. Make it smaller. SimplMaker refuses a round it cannot build correctly, such as a chamfer as big as the radius of a rounded corner, or a fillet wider than its face, instead of showing a wrong shape. A fillet can also fail if a later edit moves the edge it was attached to. See [Troubleshooting](doc:reference/troubleshooting).
 
+If the kernel struggles with a round, SimplMaker tries again in a few other ways before it gives up, and if the kernel itself falters you get an ordinary error and your part stays as it was.
+
+### An outline made of many short lines
+
+A curve drawn as dozens of short straight lines (a traced picture, an imported polyline, a sole drawn point by point) cannot be rounded or chamfered at any size. The kernel takes walls that turn by less than about 6° for one smooth surface, so the whole outline becomes a single chain of almost-smooth edges, and it cannot follow that. The error says so: *the edge is part of an outline of 151 short straight pieces*.
+
+Draw the outline as a **spline** (the [Spline tool](doc:sketch/draw), [[B]]) or as arcs instead. The same outline drawn as a spline rounds without trouble.
+
 ## Tips
 
 - To keep a part strong when printing, fillet the inside corners where it carries load.

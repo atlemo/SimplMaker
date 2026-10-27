@@ -50,7 +50,7 @@ Standard **Undo** ([[⌘Z]]), **Redo** ([[⇧⌘Z]]), **Cut**, **Copy**, **Paste
 | **Show Constraints** | Show or hide sketch constraint symbols |
 | **Snap to Grid** | Toggle grid snapping in sketches |
 | **Hide/Show Browser**, **Timeline**, **Inspector** | Toggle the panels |
-| **Show/Hide Appearance** | Opens the colour panel |
+| **Show/Hide Appearance** | Opens the colour and material panel |
 | **Show Tab Bar**, **Show All Tabs**, **Enter Full Screen** | Standard window commands |
 
 ## Sketch

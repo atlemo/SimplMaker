@@ -43,7 +43,7 @@ The first time the assistant changes your part, Claude asks you for permission. 
 ## What the assistant can do
 
 - **Look.** Read the open parts, their features, bodies, sizes and parameters, what you have selected, and take a picture of the viewport. A picture can show only some bodies, cut the part open, or draw sketches.
-- **Build.** Make sketches and shapes: box, extrude, revolve, sweep, loft, pipe, rib, and the others in the toolbar.
+- **Build.** Make sketches and shapes: box, extrude, revolve, sweep, loft, pipe, rib, and the others in the toolbar. In a sketch it draws rectangles, circles, polygons, lines, arcs, text and smooth **splines**, so an organic outline such as a sole or a leaf is one smooth curve that can be rounded later.
 - **Finish.** Fillets, chamfers, holes, threads, shells, draft, project, move, scale, lay on floor, combine, split, mirror and pattern.
 - **Change.** Edit a feature, a sketch or a parameter, delete a feature, name, colour or hide a body, and undo or redo.
 - **Measure and check.** Measure distances and sizes. A **design check** looks over a part meant for printing and reports what is likely to go wrong: overhangs, thin walls and narrow gaps, tight or loose fits between separate bodies, a part that is bigger than the print bed or that floats above or sinks below the bed, and sizes that are not parameters. It only reports. It never changes anything.

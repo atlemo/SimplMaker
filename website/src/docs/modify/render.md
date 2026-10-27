@@ -3,7 +3,7 @@ title: Render view
 description: Show a part on a solid floor with a light you set, soft shadows and a reflection, ready for a picture or a presentation.
 ---
 
-The **Render view** gives a part a presentation look. The grid gives way to a solid floor, the body edges go, and the part is lit by a light you can move, with soft shadows and a faint reflection in the floor. It only changes what you see. Nothing goes on the timeline and nothing is saved in the file.
+The **Render view** gives a part a presentation look. The grid gives way to a solid floor, the body edges go, and the part is lit by a light you can move, with soft shadows and a faint reflection in the floor. It only changes what you see. Nothing goes on the timeline and the view's own settings are not saved in the file. The one thing it shows that the file does remember is a body's [material](doc:modify/appearance): metal, glass or wood.
 
 ![A part in the Render view, with the options panel top left.](shot:render-view)
 

@@ -1,0 +1,11 @@
+<h2>SimplMaker 1.1.6</h2>
+<p>Your parts get materials: metal, glass and wood for the Render view. Fillets and chamfers also got tougher: more of them build, and when one cannot, you get a reason instead of a shrug (or a crash).</p>
+<ul>
+  <li>Materials: the Appearance panel has a Material row. Make a body Metal, Glass or Wood and it shows in the Render view. Metal reflects a small studio, tinted by the body's colour. Glass is see-through with a bright edge, and casts no shadow. Wood has grain rings and fibres that stay fixed in space, so a body that moves slides through the same log. A material is saved in the part, needs no rebuild, can be undone, and goes along when you copy and paste a body. Bodies without a colour get one that suits the material.</li>
+  <li>Render view: the browser and the Inspector close when it comes on, so the part gets the whole window. The toolbar buttons bring them back, and they return on their own when the view goes off.</li>
+  <li>Fillet: some rounds that failed for no good reason now build. One is a crease that fades out into two faces meeting at a shallow angle, such as the corner where a swept round meets a rounded plan corner. Another is a round after a thin cut through the part, where the kernel was tripped up by the order of the faces. It now tries again before it gives up.</li>
+  <li>Fillet and chamfer no longer take the app down with them. If the kernel itself falters inside a round, you get an ordinary error message, your part stays as it was, and nothing is lost.</li>
+  <li>Fillet and chamfer along an outline of many short straight lines (a traced curve, an imported polyline) now say so, instead of "size too large". The kernel cannot round such an outline at any size, however small. Draw it as a spline or as arcs and it rounds. The docs explain it in Fillet and chamfer.</li>
+  <li>Assistant: sketches can have a spline, a smooth curve through a list of points, open or closed. The design guide tells the assistant to use one for organic outlines such as a sole or a leaf, instead of tracing them with tiny lines.</li>
+  <li>Timeline: the right-click menus no longer bog down a long timeline. Selecting something used to work out every Move Earlier and Move Later check again. They are now worked out once and kept until the part changes.</li>
+</ul>

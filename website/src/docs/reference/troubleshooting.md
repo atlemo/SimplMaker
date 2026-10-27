@@ -12,6 +12,7 @@ The geometry could not be made. Select the feature. The inspector shows the reas
 | Message or cause | Try |
 |---|---|
 | **Too large for the neighbouring faces**, or **size too large for the adjacent faces** (fillet, chamfer) | Make the radius or distance smaller. A chamfer as big as the radius of a rounded corner it crosses is refused, and so is a fillet wider than its face. |
+| **The edge is part of an outline of … short straight pieces** (fillet, chamfer) | The outline is a curve cut into many short lines, which the kernel cannot round at any size. Redraw it as a spline or as arcs. See [Fillet and chamfer](doc:modify/fillet-chamfer). |
 | **A wall can't follow a corner tighter than it is thick** (shell) | Use a thinner wall, or move the shell earlier in the timeline, before the fillets |
 | **The hole diameter and depth must be positive** | Check the values, and any parameters they use |
 | **Lost a face or edge** | An earlier change removed what the feature was attached to. Pick it again, with **Reselect…** where the feature has it, or delete and remake it |
