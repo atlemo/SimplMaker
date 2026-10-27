@@ -1436,6 +1436,8 @@ struct InlineNameField: View {
     let cancel: () -> Void
     @State private var draft = ""
     @State private var done = false
+    /// The field has had the keyboard; losing it before that (the row settling after a context menu closes) isn't a click away.
+    @State private var hadFocus = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -1449,7 +1451,7 @@ struct InlineNameField: View {
             }
             .onSubmit { finish(keep: true) }
             .onExitCommand { finish(keep: false) }
-            .onChange(of: focused) { if !focused { finish(keep: true) } }
+            .onChange(of: focused) { if focused { hadFocus = true } else if hadFocus { finish(keep: true) } }
     }
 
     private func finish(keep: Bool) {

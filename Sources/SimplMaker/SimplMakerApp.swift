@@ -138,6 +138,10 @@ struct SimplMakerCommands: Commands {
             }
             Divider()
         }
+        CommandGroup(after: .saveItem) {
+            Button("Rename…") { RenameDocument.shared.rename() }
+                .disabled(model == nil)
+        }
         CommandGroup(replacing: .pasteboard) {
             Button("Cut") { EditCommands.send("cut:") }
                 .keyboardShortcut("x")
