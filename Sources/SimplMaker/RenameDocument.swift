@@ -8,17 +8,25 @@ import AppKit
 final class RenameDocument: NSObject, NSMenuItemValidation {
     static let shared = RenameDocument()
 
-    /// Points the File menu's Rename item at the sheet. SwiftUI rebuilds menu items, so this runs each time a menu opens.
+    /// Points the File menu's Rename item at the sheet. SwiftUI rebuilds menu items, so this runs whenever a menu opens
+    /// or a window comes forward. The tracking notification names the menu bar, not the File submenu, so it searches them all.
     func start() {
-        NotificationCenter.default.addObserver(self, selector: #selector(menuOpened(_:)),
-                                               name: NSMenu.didBeginTrackingNotification, object: nil)
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(patch), name: NSMenu.didBeginTrackingNotification, object: nil)
+        center.addObserver(self, selector: #selector(patch), name: NSWindow.didBecomeKeyNotification, object: nil)
     }
 
-    @objc private func menuOpened(_ note: Notification) {
-        guard let menu = note.object as? NSMenu else { return }
-        for item in menu.items where item.action == NSSelectorFromString("renameDocument:") || item.action == NSSelectorFromString("rename:") {
-            item.target = self
-            item.action = #selector(rename(_:))
+    @objc private func patch() {
+        if let menu = NSApp.mainMenu { patchItems(in: menu) }
+    }
+
+    private func patchItems(in menu: NSMenu) {
+        for item in menu.items {
+            if item.action == NSSelectorFromString("renameDocument:") || item.action == NSSelectorFromString("rename:") {
+                item.target = self
+                item.action = #selector(rename(_:))
+            }
+            if let submenu = item.submenu { patchItems(in: submenu) }
         }
     }
 
