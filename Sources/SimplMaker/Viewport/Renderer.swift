@@ -1195,6 +1195,15 @@ final class Renderer {
                         edgeHover: c, edgeSelected: c)
     }
 
+    /// A line colour that stays readable over `base`: near-white over dark colours, near-black over light ones,
+    /// pulled slightly toward `base` so it still reads as secondary to the visible edges.
+    static func hiddenEdgeColor(over base: SIMD4<Float>) -> SIMD4<Float> {
+        let luminance = 0.3 * base.x + 0.59 * base.y + 0.11 * base.z
+        let target: Float = luminance < 0.5 ? 1 : 0
+        let line = SIMD4<Float>(target, target, target, 1)
+        return simd_mix(line, SIMD4(base.x, base.y, base.z, 1), SIMD4(repeating: 0.15))
+    }
+
     func draw(in view: MTKView) {
         let size = view.drawableSize
         guard size.width >= 1, size.height >= 1,
@@ -1523,8 +1532,10 @@ final class Renderer {
         // Edges behind faces, dashed and softened toward what they're seen through.
         if style.showsHiddenEdges {
             enc.setDepthStencilState(cuttingShaded ? hiddenCutState : hiddenDepthState)
-            let hidden = simd_mix(edgeColor, style.isShaded ? p.face : p.background, SIMD4(repeating: 0.4))
-            for b in bodies {
+            // The colour is picked against what the line is seen through: the body's own colour when shaded,
+            // so a dark blue body gets light lines and a pale one dark lines, whatever the theme's edge colour is.
+            for (i, b) in bodies.enumerated() {
+                let hidden = Self.hiddenEdgeColor(over: style.isShaded ? tints[i].face : p.background)
                 segments(b.segments, b.segmentCount,
                          DrawParams(color: hidden, hoverColor: hidden, selectColor: hidden, thickness: 1.2 * scale,
                                     depthBias: 0.0004, pickable: 0, style: DrawStyle.dashed | clipStyle))
