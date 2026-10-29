@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key><string>SimplMakerThumbnail</string>
+	<key>CFBundleDisplayName</key><string>SimplMaker Thumbnail</string>
+	<key>CFBundleIdentifier</key><string>com.simplmaker.SimplMaker.Thumbnail</string>
+	<key>CFBundleExecutable</key><string>SimplMakerThumbnail</string>
+	<key>CFBundlePackageType</key><string>XPC!</string>
+	<key>CFBundleShortVersionString</key><string>0.1.0</string>
+	<key>CFBundleVersion</key><string>1</string>
+	<key>LSMinimumSystemVersion</key><string>15.0</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key><string>com.apple.quicklook.thumbnail</string>
+		<key>NSExtensionPrincipalClass</key><string>ThumbnailProvider</string>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>QLSupportedContentTypes</key><array><string>com.simplmaker.document</string></array>
+			<key>QLThumbnailMinimumDimension</key><integer>0</integer>
+		</dict>
+	</dict>
+</dict>
+</plist>

@@ -17,6 +17,10 @@ let package = Package(
         .executable(name: "SimplMaker", targets: ["SimplMaker"]),
         // The stdio relay for MCP clients that start servers as programs (Claude Desktop); bundle-app.sh puts it in the app.
         .executable(name: "simplmaker-mcp", targets: ["SimplMakerMCP"]),
+        // The Quick Look extensions for .simplmaker files (Finder's thumbnails and space-bar preview); bundle-app.sh makes them
+        // into .appex bundles in the app's PlugIns.
+        .executable(name: "SimplMakerThumbnail", targets: ["SimplMakerThumbnail"]),
+        .executable(name: "SimplMakerPreview", targets: ["SimplMakerPreview"]),
         // Used by the Xcode app project (SimplMaker.xcodeproj).
         .library(name: "CADCore", targets: ["CADCore"]),
         .library(name: "CADKernel", targets: ["CADKernel"]),
@@ -56,6 +60,11 @@ let package = Package(
         ),
         // Plain Foundation: forwards MCP messages from standard input to the running app. No CAD, no UI.
         .executableTarget(name: "SimplMakerMCP", path: "Sources/SimplMakerMCP"),
+        // App extensions: they start at NSExtensionMain, not main, and read only the picture stored in the file.
+        .executableTarget(name: "SimplMakerThumbnail", path: "Sources/SimplMakerThumbnail",
+                          linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]),
+        .executableTarget(name: "SimplMakerPreview", path: "Sources/SimplMakerPreview",
+                          linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]),
         .testTarget(name: "CADCoreTests", dependencies: ["CADCore"], path: "Tests/CADCoreTests"),
         .testTarget(name: "CADKernelTests", dependencies: ["CADCore", "CADKernel"], path: "Tests/CADKernelTests"),
         .testTarget(name: "SimplMakerMCPTests", dependencies: ["SimplMakerMCP"], path: "Tests/SimplMakerMCPTests"),

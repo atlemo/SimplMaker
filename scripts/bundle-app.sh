@@ -63,6 +63,8 @@ SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
 LINK_SDK=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xlinker "$SDK_VERSION")
 swift build -c "$CONFIG" --product SimplMaker "${LINK_SDK[@]}"
 [ "$AI_ENABLED" != 1 ] || swift build -c "$CONFIG" --product simplmaker-mcp "${LINK_SDK[@]}"
+swift build -c "$CONFIG" --product SimplMakerThumbnail "${LINK_SDK[@]}"
+swift build -c "$CONFIG" --product SimplMakerPreview "${LINK_SDK[@]}"
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 BIN="$BIN_DIR/SimplMaker"
 APP="$ROOT/dist/SimplMaker.app"
@@ -152,6 +154,16 @@ if xcrun --find actool >/dev/null 2>&1; then
 else
   cp "$ROOT/Packaging/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 fi
+# The Quick Look extensions: Finder's thumbnail and space-bar preview of a .simplmaker file (the picture stored in it).
+QL_ENTITLEMENTS="$ROOT/Packaging/QuickLook/QuickLook.entitlements"
+for EXT in Thumbnail Preview; do
+  APPEX="$APP/Contents/PlugIns/SimplMaker$EXT.appex"
+  mkdir -p "$APPEX/Contents/MacOS"
+  cp "$BIN_DIR/SimplMaker$EXT" "$APPEX/Contents/MacOS/SimplMaker$EXT"
+  cp "$ROOT/Packaging/QuickLook/$EXT-Info.plist" "$APPEX/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(tr -d '[:space:]' < "$ROOT/VERSION")" "$APPEX/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD_NUMBER:-$(git rev-list --count HEAD)}" "$APPEX/Contents/Info.plist"
+done
 # The .simplmaker document icon: a flat page-shaped .icns (Icon Composer would force the app-icon squircle).
 cp "$ROOT/Packaging/DocIcon.icns" "$APP/Contents/Resources/DocIcon.icns"
 if [ "$RELEASE" = 1 ]; then
@@ -162,12 +174,22 @@ if [ "$RELEASE" = 1 ]; then
   SPK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
   SIGN_ITEMS=("$SPK/Autoupdate" "$SPK/Updater.app" "$APP/Contents/Frameworks/Sparkle.framework" "$APP/Contents/Frameworks/libSimplOCCT.dylib")
   [ ! -f "$APP/Contents/Helpers/simplmaker-mcp" ] || SIGN_ITEMS+=("$APP/Contents/Helpers/simplmaker-mcp")
-  for item in "${SIGN_ITEMS[@]}" "$APP"; do
+  for item in "${SIGN_ITEMS[@]}"; do
     codesign --force --options runtime --timestamp --sign "$IDENTITY" "$item"
   done
+  # The extensions are sandboxed (Quick Look requires it); signed before the app that contains them.
+  for appex in "$APP"/Contents/PlugIns/*.appex; do
+    codesign --force --options runtime --timestamp --entitlements "$QL_ENTITLEMENTS" --sign "$IDENTITY" "$appex"
+  done
+  codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
   codesign --verify --deep --strict "$APP"
 else
   codesign --force --deep --sign - "$APP"
+  # --deep signs the extensions without their entitlements; sign them again, then the app (not deep) to seal them in.
+  for appex in "$APP"/Contents/PlugIns/*.appex; do
+    codesign --force --entitlements "$QL_ENTITLEMENTS" --sign - "$appex"
+  done
+  codesign --force --sign - "$APP"
 fi
 echo "Built $APP"
 [ "$OPEN" = 1 ] && open "$APP"

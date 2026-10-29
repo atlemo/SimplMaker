@@ -25,6 +25,10 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     /// The window opens with the tutorial's card showing (File ▸ New from the welcome window's tutorial, or Help ▸ Tutorial).
     private let startsTutorial: Bool
     @MainActor private var guideStorage: TutorialGuide?
+    /// A picture of the part (PNG), stored in the file for Finder's Quick Look: the one read from the file until the part changes,
+    /// then the latest drawn. Readable from any thread, like `latest`.
+    private let thumbnail = OSAllocatedUnfairLock<Data?>(initialState: nil)
+    @MainActor private var thumbnailTask: Task<Void, Never>?
 
     init(document: CADDocument = CADDocument(), tutorial: Bool = false) {
         initial = document
@@ -37,13 +41,17 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
         initial = try CADDocument.decode(data)
         startsTutorial = false
         latest = OSAllocatedUnfairLock(initialState: initial)
+        thumbnail.withLock { $0 = CADDocument.thumbnail(in: data) }
     }
 
     /// The live model for this document's window, created on first use.
     @MainActor var model: DocumentModel {
         if let m = modelStorage { return m }
         let m = DocumentModel(document: initial)
-        m.onDocumentChange = { [latest] doc in latest.withLock { $0 = doc } }
+        m.onDocumentChange = { [weak self, latest] doc in
+            latest.withLock { $0 = doc }
+            Task { @MainActor in self?.scheduleThumbnail() }
+        }
         if AIFeature.isAvailable { DocumentRegistry.shared.register(m) }  // the AI interface can now name this document
         modelStorage = m
         return m
@@ -57,13 +65,27 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
         return g
     }
 
+    /// Draws a new thumbnail once the part has been left alone for a moment (drawing is not free, and every edit changes it).
+    @MainActor private func scheduleThumbnail() {
+        thumbnailTask?.cancel()
+        thumbnailTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self, let model = modelStorage else { return }
+            await model.rebuilt()
+            guard !Task.isCancelled else { return }
+            let image = try? await ViewportSnapshot.render(model, direction: .iso, width: 512, height: 512, axes: false)
+            guard !Task.isCancelled else { return }
+            thumbnail.withLock { $0 = image?.png }  // nothing to show (an empty part) means no picture
+        }
+    }
+
     // SwiftUI calls snapshot on a background thread (autosave, Save), so it reads the locked copy.
     func snapshot(contentType: UTType) throws -> CADDocument {
         latest.withLock { $0 }
     }
 
     func fileWrapper(snapshot: CADDocument, configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: try snapshot.encoded())
+        FileWrapper(regularFileWithContents: try snapshot.encoded(thumbnail: thumbnail.withLock { $0 }))
     }
 }
 

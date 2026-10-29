@@ -12,19 +12,65 @@
 		8C3F2E7A4D9B6A1CAE5F7D32 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 7B2E1D6F3C8A5F0B9D4E6C21 /* Sparkle */; };
 		A4D81C3E7B2F5096CE1D8A47 /* TelemetryDeck in Frameworks */ = {isa = PBXBuildFile; productRef = B93E2F5A6C1D8047AE3B5D92 /* TelemetryDeck */; };
 		96BEDF105C98299B88C3483E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 72F05ED180AF401B033E9524 /* AppIcon.icon */; };
+		22B63CBD41254B9815EE8397 /* SimplMakerThumbnail.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 83893F789E334F98EE3CAD49 /* SimplMakerThumbnail.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, CodeSignOnCopy, ); }; };
+		C81A11C7EC51B677BD848549 /* SimplMakerPreview.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1B4D8B97DBBADD820CE72D6 /* SimplMakerPreview.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		185AB419CD6684CFEB6222A2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CA1115CE8D3102BE0A18F89B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 80F4E308FC7534CF2AED6D9F;
+			remoteInfo = SimplMakerThumbnail;
+		};
+		C065F32E5C25D31B712E8D3E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CA1115CE8D3102BE0A18F89B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E897C89FA34A9DCF711FA811;
+			remoteInfo = SimplMakerPreview;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		34EC437E5837D0D5F6E620DD /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				22B63CBD41254B9815EE8397 /* SimplMakerThumbnail.appex in Embed Foundation Extensions */,
+				C81A11C7EC51B677BD848549 /* SimplMakerPreview.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0FAEFC94E3FD6E9F68CAEBBD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		53366E12770BB0814BE6140E /* SimplMaker */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SimplMaker; path = .; sourceTree = SOURCE_ROOT; };
 		72F05ED180AF401B033E9524 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		7440A648B20F9F88CBCD0DDA /* SimplMaker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimplMaker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		83893F789E334F98EE3CAD49 /* SimplMakerThumbnail.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SimplMakerThumbnail.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B4D8B97DBBADD820CE72D6 /* SimplMakerPreview.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SimplMakerPreview.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		6635FE65A7E3BB091D099ADE /* SimplMaker */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = SimplMaker;
+			sourceTree = "<group>";
+		};
+		E5AF8860158AE145F46CF82B /* SimplMakerThumbnail */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SimplMakerThumbnail;
+			sourceTree = "<group>";
+		};
+		60C4196A25F8B2D795E7A7B0 /* SimplMakerPreview */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SimplMakerPreview;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -41,6 +87,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C2DBAD59D6366E638575DAF1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F278C572099F1C53663F47F5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -48,6 +108,8 @@
 			isa = PBXGroup;
 			children = (
 				7440A648B20F9F88CBCD0DDA /* SimplMaker.app */,
+				83893F789E334F98EE3CAD49 /* SimplMakerThumbnail.appex */,
+				A1B4D8B97DBBADD820CE72D6 /* SimplMakerPreview.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -73,6 +135,8 @@
 			isa = PBXGroup;
 			children = (
 				6635FE65A7E3BB091D099ADE /* SimplMaker */,
+				E5AF8860158AE145F46CF82B /* SimplMakerThumbnail */,
+				60C4196A25F8B2D795E7A7B0 /* SimplMakerPreview */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -97,10 +161,13 @@
 				ED199EAC9C26073B95BE741D /* Sources */,
 				AF83C452B252FC7AD22F16B9 /* Resources */,
 				14049B87CA42A6EEC139CAA1 /* Frameworks */,
+				34EC437E5837D0D5F6E620DD /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				0FF153C804201438DD2F021F /* PBXTargetDependency */,
+				E4899602A0436BA7E8F06BB9 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				6635FE65A7E3BB091D099ADE /* SimplMaker */,
@@ -116,6 +183,44 @@
 			productReference = 7440A648B20F9F88CBCD0DDA /* SimplMaker.app */;
 			productType = "com.apple.product-type.application";
 		};
+		80F4E308FC7534CF2AED6D9F /* SimplMakerThumbnail */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EC1C907922B07EEBAFF4CF63 /* Build configuration list for PBXNativeTarget "SimplMakerThumbnail" */;
+			buildPhases = (
+				F0E026C85894EBF1FF16DF8B /* Sources */,
+				C2DBAD59D6366E638575DAF1 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E5AF8860158AE145F46CF82B /* SimplMakerThumbnail */,
+			);
+			name = SimplMakerThumbnail;
+			productName = SimplMakerThumbnail;
+			productReference = 83893F789E334F98EE3CAD49 /* SimplMakerThumbnail.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		E897C89FA34A9DCF711FA811 /* SimplMakerPreview */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8F629333DEF5E50844A26A61 /* Build configuration list for PBXNativeTarget "SimplMakerPreview" */;
+			buildPhases = (
+				F3F8F76127DE41D4E1D17533 /* Sources */,
+				F278C572099F1C53663F47F5 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				60C4196A25F8B2D795E7A7B0 /* SimplMakerPreview */,
+			);
+			name = SimplMakerPreview;
+			productName = SimplMakerPreview;
+			productReference = A1B4D8B97DBBADD820CE72D6 /* SimplMakerPreview.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -126,6 +231,14 @@
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					B1C7B00A7A4C0908BE8F739C = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+					80F4E308FC7534CF2AED6D9F = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+					E897C89FA34A9DCF711FA811 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Manual;
 					};
@@ -151,6 +264,8 @@
 			projectRoot = "";
 			targets = (
 				B1C7B00A7A4C0908BE8F739C /* SimplMakerApp */,
+				80F4E308FC7534CF2AED6D9F /* SimplMakerThumbnail */,
+				E897C89FA34A9DCF711FA811 /* SimplMakerPreview */,
 			);
 		};
 /* End PBXProject section */
@@ -174,7 +289,34 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F0E026C85894EBF1FF16DF8B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F3F8F76127DE41D4E1D17533 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0FF153C804201438DD2F021F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 80F4E308FC7534CF2AED6D9F /* SimplMakerThumbnail */;
+			targetProxy = 185AB419CD6684CFEB6222A2 /* PBXContainerItemProxy */;
+		};
+		E4899602A0436BA7E8F06BB9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E897C89FA34A9DCF711FA811 /* SimplMakerPreview */;
+			targetProxy = C065F32E5C25D31B712E8D3E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		23463B801F04B0CB934ED481 /* Release */ = {
@@ -358,6 +500,98 @@
 			};
 			name = Release;
 		};
+		6757A3C48DC52F20825DE01C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				CODE_SIGN_ENTITLEMENTS = Packaging/QuickLook/QuickLook.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Packaging/QuickLook/Thumbnail-Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.simplmaker.SimplMaker.Thumbnail;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		C6DAF74FD503AF85C0AE0EBC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				CODE_SIGN_ENTITLEMENTS = Packaging/QuickLook/QuickLook.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Packaging/QuickLook/Thumbnail-Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.simplmaker.SimplMaker.Thumbnail;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		C7F991D076E4E7C36856E711 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				CODE_SIGN_ENTITLEMENTS = Packaging/QuickLook/QuickLook.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Packaging/QuickLook/Preview-Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.simplmaker.SimplMaker.Preview;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		0854322709C5BF322C10A053 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD)";
+				CODE_SIGN_ENTITLEMENTS = Packaging/QuickLook/QuickLook.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Packaging/QuickLook/Preview-Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.simplmaker.SimplMaker.Preview;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -375,6 +609,24 @@
 			buildConfigurations = (
 				74EB033B215369272AFBF0AB /* Debug */,
 				CF5B4C9731847D0D25D7A885 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EC1C907922B07EEBAFF4CF63 /* Build configuration list for PBXNativeTarget "SimplMakerThumbnail" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6757A3C48DC52F20825DE01C /* Debug */,
+				C6DAF74FD503AF85C0AE0EBC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8F629333DEF5E50844A26A61 /* Build configuration list for PBXNativeTarget "SimplMakerPreview" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C7F991D076E4E7C36856E711 /* Debug */,
+				0854322709C5BF322C10A053 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -908,6 +908,11 @@ public struct BrowserFolder: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+extension CodingUserInfoKey {
+    /// PNG bytes for `CADDocument` to store as its thumbnail when encoding.
+    public static let cadThumbnail = CodingUserInfoKey(rawValue: "com.simplmaker.thumbnail")!
+}
+
 public struct CADDocument: Codable, Hashable, Sendable {
     public static let formatVersion = 1
     public var version: Int = CADDocument.formatVersion
@@ -935,7 +940,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, folders, folderOf }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, folders, folderOf, thumbnail }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -965,6 +970,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
         if !bodyMaterials.isEmpty { try c.encode(bodyMaterials, forKey: .bodyMaterials) }
         if !folders.isEmpty { try c.encode(folders, forKey: .folders) }
         if !folderOf.isEmpty { try c.encode(folderOf, forKey: .folderOf) }
+        // A picture of the part for Finder's Quick Look; given when saving, never part of the design itself.
+        if let png = encoder.userInfo[.cadThumbnail] as? Data { try c.encode(png, forKey: .thumbnail) }
     }
 
     /// The same design with visibility, names, colours and materials ignored: changing those needs no rebuild.
@@ -1015,10 +1022,18 @@ public struct CADDocument: Codable, Hashable, Sendable {
         return "\(base)\(n)"
     }
 
-    public func encoded() throws -> Data {
+    /// The file's bytes. `thumbnail` (PNG) is stored in the file for the Quick Look extensions; it is not part of the design.
+    public func encoded(thumbnail: Data? = nil) throws -> Data {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let thumbnail { enc.userInfo[.cadThumbnail] = thumbnail }
         return try enc.encode(self)
+    }
+
+    /// The picture stored in a file's bytes (PNG), if it has one. Reads nothing else, so it is cheap.
+    public static func thumbnail(in data: Data) -> Data? {
+        struct Picture: Decodable { var thumbnail: Data? }
+        return (try? JSONDecoder().decode(Picture.self, from: data))?.thumbnail
     }
 
     public static func decode(_ data: Data) throws -> CADDocument {
