@@ -19,6 +19,7 @@
 		<dict>
 			<key>UTTypeIdentifier</key><string>com.simplmaker.document</string>
 			<key>UTTypeDescription</key><string>SimplMaker Document</string>
+			<key>UTTypeIconFile</key><string>DocIcon</string>
 			<key>UTTypeConformsTo</key><array><string>public.json</string></array>
 			<key>UTTypeTagSpecification</key>
 			<dict><key>public.filename-extension</key><array><string>simplmaker</string></array></dict>
@@ -35,7 +36,7 @@
 			<key>CFBundleTypeName</key><string>SimplMaker Document</string>
 			<key>CFBundleTypeRole</key><string>Editor</string>
 			<key>LSHandlerRank</key><string>Owner</string>
-			<key>CFBundleTypeIconSystemGenerated</key><true/>
+			<key>CFBundleTypeIconFile</key><string>DocIcon</string>
 			<key>LSItemContentTypes</key><array><string>com.simplmaker.document</string></array>
 		</dict>
 	</array>

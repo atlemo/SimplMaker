@@ -152,6 +152,8 @@ if xcrun --find actool >/dev/null 2>&1; then
 else
   cp "$ROOT/Packaging/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 fi
+# The .simplmaker document icon: a flat page-shaped .icns (Icon Composer would force the app-icon squircle).
+cp "$ROOT/Packaging/DocIcon.icns" "$APP/Contents/Resources/DocIcon.icns"
 if [ "$RELEASE" = 1 ]; then
   IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -n 1)}"
   [ -n "$IDENTITY" ] || { echo "no Developer ID Application certificate; set SIGN_IDENTITY" >&2; exit 1; }
