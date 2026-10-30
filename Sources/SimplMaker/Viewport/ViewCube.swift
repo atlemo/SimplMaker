@@ -10,7 +10,7 @@ final class ViewCubeView: NSView {
     var lookAlong: (SIMD3<Float>) -> Void = { _ in }
     var orbit: (_ dx: Float, _ dy: Float) -> Void = { _, _ in }
     var home: () -> Void = {}
-    /// A quarter turn of the picture, +1 counter-clockwise and −1 clockwise (offered while sketching).
+    /// A quarter turn of the picture, +1 counter-clockwise and −1 clockwise (sketching or modelling).
     var turn: (_ quarterTurns: Int) -> Void = { _ in }
     var offersTurning = false {
         didSet {
@@ -62,12 +62,12 @@ final class ViewCubeView: NSView {
         button.frame = NSRect(x: 2, y: Self.size.height - 24, width: 22, height: 22)
         addSubview(button)
         homeButton = button
-        // Curved arrows by the cube's top edge: the sketch turns a quarter on its paper, the way they point.
+        // Curved arrows by the cube's top edge: the view turns a quarter about the line of sight, the way they point.
         // They sit on a ring round the cube's top-right: counter-clockwise on top, clockwise down its right side.
         let ring = [CGPoint(x: Self.size.width / 2 + 4 + 27, y: Self.size.height / 2 - 8 + 51),
                     CGPoint(x: Self.size.width / 2 + 4 + 50, y: Self.size.height / 2 - 8 + 29)]
-        for (i, spec) in [(counterClockwise: true, tip: "Turn the sketch a quarter counter-clockwise", action: #selector(turnCounterClockwise)),
-                          (counterClockwise: false, tip: "Turn the sketch a quarter clockwise", action: #selector(turnClockwise))].enumerated() {
+        for (i, spec) in [(counterClockwise: true, tip: "Turn the view a quarter counter-clockwise", action: #selector(turnCounterClockwise)),
+                          (counterClockwise: false, tip: "Turn the view a quarter clockwise", action: #selector(turnClockwise))].enumerated() {
             let image = Self.turnArrow(counterClockwise: spec.counterClockwise)
             image.accessibilityDescription = spec.tip
             let b = NSButton(image: image, target: self, action: spec.action)

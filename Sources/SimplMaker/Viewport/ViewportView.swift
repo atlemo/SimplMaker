@@ -265,7 +265,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             }
             c.home = { [weak self] in self?.model?.show(.home) }
             c.turn = { [weak self] direction in
-                guard let self, let renderer = self.renderer, self.model?.sketchSession != nil else { return }
+                guard let self, let renderer = self.renderer else { return }
                 var goal = renderer.camera.pose
                 goal.roll = renderer.camera.quarterTurnedRoll(direction)
                 self.animateCamera(to: goal, duration: 0.25)
@@ -278,7 +278,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let right = min(shownInsets.right, bounds.width * 0.45)
         cube.frame.origin = NSPoint(x: bounds.width - right - ViewCubeView.size.width - DS.Spacing.space4,
                                     y: topInset + DS.Spacing.space4)
-        cube.offersTurning = model?.sketchSession != nil
+        cube.offersTurning = true
         cube.needsDisplay = true
     }
 
