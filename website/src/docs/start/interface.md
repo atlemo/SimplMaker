@@ -66,6 +66,7 @@ The browser lists what is in the part.
 - **Bodies**, **Sketches**, **Planes** and **Canvases** are folders. Planes and Canvases appear once you have some.
 - The eye beside a row shows or hides it. The eye on a folder shows or hides everything in it.
 - Make your own folders inside **Bodies** with the folder button in the browser header, or right-click **Bodies** and choose **New Folder**. A body's right-click menu has **Move to Folder**. Drag bodies onto a folder to fill it.
+- Drag a body, sketch, plane or canvas onto another row of the same kind to change the order of the list. Dragging down puts it after that row, dragging up puts it before. The order is only for tidiness: the model does not change. Dropping a body on a body inside a folder moves it into that folder.
 - The **padlock** beside the eye locks a body or a sketch, so it cannot be picked or changed by accident. See [Lock bodies and sketches](doc:concepts/selecting).
 - Click a body to select it. [[⌘]]-click or [[⇧]]-click selects several bodies, and a right-click then moves, scales, recolours, hides, locks or exports them together. **Double-click** to edit the feature that made it. Double-click a sketch to edit the sketch.
 - Right-click a row for more: rename, hide, lock, suppress, move, appearance, export and delete.
