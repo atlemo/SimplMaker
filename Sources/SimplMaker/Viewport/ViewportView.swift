@@ -1816,7 +1816,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 glyphViews[g.id] = view
             }
             // Only what changed: this runs for every glyph on every frame.
-            let tip = g.pattern != nil || g.mirror != nil ? "\(g.help) · click to change it" : "\(g.help) constraint · click to select, ⌫ to delete"
+            let tip = g.pattern != nil || g.mirror != nil ? "\(g.help) · click to change it"
+                : g.problem ? "\(g.help) constraint · it fights other constraints or dimensions · click to select, ⌫ to delete"
+                : "\(g.help) constraint · click to select, ⌫ to delete"
             if view.stringValue != g.symbol {
                 view.stringValue = g.symbol
                 view.sizeToFit()
@@ -1824,6 +1826,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             }
             if view.toolTip != tip { view.toolTip = tip }
             view.isSelectedGlyph = g.selected
+            view.isProblemGlyph = g.problem
             if let p = renderer.camera.project(g.world, viewSize: bounds.size) {
                 view.isHidden = false
                 // Beside its curve, but not on a value label (or another glyph): moved along until it is clear.
@@ -1846,6 +1849,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 final class ConstraintGlyphView: NSTextField {
     var onClick: ((_ additive: Bool) -> Void)?
     var isSelectedGlyph = false { didSet { if isSelectedGlyph != oldValue { updateAppearance() } } }
+    var isProblemGlyph = false { didSet { if isProblemGlyph != oldValue { updateAppearance() } } }
     var dark = false { didSet { if dark != oldValue { updateAppearance() } } }
     /// A pattern's button: the Pattern tool's own icon, bigger than a constraint's symbol and outlined in the accent
     /// colour, so it is easy to spot.
@@ -1880,6 +1884,9 @@ final class ConstraintGlyphView: NSTextField {
     private func updateAppearance() {
         if isSelectedGlyph {
             backgroundColor = .controlAccentColor  // constraint symbols exist only while sketching
+            textColor = .white
+        } else if isProblemGlyph {
+            backgroundColor = NSColor(srgbRed: 0.86, green: 0.18, blue: 0.16, alpha: 0.95)  // fixed red, readable on any paper
             textColor = .white
         } else {
             backgroundColor = dark ? NSColor(white: 0.14, alpha: 0.92) : NSColor(white: 1, alpha: 0.92)

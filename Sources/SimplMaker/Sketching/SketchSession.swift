@@ -339,6 +339,8 @@ final class SketchSession {
     var frame: Frame
     private(set) var sketch: Sketch
     private(set) var solve: SolveResult?
+    /// Constraints and dimensions that repeat or fight others, found each time the sketch is solved for good (not while dragging).
+    private(set) var diagnosis = SketchDiagnosis()
     private(set) var tool: SketchTool = .select
 
     func setTool(_ t: SketchTool) {
@@ -589,7 +591,15 @@ final class SketchSession {
     private func resolve() {
         values = sketch.dimensionValues(parameters)
         solve = SketchSolver.solveLocally(&sketch, dimensionValues: values)
+        diagnosis = SketchSolver.diagnose(sketch, dimensionValues: values)
         refreshCopies()
+    }
+
+    /// "Horizontal would over-constrain the sketch", and what it fights if that can be told.
+    private func overConstrainMessage(_ what: String, _ result: (diagnosis: SketchDiagnosis, added: Set<EntityID>)) -> String {
+        let base = "\(what) would over-constrain the sketch"
+        guard let others = sketch.conflictText(result.diagnosis.conflicting, excluding: result.added) else { return base }
+        return "\(base): it fights \(others)"
     }
 
     /// Makes the pattern copies again after the originals changed.
@@ -2378,13 +2388,14 @@ final class SketchSession {
     }
 
     /// Adds a dimension at its current value and opens it for typing.
-    private func addDimension(_ kind: SketchDimension.Kind, value: Double, expression: String? = nil) -> String? {
+    func addDimension(_ kind: SketchDimension.Kind, value: Double, expression: String? = nil) -> String? {
         let unit: UnitKind
         unit = SketchDimension(kind, "").unitKind
         let id = IDs.make()
         guard sketch.applyDimension(kind, expression: expression ?? formatDimension(value, kind: unit), value: value,
                                     values: values, id: id) else {
-            message = "That dimension would over-constrain the sketch"
+            message = overConstrainMessage("That dimension", sketch.diagnosis(
+                addingDimension: kind, expression: expression ?? formatDimension(value, kind: unit), value: value, values: values, id: id))
             return nil
         }
         if let i = sketch.dimensions.firstIndex(where: { $0.id == id }) {
@@ -2454,7 +2465,7 @@ final class SketchSession {
     func apply(_ c: ConstraintTool) -> String? {
         guard let kinds = sketch.constraints(c, for: selection + axisSelection) else { return nil }
         guard sketch.applyConstraints(kinds, values: values) else {
-            message = "\(c.rawValue) would over-constrain the sketch"
+            message = overConstrainMessage(c.rawValue, sketch.diagnosis(adding: kinds, values: values))
             return nil
         }
         selection = []
@@ -2493,7 +2504,8 @@ final class SketchSession {
             v[id] = try parameters.value(of: expression, kind: trial.dimensions[i].unitKind)
             // Moves what the dimension is about, not the whole sketch a little.
             guard SketchSolver.solveLocally(&trial, dimensionValues: v).status == .solved else {
-                message = "The sketch can't take that value"
+                let others = trial.conflictText(SketchSolver.diagnose(trial, dimensionValues: v).conflicting, excluding: [id])
+                message = "The sketch can't take that value" + (others.map { ": it fights \($0)" } ?? "")
                 return nil
             }
         } catch {
@@ -2791,7 +2803,9 @@ final class SketchSession {
         if let solve {
             switch solve.status {
             case .failed: s = "Over-constrained · " + s
-            case .solved: s = (solve.degreesOfFreedom == 0 ? "Fully constrained" : "\(solve.degreesOfFreedom) DOF") + " · " + s
+            case .solved:
+                s = (solve.degreesOfFreedom == 0 ? "Fully constrained" : "\(solve.degreesOfFreedom) DOF")
+                    + (diagnosis.redundant.isEmpty ? "" : " · \(diagnosis.redundant.count) redundant") + " · " + s
             }
         }
         return s

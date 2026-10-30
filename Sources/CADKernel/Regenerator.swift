@@ -655,6 +655,10 @@ public enum Regenerator {
         try followProjections(&solved, frame: frame, r)
         let solve = SketchSolver.solveLocally(&solved, dimensionValues: values)  // a changed parameter moves only what it drives
         guard solve.status == .solved else {
+            let diagnosis = SketchSolver.diagnose(f.sketch, dimensionValues: values)
+            if let names = f.sketch.conflictText(diagnosis.conflicting) {
+                throw KernelError(message: "sketch cannot satisfy its constraints: \(names) cannot all hold (residual \(solve.maxResidual))")
+            }
             throw KernelError(message: "sketch cannot satisfy its constraints (residual \(solve.maxResidual))")
         }
         if let problem = solved.refreshGenerated(r.parameters).values.sorted().first {

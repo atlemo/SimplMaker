@@ -174,6 +174,7 @@ struct SketchInspector: View {
                 ForEach(session.sketch.constraints) { c in
                     HStack {
                         Text(describe(c.kind)).font(.caption)
+                        ruleMark(c.id, in: session.diagnosis)
                         Spacer()
                         Button { model.sketchCommand { $0.deleteConstraint(c.id) } } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
@@ -201,6 +202,7 @@ struct SketchInspector: View {
             ForEach(Array(sketch.sketch.dimensions.enumerated()), id: \.element.id) { i, d in
                 LabeledContent(label(d)) {
                     HStack {
+                        if let session { ruleMark(d.id, in: session.diagnosis) }
                         ExpressionField(text: d.expression) { text in
                             model.updateFeature(id, "Edit Dimension") { f in
                                 if case .sketch(var s) = f.kind {
@@ -240,37 +242,23 @@ struct SketchInspector: View {
         }
     }
 
-    func describe(_ k: SketchConstraint.Kind) -> String {
-        switch k {
-        case .coincident: return "Coincident"
-        case .horizontal: return "Horizontal"
-        case .vertical: return "Vertical"
-        case .parallel: return "Parallel"
-        case .perpendicular: return "Perpendicular"
-        case .equal: return "Equal"
-        case .tangent: return "Tangent"
-        case .pointOnCurve: return "Point on curve"
-        case .midpoint: return "Midpoint"
-        case .fix: return "Fixed"
-        case .symmetric: return "Symmetric"
+    func describe(_ k: SketchConstraint.Kind) -> String { k.title }
+
+    /// A warning beside a constraint or dimension that fights the others, or a quiet mark on one that only repeats them.
+    @ViewBuilder
+    func ruleMark(_ id: EntityID, in diagnosis: SketchDiagnosis) -> some View {
+        if diagnosis.conflicting.contains(id) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                .help("This fights other constraints or dimensions: they can't all hold. Delete one of them.")
+                .accessibilityLabel("Conflicts with other constraints")
+        } else if diagnosis.redundant.contains(id) {
+            Image(systemName: "equal.circle").foregroundStyle(.secondary)
+                .help("Redundant: the other constraints and dimensions already say this. It does no harm; you can delete it.")
+                .accessibilityLabel("Redundant")
         }
     }
 
-    func label(_ d: SketchDimension) -> String {
-        switch d.kind {
-        case .distance: return "Distance"
-        case .horizontalDistance: return "Horizontal"
-        case .verticalDistance: return "Vertical"
-        case .pointLineDistance: return "Distance"
-        case .length(let l): return "Length \(l)"
-        case .radius(let c): return "Radius \(c)"
-        case .diameter(let c): return "Ø \(c)"
-        case .angle, .supplementAngle, .lineAngle: return "Angle"
-        case .arcAngle(let c): return "Sweep \(c)"
-        case .radialOffset: return "Offset"
-        case .gap: return "Gap"
-        }
-    }
+    func label(_ d: SketchDimension) -> String { d.title }
 }
 
 /// The bodies a Join, Cut or Intersect works on, each one switched on or off, with "Choose Automatically" to go back

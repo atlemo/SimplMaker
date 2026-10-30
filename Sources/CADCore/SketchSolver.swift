@@ -263,6 +263,9 @@ public enum SketchSolver {
         var beziers: [EntityID: [EntityID]] = [:]      // start, control 1, control 2, end
         var ellipses: [EntityID: (center: EntityID, major: EntityID, minor: EntityID)] = [:]
         var terms: [([Double]) -> Double] = []
+        /// The constraint or dimension each term belongs to (nil for the solver's own terms), for naming what conflicts.
+        var owners: [EntityID?] = []
+        var currentOwner: EntityID?
 
         /// With `holdRadii`, circles keep the radius they have: nothing is solved for it.
         init(_ s: Sketch, holdRadii: Bool = false) {
@@ -317,7 +320,7 @@ public enum SketchSolver {
             return p(b, x) - p(a, x)
         }
 
-        mutating func add(_ t: @escaping ([Double]) -> Double) { terms.append(t) }
+        mutating func add(_ t: @escaping ([Double]) -> Double) { terms.append(t); owners.append(currentOwner) }
 
         mutating func addSoft(_ targets: [SoftTarget], weight w: Double) {
             let me = self
@@ -340,11 +343,13 @@ public enum SketchSolver {
                     add { vlen(me.p(end, $0) - me.p(center, $0)) - vlen(me.p(start, $0) - me.p(center, $0)) }
                 }
             }
-            for c in s.constraints { addConstraint(c.kind, me, s) }
+            for c in s.constraints { currentOwner = c.id; addConstraint(c.kind, me, s) }
             for d in s.dimensions {
                 guard let v = dimensionValues[d.id] else { continue }
+                currentOwner = d.id
                 addDimension(d.kind, v, me, s)
             }
+            currentOwner = nil
         }
 
         mutating func addConstraint(_ k: SketchConstraint.Kind, _ me: System, _ s: Sketch) {

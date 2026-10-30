@@ -36,6 +36,8 @@ struct ConstraintGlyph: Identifiable, Equatable {
     var symbol: String
     var help: String
     var selected: Bool
+    /// The constraint fights others in the sketch (drawn red).
+    var problem = false
     /// A pattern's button (not a constraint): a click opens the pattern to change it.
     var pattern: EntityID?
     /// A mirror's button: a click opens the mirror to change it.
@@ -169,7 +171,8 @@ enum SketchOverlayBuilder {
                 let n = perEntity[e, default: 0]
                 perEntity[e] = n + 1
                 out.append(ConstraintGlyph(id: "\(c.id)#\(e)", constraint: c.id, world: world(session.frame, a), stack: n,
-                                           symbol: info.symbol, help: info.help, selected: selected.contains(c.id)))
+                                           symbol: info.symbol, help: info.help, selected: selected.contains(c.id),
+                                           problem: session.diagnosis.conflicting.contains(c.id)))
             }
         }
         return out
