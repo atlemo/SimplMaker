@@ -1112,13 +1112,13 @@ enum AITools {
                 handler: { args in try await changeTool("import_file", service: service, args) }),
 
             MCPTool(
-                name: "export_file", title: "Export bodies to STL or STEP",
+                name: "export_file", title: "Export bodies to STL, 3MF or STEP",
                 description: """
-                Writes the part's bodies to an STL file (for 3D printing) or a STEP file (for other CAD programs), like Export. The file is \
+                Writes the part's bodies to an STL or 3MF file (for 3D printing; 3MF also keeps units and body colours) or a STEP file (for other CAD programs), like Export. The file is \
                 written to the folder "SimplMaker Exports" in the user's Documents folder, never over a file that is already there (a number \
                 is added to the name instead). Tell the user where it is. The part itself does not change.
 
-                Arguments: document_id (required); format (required: "stl" or "step"); bodies (optional: body ids; default every body); \
+                Arguments: document_id (required); format (required: "stl", "3mf" or "step"); bodies (optional: body ids; default every body); \
                 file_name (optional: a name without folders; default the part's name). For a print with several parts, either export them \
                 together or one file per body with bodies.
 
@@ -1127,7 +1127,7 @@ enum AITools {
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to export, from list_documents."],
-                    "format": ["type": "string", "enum": ["stl", "step"], "description": "stl for printing, step for CAD."],
+                    "format": ["type": "string", "enum": ["stl", "3mf", "step"], "description": "stl or 3mf for printing, step for CAD."],
                     "bodies": ["type": "array", "items": ["type": "string"], "description": "Body ids to export (default all)."],
                     "file_name": ["type": "string", "description": "File name without folders (default the part's name)."],
                 ], ["document_id", "format"]),
@@ -1140,7 +1140,7 @@ enum AITools {
                         return text
                     }
                     return try JSONValue(encoding: try await service.exportFile(documentID: try a.requiredDocumentID(), bodyIDs: ids,
-                                                                                format: try a.requiredString("format", hint: "\"stl\" or \"step\"."),
+                                                                                format: try a.requiredString("format", hint: "\"stl\", \"3mf\" or \"step\"."),
                                                                                 fileName: try a.string("file_name")))
                 }),
 

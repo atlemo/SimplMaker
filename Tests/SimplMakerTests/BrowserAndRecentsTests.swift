@@ -217,14 +217,14 @@ import Testing
         let model = DocumentModel(document: twoBoxes())
         try await settle(model)
         let folder = model.newFolder(holding: ["a", "b"])
-        let bodies = model.bodies(inFolder: folder).map(\.body)
+        let bodies = model.bodies(inFolder: folder)
         #expect(bodies.count == 2)
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        for (stl, name) in [(true, "f.stl"), (false, "f.step")] {
+        for (format, name) in [(ExportFormat.stl, "f.stl"), (.threeMF, "f.3mf"), (.step, "f.step")] {
             let url = dir.appendingPathComponent(name)
-            #expect(model.write(bodies, stl: stl, to: url))
+            #expect(model.write(bodies, format: format, to: url))
             #expect((try? Data(contentsOf: url).count) ?? 0 > 100)
         }
     }

@@ -1090,8 +1090,9 @@ struct BrowserList: View {
             Button(allHidden ? "Show All" : "Hide All") { model.setHidden(inside, !allHidden) }
         }
         Menu("Export Folder") {
-            Button("STEP…") { model.export(folder: f.id, stl: false) }
-            Button("STL…") { model.export(folder: f.id, stl: true) }
+            Button("STL…") { model.export(folder: f.id, format: .stl) }
+            Button("3MF…") { model.export(folder: f.id, format: .threeMF) }
+            Button("STEP…") { model.export(folder: f.id, format: .step) }
         }
         .disabled(model.bodies(inFolder: f.id).isEmpty)
         if f.parent != nil {
@@ -1121,8 +1122,9 @@ struct BrowserList: View {
         Button("Appearance…") { model.openAppearance(for: id) }
         moveMenu([id])
         Menu("Export Body") {
-            Button("STEP…") { model.export(bodies: [id], stl: false) }
-            Button("STL…") { model.export(bodies: [id], stl: true) }
+            Button("STL…") { model.export(bodies: [id], format: .stl) }
+            Button("3MF…") { model.export(bodies: [id], format: .threeMF) }
+            Button("STEP…") { model.export(bodies: [id], format: .step) }
         }
     }
 
@@ -1174,8 +1176,9 @@ struct BrowserList: View {
             Button("Unlock Bodies") { model.setLocked(list, false) }
             moveMenu(list)
             Menu("Export Bodies") {
-                Button("STEP…") { model.export(bodies: list, stl: false) }
-                Button("STL…") { model.export(bodies: list, stl: true) }
+                Button("STL…") { model.export(bodies: list, format: .stl) }
+                Button("3MF…") { model.export(bodies: list, format: .threeMF) }
+                Button("STEP…") { model.export(bodies: list, format: .step) }
             }
         } else if !ids.isEmpty {
             Button("Hide") { model.setHidden(Array(ids), true) }

@@ -4,13 +4,22 @@ import AppKit
 import CADKernel
 import UniformTypeIdentifiers
 
+/// The file formats a body can be exported to.
+enum ExportFormat: String, CaseIterable {
+    case stl, step
+    case threeMF = "3mf"
+
+    var fileExtension: String { rawValue }
+    var menuTitle: String { self == .threeMF ? "3MF…" : "\(fileExtension.uppercased())…" }
+}
+
 /// What the Export dialog asks for.
 struct ExportChoice: Equatable {
     enum Grouping: String { case onePart, individualParts }
-    var stl: Bool
+    var format: ExportFormat
     var grouping: Grouping
 
-    var fileExtension: String { stl ? "stl" : "step" }
+    var fileExtension: String { format.fileExtension }
 
     private static let formatKey = "exportFormat"
     private static let groupingKey = "exportGrouping"
@@ -18,12 +27,12 @@ struct ExportChoice: Equatable {
     /// What was chosen last time, or STL with one part the first time.
     static var remembered: ExportChoice {
         let defaults = UserDefaults.standard
-        return ExportChoice(stl: defaults.string(forKey: formatKey) != "step",
+        return ExportChoice(format: ExportFormat(rawValue: defaults.string(forKey: formatKey) ?? "") ?? .stl,
                             grouping: Grouping(rawValue: defaults.string(forKey: groupingKey) ?? "") ?? .onePart)
     }
 
     func remember() {
-        UserDefaults.standard.set(stl ? "stl" : "step", forKey: Self.formatKey)
+        UserDefaults.standard.set(format.rawValue, forKey: Self.formatKey)
         UserDefaults.standard.set(grouping.rawValue, forKey: Self.groupingKey)
     }
 }
@@ -45,7 +54,7 @@ extension DocumentModel {
         choice.remember()
         switch choice.grouping {
         case .onePart:
-            export(stl: choice.stl)
+            export(format: choice.format)
         case .individualParts:
             let panel = NSOpenPanel()
             panel.canChooseFiles = false
@@ -54,7 +63,7 @@ extension DocumentModel {
             panel.prompt = "Export"
             panel.message = "Choose where to put the \(all.count) \(choice.fileExtension.uppercased()) files, one for each body."
             guard panel.runModal() == .OK, let folder = panel.url else { return }
-            let written = writeIndividually(all, stl: choice.stl, into: folder)
+            let written = writeIndividually(all, format: choice.format, into: folder)
             if written.count == all.count { NSWorkspace.shared.activateFileViewerSelecting(written) }
         }
     }
@@ -68,8 +77,11 @@ extension DocumentModel {
         alert.informativeText = "Choose a file format and how the bodies are put into files."
 
         let format = NSPopUpButton(frame: .zero, pullsDown: false)
-        format.addItems(withTitles: ["STL · a mesh, for slicers and 3D printing", "STEP · exact shapes, for other CAD programs"])
-        format.selectItem(at: last.stl ? 0 : 1)
+        let formats: [ExportFormat] = [.stl, .threeMF, .step]
+        format.addItems(withTitles: ["STL · a mesh, for slicers and 3D printing",
+                                     "3MF · a mesh with units and colours, for slicers",
+                                     "STEP · exact shapes, for other CAD programs"])
+        format.selectItem(at: formats.firstIndex(of: last.format) ?? 0)
         let formatRow = NSStackView(views: [NSTextField(labelWithString: "Format"), format])
         formatRow.spacing = 8
 
@@ -98,7 +110,7 @@ extension DocumentModel {
         alert.addButton(withTitle: "Cancel")
 
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        return ExportChoice(stl: format.indexOfSelectedItem == 0, grouping: many.state == .on ? .individualParts : .onePart)
+        return ExportChoice(format: formats[format.indexOfSelectedItem], grouping: many.state == .on ? .individualParts : .onePart)
     }
 
     /// File names for these names in a folder: safe to write, different from each other and from what the folder already holds.
@@ -121,11 +133,11 @@ extension DocumentModel {
     /// Writes each body to a file of its own in the folder, named after the body, never over a file already there.
     /// Returns the files written; it stops and alerts at the first failure.
     @discardableResult
-    func writeIndividually(_ bodies: [BodyResult], stl: Bool, into folder: URL) -> [URL] {
-        let urls = Self.exportFileURLs(for: bodies.map(\.name), extension: stl ? "stl" : "step", in: folder)
+    func writeIndividually(_ bodies: [BodyResult], format: ExportFormat, into folder: URL) -> [URL] {
+        let urls = Self.exportFileURLs(for: bodies.map(\.name), extension: format.fileExtension, in: folder)
         var written: [URL] = []
         for (body, url) in zip(bodies, urls) {
-            guard write([body.body], stl: stl, to: url) else { break }
+            guard write([body], format: format, to: url) else { break }
             written.append(url)
         }
         return written

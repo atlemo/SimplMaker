@@ -2872,9 +2872,9 @@ final class DocumentModel {
         return true
     }
 
-    /// Exports the bodies, or just the ones with these ids, to an STL or STEP file the user picks. `name` is the
+    /// Exports the bodies, or just the ones with these ids, to an STL, 3MF or STEP file the user picks. `name` is the
     /// file name offered when the ids are a group (a folder) rather than one body.
-    func export(bodies ids: [FeatureID]? = nil, name: String? = nil, stl: Bool) {
+    func export(bodies ids: [FeatureID]? = nil, name: String? = nil, format: ExportFormat) {
         let wanted = result?.bodies.filter { ids?.contains($0.id) ?? true } ?? []
         guard !wanted.isEmpty else {
             alert = name.map { AlertInfo(title: "There's nothing to export", message: "\($0) has no bodies in it.") }
@@ -2882,27 +2882,33 @@ final class DocumentModel {
             return
         }
         let panel = NSSavePanel()
-        let ext = stl ? "stl" : "step"
+        let ext = format.fileExtension
         if let type = UTType(filenameExtension: ext) { panel.allowedContentTypes = [type] }
         let partName = fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled"
         let base = name ?? (ids == nil ? partName
             : (wanted.count == 1 ? bodies.first { $0.id == wanted[0].id }?.name : nil) ?? partName)
         panel.nameFieldStringValue = "\(base).\(ext)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        write(wanted.map(\.body), stl: stl, to: url)
+        write(wanted, format: format, to: url)
     }
 
     /// Exports every body in a folder (and in the folders inside it) as one STL or STEP file.
-    func export(folder id: String, stl: Bool) {
+    func export(folder id: String, format: ExportFormat) {
         guard let folder = document.folder(id) else { return }
-        export(bodies: bodies(inFolder: id).map(\.id), name: folder.name, stl: stl)
+        export(bodies: bodies(inFolder: id).map(\.id), name: folder.name, format: format)
     }
 
     /// Writes bodies to a file, alerting if that fails. False if it did.
     @discardableResult
-    func write(_ bodies: [KBody], stl: Bool, to url: URL) -> Bool {
+    func write(_ bodies: [BodyResult], format: ExportFormat, to url: URL) -> Bool {
         do {
-            if stl { try KBody.exportSTL(bodies, to: url) } else { try KBody.exportSTEP(bodies, to: url) }
+            let kernel = bodies.map(\.body)
+            switch format {
+            case .stl: try KBody.exportSTL(kernel, to: url)
+            case .step: try KBody.exportSTEP(kernel, to: url)
+            case .threeMF:
+                try ThreeMF.write(bodies.map { (name: $0.name, body: $0.body, color: document.bodyColors[$0.id]) }, to: url)
+            }
             return true
         } catch {
             alert = AlertInfo(title: "The export failed", message: "\(error)")

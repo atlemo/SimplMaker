@@ -205,6 +205,8 @@ import Testing
         #expect(second.path != first.path && FileManager.default.fileExists(atPath: first.path) && FileManager.default.fileExists(atPath: second.path))
         let step = try await t.service.exportFile(documentID: t.id, bodyIDs: nil, format: "step", fileName: nil, folder: folder)
         #expect(step.path.hasSuffix(".step") && step.bytes > 100)
+        let threeMF = try await t.service.exportFile(documentID: t.id, bodyIDs: nil, format: "3mf", fileName: nil, folder: folder)
+        #expect(threeMF.path.hasSuffix(".3mf") && threeMF.bytes > 200)
         let badFormat = await refusal { _ = try await t.service.exportFile(documentID: t.id, bodyIDs: nil, format: "obj", fileName: nil, folder: folder) }
         #expect(badFormat?.code == .invalidArguments)
         let ghost = await refusal { _ = try await t.service.exportFile(documentID: t.id, bodyIDs: ["ghost"], format: "stl", fileName: nil, folder: folder) }

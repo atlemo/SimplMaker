@@ -29,9 +29,9 @@ import Testing
         try await settle(model)
         let dir = try tempFolder()
         defer { try? FileManager.default.removeItem(at: dir) }
-        for stl in [true, false] {
-            let written = model.writeIndividually(model.bodies, stl: stl, into: dir)
-            #expect(written.map(\.lastPathComponent).sorted() == (stl ? ["Body1.stl", "Body2.stl"] : ["Body1.step", "Body2.step"]))
+        for format in ExportFormat.allCases {
+            let written = model.writeIndividually(model.bodies, format: format, into: dir)
+            #expect(written.map(\.lastPathComponent).sorted() == ["Body1.\(format.fileExtension)", "Body2.\(format.fileExtension)"])
             for url in written { #expect((try? Data(contentsOf: url).count) ?? 0 > 100) }
         }
     }

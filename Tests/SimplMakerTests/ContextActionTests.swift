@@ -46,19 +46,19 @@ import Testing
         try await settle(model)
     }
 
-    @Test func bodyMenuOffersSTEPAndSTLExport() async throws {
+    @Test func bodyMenuOffersSTLThreeMFAndSTEPExport() async throws {
         let model = try await loaded(.demo())
         for pick in [try face(model, "plate.end"), PickID(body: 0, edge: 0)] {
             let items = model.contextItems(for: pick)
             guard case .submenu(let title, let children)? = items.last else { Issue.record("no export submenu in \(titles(items))"); return }
-            #expect(title == "Export Body1" && titles(children) == ["STEP…", "STL…"])
+            #expect(title == "Export Body1" && titles(children) == ["STL…", "3MF…", "STEP…"])
         }
         // Writing the picked body gives files other CAD programs can read back.
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let body = try #require(model.result?.bodies.first)
         let step = dir.appendingPathComponent("b.step"), stl = dir.appendingPathComponent("b.stl")
-        #expect(model.write([body.body], stl: false, to: step) && model.write([body.body], stl: true, to: stl))
+        #expect(model.write([body], format: .step, to: step) && model.write([body], format: .stl, to: stl))
         let back = try KBody.importSTEP(try Data(contentsOf: step), featureID: "x")
         #expect(abs(back.volume - body.body.volume) < 1e-3 * body.body.volume)
         #expect(try Data(contentsOf: stl).count > 100)

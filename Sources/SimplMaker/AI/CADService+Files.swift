@@ -32,11 +32,11 @@ extension CADService {
         return cleaned.isEmpty ? "Part" : String(cleaned.prefix(80))
     }
 
-    /// Writes bodies of a part to an STL or STEP file in the exports folder. Nothing in the part changes.
+    /// Writes bodies of a part to an STL, 3MF or STEP file in the exports folder. Nothing in the part changes.
     func exportFile(documentID: String?, bodyIDs: [String]?, format: String, fileName: String?, folder: URL? = nil) async throws -> ExportResult {
         try checkLicense()
-        guard format == "stl" || format == "step" else {
-            throw AIError(.invalidArguments, "format \"\(format)\" is not stl or step.", reason: "STL for 3D printing, STEP for other CAD programs.")
+        guard let kind = ExportFormat(rawValue: format) else {
+            throw AIError(.invalidArguments, "format \"\(format)\" is not stl, 3mf or step.", reason: "STL or 3MF for 3D printing, STEP for other CAD programs.")
         }
         let (docID, model) = try resolve(documentID)
         await model.rebuilt()
@@ -62,10 +62,15 @@ extension CADService {
         var n = 2
         while fm.fileExists(atPath: url.path) { url = directory.appendingPathComponent("\(base) \(n).\(format)"); n += 1 }  // never over an existing file
         let kernelBodies = chosen.map(\.body)
+        let named = chosen.map { (name: $0.name, body: $0.body, color: model.document.bodyColors[$0.id]) }
         let target = url
         do {
             try await Task.detached(priority: .userInitiated) {
-                if format == "stl" { try KBody.exportSTL(kernelBodies, to: target) } else { try KBody.exportSTEP(kernelBodies, to: target) }
+                switch kind {
+                case .stl: try KBody.exportSTL(kernelBodies, to: target)
+                case .step: try KBody.exportSTEP(kernelBodies, to: target)
+                case .threeMF: try ThreeMF.write(named, to: target)
+                }
             }.value
         } catch {
             throw AIError(.invalidArguments, "The export failed: \(error).", reason: "Check that the bodies are valid with get_body.")
