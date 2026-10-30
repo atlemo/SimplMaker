@@ -119,6 +119,7 @@ extension CADDocument {
         guard !parameters.contains(where: { $0.name == name }) else { throw RenameError(message: "There's already a parameter called \(name)") }
         let change = { (text: String) in Expressions.uses(text, old) ? Expressions.renaming(text, old, to: name) : text }
         parameters[i].name = name
+        if let home = parameterFolderOf.removeValue(forKey: old) { parameterFolderOf[name] = home }
         for j in parameters.indices { parameters[j].expression = change(parameters[j].expression) }
         for j in features.indices { features[j].kind.mapExpressions(change) }
     }

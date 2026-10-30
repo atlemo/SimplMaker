@@ -937,12 +937,15 @@ public struct CADDocument: Codable, Hashable, Sendable {
     /// The folder each body, sketch, plane or canvas sits in, by the id of the feature that made it. Anything
     /// not listed (or listed under a folder that no longer exists) stays in its usual group.
     public var folderOf: [FeatureID: String] = [:]
+    /// Folders the user made in the Parameters list, and the folder each parameter sits in, by its name.
+    public var parameterFolders: [BrowserFolder] = []
+    public var parameterFolderOf: [String: String] = [:]
 
     public init(parameters: [Parameter] = [], features: [Feature] = []) {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, folders, folderOf, thumbnail }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, folders, folderOf, parameterFolders, parameterFolderOf, thumbnail }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -957,6 +960,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
         bodyMaterials = try c.decodeIfPresent([FeatureID: BodyMaterial].self, forKey: .bodyMaterials) ?? [:]
         folders = try c.decodeIfPresent([BrowserFolder].self, forKey: .folders) ?? []
         folderOf = try c.decodeIfPresent([FeatureID: String].self, forKey: .folderOf) ?? [:]
+        parameterFolders = try c.decodeIfPresent([BrowserFolder].self, forKey: .parameterFolders) ?? []
+        parameterFolderOf = try c.decodeIfPresent([String: String].self, forKey: .parameterFolderOf) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -972,6 +977,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
         if !bodyMaterials.isEmpty { try c.encode(bodyMaterials, forKey: .bodyMaterials) }
         if !folders.isEmpty { try c.encode(folders, forKey: .folders) }
         if !folderOf.isEmpty { try c.encode(folderOf, forKey: .folderOf) }
+        if !parameterFolders.isEmpty { try c.encode(parameterFolders, forKey: .parameterFolders) }
+        if !parameterFolderOf.isEmpty { try c.encode(parameterFolderOf, forKey: .parameterFolderOf) }
         // A picture of the part for Finder's Quick Look; given when saving, never part of the design itself.
         if let png = encoder.userInfo[.cadThumbnail] as? Data { try c.encode(png, forKey: .thumbnail) }
     }
@@ -986,6 +993,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
         d.bodyMaterials = [:]
         d.folders = []
         d.folderOf = [:]
+        d.parameterFolders = []
+        d.parameterFolderOf = [:]
         for i in d.features.indices {
             d.features[i].name = ""
             if case .image(var f) = d.features[i].kind { f.opacity = 1; d.features[i].kind = .image(f) }
@@ -1185,5 +1194,73 @@ extension CADDocument {
         for i in folders.indices where folders[i].parent == id { folders[i].parent = f.parent }
         for (item, home) in folderOf where home == id { folderOf[item] = f.parent }
         folders.removeAll { $0.id == id }
+    }
+}
+
+// MARK: parameter folders
+
+extension CADDocument {
+    /// The parameter folders directly inside `parent` (nil: at the top), in the order they were made.
+    public func parameterSubfolders(of parent: String?) -> [BrowserFolder] {
+        parameterFolders.filter { $0.parent == parent }
+    }
+
+    public func parameterFolder(_ id: String) -> BrowserFolder? { parameterFolders.first { $0.id == id } }
+
+    /// The folder a parameter sits in, if it has one that still exists.
+    public func parameterFolder(of name: String) -> String? {
+        guard let f = parameterFolderOf[name], parameterFolders.contains(where: { $0.id == f }) else { return nil }
+        return f
+    }
+
+    /// The folder and every folder inside it, however deep.
+    public func parameterFolderTree(_ id: String) -> Set<String> {
+        var found: Set<String> = [id]
+        var queue = [id]
+        while let next = queue.popLast() {
+            for child in parameterFolders where child.parent == next && found.insert(child.id).inserted { queue.append(child.id) }
+        }
+        return found
+    }
+
+    /// Makes a parameter folder inside `parent` (nil: at the top) and returns its id.
+    @discardableResult
+    public mutating func addParameterFolder(in parent: String? = nil) -> String {
+        var n = 1
+        func name(_ n: Int) -> String { n == 1 ? "Folder" : "Folder \(n)" }
+        while parameterFolders.contains(where: { $0.name == name(n) }) { n += 1 }
+        let f = BrowserFolder(name: name(n), parent: parent.flatMap { parameterFolder($0) == nil ? nil : $0 })
+        parameterFolders.append(f)
+        return f.id
+    }
+
+    /// Puts parameters into a folder (nil: back at the top).
+    public mutating func move(parameters names: [String], toFolder id: String?) {
+        for name in names where parameters.contains(where: { $0.name == name }) {
+            if let id, parameterFolder(id) != nil { parameterFolderOf[name] = id } else { parameterFolderOf[name] = nil }
+        }
+    }
+
+    /// Puts a parameter folder inside another (nil: at the top). Refused, with false, into itself or one of its own folders.
+    @discardableResult
+    public mutating func moveParameterFolder(_ id: String, into parent: String?) -> Bool {
+        guard let i = parameterFolders.firstIndex(where: { $0.id == id }) else { return false }
+        if let parent, parameterFolder(parent) == nil || parameterFolderTree(id).contains(parent) { return false }
+        parameterFolders[i].parent = parent
+        return true
+    }
+
+    /// Removes a folder. What it held (parameters and folders) moves up into the folder it was in.
+    public mutating func removeParameterFolder(_ id: String) {
+        guard let f = parameterFolder(id) else { return }
+        for i in parameterFolders.indices where parameterFolders[i].parent == id { parameterFolders[i].parent = f.parent }
+        for (name, home) in parameterFolderOf where home == id { parameterFolderOf[name] = f.parent }
+        parameterFolders.removeAll { $0.id == id }
+    }
+
+    /// The parameters in a folder and in every folder inside it.
+    public func parameterNames(inTree id: String) -> [String] {
+        let tree = parameterFolderTree(id)
+        return parameters.map(\.name).filter { name in parameterFolder(of: name).map(tree.contains) ?? false }
     }
 }

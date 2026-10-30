@@ -56,4 +56,28 @@ import Testing
         d.folderOf["x"] = "gone"
         #expect(d.folder(of: "x") == nil)
     }
+
+    @Test func parametersLiveInFoldersOfTheirOwn() throws {
+        var d = CADDocument(parameters: [Parameter("width", "40 mm"), Parameter("wall", "2 mm"), Parameter("lid", "width - 1")])
+        let a = d.addParameterFolder()
+        let b = d.addParameterFolder(in: a)
+        d.move(parameters: ["width", "wall", "nope"], toFolder: a)
+        d.move(parameters: ["lid"], toFolder: b)
+        #expect(d.parameterFolder(of: "width") == a && d.parameterFolderOf["nope"] == nil)
+        #expect(d.parameterNames(inTree: a) == ["width", "wall", "lid"])
+        #expect(d.folders.isEmpty, "the browser's folders are separate")
+        let cycle = d.moveParameterFolder(a, into: b)
+        #expect(!cycle, "not into its own folder")
+
+        try d.renameParameter("width", to: "w")
+        #expect(d.parameterFolder(of: "w") == a && d.parameterFolderOf["width"] == nil)
+
+        let back = try JSONDecoder().decode(CADDocument.self, from: JSONEncoder().encode(d))
+        #expect(back.parameterFolders == d.parameterFolders && back.parameterFolderOf == d.parameterFolderOf)
+        #expect(d.ignoringPresentation.parameterFolders.isEmpty)
+
+        d.removeParameterFolder(a)
+        #expect(d.parameterFolder(of: "w") == nil && d.parameterFolder(of: "lid") == b, "the folder's contents move up")
+        #expect(d.parameterFolder(b)?.parent == nil)
+    }
 }

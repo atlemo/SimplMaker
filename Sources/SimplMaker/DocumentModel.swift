@@ -619,6 +619,8 @@ final class DocumentModel {
 
     /// A folder just made from the browser's header, for the list to start naming.
     var pendingFolderRename: String?
+    /// The same for a folder just made in the Parameters list.
+    var pendingParameterFolderRename: String?
 
     /// Makes a folder (inside `parent`, or at the top), with these items in it, and returns its id.
     @discardableResult
@@ -739,7 +741,38 @@ final class DocumentModel {
     }
 
     func removeParameter(_ name: String) {
-        mutate("Delete \(name)") { $0.parameters.removeAll { $0.name == name } }
+        mutate("Delete \(name)") {
+            $0.parameters.removeAll { $0.name == name }
+            $0.parameterFolderOf[name] = nil
+        }
+    }
+
+    /// Makes a folder in the Parameters list (inside `parent`, or at the top), with these parameters in it.
+    func newParameterFolder(in parent: String? = nil, holding names: [String] = []) -> String {
+        var id = ""
+        mutate("New Folder") { doc in
+            id = doc.addParameterFolder(in: parent)
+            doc.move(parameters: names, toFolder: id)
+        }
+        return id
+    }
+
+    func renameParameterFolder(_ id: String, to name: String) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        mutate("Rename Folder") { doc in
+            if let i = doc.parameterFolders.firstIndex(where: { $0.id == id }) { doc.parameterFolders[i].name = n }
+        }
+    }
+
+    func deleteParameterFolder(_ id: String) { mutate("Delete Folder") { $0.removeParameterFolder(id) } }
+
+    func move(parameters names: [String], toFolder id: String?) {
+        mutate("Move to Folder") { $0.move(parameters: names, toFolder: id) }
+    }
+
+    func move(parameterFolder id: String, into parent: String?) {
+        mutate("Move Folder") { $0.moveParameterFolder(id, into: parent) }
     }
 
     func updateFeature(_ id: FeatureID, _ actionName: String, _ change: (inout Feature) -> Void) {

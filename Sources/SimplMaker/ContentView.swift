@@ -685,9 +685,15 @@ struct Sidebar: View {
                 .tutorialSpot("browser", cornerRadius: DS.Radius.window, outset: 0, filled: false)
                 divider(room: max(geo.size.height - Panel.inset, 1), browserHeight: h.browser)
                 SidebarPanel(title: "Parameters", open: $model.parametersOpen, accessory: {
-                    HeaderIconButton(systemImage: "plus", help: "Add a parameter") {
-                        model.parametersOpen = true  // show the new one
-                        model.addParameter()
+                    HStack(spacing: 2) {
+                        HeaderIconButton(systemImage: "folder.badge.plus", help: "Add a folder") {
+                            model.parametersOpen = true
+                            model.pendingParameterFolderRename = model.newParameterFolder()
+                        }
+                        HeaderIconButton(systemImage: "plus", help: "Add a parameter") {
+                            model.parametersOpen = true  // show the new one
+                            model.addParameter()
+                        }
                     }
                 }) {
                     ParametersList(model: model)
@@ -778,27 +784,108 @@ struct ParametersList: View {
     /// The parameter whose value field has the keyboard.
     @State private var focused: String?
 
+    /// The folder being named in place, and the folders the user has closed.
+    @State private var renamingFolder: String?
+    @State private var closedFolders: Set<String> = []
+    private static let folderTag = "folder:"
+
+    private func folderID(_ tag: String) -> String? {
+        tag.hasPrefix(Self.folderTag) ? String(tag.dropFirst(Self.folderTag.count)) : nil
+    }
+
+    private func row(_ p: Parameter) -> AnyView {
+        AnyView(
+            ParameterRow(model: model, parameter: p, selected: selection == p.name, renaming: renamingBinding(p.name),
+                         valueFocused: focusBinding(p.name), tabbed: { moveFocus(from: p.name, backwards: $0) })
+                .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
+                .draggable(BrowserDrag(items: [p.name]))
+                .tag(p.name)
+                .listRowBackground(SelectedRowBackground(on: selection == p.name)))
+    }
+
     var body: some View {
         List(selection: $selection) {
-            ForEach(model.document.parameters) { p in
-                ParameterRow(model: model, parameter: p, selected: selection == p.name, renaming: renamingBinding(p.name),
-                             valueFocused: focusBinding(p.name), tabbed: { moveFocus(from: p.name, backwards: $0) })
-                    .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
-                    .tag(p.name)
-                    .listRowBackground(SelectedRowBackground(on: selection == p.name))
+            ForEach(model.document.parameterSubfolders(of: nil)) { folder in
+                ParameterFolderNode(model: model, folder: folder, closed: $closedFolders, renaming: $renamingFolder,
+                                    selected: selection, row: row, drop: drop)
+            }
+            ForEach(model.document.parameters.filter { model.document.parameterFolder(of: $0.name) == nil }) { p in
+                row(p)
             }
         }
         .listStyle(.sidebar)
+        .browserDropDestination { drop($0, nil) }
         .background(OutsideClickMonitor {
             // A click anywhere else (the 3D view, a body in the browser) lets go of the row and its field.
             if focused != nil { NSApp.keyWindow?.makeFirstResponder(nil) }
             focused = nil
             selection = nil
         })
-        .contextMenu(forSelectionType: String.self) { names in
-            if names.count == 1, let name = names.first {
-                Button("Rename") { renaming = name }
-                Button("Delete", role: .destructive) { model.removeParameter(name) }
+        .onChange(of: model.pendingParameterFolderRename) {
+            if let id = model.pendingParameterFolderRename { renamingFolder = id; model.pendingParameterFolderRename = nil }
+        }
+        .contextMenu(forSelectionType: String.self) { tags in
+            if tags.isEmpty {
+                Button("New Folder") { makeFolder() }
+            } else if tags.count == 1, let tag = tags.first, let fid = folderID(tag), model.document.parameterFolder(fid) != nil {
+                Button("New Folder Inside") { makeFolder(in: fid) }
+                Button("Rename Folder") { renamingFolder = fid }
+                if let f = model.document.parameterFolder(fid), f.parent != nil {
+                    Button("Out of the Folder") { model.move(parameterFolder: fid, into: model.document.parameterFolder(f.parent ?? "")?.parent) }
+                }
+                Divider()
+                Button("Delete Folder", role: .destructive) { model.deleteParameterFolder(fid) }
+            } else {
+                let names = tags.filter { folderID($0) == nil }.sorted()
+                if names.count == 1, let name = names.first {
+                    Button("Rename") { renaming = name }
+                }
+                if !names.isEmpty {
+                    moveMenu(names)
+                    Divider()
+                    Button("Delete", role: .destructive) { names.forEach { model.removeParameter($0) } }
+                }
+            }
+        }
+    }
+
+    /// Parameters (or one folder) dropped on a folder; nil is the list itself, which takes them out of any folder.
+    private func drop(_ drops: [BrowserDrag], _ folder: String?) -> Bool {
+        var moved = false
+        let known = Set(model.document.parameters.map(\.name))
+        for d in drops {
+            if let f = d.folder {
+                if model.document.parameterFolder(f) != nil, f != folder { model.move(parameterFolder: f, into: folder); moved = true }
+            } else {
+                let names = d.items.filter(known.contains)
+                if !names.isEmpty { model.move(parameters: names, toFolder: folder); moved = true }
+            }
+        }
+        return moved
+    }
+
+    private func makeFolder(in parent: String? = nil, holding names: [String] = []) {
+        let id = model.newParameterFolder(in: parent, holding: names)
+        if let parent { closedFolders.remove(parent) }
+        renamingFolder = id
+    }
+
+    private func folderList(under parent: String? = nil, depth: Int = 0) -> [(folder: BrowserFolder, depth: Int)] {
+        model.document.parameterSubfolders(of: parent).flatMap { [($0, depth)] + folderList(under: $0.id, depth: depth + 1) }
+    }
+
+    @ViewBuilder private func moveMenu(_ names: [String]) -> some View {
+        Menu("Move to Folder") {
+            ForEach(folderList(), id: \.folder.id) { entry in
+                Button(String(repeating: "    ", count: entry.depth) + entry.folder.name) {
+                    model.move(parameters: names, toFolder: entry.folder.id)
+                }
+                .disabled(names.allSatisfy { model.document.parameterFolder(of: $0) == entry.folder.id })
+            }
+            if !model.document.parameterFolders.isEmpty { Divider() }
+            Button("New Folder") { makeFolder(holding: names) }
+            if names.contains(where: { model.document.parameterFolder(of: $0) != nil }) {
+                Button("Out of the Folder") { model.move(parameters: names, toFolder: nil) }
             }
         }
     }
@@ -817,6 +904,47 @@ struct ParametersList: View {
         let names = model.document.parameters.map(\.name)
         guard let i = names.firstIndex(of: name), names.count > 1 else { return }
         focused = names[(i + (backwards ? names.count - 1 : 1)) % names.count]
+    }
+}
+
+/// A folder in the Parameters list, with the folders and parameters inside it.
+struct ParameterFolderNode: View {
+    let model: DocumentModel
+    let folder: BrowserFolder
+    @Binding var closed: Set<String>
+    @Binding var renaming: String?
+    let selected: String?
+    let row: (Parameter) -> AnyView
+    let drop: ([BrowserDrag], String?) -> Bool
+
+    private var expanded: Binding<Bool> {
+        Binding(get: { !closed.contains(folder.id) },
+                set: { if $0 { closed.remove(folder.id) } else { closed.insert(folder.id) } })
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: expanded) {
+            ForEach(model.document.parameterSubfolders(of: folder.id)) { child in
+                ParameterFolderNode(model: model, folder: child, closed: $closed, renaming: $renaming,
+                                    selected: selected, row: row, drop: drop)
+            }
+            ForEach(model.document.parameters.filter { model.document.parameterFolder(of: $0.name) == folder.id }) { row($0) }
+        } label: {
+            HStack(spacing: DS.Spacing.labelGap) {
+                Image(systemName: "folder").frame(width: 18)
+                if renaming == folder.id {
+                    InlineNameField(name: folder.name,
+                                    commit: { model.renameParameterFolder(folder.id, to: $0); renaming = nil },
+                                    cancel: { renaming = nil })
+                } else {
+                    Text(folder.name)
+                }
+                Spacer(minLength: 0)
+            }
+            .draggable(BrowserDrag(folder: folder.id))
+            .browserDropDestination { drop($0, folder.id) }
+        }
+        .tag("folder:" + folder.id)
     }
 }
 
