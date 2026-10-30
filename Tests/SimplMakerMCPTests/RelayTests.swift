@@ -24,7 +24,7 @@ import Testing
         Relay(connectionFile: file, post: { request in
             record.add(request)
             return Relay.Reply(status: status, body: Data(body.utf8))
-        })
+        }, launch: { false })
     }
 
     private func object(_ line: String?) throws -> [String: Any] {
@@ -89,7 +89,7 @@ import Testing
 
     @Test func anAppThatQuitWithoutTellingIsNoticedWhenTheConnectionFails() async throws {
         let file = try connectionFile(running: true); defer { try? FileManager.default.removeItem(at: file) }
-        let r = Relay(connectionFile: file, post: { _ in throw URLError(.cannotConnectToHost) })
+        let r = Relay(connectionFile: file, post: { _ in throw URLError(.cannotConnectToHost) }, launch: { false })
         let answer = try object(await r.handle(line: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}"#))
         let error = ((answer["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["error"] as? [String: Any]
         #expect(error?["code"] as? String == "SIMPLMAKER_NOT_RUNNING")
@@ -130,5 +130,87 @@ import Testing
         #expect(try connection(#"{"port":0,"token":"t","running":true}"#) == nil)
         #expect(try connection(#"{"port":1,"token":"","running":true}"#) == nil)
         #expect(try connection("garbage") == nil)
+    }
+
+    // MARK: opening the app
+
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var n = 0
+        func bump() { lock.withLock { n += 1 } }
+        var count: Int { lock.withLock { n } }
+    }
+
+    private let toolCall = #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_document"}}"#
+
+    @Test func aToolCallOpensTheAppWaitsForItAndThenGoesThrough() async throws {
+        let file = try connectionFile(running: false, port: 6001, token: "fresh"); defer { try? FileManager.default.removeItem(at: file) }
+        let opened = Counter(), record = Recorder()
+        let r = Relay(connectionFile: file, post: { request in
+            record.add(request)
+            return Relay.Reply(status: 200, body: Data(#"{"jsonrpc":"2.0","id":3,"result":{"ok":true}}"#.utf8))
+        }, launch: {
+            opened.bump()
+            // The app comes up and says where it is.
+            try? JSONSerialization.data(withJSONObject: ["port": 6001, "token": "fresh", "pid": 1, "running": true, "version": "t"]).write(to: file)
+            return true
+        }, pause: { _ in })
+        let answer = try object(await r.handle(line: toolCall))
+        #expect(opened.count == 1)
+        #expect((answer["result"] as? [String: Any])?["ok"] as? Bool == true)
+        #expect(record.requests.last?.value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
+    }
+
+    @Test func startingTheClientNeverOpensTheApp() async throws {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent("relay-\(UUID().uuidString)/mcp-connection.json")
+        let opened = Counter()
+        let r = Relay(connectionFile: missing, post: { _ in throw URLError(.cannotConnectToHost) }, launch: { opened.bump(); return true }, pause: { _ in })
+        for method in ["initialize", "tools/list", "ping"] { _ = await r.handle(line: #"{"jsonrpc":"2.0","id":1,"method":"\#(method)"}"#) }
+        #expect(opened.count == 0)
+    }
+
+    @Test func theStartUpQuestionsAreAnsweredFromWhatTheAppSaidLastTime() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("relay-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("mcp-connection.json")
+        try JSONSerialization.data(withJSONObject: ["port": 4242, "token": "t", "pid": 1, "running": true, "version": "t"]).write(to: file)
+        let list = #"{"jsonrpc":"2.0","id":7,"result":{"tools":[{"name":"get_document"}]}}"#
+        let up = Relay(connectionFile: file, post: { _ in Relay.Reply(status: 200, body: Data(list.utf8)) }, launch: { false })
+        _ = await up.handle(line: #"{"jsonrpc":"2.0","id":7,"method":"tools/list"}"#)
+
+        // The app quits; a client that starts now still gets the tool list, with its own id, and nothing is opened.
+        try JSONSerialization.data(withJSONObject: ["port": 4242, "token": "t", "pid": 1, "running": false, "version": "t"]).write(to: file)
+        let opened = Counter()
+        let down = Relay(connectionFile: file, post: { _ in throw URLError(.cannotConnectToHost) }, launch: { opened.bump(); return true }, pause: { _ in })
+        let answer = try object(await down.handle(line: #"{"jsonrpc":"2.0","id":"x","method":"tools/list"}"#))
+        #expect(answer["id"] as? String == "x")
+        #expect(((answer["result"] as? [String: Any])?["tools"] as? [[String: Any]])?.first?["name"] as? String == "get_document")
+        #expect(opened.count == 0)
+    }
+
+    @Test func anAppThatNeverAnswersIsReportedAndNotWaitedForAgainAtOnce() async throws {
+        let file = try connectionFile(running: false); defer { try? FileManager.default.removeItem(at: file) }
+        let opened = Counter()
+        let r = Relay(connectionFile: file, post: { _ in throw URLError(.cannotConnectToHost) }, launch: { opened.bump(); return true },
+                      pause: { _ in }, launchTimeout: 1)
+        for _ in 0..<2 {
+            let answer = try object(await r.handle(line: toolCall))
+            let error = ((answer["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["error"] as? [String: Any]
+            #expect(error?["code"] as? String == "SIMPLMAKER_NOT_RUNNING")
+        }
+        #expect(opened.count == 1, "the second call does not open and wait again")
+    }
+
+    @Test func anAppThatCrashedIsOpenedAgainForAToolCall() async throws {
+        let file = try connectionFile(running: true, port: 6002); defer { try? FileManager.default.removeItem(at: file) }
+        let opened = Counter(), posts = Counter()
+        let r = Relay(connectionFile: file, post: { _ in
+            posts.bump()
+            if posts.count == 1 { throw URLError(.cannotConnectToHost) }  // the stale file's port
+            return Relay.Reply(status: 200, body: Data(#"{"jsonrpc":"2.0","id":3,"result":{"back":true}}"#.utf8))
+        }, launch: { opened.bump(); return true }, pause: { _ in })
+        let answer = try object(await r.handle(line: toolCall))
+        #expect(opened.count == 1 && (answer["result"] as? [String: Any])?["back"] as? Bool == true)
     }
 }
