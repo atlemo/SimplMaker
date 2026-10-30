@@ -67,7 +67,7 @@ Draw the construction line first, and a mirror is a quick way to draw one half o
 
 ### Change or remove a mirror
 
-The mirrored curves select like any others: click one, or double-click to select the whole outline. With a mirrored curve selected, press **Mirror** again to change the line it goes across. **Delete** (or [[⌫]]) removes the mirror image and leaves the originals, either in the bar or on a selected image.
+Each mirror has a **Mirror button** (the two-triangle icon) at the top right of its image. Click it to open the mirror and change the line it goes across. Clicking a mirrored curve only selects it: click one, or double-click to select the whole outline. With a mirrored curve selected, pressing **Mirror** does the same as the button. The button stays when constraint symbols are hidden. **Delete** (or [[⌫]]) removes the mirror image and leaves the originals, either in the bar or on a selected image.
 
 The image is read-only like a pattern's copies: you can't draw to it, constrain it or drag it, but you can extrude its profiles. A mirror copies what other mirrors and patterns made, so a shape you have mirrored once can be mirrored again, image and all, across a second line. Mirrors are made in order: change an earlier one and the later ones that copy its image follow. Curves added to the sketch later are not part of a mirror; press **Mirror** again for them.
 

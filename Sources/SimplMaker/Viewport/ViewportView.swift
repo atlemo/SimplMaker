@@ -1777,7 +1777,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         var created = false
         // A pattern's button stays when constraint symbols are hidden: it is the way into the pattern.
         let wanted = (showConstraints ? (model.sketchSession.map { SketchOverlayBuilder.glyphs($0) } ?? []) : [])
-            + (model.sketchSession.map { SketchOverlayBuilder.patternGlyphs($0) } ?? [])
+            + (model.sketchSession.map { SketchOverlayBuilder.patternGlyphs($0) + SketchOverlayBuilder.mirrorGlyphs($0) } ?? [])
         let ids = Set(wanted.map(\.id))
         for (id, view) in glyphViews where !ids.contains(id) {
             view.removeFromSuperview()
@@ -1798,6 +1798,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                         self?.model?.beginSketchPattern(editing: constraint)
                         self?.refreshOverlay()
                     }
+                } else if g.mirror != nil {
+                    view.iconName = "flip-horizontal-2"
+                    view.isPatternButton = true
+                    view.onClick = { [weak self] _ in
+                        self?.model?.beginSketchMirror(editing: constraint)
+                        self?.refreshOverlay()
+                    }
                 } else {
                     view.onClick = { [weak self] additive in
                         self?.model?.selectSketchItem(constraint, additive: additive)
@@ -1809,7 +1816,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 glyphViews[g.id] = view
             }
             // Only what changed: this runs for every glyph on every frame.
-            let tip = g.pattern != nil ? "\(g.help) · click to change it" : "\(g.help) constraint · click to select, ⌫ to delete"
+            let tip = g.pattern != nil || g.mirror != nil ? "\(g.help) · click to change it" : "\(g.help) constraint · click to select, ⌫ to delete"
             if view.stringValue != g.symbol {
                 view.stringValue = g.symbol
                 view.sizeToFit()
@@ -1851,10 +1858,12 @@ final class ConstraintGlyphView: NSTextField {
         }
     }
     private var iconImage: NSImage?
+    /// The tool icon the button shows (the Pattern tool's, or the Mirror tool's); set before `isPatternButton`.
+    var iconName = "pattern"
 
-    /// The Pattern tool's icon in `color`, drawn from the design system's glyph table like the toolbar's.
-    @MainActor private static func patternIcon(_ color: NSColor) -> NSImage? {
-        let renderer = ImageRenderer(content: Icon("pattern", size: 18, renderedStroke: 1.4).foregroundStyle(Color(nsColor: color)))
+    /// A tool's icon in `color`, drawn from the design system's glyph table like the toolbar's.
+    @MainActor private static func patternIcon(_ name: String, _ color: NSColor) -> NSImage? {
+        let renderer = ImageRenderer(content: Icon(name, size: 18, renderedStroke: 1.4).foregroundStyle(Color(nsColor: color)))
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
         return renderer.nsImage
     }
@@ -1880,7 +1889,7 @@ final class ConstraintGlyphView: NSTextField {
                               : dark ? NSColor(white: 1, alpha: 0.3) : NSColor(white: 0, alpha: 0.3)).cgColor
         layer?.borderWidth = isPatternButton ? 1.5 : 0.5
         if isPatternButton {
-            iconImage = Self.patternIcon(isSelectedGlyph ? .white : dark ? NSColor(white: 0.9, alpha: 1) : NSColor(white: 0.15, alpha: 1))
+            iconImage = Self.patternIcon(iconName, isSelectedGlyph ? .white : dark ? NSColor(white: 0.9, alpha: 1) : NSColor(white: 0.15, alpha: 1))
             needsDisplay = true
         }
     }

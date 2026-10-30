@@ -38,6 +38,8 @@ struct ConstraintGlyph: Identifiable, Equatable {
     var selected: Bool
     /// A pattern's button (not a constraint): a click opens the pattern to change it.
     var pattern: EntityID?
+    /// A mirror's button: a click opens the mirror to change it.
+    var mirror: EntityID?
 }
 
 @MainActor
@@ -184,6 +186,29 @@ enum SketchOverlayBuilder {
             return ConstraintGlyph(id: "pattern:\(def.id)", constraint: def.id, world: world(session.frame, box.max), stack: 0,
                                    symbol: "", help: circular ? "Circular pattern" : "Rectangular pattern",
                                    selected: false, pattern: def.id)
+        }
+    }
+
+    /// One button per mirror, at the top right of its image: the way into its editor (the Mirror button with an
+    /// image selected does the same). A mirror whose line is a projected edge or axis has no other handle.
+    static func mirrorGlyphs(_ session: SketchSession) -> [ConstraintGlyph] {
+        let s = session.sketch
+        guard !s.mirrors.isEmpty, !session.isMirroring else { return [] }
+        var hi: [EntityID: SIMD2<Double>] = [:]
+        func grow(_ owner: EntityID, _ p: SIMD2<Double>) { hi[owner] = hi[owner].map { simd_max($0, p) } ?? p }
+        for point in s.points {
+            guard let owner = Sketch.pattern(ofGenerated: point.id) else { continue }
+            grow(owner, SIMD2(point.x, point.y))
+        }
+        for c in s.curves {
+            guard let owner = Sketch.pattern(ofGenerated: c.id), case .circle(let m, let r) = c.geometry, let p = s.position(m) else { continue }
+            grow(owner, p + SIMD2(r, r))
+        }
+        return s.mirrors.compactMap { def in
+            guard let top = hi[def.id] else { return nil }
+            return ConstraintGlyph(id: "mirror:\(def.id)", constraint: def.id, world: world(session.frame, top), stack: 0,
+                                   symbol: "", help: "Mirror across \(s.mirrorLineName(def.line))",
+                                   selected: false, mirror: def.id)
         }
     }
 

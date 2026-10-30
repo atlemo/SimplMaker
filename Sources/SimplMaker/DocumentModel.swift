@@ -1503,6 +1503,12 @@ final class DocumentModel {
         overlayRevision += 1
     }
 
+    /// A mirror's button in the viewport: opens that mirror to change it.
+    func beginSketchMirror(editing id: EntityID) {
+        sketchSession?.beginMirror(editing: id)
+        overlayRevision += 1
+    }
+
     /// Move turns the manipulator on or off; Scale asks for a factor.
     func beginSketchTransform(_ tool: SketchTransformTool) {
         sketchSession?.beginTransform(tool)

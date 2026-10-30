@@ -157,6 +157,27 @@ import Testing
         try await settle(model)
     }
 
+    @Test func eachMirrorHasAButtonOnItsImageThatOpensIt() async throws {
+        let (model, session, _, guide) = try await editing()
+        #expect(SketchOverlayBuilder.mirrorGlyphs(session).isEmpty, "no mirror, no button")
+        session.beginTransform(.mirror)
+        click(session, guide)
+        model.commitSketchTyped()
+        let id = try #require(session.sketch.mirrors.first?.id)
+        let glyph = try #require(SketchOverlayBuilder.mirrorGlyphs(session).first)
+        #expect(SketchOverlayBuilder.mirrorGlyphs(session).count == 1)
+        #expect(glyph.mirror == id && glyph.pattern == nil && glyph.id == "mirror:\(id)")
+        let image = session.sketch.points.filter { Sketch.pattern(ofGenerated: $0.id) == id }
+        #expect(!image.isEmpty)
+        model.beginSketchMirror(editing: id)  // what the button's click does
+        #expect(session.isMirroring && !session.mirrorIsNew && session.mirrorSetup?.line == guide)
+        #expect(SketchOverlayBuilder.mirrorGlyphs(session).isEmpty, "no button while the mirror is open")
+        session.setMirrorLine(SketchMirrorDef.yAxis)
+        model.commitSketchTyped()
+        #expect(committed(model)?.mirrors.first?.line == SketchMirrorDef.yAxis)
+        try await settle(model)
+    }
+
     @Test func theHUDsDeleteRemovesTheMirrorBeingChanged() async throws {
         let (model, session, lines, guide) = try await editing()
         session.beginTransform(.mirror)
