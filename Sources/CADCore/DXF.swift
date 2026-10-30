@@ -61,6 +61,7 @@ public enum DXFImport {
         case arc(center: SIMD2<Double>, start: SIMD2<Double>, end: SIMD2<Double>)
         case circle(center: SIMD2<Double>, radius: Double)
         case ellipse(center: SIMD2<Double>, major: SIMD2<Double>, minor: SIMD2<Double>)
+        case bezier(SIMD2<Double>, SIMD2<Double>, SIMD2<Double>, SIMD2<Double>)
     }
 
     struct Reader {
@@ -190,9 +191,11 @@ public enum DXFImport {
                     guard let c = pt(e.first(10), e.first(20)), let mx = e.first(11), let my = e.first(21), let ratio = e.first(40), ratio > 0 else { continue }
                     let major = SIMD2((flip ? -mx : mx) * scale, my * scale)
                     let t0 = e.first(41) ?? 0, t1 = e.first(42) ?? 2 * .pi
-                    guard abs((t1 - t0) - 2 * .pi) < 1e-6 else { skipped.insert("elliptical arcs"); continue }
+                    // Some programs write 6.28318 for a whole turn, so this is not strict.
+                    guard abs((t1 - t0) - 2 * .pi) < 1e-3 else { skipped.insert("elliptical arcs"); continue }
                     pieces.append(.ellipse(center: c, major: major, minor: ratio * SIMD2(-major.y, major.x)))
-                case "SPLINE": skipped.insert("splines")
+                case "SPLINE":
+                    if !spline(e, flip: flip) { skipped.insert("splines") }
                 case "TEXT", "MTEXT": skipped.insert("text")
                 case "INSERT": skipped.insert("blocks")
                 case "HATCH": skipped.insert("hatches")
@@ -201,6 +204,65 @@ public enum DXFImport {
                 default: skipped.insert("some \(e.type.lowercased()) objects")
                 }
             }
+        }
+
+        /// A cubic or quadratic B-spline with control points and a clamped knot vector, as Bézier curves. False if it is
+        /// some other kind (rational, periodic, only fit points), which is left out.
+        mutating func spline(_ e: Entity, flip: Bool) -> Bool {
+            let degree = e.int(71) ?? 0
+            guard degree == 2 || degree == 3, e.all(41).isEmpty || Set(e.all(41)).count == 1 else { return false }
+            var knots: [Double] = [], points: [SIMD2<Double>] = []
+            var x: Double?
+            for p in e.pairs {
+                guard let v = Double(p.value), v.isFinite else { continue }
+                switch p.code {
+                case 40: knots.append(v)
+                case 10: x = v
+                case 20: if let px = x { points.append(SIMD2((flip ? -px : px) * scale, v * scale)); x = nil }
+                default: break
+                }
+            }
+            guard points.count >= degree + 1, knots.count == points.count + degree + 1, knots == knots.sorted(),
+                  knots[0] == knots[degree], knots[knots.count - 1] == knots[knots.count - 1 - degree],
+                  knots[degree] < knots[knots.count - 1 - degree], points.count <= 10_000 else { return false }
+            var u = knots, pts = points
+            // Insert each inner knot until it has the full multiplicity: then every span is a Bézier curve.
+            var i = degree + 1
+            while i < u.count - degree - 1 {
+                let value = u[i]
+                var multiplicity = 0
+                while i + multiplicity < u.count - degree - 1, u[i + multiplicity] == value { multiplicity += 1 }
+                for _ in 0..<(degree - multiplicity) where multiplicity < degree {
+                    // The span the knot is in: the last knot not above it.
+                    let k = (0..<u.count - 1).last { u[$0] <= value && u[$0] < u[$0 + 1] } ?? degree
+                    var q: [SIMD2<Double>] = []
+                    let s0 = u[(k - degree + 1)...k].filter { $0 == value }.count
+                    for j in 0...pts.count {
+                        if j <= k - degree { q.append(pts[j]) }
+                        else if j <= k - s0 {
+                            let alpha = (value - u[j]) / (u[j + degree] - u[j])
+                            q.append(alpha * pts[j] + (1 - alpha) * pts[j - 1])
+                        } else { q.append(pts[j - 1]) }
+                    }
+                    pts = q
+                    u.insert(value, at: k + 1)
+                    multiplicity += 1
+                }
+                i += multiplicity
+            }
+            guard (pts.count - 1) % degree == 0 else { return false }
+            var start = 0
+            while start + degree < pts.count {
+                let a = pts[start], b = pts[start + degree]
+                if degree == 3 {
+                    pieces.append(.bezier(a, pts[start + 1], pts[start + 2], b))
+                } else {
+                    let m = pts[start + 1]
+                    pieces.append(.bezier(a, a + (m - a) * (2.0 / 3), b + (m - b) * (2.0 / 3), b))
+                }
+                start += degree
+            }
+            return true
         }
 
         /// Segments of a polyline; a bulge makes a segment an arc.
@@ -237,6 +299,8 @@ public enum DXFImport {
                         let dir = SIMD2(cos(Double(k) * .pi / 2), sin(Double(k) * .pi / 2))
                         if Self.arcContains(center: c, start: a, end: b, direction: dir) { grow(c + dir * r) }
                     }
+                case .bezier(let a, let b, let c, let d):
+                    for q in Bezier.flatten([a, b, c, d], steps: 16) { grow(q) }
                 case .ellipse(let c, let major, let minor):
                     let half = SIMD2((major.x * major.x + minor.x * minor.x).squareRoot(), (major.y * major.y + minor.y * minor.y).squareRoot())
                     grow(c - half); grow(c + half)
@@ -272,6 +336,10 @@ public enum DXFImport {
                     if pa != pb { sketch.addArc(center: newPoint(c), start: pa, end: pb, id: fresh()) }
                 case .circle(let c, let r):
                     sketch.addCircle(center: newPoint(c), radius: r, id: fresh())
+                case .bezier(let a, let c1, let c2, let b):
+                    let pa = endpoint(a), pb = endpoint(b)
+                    if pa == pb, vlen(c1 - a) < 1e-6, vlen(c2 - a) < 1e-6 { continue }
+                    sketch.addBezier(start: pa, control1: newPoint(c1), control2: newPoint(c2), end: pb, id: fresh())
                 case .ellipse(let c, let major, let minor):
                     sketch.curves.append(SketchCurve(id: fresh(), .ellipse(center: newPoint(c), major: newPoint(c + major), minor: newPoint(c + minor))))
                 }
@@ -298,6 +366,8 @@ public enum DXFExport {
 
     public static func text(_ sketch: Sketch) -> String {
         var out = "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n"
+        // A layer table with layer 0, which some readers complain about missing.
+        out += "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n1\n0\nLAYER\n2\n0\n70\n0\n62\n7\n6\nCONTINUOUS\n0\nENDTAB\n0\nENDSEC\n"
         out += "0\nSECTION\n2\nENTITIES\n"
         let points = Dictionary(sketch.points.map { ($0.id, $0.position) }, uniquingKeysWith: { a, _ in a })
         func p(_ id: EntityID) -> SIMD2<Double>? { points[id] }

@@ -58,11 +58,24 @@ extension SketchDimension {
     }
 }
 
+extension SketchDimension {
+    /// The dimension's name for a sentence: no entity id, which means nothing to the user.
+    public var shortTitle: String {
+        switch kind {
+        case .length: return "Length"
+        case .radius: return "Radius"
+        case .diameter: return "Diameter"
+        case .arcAngle: return "Sweep"
+        default: return title
+        }
+    }
+}
+
 extension Sketch {
     /// "Horizontal", or "Distance = 40 mm": a constraint or dimension in a sentence. Nil for an id that is neither.
     public func describeRule(_ id: EntityID) -> String? {
         if let c = constraints.first(where: { $0.id == id }) { return c.kind.title }
-        if let d = dimensions.first(where: { $0.id == id }) { return "\(d.title) = \(d.expression)" }
+        if let d = dimensions.first(where: { $0.id == id }) { return "\(d.shortTitle) = \(d.expression)" }
         return nil
     }
 
