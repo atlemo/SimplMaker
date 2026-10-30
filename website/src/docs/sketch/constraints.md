@@ -45,6 +45,12 @@ Small symbols next to the geometry show each constraint: **H**, **V**, **∥**, 
 
 Hide the symbols with **View → Show Constraints**, or in **Settings → Viewport**.
 
+## When constraints fight
+
+A constraint or dimension that can't hold together with the others is refused, and the message names what it fights: *Vertical would over-constrain the sketch: it fights Horizontal, Length l1 = 40 mm*. If a parameter change later makes a saved sketch impossible, the error on the [timeline](doc:concepts/timeline) names the ones that no longer fit.
+
+A constraint that only says what the others already say is **redundant**. It does no harm, but the status line counts it, and the inspector marks it with an **=** sign so you can delete it.
+
 ## Automatic constraints
 
 You don't have to add the obvious ones by hand:

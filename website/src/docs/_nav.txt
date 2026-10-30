@@ -27,6 +27,7 @@ sketch/constraints
 sketch/text
 sketch/transform
 sketch/import-svg
+sketch/dxf
 
 ## Create
 create/extrude

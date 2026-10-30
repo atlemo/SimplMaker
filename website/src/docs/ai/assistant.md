@@ -30,6 +30,10 @@ Press **Copy Command** and paste it into a terminal once. It adds SimplMaker for
 
 If you have moved or reinstalled SimplMaker, the row says it was set up for another copy. Copy the command again to update it.
 
+### Starting SimplMaker for you
+
+If SimplMaker is closed when the assistant first needs it, the assistant opens it in the background and waits a few seconds. Starting Claude alone never opens SimplMaker. If **Let AI assistants work with SimplMaker** is off, SimplMaker still opens, and the assistant is told to ask you to switch it on.
+
 ## Ask for something
 
 The pane lists a few things to try, each with a copy button:

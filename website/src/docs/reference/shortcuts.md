@@ -99,6 +99,7 @@ Other keys while sketching:
 
 | Shortcut | Command |
 |---|---|
+| [[⌘K]] | Command palette: type part of a tool or command and press [[Return]] |
 | [[⌘R]] | Rebuild |
 | [[⌘N]] | New part |
 | [[⌘O]] | Open |

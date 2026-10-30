@@ -48,8 +48,8 @@ In the **Import** feature's inspector, **Replace File…** swaps in a new STEP o
 
 | Command | What it does |
 |---|---|
-| **File → Export…** | Asks for a format (STL for slicers, STEP for other CAD tools) and whether all bodies go into one single part or into individual parts, one file per body |
+| **File → Export…** | Asks for a format (STL or 3MF for slicers, STEP for other CAD tools) and whether all bodies go into one single part or into individual parts, one file per body |
 
-To export a single body, right-click it in the browser and choose **Export Body → STL…** or **STEP…**.
+To export a single body, right-click it in the browser and choose **Export Body → STL…**, **3MF…** or **STEP…**.
 
 See [Exporting for printing](doc:print/export) for what to check before you slice.
