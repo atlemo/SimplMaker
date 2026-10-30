@@ -50,7 +50,8 @@ import Testing
         let model = try unzip(["-p", url.path, "3D/3dmodel.model"]).1
         #expect(model.contains("unit=\"millimeter\""))
         #expect(model.contains("name=\"Base &amp; &lt;lid&gt;\""))
-        #expect(model.contains("displaycolor=\"#FF8000FF\""))
+        #expect(model.contains("<m:color color=\"#FF8000FF\"/>") && model.contains("xmlns:m="))
+        #expect(model.contains("pid=\"1\" pindex=\"0\""), "the object points at its colour")
         #expect(model.components(separatedBy: "<triangle ").count - 1 == 12)
         #expect(model.contains("<item objectid=\"2\"/>"))
     }

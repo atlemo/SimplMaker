@@ -27,7 +27,7 @@ Printing several parts one at a time? Choose **All bodies as individual parts** 
 
 ## Export a 3MF
 
-3MF is the format most slicers now prefer. It is a mesh like STL, but it also says the numbers are **millimetres**, keeps each body as a named object in one file, and carries the **colour** you gave each body in [Appearance](doc:modify/appearance), so a multi-colour slicer such as Bambu Studio or PrusaSlicer shows them. Choose **File → Export…** and set **Format** to **3MF**.
+3MF is the format most slicers now prefer. It is a mesh like STL, but it also says the numbers are **millimetres**, keeps each body as a named object in one file, and carries the **colour** you gave each body in [Appearance](doc:modify/appearance), so Bambu Studio and OrcaSlicer show them (a body with no colour set comes in as the slicer's default). Choose **File → Export…** and set **Format** to **3MF**.
 
 ## Export a STEP
 

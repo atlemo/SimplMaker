@@ -1058,14 +1058,17 @@ struct BrowserList: View {
     }
 
     /// Bodies not in a folder of the user's: what the Bodies group lists directly.
-    private var looseBodies: [FeatureID] { model.bodies.map(\.id).filter { model.document.folder(of: $0) == nil } }
+    private var looseBodies: [FeatureID] {
+        model.document.ordered(model.bodies.map(\.id)).filter { model.document.folder(of: $0) == nil }
+    }
 
     var body: some View {
         List(selection: listSelection) {
             DisclosureGroup(isExpanded: $bodiesOpen) {
                 ForEach(model.document.subfolders(of: nil)) { folder in
                     BrowserFolderNode(model: model, folder: folder, closed: $closedFolders, renaming: $renaming,
-                                      row: { AnyView(row($0)) }, drop: drop, itemIDs: model.bodies.map(\.id),
+                                      row: { AnyView(row($0)) }, drop: drop,
+                                      itemIDs: model.document.ordered(model.bodies.map(\.id)),
                                       selection: currentTags)
                 }
                 ForEach(looseBodies, id: \.self) { row($0) }
@@ -1074,7 +1077,7 @@ struct BrowserList: View {
                     .browserDropDestination { drop($0, into: nil) }
             }
             DisclosureGroup(isExpanded: $sketchesOpen) {
-                ForEach(model.sketches) { row($0.id) }
+                ForEach(model.document.ordered(model.sketches.map(\.id)), id: \.self) { row($0) }
             } label: {
                 FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model, lockable: true)
             }
@@ -1123,6 +1126,7 @@ struct BrowserList: View {
             .tag(Self.bodyTag + b.id)
             .listRowBackground(SelectedRowBackground(on: currentTags.contains(Self.bodyTag + b.id), highlighted: model.browserHighlights.contains(b.id)))
             .draggable(BrowserDrag(items: [b.id]))
+            .browserDropDestination { drops in reorder(drops, onto: b.id) }
         } else if let f = model.document.features.first(where: { $0.id == id }) {
             switch f.kind {
             case .sketch:
@@ -1136,6 +1140,8 @@ struct BrowserList: View {
                 }
                 .tag(f.id)
                 .listRowBackground(SelectedRowBackground(on: currentTags.contains(f.id), highlighted: model.browserHighlights.contains(f.id)))
+                .draggable(BrowserDrag(items: [f.id]))
+                .browserDropDestination { drops in reorder(drops, onto: f.id) }
             case .plane:
                 BrowserRow(name: f.name, hidden: model.isHidden(f.id),
                            toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
@@ -1170,6 +1176,14 @@ struct BrowserList: View {
             }
         }
         return moved
+    }
+
+    /// Bodies or sketches dropped on another of their kind take its place in the list.
+    private func reorder(_ drops: [BrowserDrag], onto target: FeatureID) -> Bool {
+        let moved = drops.filter { $0.folder == nil }.flatMap(\.items)
+        guard !moved.isEmpty else { return false }
+        model.reorder(moved, onto: target)
+        return true
     }
 
     /// Whether a row is being renamed; ending the edit clears it.

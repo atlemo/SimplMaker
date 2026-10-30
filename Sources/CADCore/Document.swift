@@ -937,6 +937,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
     /// The folder each body, sketch, plane or canvas sits in, by the id of the feature that made it. Anything
     /// not listed (or listed under a folder that no longer exists) stays in its usual group.
     public var folderOf: [FeatureID: String] = [:]
+    /// The order the user gave bodies and sketches in the browser by dragging; items not listed come after, in their usual order.
+    public var browserOrder: [FeatureID] = []
     /// Folders the user made in the Parameters list, and the folder each parameter sits in, by its name.
     public var parameterFolders: [BrowserFolder] = []
     public var parameterFolderOf: [String: String] = [:]
@@ -945,7 +947,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, folders, folderOf, parameterFolders, parameterFolderOf, thumbnail }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, folders, folderOf, browserOrder, parameterFolders, parameterFolderOf, thumbnail }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -960,6 +962,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         bodyMaterials = try c.decodeIfPresent([FeatureID: BodyMaterial].self, forKey: .bodyMaterials) ?? [:]
         folders = try c.decodeIfPresent([BrowserFolder].self, forKey: .folders) ?? []
         folderOf = try c.decodeIfPresent([FeatureID: String].self, forKey: .folderOf) ?? [:]
+        browserOrder = try c.decodeIfPresent([FeatureID].self, forKey: .browserOrder) ?? []
         parameterFolders = try c.decodeIfPresent([BrowserFolder].self, forKey: .parameterFolders) ?? []
         parameterFolderOf = try c.decodeIfPresent([String: String].self, forKey: .parameterFolderOf) ?? [:]
     }
@@ -977,6 +980,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         if !bodyMaterials.isEmpty { try c.encode(bodyMaterials, forKey: .bodyMaterials) }
         if !folders.isEmpty { try c.encode(folders, forKey: .folders) }
         if !folderOf.isEmpty { try c.encode(folderOf, forKey: .folderOf) }
+        if !browserOrder.isEmpty { try c.encode(browserOrder, forKey: .browserOrder) }
         if !parameterFolders.isEmpty { try c.encode(parameterFolders, forKey: .parameterFolders) }
         if !parameterFolderOf.isEmpty { try c.encode(parameterFolderOf, forKey: .parameterFolderOf) }
         // A picture of the part for Finder's Quick Look; given when saving, never part of the design itself.
@@ -993,6 +997,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         d.bodyMaterials = [:]
         d.folders = []
         d.folderOf = [:]
+        d.browserOrder = []
         d.parameterFolders = []
         d.parameterFolderOf = [:]
         for i in d.features.indices {
@@ -1186,6 +1191,30 @@ extension CADDocument {
         if let parent, folder(parent) == nil || folderTree(id).contains(parent) { return false }
         folders[i].parent = parent
         return true
+    }
+
+    /// `ids` in the order the user gave them by dragging; ids never dragged keep their order and come last.
+    public func ordered(_ ids: [FeatureID]) -> [FeatureID] {
+        guard !browserOrder.isEmpty else { return ids }
+        var rank: [FeatureID: Int] = [:]
+        for (i, id) in browserOrder.enumerated() { rank[id] = i }
+        return ids.enumerated().sorted {
+            let a = rank[$0.element] ?? Int.max, b = rank[$1.element] ?? Int.max
+            return a != b ? a < b : $0.offset < $1.offset
+        }.map(\.element)
+    }
+
+    /// Puts `moved` where `target` is among `siblings` (the ids listed together): after it when they come from above,
+    /// before it when they come from below, so dragging to the first or last row works.
+    public mutating func reorder(_ moved: [FeatureID], onto target: FeatureID, among siblings: [FeatureID]) {
+        let list = ordered(siblings)
+        guard let t = list.firstIndex(of: target), !moved.contains(target) else { return }
+        let block = list.filter(moved.contains)
+        guard let first = block.first, let from = list.firstIndex(of: first) else { return }
+        var rest = list.filter { !block.contains($0) }
+        guard let at = rest.firstIndex(of: target) else { return }
+        rest.insert(contentsOf: block, at: at + (from < t ? 1 : 0))
+        browserOrder = browserOrder.filter { !rest.contains($0) } + rest
     }
 
     /// Removes a folder. What it held (items and folders) moves up into the folder it was in.

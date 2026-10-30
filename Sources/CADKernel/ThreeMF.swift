@@ -1,4 +1,4 @@
-// 3MF export: the format slicers read, with units, one object per body and a colour for each.
+// 3MF export: the format slicers read, with units, one object per body and a colour for each (as a Materials-extension colour group).
 // A 3MF file is a zip with three small parts; the parts are stored without compression, which every reader accepts.
 // Copyright © 2026 Atle Mo. All rights reserved.
 import CADCore
@@ -61,10 +61,11 @@ public enum ThreeMF {
 
     static func modelXML(_ objects: [Object]) -> String {
         var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        xml += "<model unit=\"millimeter\" xml:lang=\"en-US\" xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n"
+        xml += "<model unit=\"millimeter\" xml:lang=\"en-US\" xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\" xmlns:m=\"http://schemas.microsoft.com/3dmanufacturing/material/2015/02\">\n"
         xml += "<metadata name=\"Application\">SimplMaker</metadata>\n<resources>\n"
 
-        // Colours go in one base-materials group (resource 1); objects point at their entry.
+        // Colours go in one colour group of the Materials extension (resource 1); objects point at their entry. Slicers
+        // (Bambu Studio, OrcaSlicer) read these and ignore the core spec's base materials.
         var colors: [BodyColor] = []
         var colorIndex: [BodyColor: Int] = [:]
         for color in objects.compactMap(\.color) where colorIndex[color] == nil {
@@ -72,9 +73,9 @@ public enum ThreeMF {
             colors.append(color)
         }
         if !colors.isEmpty {
-            xml += "<basematerials id=\"1\">\n"
-            for (i, c) in colors.enumerated() { xml += "<base name=\"Colour \(i + 1)\" displaycolor=\"\(c.hex)FF\"/>\n" }
-            xml += "</basematerials>\n"
+            xml += "<m:colorgroup id=\"1\">\n"
+            for c in colors { xml += "<m:color color=\"\(c.hex)FF\"/>\n" }
+            xml += "</m:colorgroup>\n"
         }
 
         for (n, object) in objects.enumerated() {

@@ -80,4 +80,14 @@ import Testing
         #expect(d.parameterFolder(of: "w") == nil && d.parameterFolder(of: "lid") == b, "the folder's contents move up")
         #expect(d.parameterFolder(b)?.parent == nil)
     }
+
+    @Test func dragOrderMovesBeforeOrAfterTheTarget() {
+        var d = CADDocument()
+        let all = ["a", "b", "c", "d"]
+        d.reorder(["d"], onto: "b", among: all)
+        #expect(d.ordered(all) == ["a", "d", "b", "c"], "from below: before the target")
+        d.reorder(["a"], onto: "c", among: all)
+        #expect(d.ordered(all) == ["d", "b", "c", "a"], "from above: after the target")
+        #expect(d.ordered(all + ["e"]) == ["d", "b", "c", "a", "e"], "new items come last")
+    }
 }
