@@ -163,6 +163,7 @@ struct SimplMakerCommands: Commands {
                     .shortcut(.importSTEP)
                 Button("STL…") { model?.importSTL() }
                 Button("SVG as Sketch…") { model?.importSVG() }
+                Button("DXF as Sketch…") { model?.importDXF() }
             }
             .disabled(model == nil)
             Divider()

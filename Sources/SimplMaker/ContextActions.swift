@@ -126,7 +126,8 @@ extension DocumentModel {
          .action("Edit \(featureName(sketch))", symbol: "pencil") { self.editSketch(sketch) },
          .action("Move or Rotate \(featureName(sketch))", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.move(sketches: [sketch]) },
          .action("Scale \(featureName(sketch))", symbol: "arrow.up.left.and.arrow.down.right") { self.scale(sketches: [sketch]) },
-         .action("Hide \(featureName(sketch))", symbol: "eye.slash") { self.setHidden([sketch], true) }]
+         .action("Hide \(featureName(sketch))", symbol: "eye.slash") { self.setHidden([sketch], true) },
+         .action("Export \(featureName(sketch)) as DXF…", symbol: "square.and.arrow.up") { self.exportDXF(sketch: sketch) }]
     }
 
     /// "Edit Extrude1" for the feature that made a face, and "Hide Body1".

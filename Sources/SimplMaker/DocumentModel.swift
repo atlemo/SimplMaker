@@ -2811,7 +2811,37 @@ final class DocumentModel {
         Task { await importSVG(from: url) }
     }
 
-    /// Reads an SVG file into the sketch being edited, or else into a new sketch on the selected flat
+    /// Asks for a DXF file and puts its lines, arcs, circles and polylines in a sketch.
+    func importDXF() {
+        guard !importInProgress() else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "dxf") ?? .data]
+        panel.prompt = "Import"
+        panel.message = "Choose a DXF file (text form). Its lines, arcs, circles and polylines become a sketch, in the file's units."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await importSVG(from: url) }
+    }
+
+    /// Writes the sketch as a DXF file the user picks. Nothing in the part changes.
+    func exportDXF(sketch id: FeatureID) {
+        guard let solved = result?.sketches[id]?.solved else {
+            alert = AlertInfo(title: "There's no sketch to export", message: "Fix the sketch's problems first, then export it.")
+            return
+        }
+        guard solved.curves.contains(where: { !$0.construction }) else {
+            alert = AlertInfo(title: "There's nothing to export", message: "\(featureName(id)) has no lines, arcs or curves. Construction lines are left out.")
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "dxf") ?? .data]
+        panel.nameFieldStringValue = "\(featureName(id)).dxf"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try DXFExport.data(solved).write(to: url, options: .atomic) } catch {
+            alert = AlertInfo(title: "The export failed", message: "\(error.localizedDescription)")
+        }
+    }
+
+    /// Reads an SVG or DXF file into the sketch being edited, or else into a new sketch on the selected flat
     /// face or plane (the XY plane when nothing is selected), with the drawing's middle on the sketch
     /// origin. False if it can't be read (an alert says why).
     @discardableResult
@@ -2819,7 +2849,10 @@ final class DocumentModel {
         guard !importInProgress() else { return false }
         isImporting = true
         let outcome = await Task.detached(priority: .userInitiated) { () -> Swift.Result<SVGImport.Result, any Error> in
-            Swift.Result { try SVGImport.sketch(from: Data(contentsOf: url)) }
+            Swift.Result {
+                let data = try Data(contentsOf: url)
+                return url.pathExtension.lowercased() == "dxf" ? try DXFImport.sketch(from: data) : try SVGImport.sketch(from: data)
+            }
         }.value
         isImporting = false
         let imported: SVGImport.Result
@@ -2867,7 +2900,9 @@ final class DocumentModel {
         }
         if !imported.skipped.isEmpty {
             alert = AlertInfo(title: "Some of \(url.lastPathComponent) wasn't imported",
-                              message: "Sketches hold lines, arcs and curves, so \(imported.skipped.joined(separator: " and ")) in the file were left out. Convert them to outlines first (in Inkscape: Path ▸ Object to Path).")
+                              message: "Sketches hold lines, arcs and curves, so \(imported.skipped.joined(separator: " and ")) in the file were left out."
+                              + (url.pathExtension.lowercased() == "dxf" ? " Splines can be saved as polylines in most CAD programs."
+                                 : " Convert them to outlines first (in Inkscape: Path ▸ Object to Path)."))
         }
         return true
     }
