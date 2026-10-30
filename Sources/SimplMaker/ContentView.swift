@@ -1083,14 +1083,14 @@ struct BrowserList: View {
             }
             if !model.planeFeatures.isEmpty {
                 DisclosureGroup(isExpanded: $planesOpen) {
-                    ForEach(model.planeFeatures) { row($0.id) }
+                    ForEach(model.document.ordered(model.planeFeatures.map(\.id)), id: \.self) { row($0) }
                 } label: {
                     FolderRow(title: "Planes", ids: model.planeFeatures.map(\.id), model: model)
                 }
             }
             if !model.imageFeatures.isEmpty {
                 DisclosureGroup(isExpanded: $imagesOpen) {
-                    ForEach(model.imageFeatures) { row($0.id) }
+                    ForEach(model.document.ordered(model.imageFeatures.map(\.id)), id: \.self) { row($0) }
                 } label: {
                     FolderRow(title: "Canvases", ids: model.imageFeatures.map(\.id), model: model)
                 }
@@ -1150,6 +1150,8 @@ struct BrowserList: View {
                 }
                 .tag(f.id)
                 .listRowBackground(SelectedRowBackground(on: currentTags.contains(f.id)))
+                .draggable(BrowserDrag(items: [f.id]))
+                .browserDropDestination { drops in reorder(drops, onto: f.id) }
             case .image:
                 BrowserRow(name: f.name, hidden: model.isHidden(f.id),
                            toggle: { model.setHidden([f.id], !model.isHidden(f.id)) },
@@ -1158,6 +1160,8 @@ struct BrowserList: View {
                 }
                 .tag(f.id)
                 .listRowBackground(SelectedRowBackground(on: currentTags.contains(f.id)))
+                .draggable(BrowserDrag(items: [f.id]))
+                .browserDropDestination { drops in reorder(drops, onto: f.id) }
             default:
                 EmptyView()
             }
@@ -1178,7 +1182,7 @@ struct BrowserList: View {
         return moved
     }
 
-    /// Bodies or sketches dropped on another of their kind take its place in the list.
+    /// Bodies, sketches, planes or canvases dropped on another of their kind take its place in the list.
     private func reorder(_ drops: [BrowserDrag], onto target: FeatureID) -> Bool {
         let moved = drops.filter { $0.folder == nil }.flatMap(\.items)
         guard !moved.isEmpty else { return false }

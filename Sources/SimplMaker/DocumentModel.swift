@@ -651,11 +651,15 @@ final class DocumentModel {
         mutate("Move to Folder") { $0.move(items, toFolder: id) }
     }
 
-    /// Drag and drop in the browser: bodies or sketches placed at `target`'s row. A body also joins the folder `target` is in.
+    /// Drag and drop in the browser: bodies, sketches, planes or canvases placed at `target`'s row. A body also joins the folder `target` is in.
     func reorder(_ moved: [FeatureID], onto target: FeatureID) {
         let bodyIDs = bodies.map(\.id)
         let isBody = bodyIDs.contains(target)
-        let siblings: [FeatureID] = isBody ? bodyIDs : sketches.map(\.id)
+        let siblings: [FeatureID]
+        if isBody { siblings = bodyIDs }
+        else if sketches.contains(where: { $0.id == target }) { siblings = sketches.map(\.id) }
+        else if planeFeatures.contains(where: { $0.id == target }) { siblings = planeFeatures.map(\.id) }
+        else { siblings = imageFeatures.map(\.id) }
         let moved = moved.filter { siblings.contains($0) }
         guard !moved.isEmpty else { return }
         mutate("Reorder") { doc in
