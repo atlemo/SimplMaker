@@ -522,6 +522,22 @@ extension DocumentModel {
         return true
     }
 
+    /// Splits each of these bodies into the separate solids it is made of (a body that is really several loose
+    /// pieces). Says so, and changes nothing, when none of them has more than one.
+    func splitIntoParts(bodies ids: [FeatureID]) {
+        let ids = ids.filter { id in !isLocked(id) }
+        let many = ids.filter { id in
+            guard let body = result?.body(id), let parts = try? body.splitIntoParts(featureID: "probe") else { return false }
+            return parts.count > 1
+        }
+        guard !many.isEmpty else {
+            alert = AlertInfo(title: "Already one part",
+                              message: ids.count > 1 ? "None of these bodies is made of loose pieces." : "This body is all in one piece, so there is nothing to separate.")
+            return
+        }
+        add(Feature(name: document.nextName("Split"), .split(SplitFeature(bodies: many, tool: .parts))))
+    }
+
     /// What a click on a plane, a profile or a face splits with.
     func splitTool(for pick: PickID) -> SplitFeature.Tool? {
         switch pick.kind {

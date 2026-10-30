@@ -83,7 +83,7 @@ import Testing
         // The block is 60 × 30 × 15 and stands on z = 0, centred on x and y.
         let everything = NewFeatureTests.box("all", "200", "200", "200")
         var doc = CADDocument()
-        doc.features = features + [everything, Feature(id: "c", name: "Combine1", .combine(CombineFeature(target: "b", tools: ["all"])))]
+        doc.features = features + [everything, Feature(id: "c", name: "Combine1", .combine(CombineFeature(target: "b", tools: ["all"], operation: .cut)))]
         let gone = Regenerator.regenerate(doc)
         #expect(gone.errors["c"]?.contains("removes the whole body") == true, "\(gone.errors)")
 
@@ -95,7 +95,7 @@ import Testing
         // Part of it cut away is not nothing.
         let corner = NewFeatureTests.box("corner", u: "-30 mm", "20", "20", "30")
         var partly = CADDocument()
-        partly.features = features + [corner, Feature(id: "c", name: "Combine1", .combine(CombineFeature(target: "b", tools: ["corner"])))]
+        partly.features = features + [corner, Feature(id: "c", name: "Combine1", .combine(CombineFeature(target: "b", tools: ["corner"], operation: .cut)))]
         let part = Regenerator.regenerate(partly)
         #expect(part.errors.isEmpty, "\(part.errors)")
         #expect(try #require(part.body("b")).volume < (try Self.body(features)).volume)

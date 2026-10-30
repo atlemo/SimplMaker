@@ -501,8 +501,10 @@ public enum Regenerator {
     public static func rootBody(_ id: FeatureID) -> FeatureID { String(id.prefix { $0 != "~" }) }
 
     static func split(_ f: SplitFeature, _ feature: Feature, _ r: inout RegenResult) throws {
-        let tool: SplitTool, what: String
+        let tool: SplitTool?, what: String
         switch f.tool {
+        case .parts:
+            tool = nil; what = "parts"
         case .plane(let ref):
             let frame = try resolvePlane(ref, r)
             tool = .plane(origin: frame.origin, normal: frame.normal); what = "plane"
@@ -528,9 +530,11 @@ public enum Regenerator {
             let pieces: [KBody]
             do {
                 switch tool {
-                case .plane(let origin, let normal):
+                case nil:
+                    pieces = try whole.splitIntoParts(featureID: feature.id)
+                case .plane(let origin, let normal)?:
                     pieces = try whole.split(planeThrough: origin, normal: normal, featureID: feature.id)
-                case .curved(let toolBody, let face):
+                case .curved(let toolBody, let face)?:
                     guard toolBody != id, let toolShape = r.body(toolBody) else { continue }  // a body can't cut itself
                     pieces = try whole.split(byFace: face, of: toolShape, featureID: feature.id)
                 }
@@ -546,6 +550,9 @@ public enum Regenerator {
                 let name = r.bodyNames[pieceID] ?? (r.bodyNames[id] != nil ? "\(parent.name) \(k + 1)" : "Body\(r.bodies.count + 1)")
                 r.bodies.insert(BodyResult(id: pieceID, name: name, body: piece), at: i + k)
             }
+        }
+        if !cutAny, tool == nil {
+            throw KernelError(message: "\(f.bodies.count == 1 ? "The body is" : "None of the bodies is") made of a single part, so there is nothing to separate.")
         }
         if !cutAny {
             throw KernelError(message: "The \(what) doesn't cut through \(f.bodies.count == 1 ? "the body" : "any of the bodies"). "

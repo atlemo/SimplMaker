@@ -956,7 +956,7 @@ enum AITools {
 
                 Arguments: document_id; bodies (required: body ids); exactly ONE of plane ("xy", "xz", "yz", "plane:<id>" (create_plane makes one \
                 at any offset or tilt: to cut at a height, make a plane first)), face (a face id) or sketch_id (cut along the plane that sketch \
-                lies on); name, id, expected_revision.
+                lies on) or parts (true: no cut, a body that is really several loose pieces becomes one body per piece, biggest first); name, id, expected_revision.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
                 FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED (the tool misses every body), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
@@ -967,6 +967,7 @@ enum AITools {
                     "plane": ["type": "string", "description": "xy, xz, yz or plane:<id>."],
                     "face": ["type": "string", "description": "A face id: its plane if flat, the face itself if curved."],
                     "sketch_id": ["type": "string", "description": "Split along the plane this sketch lies on."],
+                    "parts": ["type": "boolean", "description": "true: separate the loose pieces of each body into bodies of their own (no cut)."],
                     "name": ["type": "string", "description": "A name for the feature (default Split1…)."],
                     "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
                     "expected_revision": expectedRevision,

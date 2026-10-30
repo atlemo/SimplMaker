@@ -79,6 +79,7 @@ struct InspectorView: View {
                             Button("Edit") { model.editFeature(body) }
                         }
                     }
+                    Button("Split into Parts") { model.splitIntoParts(bodies: [body]) }
                     Button(model.isHidden(body) ? "Show Body" : "Hide Body") { model.setHidden([body], !model.isHidden(body)) }
                 }
             }
@@ -93,6 +94,7 @@ struct InspectorView: View {
                     Button("Move or Rotate") { model.move(bodies: ids) }
                     Button("Scale") { model.scale(bodies: ids) }
                     Button("Appearance…") { model.openAppearance(for: ids) }
+                    Button("Split into Parts") { model.splitIntoParts(bodies: ids) }
                     Button(ids.allSatisfy(model.isHidden) ? "Show Bodies" : "Hide Bodies") {
                         model.setHidden(ids, !ids.allSatisfy(model.isHidden))
                     }
@@ -1176,6 +1178,7 @@ struct SplitInspector: View {
         case .plane(let ref): return model.planeName(ref)
         case .face(let face): return "Face \(face.face)"
         case .profile(let sketch): return "Profile of \(model.featureName(sketch))"
+        case .parts: return "Separate parts"
         }
     }
 

@@ -170,6 +170,9 @@ SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op);
 /// kept; the faces the cut makes are "<featureId>.split".
 int sk_split(SKHandle body, SKHandle toolBody, const char *toolFace, double ox, double oy, double oz, double nx, double ny,
              double nz, const char *featureId, SKHandle *out, int max);
+/// Splits a body into the separate solids it is made of (bodies that were joined without touching). Writes at most
+/// `max` handles to `out`, biggest first, and returns how many: 1 when the body is a single piece, 0 on failure.
+int sk_split_parts(SKHandle body, const char *featureId, SKHandle *out, int max);
 /// Constant-radius fillet on the named edges. New faces: "<featureId>.fillet.<edgeName>".
 SKHandle sk_fillet(SKHandle body, const char *const *edgeNames, int count, double radius, const char *featureId);
 /// Equal-distance chamfer on the named edges. New faces: "<featureId>.chamfer.<edgeName>".

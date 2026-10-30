@@ -134,4 +134,40 @@ import simd
         let grown = try #require(r.body(piece.id))
         #expect(abs(grown.volume - (500 + 3 * 10 * 5)) < 1e-6, "\(grown.volume)")
     }
+
+    // MARK: split into parts
+
+    /// Two blocks that don't touch, extruded together into one body.
+    private func twoBlocks(_ tool: SplitFeature.Tool) -> RegenResult {
+        var s = Sketch()
+        s.addRectangle(0, 0, 10, 10)
+        s.addRectangle(30, 0, 40, 10)
+        var d = CADDocument()
+        d.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s)))]
+        d.features.append(Feature(id: "e", name: "Extrude1", .extrude(ExtrudeFeature(sketch: "sk",
+            profiles: [ProfileRef(curves: [], hintU: 5, hintV: 5), ProfileRef(curves: [], hintU: 35, hintV: 5)],
+            extent: .distance("5 mm")))))
+        d.features.append(Feature(id: "pl", name: "Plane1", .plane(PlaneFeature(base: .yz, offset: "100 mm"))))
+        d.features.append(Feature(id: "s", name: "Split1", .split(SplitFeature(bodies: ["e"], tool: tool))))
+        return Regenerator.regenerate(d)
+    }
+
+    @Test func loosePiecesBecomeBodiesOfTheirOwn() throws {
+        let r = twoBlocks(.parts)
+        #expect(r.errors.isEmpty)
+        #expect(r.bodies.count == 2)
+        #expect(r.bodies.first?.id == "e")
+        for b in r.bodies { #expect(abs(b.body.volume - 500) < 1e-6) }
+    }
+
+    @Test func aPlaneThatMissesBothStillSeparatesThem() throws {
+        let r = twoBlocks(.plane(.plane("pl")))
+        #expect(r.bodies.count == 2)
+    }
+
+    @Test func aBodyInOnePieceHasNothingToSeparate() throws {
+        let r = split(.parts)
+        #expect(!r.errors.isEmpty)
+        #expect(r.bodies.count == 1)
+    }
 }

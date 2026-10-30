@@ -3328,6 +3328,57 @@ SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op) {
   SK_CATCH(0)
 }
 
+/// The separate solids a shape is made of. A solid whose shells don't touch (two blocks that were joined into one
+/// body without meeting) comes out as one solid per outer shell, with any void shell given to the outer shell around it.
+static std::vector<TopoDS_Shape> componentSolids(const TopoDS_Shape &shape) {
+  std::vector<TopoDS_Shape> out;
+  for (TopExp_Explorer ex(shape, TopAbs_SOLID); ex.More(); ex.Next()) {
+    std::vector<TopoDS_Shell> shells;
+    for (TopExp_Explorer sx(ex.Current(), TopAbs_SHELL); sx.More(); sx.Next()) shells.push_back(TopoDS::Shell(sx.Current()));
+    if (shells.size() < 2) {
+      out.push_back(ex.Current());
+      continue;
+    }
+    std::vector<TopoDS_Solid> outers, voids;
+    for (const TopoDS_Shell &sh : shells) {
+      BRepBuilderAPI_MakeSolid mk(sh);
+      GProp_GProps props;
+      BRepGProp::VolumeProperties(mk.Solid(), props);
+      (props.Mass() >= 0 ? outers : voids).push_back(mk.Solid());
+    }
+    if (outers.size() < 2) {  // one body with hollows inside: stays whole
+      out.push_back(ex.Current());
+      continue;
+    }
+    std::vector<std::vector<TopoDS_Shell>> owned(outers.size());
+    for (size_t i = 0; i < outers.size(); ++i) owned[i].push_back(TopoDS::Shell(TopoDS_Iterator(outers[i]).Value()));
+    for (const TopoDS_Solid &v : voids) {
+      TopExp_Explorer vx(v, TopAbs_VERTEX);
+      if (!vx.More()) continue;
+      const gp_Pnt at = BRep_Tool::Pnt(TopoDS::Vertex(vx.Current()));
+      for (size_t i = 0; i < outers.size(); ++i) {
+        BRepClass3d_SolidClassifier cls(outers[i], at, 1e-6);
+        if (cls.State() == TopAbs_IN || cls.State() == TopAbs_ON) {
+          owned[i].push_back(TopoDS::Shell(TopoDS_Iterator(v).Value()));
+          break;
+        }
+      }
+    }
+    for (size_t i = 0; i < outers.size(); ++i) {
+      if (owned[i].size() == 1) {
+        out.push_back(outers[i]);
+        continue;
+      }
+      BRep_Builder bb;
+      TopoDS_Solid solid;
+      bb.MakeSolid(solid);
+      for (const TopoDS_Shell &sh : owned[i]) bb.Add(solid, sh);
+      out.push_back(solid);
+    }
+  }
+  return out;
+}
+
 int sk_split(SKHandle body, SKHandle toolBody, const char *toolFace, double ox, double oy, double oz, double nx, double ny,
              double nz, const char *featureId, SKHandle *out, int max) {
   SK_TRY
@@ -3394,13 +3445,13 @@ int sk_split(SKHandle body, SKHandle toolBody, const char *toolFace, double ox, 
     long long along;
   };
   std::vector<Piece> pieces;
-  for (TopExp_Explorer ex(sp.Shape(), TopAbs_SOLID); ex.More(); ex.Next()) {
+  for (const TopoDS_Shape &solid : componentSolids(sp.Shape())) {
     GProp_GProps props;
-    BRepGProp::VolumeProperties(ex.Current(), props);
+    BRepGProp::VolumeProperties(solid, props);
     if (props.Mass() <= 1e-9) continue;
     const gp_Pnt c = props.CentreOfMass();
     auto q = [](double v) { return std::llround(v * 1e4); };
-    pieces.push_back({ex.Current(), {q(c.X()), q(c.Y()), q(c.Z())}, q(gp_Vec(gp_Pnt(0, 0, 0), c).Dot(gp_Vec(dir)))});
+    pieces.push_back({solid, {q(c.X()), q(c.Y()), q(c.Z())}, q(gp_Vec(gp_Pnt(0, 0, 0), c).Dot(gp_Vec(dir)))});
   }
   if (pieces.empty()) {
     setError("the split left nothing");
@@ -3422,6 +3473,50 @@ int sk_split(SKHandle body, SKHandle toolBody, const char *toolFace, double ox, 
     for (const Named &n : names)
       if (inPiece.Contains(n.shape)) mine.push_back({copy.ModifiedShape(n.shape), n.name});
     for (const Named &n : cuts)
+      if (inPiece.Contains(n.shape)) mine.push_back({copy.ModifiedShape(n.shape), n.name});
+    out[written++] = store(makeBody(copy.Shape(), mine, feat));
+  }
+  return written;
+  SK_CATCH(0)
+}
+
+int sk_split_parts(SKHandle body, const char *featureId, SKHandle *out, int max) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  const std::string feat = featureOrDefault(featureId, "split");
+  struct Piece {
+    TopoDS_Shape solid;
+    long long volume;
+    std::tuple<long long, long long, long long> key;
+  };
+  std::vector<Piece> pieces;
+  for (const TopoDS_Shape &solid : componentSolids(b->shape)) {
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(solid, props);
+    if (props.Mass() <= 1e-9) continue;
+    const gp_Pnt c = props.CentreOfMass();
+    auto q = [](double v) { return std::llround(v * 1e4); };
+    pieces.push_back({solid, q(props.Mass()), {q(c.X()), q(c.Y()), q(c.Z())}});
+  }
+  if (pieces.empty()) {
+    setError("the body has no solid in it");
+    return 0;
+  }
+  // The biggest part keeps the body's identity; equal parts go by position, so a rebuild names them the same.
+  std::sort(pieces.begin(), pieces.end(), [](const Piece &x, const Piece &y) {
+    return x.volume != y.volume ? x.volume > y.volume : x.key < y.key;
+  });
+  const std::vector<Named> names = namedFaces(*b);
+  int written = 0;
+  for (const Piece &p : pieces) {
+    if (written >= max) break;
+    BRepBuilderAPI_Copy copy(p.solid, true, false);
+    std::vector<Named> mine;
+    ShapeIndexedMap inPiece;
+    TopExp::MapShapes(p.solid, TopAbs_FACE, inPiece);
+    for (const Named &n : names)
       if (inPiece.Contains(n.shape)) mine.push_back({copy.ModifiedShape(n.shape), n.name});
     out[written++] = store(makeBody(copy.Shape(), mine, feat));
   }

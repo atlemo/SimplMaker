@@ -38,3 +38,11 @@ To split along a different place, move the construction plane or sketch that the
 - The pieces are separate bodies. To put them back together, use [Combine](doc:modify/combine) with **Join**.
 - Splitting a hole-ridden body can make more than two pieces, if the cut separates parts that were only joined through the cut.
 - To keep only one side, split, then hide the other body in the browser.
+
+## Split into Parts
+
+A body can be several loose pieces that were joined into one body without ever touching (two blocks extruded from one sketch, say). **Split into Parts** turns each piece into a body of its own, like the "split to parts" button in a slicer. No cutting plane is needed.
+
+Right-click a body in the browser (or a face in the viewport) and choose **Split into Parts**, or use the button in the Inspector. With several bodies selected it works on all of them. The biggest piece keeps the body's name and identity; the others become Body2, Body3 and so on. A body that is all in one piece says so and changes nothing.
+
+Splitting along a plane now does the same for loose pieces: if a plane cuts one part, any part it never touches becomes its own body too, instead of staying tied to the original.

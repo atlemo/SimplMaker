@@ -171,6 +171,7 @@ extension Feature {
             case .plane(let plane): add(plane.feature)
             case .face(let face): add(face.body)
             case .profile(let sketch): add(sketch)
+            case .parts: break
             }
         case .layOnFloor(let f): add(f.face.body)
         case .plane(let f): add(f.base.feature)

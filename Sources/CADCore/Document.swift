@@ -544,6 +544,8 @@ public struct SplitFeature: Codable, Hashable, Sendable {
         case face(FaceRef)
         /// A profile of a sketch, by the id of the sketch: the plane the sketch lies on.
         case profile(FeatureID)
+        /// No cut: each separate solid of the body becomes a body of its own (Split into Parts).
+        case parts
     }
     public var bodies: [FeatureID]
     public var tool: Tool
@@ -565,7 +567,7 @@ public struct CombineFeature: Codable, Hashable, Sendable {
     /// Join, Cut or Intersect (New Body isn't offered).
     public var operation: BodyOperation
     public var keepTools: Bool
-    public init(target: FeatureID, tools: [FeatureID], operation: BodyOperation = .cut, keepTools: Bool = false) {
+    public init(target: FeatureID, tools: [FeatureID], operation: BodyOperation = .join, keepTools: Bool = false) {
         self.target = target; self.tools = tools; self.operation = operation; self.keepTools = keepTools
     }
 }

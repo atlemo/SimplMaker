@@ -70,7 +70,7 @@ struct CreatePipeOperation: AIOperation {
 // MARK: split
 
 struct CreateSplitOperation: AIOperation {
-    enum Tool: Sendable { case plane(String), face(String), sketch(FeatureID) }
+    enum Tool: Sendable { case plane(String), face(String), sketch(FeatureID), parts }
     let bodies: [String]
     let tool: Tool
     let name: String?
@@ -97,6 +97,8 @@ struct CreateSplitOperation: AIOperation {
         case .face(let text):
             let (ref, _) = try AIChecks.face(text, field: "face", context)
             splitTool = .face(ref); what = "the face \(text)"
+        case .parts:
+            splitTool = .parts; what = "its separate parts"
         case .sketch(let sketch):
             guard doc.features.contains(where: { $0.id == sketch && { if case .sketch = $0.kind { return true } else { return false } }($0) }) else {
                 throw AIError(.featureNotFound, "There is no sketch with the id \(sketch).", reason: "Take sketch ids from get_document.")

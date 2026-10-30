@@ -134,6 +134,7 @@ struct FeatureDescriber {
             case .plane(let p): out["tool"] = plane(p)
             case .face(let face): out["tool"] = faces([face])
             case .profile(let sketch): out["tool"] = .text(sketch)
+            case .parts: out["tool"] = .text("parts")
             }
         case .layOnFloor(let f):
             out["face"] = faces([f.face])

@@ -386,6 +386,12 @@ public final class KBody: @unchecked Sendable {
         try splitPieces("split") { out, max in sk_split(handle, tool.handle, face, 0, 0, 0, 0, 0, 1, featureID, out, max) }
     }
 
+    /// The separate solids this body is made of, biggest first (the biggest keeps the body's identity). One part comes
+    /// back when the body is all in one piece.
+    public func splitIntoParts(featureID: String) throws -> [KBody] {
+        try splitPieces("split") { out, max in sk_split_parts(handle, featureID, out, max) }
+    }
+
     private func splitPieces(_ context: String, _ call: (UnsafeMutablePointer<SKHandle>, Int32) -> Int32) throws -> [KBody] {
         var handles = [SKHandle](repeating: 0, count: 64)
         let n = Int(handles.withUnsafeMutableBufferPointer { call($0.baseAddress!, 64) })

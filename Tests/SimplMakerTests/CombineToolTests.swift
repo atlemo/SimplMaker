@@ -13,7 +13,7 @@ import simd
         for _ in 0..<1000 where model.isRegenerating || model.result == nil { try await Task.sleep(for: .milliseconds(5)) }
     }
 
-    @Test func combineCutsTheSecondBodyOutOfTheFirst() async throws {
+    @Test func combineJoinsTheSecondBodyToTheFirst() async throws {
         var d = CADDocument()
         d.features = [
             Feature(id: "a", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20", length: "20", height: "10"))),
@@ -29,12 +29,12 @@ import simd
         #expect(model.pendingTool == .combine, "waits for more tools until Return")
         model.confirmTool()
         guard case .combine(let c)? = model.document.features.last?.kind else { Issue.record("expected a combine"); return }
-        #expect(c.target == "a" && c.tools == ["b"] && c.operation == .cut)
+        #expect(c.target == "a" && c.tools == ["b"] && c.operation == .join, "Combine joins unless told otherwise")
         try await settle(model)
         let r = try #require(model.result)
         #expect(r.errors.isEmpty, "\(r.errors)")
         let volume = try #require(r.body("a")).volume
-        #expect(r.bodies.map(\.id) == ["a"] && abs(volume - (4000 - 1000)) < 1e-6, "\(volume)")
+        #expect(r.bodies.map(\.id) == ["a"] && abs(volume - 5000) < 1e-6, "\(volume)")
     }
 
     @Test func aSketchMovesWithAHandle() async throws {

@@ -280,12 +280,13 @@ enum AIOperationParser {
                                        name: try a.string("name"), id: try a.string("id"))
 
         case "create_split":
-            try a.rejectUnknown(["document_id", "bodies", "plane", "face", "sketch_id", "name", "id", "expected_revision"], in: tool)
+            try a.rejectUnknown(["document_id", "bodies", "plane", "face", "sketch_id", "parts", "name", "id", "expected_revision"], in: tool)
             let plane = try a.string("plane"), face = try a.string("face"), sketch = try a.string("sketch_id")
-            let tools: [CreateSplitOperation.Tool] = [plane.map { .plane($0) }, face.map { .face($0) }, sketch.map { .sketch($0) }].compactMap { $0 }
+            let parts = try a.bool("parts") ?? false
+            let tools: [CreateSplitOperation.Tool] = [plane.map { .plane($0) }, face.map { .face($0) }, sketch.map { .sketch($0) }, parts ? .parts : nil].compactMap { $0 }
             guard tools.count == 1, let splitTool = tools.first else {
-                throw AIError(.invalidArguments, "Send exactly one of plane, face or sketch_id: what cuts the bodies.",
-                              reason: "plane: \"xy\", \"xz\", \"yz\" or \"plane:<id>\" (create_plane makes one at any height); face: a face id (its plane if flat); sketch_id: cut along the plane that sketch lies on.")
+                throw AIError(.invalidArguments, "Send exactly one of plane, face, sketch_id or parts: what divides the bodies.",
+                              reason: "plane: \"xy\", \"xz\", \"yz\" or \"plane:<id>\" (create_plane makes one at any height); face: a face id (its plane if flat); sketch_id: cut along the plane that sketch lies on; parts: true separates a body that is really several loose pieces into one body each, no cut.")
             }
             return CreateSplitOperation(bodies: try ids(a, "bodies"), tool: splitTool, name: try a.string("name"), id: try a.string("id"))
 

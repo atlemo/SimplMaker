@@ -39,7 +39,7 @@ import Testing
         let before = Regenerator.regenerate(d)
         #expect(before.errors.isEmpty, "\(before.errors)")
         let text = try #require(before.body("text")).volume, plate = try #require(before.body("plate")).volume
-        d.features.append(Feature(id: "c", name: "Combine1", .combine(CombineFeature(target: "plate", tools: ["text"]))))
+        d.features.append(Feature(id: "c", name: "Combine1", .combine(CombineFeature(target: "plate", tools: ["text"], operation: .cut))))
         let r = Regenerator.regenerate(d)
         #expect(r.errors.isEmpty, "\(r.errors)")
         #expect(r.bodies.map(\.id) == ["plate"], "the text is used up")
@@ -54,7 +54,7 @@ import Testing
 
     @Test func aCutThatRemovesEverythingIsAnError() throws {
         var d = try textAndPlate()
-        d.features.append(Feature(id: "c", name: "Combine1", .combine(CombineFeature(target: "text", tools: ["plate"]))))
+        d.features.append(Feature(id: "c", name: "Combine1", .combine(CombineFeature(target: "text", tools: ["plate"], operation: .cut))))
         #expect(Regenerator.regenerate(d).errors["c"] == nil, "the plate only takes the letters' bottom 2 mm")
         if case .extrude(var e) = d.features[3].kind { e.extent = .distance("5 mm"); d.features[3].kind = .extrude(e) }
         #expect(Regenerator.regenerate(d).errors["c"]?.contains("removes the whole body") == true)

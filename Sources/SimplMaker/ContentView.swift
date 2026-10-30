@@ -1111,6 +1111,21 @@ struct BrowserList: View {
         }
     }
 
+    @ViewBuilder private func bodyButtons(_ id: FeatureID) -> some View {
+        Button(model.isHidden(id) ? "Show Body" : "Hide Body") { model.setHidden([id], !model.isHidden(id)) }
+        Button(model.isLocked(id) ? "Unlock Body" : "Lock Body") { model.setLocked([id], !model.isLocked(id)) }
+        Button("Move or Rotate Body") { model.move(bodies: [id]) }.disabled(model.isLocked(id))
+        Button("Scale Body") { model.scale(bodies: [id]) }.disabled(model.isLocked(id))
+        Button("Rename Body") { renaming = id }
+        Button("Split into Parts") { model.splitIntoParts(bodies: [id]) }.disabled(model.isLocked(id))
+        Button("Appearance…") { model.openAppearance(for: id) }
+        moveMenu([id])
+        Menu("Export Body") {
+            Button("STEP…") { model.export(bodies: [id], stl: false) }
+            Button("STL…") { model.export(bodies: [id], stl: true) }
+        }
+    }
+
     @ViewBuilder private func itemMenu(for tags: Set<FeatureID>) -> some View {
         let ids = Set(tags.map(featureID))
         if ids.count == 1, let id = ids.first, let f = model.document.features.first(where: { $0.id == id }) {
@@ -1132,17 +1147,7 @@ struct BrowserList: View {
                 Button(model.isHidden(id) ? "Show Canvas" : "Hide Canvas") { model.setHidden([id], !model.isHidden(id)) }
                 Button("Rename Canvas") { renaming = id }
             } else if model.bodies.contains(where: { $0.id == id }) {
-                Button(model.isHidden(id) ? "Show Body" : "Hide Body") { model.setHidden([id], !model.isHidden(id)) }
-                Button(model.isLocked(id) ? "Unlock Body" : "Lock Body") { model.setLocked([id], !model.isLocked(id)) }
-                Button("Move or Rotate Body") { model.move(bodies: [id]) }.disabled(model.isLocked(id))
-                Button("Scale Body") { model.scale(bodies: [id]) }.disabled(model.isLocked(id))
-                Button("Rename Body") { renaming = id }
-                Button("Appearance…") { model.openAppearance(for: id) }
-                moveMenu([id])
-                Menu("Export Body") {
-                    Button("STEP…") { model.export(bodies: [id], stl: false) }
-                    Button("STL…") { model.export(bodies: [id], stl: true) }
-                }
+                bodyButtons(id)
             }
             Divider()
             Button(f.suppressed ? "Unsuppress" : "Suppress") {
@@ -1151,6 +1156,9 @@ struct BrowserList: View {
             .disabled(model.isLocked(id))
             Button("Delete \(f.name)", role: .destructive) { model.deleteFeature(id) }
                 .disabled(model.isLocked(id))
+        } else if ids.count == 1, let id = ids.first, model.bodies.contains(where: { $0.id == id }) {
+            // A body no feature of the same id made (a piece of a split): the same body menu.
+            bodyButtons(id)
         } else if ids.count > 1, ids.allSatisfy({ id in model.bodies.contains { $0.id == id } }) {
             // Several bodies: what works on them together.
             let list = model.bodies.map(\.id).filter(ids.contains)
@@ -1158,6 +1166,7 @@ struct BrowserList: View {
             Button("Move or Rotate Bodies") { model.move(bodies: free) }.disabled(free.isEmpty)
             Button("Scale Bodies") { model.scale(bodies: free) }.disabled(free.isEmpty)
             Button("Appearance…") { model.openAppearance(for: free) }.disabled(free.isEmpty)
+            Button("Split into Parts") { model.splitIntoParts(bodies: free) }.disabled(free.isEmpty)
             Divider()
             Button("Hide Bodies") { model.setHidden(list, true) }
             Button("Show Bodies") { model.setHidden(list, false) }

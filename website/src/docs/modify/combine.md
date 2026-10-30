@@ -18,7 +18,7 @@ The first body picked is the target. The status bar counts the tools you have pi
 
 | Operation | Result |
 |---|---|
-| **Join** | The bodies become one |
+| **Join** | The bodies become one. This is what the tool starts with. |
 | **Cut** | The tool bodies are removed from the target. Cut text out of a plate, or a pocket out of a block. |
 | **Intersect** | Only the volume where the bodies overlap remains |
 
