@@ -159,6 +159,8 @@ final class DocumentModel {
     var orthographic = true
     /// How bodies are drawn: shaded or wireframe, with or without edges (View ▸ Visual Style).
     var visualStyle = VisualStyle.standard
+    /// The command palette (⌘K) is open.
+    var showPalette = false
     /// Shaded bodies drawn like an FDM print, with layer lines (View ▸ FDM 3D Print Preview). Not saved.
     var printPreview = false
     /// The print preview's layer height and nozzle width, in mm, and whether its options panel is open.

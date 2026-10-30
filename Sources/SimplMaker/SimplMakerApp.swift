@@ -170,6 +170,10 @@ struct SimplMakerCommands: Commands {
             Button("Export…") { model?.exportWithDialog() }.disabled(model == nil)
         }
         CommandGroup(before: .toolbar) {
+            Button("Command Palette…") { model?.showPalette.toggle() }
+                .shortcut(.palette)
+                .disabled(model == nil)
+            Divider()
             Button("Fit All") { LetterShortcut.perform(model) { model?.fitView() } }
                 .shortcut(.fitAll)
             Menu("Standard Views") {

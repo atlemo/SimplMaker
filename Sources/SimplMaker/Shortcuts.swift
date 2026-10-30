@@ -100,7 +100,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
     case view(StandardView)
     case fitAll, orthographic, showGrid, showAxes, snapToGrid
     case appearance, browser, timeline, inspector
-    case rebuild, importSTEP, welcome, exampleParts
+    case rebuild, importSTEP, welcome, exampleParts, palette
 
     /// Menu shortcuts work anywhere in the app; sketch shortcuts are single keys the viewport reads while sketching.
     enum Scope: Sendable { case app, sketch }
@@ -124,6 +124,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .importSTEP: return "importSTEP"
         case .welcome: return "welcome"
         case .exampleParts: return "exampleParts"
+        case .palette: return "palette"
         }
     }
 
@@ -145,6 +146,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .importSTEP: return "Import STEP"
         case .welcome: return "Welcome Window"
         case .exampleParts: return "Open Example Part"
+        case .palette: return "Command Palette"
         }
     }
 
@@ -172,6 +174,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .importSTEP: return KeyChord("i", [.command, .shift])
         case .welcome: return KeyChord("1", [.command, .shift])
         case .exampleParts: return KeyChord("n", [.command, .option])
+        case .palette: return KeyChord("k", .command)
         }
     }
 
@@ -188,7 +191,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         Section(title: "Inspect", commands: DesignTool.inspect.map { .tool($0) }),
         Section(title: "View", commands: StandardView.allCases.map { .view($0) } + [
             .fitAll, .orthographic, .showGrid, .showAxes, .snapToGrid, .appearance, .browser, .timeline, .inspector]),
-        Section(title: "Model", commands: [.rebuild, .importSTEP, .welcome, .exampleParts]),
+        Section(title: "Model", commands: [.palette, .rebuild, .importSTEP, .welcome, .exampleParts]),
         Section(title: "While Sketching", commands: SketchTool.allCases.filter { $0.family[0] == $0 }.map { .sketch($0) }),
     ]
 

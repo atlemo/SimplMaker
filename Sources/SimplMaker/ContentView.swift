@@ -261,6 +261,9 @@ struct DocumentWindow: View {
             .animation(.easeOut(duration: DS.Duration.base), value: model.showTimeline)
             .animation(.easeOut(duration: DS.Duration.base), value: model.showSidebar)
             .animation(.easeOut(duration: DS.Duration.base), value: model.showInspector)
+            if model.showPalette {
+                CommandPaletteView(model: model)
+            }
         }
         // An empty part says how to begin, in the middle of the free space.
         .overlay {
