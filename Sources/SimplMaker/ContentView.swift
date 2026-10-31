@@ -159,6 +159,7 @@ struct DocumentWindow: View {
         .toolbar(removing: .title)  // the document's name is in its tab
         .toolbar(model.uiHidden ? .hidden : .automatic, for: .windowToolbar)
         .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
+        .background(HideUIKeyMonitor { model.toggleUIHidden() })
         .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
         .background(toolStrip)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
@@ -237,7 +238,7 @@ struct DocumentWindow: View {
                 .ignoresSafeArea()
             // The toolbar lights up under the pointer only on macOS 26 and later; macOS 15's toolbar and strip don't need it.
             ToolbarFade(tint: sketchTint ? sketchPaper.toolbarTint : Color(nsColor: .windowBackgroundColor),
-                        height: toolbarHeight, visible: sketchTint || (toolbarHovered && toolsInNativeToolbar))
+                        height: toolbarHeight, visible: !model.uiHidden && (sketchTint || (toolbarHovered && toolsInNativeToolbar)))
             VStack(spacing: Panel.inset) {
             HStack(alignment: .top, spacing: 0) {
                 if model.showSidebar {
@@ -264,6 +265,27 @@ struct DocumentWindow: View {
             .animation(.easeOut(duration: DS.Duration.base), value: model.showTimeline)
             .animation(.easeOut(duration: DS.Duration.base), value: model.showSidebar)
             .animation(.easeOut(duration: DS.Duration.base), value: model.showInspector)
+            if model.uiHidden {
+                // The one control left: it brings the panels and toolbar back.
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button { model.toggleUIHidden() } label: {
+                            Image(systemName: "rectangle.on.rectangle")
+                                .font(.system(size: 14))
+                                .frame(width: 32, height: 32)
+                                .background(.regularMaterial, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .opacity(0.6)
+                        .help(helpWithShortcut("Show the panels and toolbar again", .hideUI))
+                        .accessibilityLabel("Show UI")
+                    }
+                }
+                .padding(.trailing, Panel.inset)
+                .padding(.bottom, 40)
+            }
             if model.showPalette {
                 CommandPaletteView(model: model)
             }
@@ -437,6 +459,58 @@ struct ToolbarFade: View {
 
 /// Tells whether the pointer is over the window's toolbar strip. Events over the toolbar never reach
 /// the content's own tracking areas, so a local event monitor watches the pointer instead.
+/// Runs `action` when the Show/Hide UI shortcut is pressed in this window. Read from the key event itself rather
+/// than a menu key equivalent, which doesn't match a symbol like @ on every keyboard layout.
+struct HideUIKeyMonitor: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> MonitorView { MonitorView() }
+    func updateNSView(_ view: MonitorView, context: Context) { view.action = action }
+
+    final class MonitorView: NSView {
+        var action: () -> Void = {}
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                let handled = MainActor.assumeIsolated { () -> Bool in
+                    guard let self, self.matches(event) else { return false }
+                    self.action()
+                    return true
+                }
+                return handled ? nil : event
+            }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            if newWindow == nil, let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+        }
+
+        private func matches(_ event: NSEvent) -> Bool {
+            guard event.window === window, !event.isARepeat, let chord = Shortcuts.chord(.hideUI) else { return false }
+            let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            // The key may be typed with shift or option (@), so for a symbol only the other modifiers must agree.
+            let symbol = !(chord.key.isLetter || chord.key.isNumber)
+            let wanted = chord.modifiers
+            var held: KeyChord.Modifiers = []
+            if flags.contains(.command) { held.insert(.command) }
+            if flags.contains(.control) { held.insert(.control) }
+            if !symbol {
+                if flags.contains(.option) { held.insert(.option) }
+                if flags.contains(.shift) { held.insert(.shift) }
+            }
+            let need = symbol ? wanted.subtracting([.shift, .option]) : wanted
+            guard held == need else { return false }
+            let typed = event.characters?.first.map { Character($0.lowercased()) }
+            let bare = event.characters(byApplyingModifiers: [])?.first.map { Character($0.lowercased()) }
+            return typed == chord.key || bare == chord.key
+        }
+    }
+}
+
 struct ToolbarHoverMonitor: NSViewRepresentable {
     @Binding var hovering: Bool
 
