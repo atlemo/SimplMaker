@@ -242,6 +242,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     // MARK: view cube
 
     private var viewCube: ViewCubeView?
+    /// The toolbar's height as last seen, kept for the cube while the toolbar is hidden.
+    private var toolbarInset: CGFloat = 52
     private var cameraAnimation: Task<Void, Never>?
     /// Whether the view is moving by itself (a turn to a view, leaving a sketch).
     var isAnimatingCamera: Bool { cameraAnimation != nil }
@@ -276,8 +278,11 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             return c
         }()
         let right = min(shownInsets.right, bounds.width * 0.45)
+        // With the toolbar hidden (Hide UI) the cube stays where it was, so the button that brings the UI back has the corner.
+        let top = topInset
+        if top > 0 { toolbarInset = top }
         cube.frame.origin = NSPoint(x: bounds.width - right - ViewCubeView.size.width - DS.Spacing.space4,
-                                    y: topInset + DS.Spacing.space4)
+                                    y: max(top, toolbarInset) + DS.Spacing.space4)
         cube.offersTurning = true
         cube.needsDisplay = true
     }

@@ -288,8 +288,8 @@ struct DocumentWindow: View {
                     }
                     Spacer()
                 }
-                .padding(.trailing, Panel.inset)
-                .padding(.top, 7)  // on the toolbar's line, where the button was
+                .padding(.trailing, 62)  // where the toolbar's button was: left of the Inspector button
+                .padding(.top, 7)
             }
             if model.showPalette {
                 CommandPaletteView(model: model)
