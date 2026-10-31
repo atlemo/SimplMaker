@@ -87,6 +87,20 @@ struct TimelineBar: View {
 
     private var marker: Int { dragPosition ?? model.markerPosition }
 
+    private static let endID = "timeline-end"
+
+    /// Brings the marker into view: all the way right when it is at the end, else the feature it sits after.
+    private func scrollToMarker(_ proxy: ScrollViewProxy, animated: Bool) {
+        let features = model.document.features
+        let position = model.markerPosition
+        let scroll = {
+            if position >= features.count { proxy.scrollTo(Self.endID, anchor: .trailing) }
+            else if position > 0 { proxy.scrollTo(features[position - 1].id) }
+            else if let first = features.first?.id { proxy.scrollTo(first, anchor: .leading) }
+        }
+        if animated { withAnimation { scroll() } } else { scroll() }
+    }
+
     var body: some View {
         let marks = model.timelineMarks
         return HStack(spacing: DS.Spacing.space4) {
@@ -98,6 +112,8 @@ struct TimelineBar: View {
                         ForEach(Array(model.document.features.enumerated()), id: \.element.id) { i, f in
                             item(f, index: i, marks: marks)
                         }
+                        // Room after the last feature for the marker, and something to scroll to that shows it.
+                        Color.clear.frame(width: 12, height: 1).id(Self.endID)
                     }
                     .padding(.horizontal, DS.Spacing.space2)
                     .frame(height: Self.height)
@@ -108,9 +124,14 @@ struct TimelineBar: View {
                             .offset(x: DS.Spacing.space2 + CGFloat(min(marker, model.document.features.count)) * Self.step - 6)
                     }
                 }
-                .onChange(of: model.document.features.count) {
-                    if let last = model.document.features.last?.id { withAnimation { proxy.scrollTo(last) } }
+                .onChange(of: model.document.features.count) { scrollToMarker(proxy, animated: true) }
+                // A document opens with the marker in view: at the end, unless it was saved rolled back. The bar's
+                // width settles a moment after it appears, so it is scrolled again then.
+                .onAppear {
+                    scrollToMarker(proxy, animated: false)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { scrollToMarker(proxy, animated: false) }
                 }
+                .task(id: model.document.features.first?.id) { scrollToMarker(proxy, animated: false) }
                 // A click brings its feature into view on the timeline.
                 .onChange(of: marks) {
                     if let id = marks.first { withAnimation { proxy.scrollTo(id) } }
