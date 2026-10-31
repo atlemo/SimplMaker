@@ -362,6 +362,15 @@ struct ExtrudeInspector: View {
         }
     }
 
+    /// Sets the distance. Typed through zero it turns round, as dragging the arrow does: a negative distance cuts
+    /// (pushed into the body), a positive one joins. Other operations are left as chosen.
+    private func setDistance(_ e: inout ExtrudeFeature, from old: String, to new: String) {
+        e.extent = .distance(new)
+        func negative(_ text: String) -> Bool { ((try? model.parameterValues.value(of: text, kind: .length)) ?? 0) < 0 }
+        if !negative(old), negative(new), e.operation == .join { e.operation = .cut }
+        else if negative(old), !negative(new), e.operation == .cut { e.operation = .join }
+    }
+
     var body: some View {
         Section("Extrude") {
             Picker("Extent", selection: Binding(get: { extentKind }, set: { k in
@@ -383,8 +392,8 @@ struct ExtrudeInspector: View {
             switch extrude.extent {
             case .distance(let d):
                 LabeledContent("Distance") {
-                    ExpressionField(text: d, preview: { v in preview { $0.extent = .distance(v) } }) { v in
-                        update("Edit Distance") { $0.extent = .distance(v) }
+                    ExpressionField(text: d, preview: { v in preview { setDistance(&$0, from: d, to: v) } }) { v in
+                        update("Edit Distance") { setDistance(&$0, from: d, to: v) }
                     }
                 }
             case .symmetric(let d):
