@@ -99,7 +99,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
     case sketch(SketchTool)
     case view(StandardView)
     case fitAll, orthographic, showGrid, showAxes, snapToGrid
-    case appearance, browser, timeline, inspector
+    case appearance, browser, timeline, inspector, hideUI
     case rebuild, importSTEP, welcome, exampleParts, palette
 
     /// Menu shortcuts work anywhere in the app; sketch shortcuts are single keys the viewport reads while sketching.
@@ -120,6 +120,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .browser: return "browser"
         case .timeline: return "timeline"
         case .inspector: return "inspector"
+        case .hideUI: return "hideUI"
         case .rebuild: return "rebuild"
         case .importSTEP: return "importSTEP"
         case .welcome: return "welcome"
@@ -142,6 +143,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .browser: return "Show or Hide Browser"
         case .timeline: return "Show or Hide Timeline"
         case .inspector: return "Show or Hide Inspector"
+        case .hideUI: return "Show or Hide UI"
         case .rebuild: return "Rebuild"
         case .importSTEP: return "Import STEP"
         case .welcome: return "Welcome Window"
@@ -170,6 +172,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .browser: return KeyChord("s", [.command, .control])
         case .timeline: return KeyChord("t", [.command, .option])
         case .inspector: return KeyChord("i", [.command, .option])
+        case .hideUI: return KeyChord("@", .command)
         case .rebuild: return KeyChord("r", .command)
         case .importSTEP: return KeyChord("i", [.command, .shift])
         case .welcome: return KeyChord("1", [.command, .shift])
@@ -190,7 +193,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         Section(title: "Modify", commands: (DesignTool.modifiers + [.mirror, .pattern]).map { .tool($0) }),
         Section(title: "Inspect", commands: DesignTool.inspect.map { .tool($0) }),
         Section(title: "View", commands: StandardView.allCases.map { .view($0) } + [
-            .fitAll, .orthographic, .showGrid, .showAxes, .snapToGrid, .appearance, .browser, .timeline, .inspector]),
+            .fitAll, .orthographic, .showGrid, .showAxes, .snapToGrid, .appearance, .browser, .timeline, .inspector, .hideUI]),
         Section(title: "Model", commands: [.palette, .rebuild, .importSTEP, .welcome, .exampleParts]),
         Section(title: "While Sketching", commands: SketchTool.allCases.filter { $0.family[0] == $0 }.map { .sketch($0) }),
     ]

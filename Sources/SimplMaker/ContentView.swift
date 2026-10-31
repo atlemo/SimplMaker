@@ -138,7 +138,7 @@ struct DocumentWindow: View {
     /// The tools in the titlebar strip on macOS 15. The row is hosted apart from this view, so the accent and the
     /// tutorial's spotlight are handed on to it here.
     @ViewBuilder private var toolStrip: some View {
-        if !toolsInNativeToolbar {
+        if !toolsInNativeToolbar, !model.uiHidden {
             TitlebarToolStrip(height: Self.toolStripHeight) {
                 toolRow(toolbarLayout)
                     .accessibilityElement(children: .contain)
@@ -157,6 +157,7 @@ struct DocumentWindow: View {
         documentContent
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .toolbar(removing: .title)  // the document's name is in its tab
+        .toolbar(model.uiHidden ? .hidden : .automatic, for: .windowToolbar)
         .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
         .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
         .background(toolStrip)
@@ -187,6 +188,8 @@ struct DocumentWindow: View {
                 PanelToggle(title: "Render", systemImage: model.renderView ? "camera.fill" : "camera", ink: panelToggleInk,
                             help: "Show the part on a floor with a light you set, for presentation") { model.setRenderView(!model.renderView) }
                     .disabled(model.sketchSession != nil)
+                PanelToggle(title: "Hide UI", systemImage: "rectangle.on.rectangle.slash", ink: panelToggleInk,
+                            help: helpWithShortcut("Hide the panels and toolbar, leaving only the view", .hideUI)) { model.toggleUIHidden() }
                 PanelToggle(title: "Inspector", systemImage: "sidebar.right", ink: panelToggleInk,
                             help: helpWithShortcut("Show or hide the inspector", .inspector)) { model.showInspector.toggle() }
             }

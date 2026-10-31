@@ -101,6 +101,7 @@ extension DocumentModel {
         if visualStyle.isShaded {
             add("FDM 3D Print Preview", "View", keywords: "layers slicer", detail: state(printPreview)) { self.setPrintPreview(!self.printPreview) }
         }
+        add("Show or Hide UI", "View", keywords: "panels toolbar clean", shortcut: .hideUI, detail: state(uiHidden)) { self.toggleUIHidden() }
         add("Render", "View", keywords: "shadows reflection picture", detail: state(renderView)) { self.setRenderView(!self.renderView) }
         add("Section Analysis", "View", keywords: "cut slice", detail: state(sectionActive)) { self.setSectionAnalysis(!self.sectionActive) }
         add("Exploded View", "View", keywords: "assembly separate", detail: state(explodeOn)) { self.setExplodedView(!self.explodeOn) }

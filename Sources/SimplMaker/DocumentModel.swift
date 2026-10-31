@@ -204,6 +204,25 @@ final class DocumentModel {
 
     /// The Render view (the Render button): a solid floor and a light you set, for presentation. Not saved.
     var renderView = false
+
+    /// Show/Hide UI: the panels and the toolbar are put away, leaving the 3D view alone. Not saved.
+    private(set) var uiHidden = false
+    /// What was open when the UI was hidden, to bring back.
+    @ObservationIgnored private var panelsHiddenByUI = (sidebar: false, inspector: false, timeline: false, appearance: false, renderOptions: false)
+
+    func toggleUIHidden() {
+        if uiHidden {
+            showSidebar = panelsHiddenByUI.sidebar
+            showInspector = panelsHiddenByUI.inspector
+            showTimeline = panelsHiddenByUI.timeline
+            showAppearance = panelsHiddenByUI.appearance
+            showRenderOptions = panelsHiddenByUI.renderOptions
+        } else {
+            panelsHiddenByUI = (showSidebar, showInspector, showTimeline, showAppearance, showRenderOptions)
+            showSidebar = false; showInspector = false; showTimeline = false; showAppearance = false; showRenderOptions = false
+        }
+        uiHidden.toggle()
+    }
     /// Its floor and light, kept between launches, and whether its options panel is open.
     var renderSettings = RenderSettings.load() {
         didSet { renderSettings.save() }

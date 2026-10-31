@@ -222,6 +222,9 @@ struct SimplMakerCommands: Commands {
                 .shortcut(.timeline)
             Button((model?.showInspector ?? true) ? "Hide Inspector" : "Show Inspector") { LetterShortcut.perform(model) { model?.showInspector.toggle() } }
                 .shortcut(.inspector)
+            Button((model?.uiHidden ?? false) ? "Show UI" : "Hide UI") { model?.toggleUIHidden() }
+                .shortcut(.hideUI)
+                .disabled(model == nil)
             Button((model?.showAppearance ?? false) ? "Hide Appearance" : "Show Appearance") {
                 LetterShortcut.perform(model) { model?.toggleAppearance() }
             }
