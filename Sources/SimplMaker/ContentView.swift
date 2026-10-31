@@ -271,7 +271,6 @@ struct DocumentWindow: View {
             if model.uiHidden {
                 // The one control left: it brings the panels and toolbar back.
                 VStack {
-                    Spacer()
                     HStack {
                         Spacer()
                         Button { model.toggleUIHidden() } label: {
@@ -287,9 +286,10 @@ struct DocumentWindow: View {
                         .help(helpWithShortcut("Show the panels and toolbar again", .hideUI))
                         .accessibilityLabel("Show UI")
                     }
+                    Spacer()
                 }
                 .padding(.trailing, Panel.inset)
-                .padding(.bottom, 40)
+                .padding(.top, 7)  // on the toolbar's line, where the button was
             }
             if model.showPalette {
                 CommandPaletteView(model: model)
