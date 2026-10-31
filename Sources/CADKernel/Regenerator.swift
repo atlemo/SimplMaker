@@ -870,69 +870,82 @@ public enum Regenerator {
     }
 
     static func extrude(_ f: ExtrudeFeature, _ feature: Feature, _ r: inout RegenResult) throws {
-        let profiles: [KProfile], normal: SIMD3<Double>, planeOrigin: SIMD3<Double>
-        if let face = f.face {
-            guard let body = r.body(face.body) else { throw KernelError(message: "the body with that face is missing") }
-            r.featureInputs[feature.id] = [face.body: body]  // the face moves once extruded; its handle stays on the input
-            profiles = [try body.faceProfile(face.face)]
-            let frame = try body.faceFrame(face.face)
-            normal = frame.normal; planeOrigin = frame.origin
+        /// One thing to extrude: profiles on a plane, and the body (for a face) it grows on.
+        struct Job { var profiles: [KProfile]; var normal: SIMD3<Double>; var planeOrigin: SIMD3<Double>; var body: FeatureID? }
+        var jobs: [Job] = []
+        if f.face != nil {
+            // Every face is read before any is pulled: the first join changes the body the others are read from.
+            var inputs: [FeatureID: KBody] = [:]
+            for face in f.allFaces {
+                guard let body = r.body(face.body) else { throw KernelError(message: "the body with that face is missing") }
+                inputs[face.body] = inputs[face.body] ?? body
+                let frame = try body.faceFrame(face.face)
+                jobs.append(Job(profiles: [try body.faceProfile(face.face)], normal: frame.normal, planeOrigin: frame.origin, body: face.body))
+            }
+            r.featureInputs[feature.id] = inputs  // the faces move once extruded; the handle stays on the inputs
         } else {
             let sk = try sketchResult(f.sketch, r)
-            profiles = try Self.profiles(f.profiles, in: sk)
-            normal = sk.frame.normal; planeOrigin = sk.frame.origin
+            jobs = [Job(profiles: try Self.profiles(f.profiles, in: sk), normal: sk.frame.normal, planeOrigin: sk.frame.origin, body: nil)]
         }
 
         let p = r.parameters
-        let dir = f.flipped ? -normal : normal
-        var origin = planeOrigin  // where the extrude starts: the sketch plane, or the face it starts from
-        var startOffset = 0.0  // along `dir`, from the sketch plane to the face the extrude starts on
-        if let ref = f.start, f.face == nil {
-            guard let body = r.body(ref.body) else { throw KernelError(message: "the body with the face to start from is missing") }
-            let face: Frame
-            do { face = try body.faceFrame(ref.face) } catch { throw KernelError(message: "the face to start from is gone or isn't flat") }
-            guard abs(simd_dot(face.normal, normal)) > 0.9999 else {
-                throw KernelError(message: "the face to start from isn't parallel to the sketch")
-            }
-            startOffset = simd_dot(face.origin - planeOrigin, dir)
-            origin += dir * startOffset
-            r.extrudeStarts[feature.id] = simd_dot(face.origin - planeOrigin, normal)
-        }
-        var distance: Double, back: Double
-        switch f.extent {
-        case .distance(let d): distance = try p.value(of: d, kind: .length); back = 0
-        case .symmetric(let d): distance = try p.value(of: d, kind: .length) / 2; back = distance
-        case .twoSides(let d, let b): distance = try p.value(of: d, kind: .length); back = try p.value(of: b, kind: .length)
-        case .throughAll:
-            // Past the farthest corner of any body, measured along the direction.
-            let boxes = r.bodies.compactMap { $0.body.bounds }
-            guard !boxes.isEmpty else { throw KernelError(message: "there's no body to go through") }
-            var far = 0.0
-            for b in boxes {
-                for c in 0..<8 {
-                    let corner = SIMD3(c & 1 == 0 ? b.min.x : b.max.x, c & 2 == 0 ? b.min.y : b.max.y, c & 4 == 0 ? b.min.z : b.max.z)
-                    far = max(far, simd_dot(corner - origin, dir))
+        var tools: [(KBody, FeatureID?)] = []
+        for job in jobs {
+            let normal = job.normal, planeOrigin = job.planeOrigin
+            let dir = f.flipped ? -normal : normal
+            var origin = planeOrigin  // where the extrude starts: the sketch plane, or the face it starts from
+            var startOffset = 0.0  // along `dir`, from the sketch plane to the face the extrude starts on
+            if let ref = f.start, f.face == nil {
+                guard let body = r.body(ref.body) else { throw KernelError(message: "the body with the face to start from is missing") }
+                let face: Frame
+                do { face = try body.faceFrame(ref.face) } catch { throw KernelError(message: "the face to start from is gone or isn't flat") }
+                guard abs(simd_dot(face.normal, normal)) > 0.9999 else {
+                    throw KernelError(message: "the face to start from isn't parallel to the sketch")
                 }
+                startOffset = simd_dot(face.origin - planeOrigin, dir)
+                origin += dir * startOffset
+                r.extrudeStarts[feature.id] = simd_dot(face.origin - planeOrigin, normal)
             }
-            guard far > 1e-4 else { throw KernelError(message: "every body is behind the sketch · flip the direction") }  // boxes carry a hair of tolerance
-            distance = far + 1; back = 0
-        case .toFace(let ref):
-            guard let body = r.body(ref.body) else { throw KernelError(message: "the body with the face to extrude to is missing") }
-            let face: Frame
-            do { face = try body.faceFrame(ref.face) } catch { throw KernelError(message: "the face to extrude to is gone or isn't flat") }
-            guard abs(simd_dot(face.normal, normal)) > 0.9999 else {
-                throw KernelError(message: "the face to extrude to isn't parallel to the sketch")
+            var distance: Double, back: Double
+            switch f.extent {
+            case .distance(let d): distance = try p.value(of: d, kind: .length); back = 0
+            case .symmetric(let d): distance = try p.value(of: d, kind: .length) / 2; back = distance
+            case .twoSides(let d, let b): distance = try p.value(of: d, kind: .length); back = try p.value(of: b, kind: .length)
+            case .throughAll:
+                // Past the farthest corner of any body, measured along the direction.
+                let boxes = r.bodies.compactMap { $0.body.bounds }
+                guard !boxes.isEmpty else { throw KernelError(message: "there's no body to go through") }
+                var far = 0.0
+                for b in boxes {
+                    for c in 0..<8 {
+                        let corner = SIMD3(c & 1 == 0 ? b.min.x : b.max.x, c & 2 == 0 ? b.min.y : b.max.y, c & 4 == 0 ? b.min.z : b.max.z)
+                        far = max(far, simd_dot(corner - origin, dir))
+                    }
+                }
+                guard far > 1e-4 else { throw KernelError(message: "every body is behind the sketch · flip the direction") }  // boxes carry a hair of tolerance
+                distance = far + 1; back = 0
+            case .toFace(let ref):
+                guard let body = r.body(ref.body) else { throw KernelError(message: "the body with the face to extrude to is missing") }
+                let face: Frame
+                do { face = try body.faceFrame(ref.face) } catch { throw KernelError(message: "the face to extrude to is gone or isn't flat") }
+                guard abs(simd_dot(face.normal, normal)) > 0.9999 else {
+                    throw KernelError(message: "the face to extrude to isn't parallel to the sketch")
+                }
+                distance = simd_dot(face.origin - origin, dir); back = 0
+                guard distance > 1e-9 else { throw KernelError(message: "the face is behind the sketch · flip the direction") }
             }
-            distance = simd_dot(face.origin - origin, dir); back = 0
-            guard distance > 1e-9 else { throw KernelError(message: "the face is behind the sketch · flip the direction") }
+            let taper = try f.taper.map { try p.value(of: $0, kind: .angle) } ?? 0
+            guard abs(taper) < 89.0 * .pi / 180 else { throw KernelError(message: "the taper angle must be under 90°") }
+            tools.append((try KBody.extrude(job.profiles, direction: dir, distance: distance, back: back, taper: taper,
+                                            startOffset: startOffset, featureID: feature.id), job.body))
         }
-        let taper = try f.taper.map { try p.value(of: $0, kind: .angle) } ?? 0
-        guard abs(taper) < 89.0 * .pi / 180 else { throw KernelError(message: "the taper angle must be under 90°") }
-        let tool = try KBody.extrude(profiles, direction: dir, distance: distance, back: back, taper: taper, startOffset: startOffset, featureID: feature.id)
-        if let targets = f.targets {
-            try combine(tool, f.operation, targets: targets, feature, &r)
-        } else {
-            try combine(tool, f.operation, target: f.target, feature, &r)
+        let oneBody = Set(tools.compactMap(\.1)).count <= 1
+        for (tool, body) in tools {
+            if let targets = f.targets {
+                try combine(tool, f.operation, targets: targets, feature, &r)
+            } else {
+                try combine(tool, f.operation, target: oneBody ? (f.target ?? body) : body, feature, &r)
+            }
         }
     }
 

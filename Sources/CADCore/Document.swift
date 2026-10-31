@@ -149,6 +149,10 @@ public struct ExtrudeFeature: Codable, Hashable, Sendable {
     public var targets: [FeatureID]?
     /// Extrude a flat face of a body instead of sketch profiles (press-pull); `sketch` is then empty.
     public var face: FaceRef?
+    /// More flat faces pulled out together with `face`, by the same distance, each along its own normal.
+    public var moreFaces: [FaceRef]?
+    /// Every face this extrude pulls: `face` and then `moreFaces`.
+    public var allFaces: [FaceRef] { (face.map { [$0] } ?? []) + (moreFaces ?? []) }
     /// How far the sides lean as they leave the sketch plane, an angle expression: positive leans out (the
     /// shape grows as it goes), negative leans in. Nil (and zero) is a straight extrude.
     public var taper: String?
@@ -163,9 +167,10 @@ public struct ExtrudeFeature: Codable, Hashable, Sendable {
     }
 
     /// Pulls a body's flat face out (join) or pushes it in (cut, with a negative distance).
-    public init(face: FaceRef, extent: ExtrudeExtent = .distance("4 mm")) {
+    public init(face: FaceRef, more: [FaceRef] = [], extent: ExtrudeExtent = .distance("4 mm")) {
         self.init(sketch: "", profiles: [], extent: extent, operation: .join, target: face.body)
         self.face = face
+        moreFaces = more.isEmpty ? nil : more
     }
 }
 

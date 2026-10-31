@@ -31,7 +31,7 @@ struct FeatureDescriber {
         case .sketch(let f):
             out["plane"] = plane(f.plane)
         case .extrude(let f):
-            if let face = f.face { out["face"] = faces([face]) } else {
+            if f.face != nil { out["face"] = faces(f.allFaces) } else {
                 out["sketch"] = .text(f.sketch)
                 out["profiles"] = profiles(f.profiles, in: f.sketch)
             }

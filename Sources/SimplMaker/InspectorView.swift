@@ -441,7 +441,8 @@ struct ExtrudeInspector: View {
                                                        set: { v in update("Flip") { $0.flipped = v } }))
             }
             if let face = extrude.face {
-                LabeledContent("Face", value: face.face)
+                let faces = extrude.allFaces
+                LabeledContent(faces.count == 1 ? "Face" : "Faces", value: faces.count == 1 ? face.face : "\(faces.count) faces")
             } else {
                 LabeledContent("Profiles") {
                     HStack {

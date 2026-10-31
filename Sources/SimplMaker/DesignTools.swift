@@ -274,6 +274,10 @@ extension DocumentModel {
         }
         guard accepts(pick) else { return }
         toggle(single ? [pick] : profileGroup(of: pick))
+        if tool == .extrude, additive, pick.isFace {  // more faces are coming: Return extrudes them together
+            overlayRevision += 1
+            return
+        }
         if perform(tool) { pendingTool = nil }
         overlayRevision += 1
     }
@@ -288,7 +292,10 @@ extension DocumentModel {
             return "Click the profiles for \(name)\(axis) · \(profiles) selected · Return to use them"
         }
         switch tool {
-        case .extrude: return "Select a profile or a flat face to extrude"
+        case .extrude:
+            let n = selection.filter(\.isFace).count
+            return n > 1 ? "Shift-click more faces, or press Return to extrude \(n) faces"
+                : "Select a profile or a flat face to extrude · Shift-click for several faces"
         case .revolve:
             return profiles == 0 ? "Select a profile to revolve" : "Select a line as the axis · Return uses the sketch's vertical axis"
         case .sweep: return profiles == 0 ? "Select the profile to sweep" : "Select the path to sweep along"
@@ -358,14 +365,18 @@ extension DocumentModel {
         let noBodies = result?.bodies.isEmpty ?? true
         switch tool {
         case .extrude:
-            if profiles.isEmpty, selection.count == 1, let pick = selection.first, pick.isFace {
-                // A flat face of a body: pull it out (or, with a negative distance, push it in).
-                guard let ref = faceRef(pick), let body = result?.body(ref.body), (try? body.faceFrame(ref.face)) != nil else {
+            let facePicks = selection.filter(\.isFace)
+            if profiles.isEmpty, !facePicks.isEmpty {
+                // Flat faces of bodies: pull them out together (or, with a negative distance, push them in).
+                let refs = facePicks.compactMap { faceRef($0) }
+                guard refs.count == facePicks.count,
+                      refs.allSatisfy({ ref in result?.body(ref.body).flatMap { try? $0.faceFrame(ref.face) } != nil }) else {
                     selection = []
-                    alert = AlertInfo(title: "Only flat faces can be extruded", message: "Pick a flat face, or a profile in a sketch.")
+                    alert = AlertInfo(title: "Only flat faces can be extruded", message: "Pick flat faces, or a profile in a sketch.")
                     return false
                 }
-                add(Feature(name: document.nextName("Extrude"), .extrude(ExtrudeFeature(face: ref, extent: newExtrudeExtent))))
+                add(Feature(name: document.nextName("Extrude"),
+                            .extrude(ExtrudeFeature(face: refs[0], more: Array(refs.dropFirst()), extent: newExtrudeExtent))))
                 return true
             }
             guard let first = profiles.first else { return false }
