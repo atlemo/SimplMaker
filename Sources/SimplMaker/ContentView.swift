@@ -276,12 +276,14 @@ struct DocumentWindow: View {
                         Spacer()
                         Button { model.toggleUIHidden() } label: {
                             Image(systemName: "rectangle.on.rectangle")
-                                .font(.system(size: 14))
-                                .frame(width: 32, height: 32)
-                                .background(.regularMaterial, in: Circle())
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .frame(width: 38, height: 38)
+                                .background(Color(nsColor: .controlBackgroundColor), in: Circle())
+                                .overlay(Circle().strokeBorder(.primary.opacity(0.25), lineWidth: 1))
+                                .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
                         }
                         .buttonStyle(.plain)
-                        .opacity(0.85)
                         .help(helpWithShortcut("Show the panels and toolbar again", .hideUI))
                         .accessibilityLabel("Show UI")
                     }
