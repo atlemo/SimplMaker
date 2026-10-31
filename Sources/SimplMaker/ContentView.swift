@@ -237,8 +237,11 @@ struct DocumentWindow: View {
                                        Panel.bottomInset(timeline: model.showTimeline)))
                 .ignoresSafeArea()
             // The toolbar lights up under the pointer only on macOS 26 and later; macOS 15's toolbar and strip don't need it.
-            ToolbarFade(tint: sketchTint ? sketchPaper.toolbarTint : Color(nsColor: .windowBackgroundColor),
-                        height: toolbarHeight, visible: !model.uiHidden && (sketchTint || (toolbarHovered && toolsInNativeToolbar)))
+            // Its material strip is drawn all the time (under the toolbar), so with the UI hidden it goes altogether.
+            if !model.uiHidden {
+                ToolbarFade(tint: sketchTint ? sketchPaper.toolbarTint : Color(nsColor: .windowBackgroundColor),
+                            height: toolbarHeight, visible: sketchTint || (toolbarHovered && toolsInNativeToolbar))
+            }
             VStack(spacing: Panel.inset) {
             HStack(alignment: .top, spacing: 0) {
                 if model.showSidebar {
@@ -278,7 +281,7 @@ struct DocumentWindow: View {
                                 .background(.regularMaterial, in: Circle())
                         }
                         .buttonStyle(.plain)
-                        .opacity(0.6)
+                        .opacity(0.85)
                         .help(helpWithShortcut("Show the panels and toolbar again", .hideUI))
                         .accessibilityLabel("Show UI")
                     }
