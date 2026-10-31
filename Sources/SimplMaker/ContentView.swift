@@ -290,6 +290,7 @@ struct DocumentWindow: View {
                 }
                 .padding(.trailing, 62)  // where the toolbar's button was: left of the Inspector button
                 .padding(.top, 7)
+                .ignoresSafeArea()  // the titlebar's room is still reserved at the top; the button sits in it
             }
             if model.showPalette {
                 CommandPaletteView(model: model)
