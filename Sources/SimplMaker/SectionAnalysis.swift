@@ -351,6 +351,7 @@ struct SectionPanel: View {
                         .monospacedDigit()
                         .frame(width: 110)
                         .focused($editing)
+                        .arrowNudges($offsetText)
                         .onSubmit { commit() }
                         .help("How far the cut is from the plane: type a distance, or drag the arrow in the view")
                 }

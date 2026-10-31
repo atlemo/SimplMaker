@@ -2160,7 +2160,11 @@ final class DocumentModel {
             // Out of the surface where the first profile landed. Dragged past zero it sinks in instead (a deboss).
             guard let landed = result.projectionHandles[id] else { return nil }
             return handle("Height", landed.origin, landed.normal, pf.signedHeight, negative: true)
-        case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .pattern, .importBody, .image:
+        case .image(let imf):
+            // Out along the picture's width from its middle: the arrow spans half the width; the height follows.
+            guard let placed = result.images[id] else { return nil }
+            return handle("Width", placed.frame.origin, placed.frame.xAxis, imf.width, per: 0.5)
+        case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .pattern, .importBody:
             return nil
         }
     }
@@ -2657,7 +2661,10 @@ final class DocumentModel {
         case .project(var pf):
             pf.setHeight(text)
             doc.features[i].kind = .project(pf)
-        case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .importBody, .image:
+        case .image(var im):
+            im.width = text
+            doc.features[i].kind = .image(im)
+        case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .importBody:
             break
         }
     }

@@ -1899,6 +1899,19 @@ private struct ScrubHandle: NSViewRepresentable {
     }
 }
 
+extension View {
+    /// ↑ ↓ move a plain number in the field by one (Shift: ten, Option: a tenth). The text only changes; Return commits it.
+    func arrowNudges(_ text: Binding<String>) -> some View {
+        onKeyPress(phases: [.down, .repeat]) { press in
+            guard press.key == .upArrow || press.key == .downArrow else { return .ignored }
+            let size = press.modifiers.contains(.shift) ? 10.0 : press.modifiers.contains(.option) ? 0.1 : 1.0
+            guard let next = nudgedExpression(text.wrappedValue, by: press.key == .upArrow ? size : -size) else { return .ignored }
+            text.wrappedValue = next
+            return .handled
+        }
+    }
+}
+
 /// A text field that commits on Return / focus loss and follows external changes (undo).
 struct ExpressionField: View {
     let text: String
@@ -1915,7 +1928,7 @@ struct ExpressionField: View {
     /// `rowFieldStyle`'s explicit per-state colours instead of the stock bordered field's.
     var inSelectableRow = false
     /// ↑ ↓ move a plain number in the field by one (Shift: ten, Option: a tenth) and commit it.
-    var nudges = false
+    var nudges = true
     /// Lets the list around the field take the keyboard to this field, and learn when it has it.
     var focusRequest: Binding<Bool>?
     /// Tab (false) or Shift-Tab (true) pressed with no completion on offer: the list moves to its next field.
@@ -1926,7 +1939,7 @@ struct ExpressionField: View {
     @FocusState private var focused: Bool
 
     init(text: String, monospaced: Bool = true, completes: Bool = true, excluding: String? = nil,
-         inSelectableRow: Bool = false, nudges: Bool = false, focusRequest: Binding<Bool>? = nil,
+         inSelectableRow: Bool = false, nudges: Bool = true, focusRequest: Binding<Bool>? = nil,
          tabbed: ((Bool) -> Void)? = nil, preview: ((String) -> Void)? = nil, commit: @escaping (String) -> Void) {
         self.text = text
         self.monospaced = monospaced
@@ -2337,6 +2350,7 @@ struct DimensionEditor: View {
                     .frame(width: 180)
                     .focused($focused)
                     .completesParameters(model, focused: focused)
+                    .arrowNudges($draft)
                     .onSubmit { submit() }
                     .onChange(of: draft) { session.message = nil }  // an old complaint isn't about this text
                     .onExitCommand(perform: onDone)
@@ -2423,6 +2437,7 @@ struct TransformPopover: View {
                 .font(.body.monospaced())
                 .frame(width: 140)
                 .completesParameters(model, focused: focus && focused)
+                .arrowNudges(text)
                 .onSubmit { submit() }
             if focus { box.focused($focused) } else { box }
         }
