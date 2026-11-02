@@ -391,12 +391,6 @@ main { padding-top: 64px; }
 .honest li:first-child { border-top: 1px solid var(--line-dark); }
 @media (max-width: 860px) { .honest .big, .honest h2, .honest ul { grid-column: 1 / -1; } }
 
-/* ---------- Pricing ---------- */
-.price-hero { padding-top: clamp(24px, 4vw, 56px); display: grid; grid-template-columns: repeat(12, 1fr); column-gap: clamp(16px, 2vw, 32px); row-gap: 40px; align-items: end; }
-.price-hero .figure { grid-column: 1 / span 7; }
-.price-hero .num { display: block; font-size: clamp(9rem, 27vw, 30rem); font-weight: 600; line-height: 0.76; letter-spacing: -0.085em; margin-left: -0.05em; }
-.price-hero .buy { grid-column: 8 / span 5; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; padding-bottom: 1.5vw; }
-@media (max-width: 860px) { .price-hero .figure, .price-hero .buy { grid-column: 1 / -1; } }
 
 .list-rows { border-top: 1px solid var(--line); }
 .list-rows li { display: grid; grid-template-columns: 5fr 7fr; gap: 20px; padding-block: 18px; border-bottom: 1px solid var(--line); }
@@ -477,6 +471,7 @@ main { padding-top: 64px; }
 .text-page p, .text-page li { color: #25241f; }
 .text-page ul { list-style: disc; padding-left: 1.3em; margin-top: 0.8em; }
 .text-page li + li { margin-top: 0.4em; }
+.text-page ul + p { margin-top: 1em; }
 .text-page a { text-decoration: underline; text-underline-offset: 0.2em; }
 .notice { border: 1.5px solid var(--ink); padding: 16px 20px; margin-bottom: 2em; font-size: 0.95rem; }
 .release { border-top: 1px solid var(--line); padding-block: 36px; display: grid; grid-template-columns: 1fr 2fr; gap: 24px; }

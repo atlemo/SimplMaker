@@ -9,7 +9,6 @@ description: What is in each menu, and where to find every command.
 |---|---|
 | **About SimplMaker** | Version, credits and open-source licences |
 | **Check for Updates…** | Looks for a new version |
-| **License…** | Enter or manage your licence key. Also **Buy SimplMaker…** during the trial. |
 | **Settings…** ([[⌘,]]) | The settings window, including the AI connection. See [Settings](doc:reference/settings) and [Work with an AI assistant](doc:ai/assistant). |
 
 ## File
@@ -76,7 +75,7 @@ While you are editing a sketch, the menu also lists the sketch tools, **Offset S
 
 ## Window
 
-Standard window commands, including **Move Tab to New Window** and **Merge All Windows** (parts open as tabs), plus **Welcome to SimplMaker** ([[⇧⌘1]]), and the licence window.
+Standard window commands, including **Move Tab to New Window** and **Merge All Windows** (parts open as tabs), plus **Welcome to SimplMaker** ([[⇧⌘1]]).
 
 ## Help
 

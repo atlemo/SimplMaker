@@ -11,7 +11,6 @@ This is a beta feature, and it is off until you turn it on in **Settings → AI*
 
 ## What you need
 
-- A running [trial](doc:reference/license) or a valid licence. The connection checks this on every request. Without one, the AI pane says *Waiting for a license* and starts by itself once the licence is valid.
 - Claude Desktop or Claude Code on the same Mac. [Get Claude](https://claude.ai/download) if you have neither.
 
 ## Connect an assistant
