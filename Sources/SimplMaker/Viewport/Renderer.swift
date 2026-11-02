@@ -1468,10 +1468,15 @@ final class Renderer {
             var regionParams = DrawParams(color: .zero, hoverColor: .zero, selectColor: .zero,
                                           thickness: 0, depthBias: fillBias, pickable: 1)
             enc.setRenderPipelineState(regionPipeline)
+            // Tested against the bodies but not written to the depth buffer: fills of layered sketches lie in the
+            // same plane, and with depth writes the first one drawn would knock out stripes of the next (z-fighting)
+            // instead of every fill blending over the one below.
+            enc.setDepthStencilState(noWriteDepthState)
             enc.setVertexBuffer(regions, offset: 0, index: 0)
             enc.setVertexBytes(&regionParams, length: MemoryLayout<DrawParams>.stride, index: 3)
             enc.drawIndexedPrimitives(type: .triangle, indexCount: overlay.regionIndexCount, indexType: .uint32,
                                       indexBuffer: indices, indexBufferOffset: 0)
+            enc.setDepthStencilState(depthState)
         }
 
         // Origin planes: translucent, back to front so the nearest one is what the cursor picks.
