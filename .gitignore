@@ -10,3 +10,5 @@ ThirdParty/occt/
 dist/
 Packaging/licensing.sandbox.conf
 website/public/
+
+scripts/release.local.env

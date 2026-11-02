@@ -13,12 +13,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+. "$ROOT/scripts/release-env.sh"
 
-NOTARY_PROFILE="${NOTARY_PROFILE:-simplcad-notary}"
 DMG_DIR="${DMG_DIR:-$HOME/SimplMakerReleases/dmg}"
-SFTP_USER="${SFTP_USER:-sftp-user}"
-SFTP_HOST="${SFTP_HOST:-ssh.example.com}"
-SFTP_KEY="${SFTP_KEY:-$HOME/.ssh/simplcad_deploy}"
 WEB_ROOT="${WEB_ROOT:-webroots/by-route/simplmaker.com_}"
 SITE_URL="${SITE_URL:-https://simplmaker.com}"
 VERSION="$(tr -d '[:space:]' < VERSION)"
@@ -43,6 +40,7 @@ codesign --verify --deep --strict "$APP"
 if [ "$NOTARIZE" = 1 ]; then
   xcrun stapler validate "$APP" >/dev/null 2>&1 \
     || { echo "$APP is not notarized and stapled: run scripts/release.sh first (or use --no-notarize)" >&2; exit 1; }
+  require_notary
   xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null \
     || { echo "notarytool profile '$NOTARY_PROFILE' not found or invalid" >&2; exit 1; }
 fi
@@ -75,7 +73,7 @@ SIZE="$(stat -f %z "$DMG")"  # stapling adds the ticket, so measure again
 echo "DMG ready: $DMG ($(( SIZE / 1000000 )) MB)"
 
 [ -n "$UPLOAD" ] || exit 0
-[ -r "$SFTP_KEY" ] || { echo "SSH key $SFTP_KEY not found" >&2; exit 1; }
+require_sftp
 SFTP=(sftp -i "$SFTP_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20)
 if [ "$UPLOAD" = test ]; then
   # An unguessable folder, never linked. The empty index.html stops the folder being listed.

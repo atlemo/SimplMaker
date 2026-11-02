@@ -7,15 +7,14 @@
 # a file which is not there yet. Archives are immutable (one per version), so ones already on the
 # server are skipped. Login is by SSH key; no password is stored or typed.
 #
-# Settings (environment overrides): defaults are the one.com account for simplmaker.com.
+# Settings (scripts/release.local.env, or the environment): SFTP_USER, SFTP_HOST and SFTP_KEY say where to upload; there
+# are no defaults, so nothing about the server is in the repository.
 #   SFTP_USER, SFTP_HOST, SFTP_KEY, REMOTE_DIR (relative to the SFTP home), UPDATES_URL, RELEASES_DIR
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT/scripts/release-env.sh"
 
 RELEASES_DIR="${RELEASES_DIR:-$HOME/SimplMakerReleases/v1}"
-SFTP_USER="${SFTP_USER:-sftp-user}"
-SFTP_HOST="${SFTP_HOST:-ssh.example.com}"
-SFTP_KEY="${SFTP_KEY:-$HOME/.ssh/simplcad_deploy}"
 REMOTE_DIR="${REMOTE_DIR:-webroots/by-route/simplmaker.com_/updates/v1}"
 UPDATES_URL="${UPDATES_URL:-https://simplmaker.com/updates/v1}"
 DRY=0
@@ -27,7 +26,7 @@ for arg in "$@"; do
 done
 
 [ -s "$RELEASES_DIR/appcast.xml" ] || { echo "no appcast.xml in $RELEASES_DIR: run scripts/release.sh first" >&2; exit 1; }
-[ -r "$SFTP_KEY" ] || { echo "SSH key $SFTP_KEY not found" >&2; exit 1; }
+require_sftp
 
 SFTP=(sftp -i "$SFTP_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20)
 TARGET="$SFTP_USER@$SFTP_HOST"

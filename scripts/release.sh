@@ -8,21 +8,19 @@
 #
 # Needs, once:
 #   - a "Developer ID Application" certificate in the keychain (SIGN_IDENTITY picks one if there are several)
-#   - notarytool credentials:  xcrun notarytool store-credentials simplcad-notary …   (NOTARY_PROFILE)
-#   - the Sparkle signing key in the keychain under the account SimplCAD (generate_keys --account SimplCAD)
+#   - notarytool credentials in the keychain:  xcrun notarytool store-credentials <name> …   (NOTARY_PROFILE)
+#   - the Sparkle signing key in the keychain (generate_keys --account <name>; SPARKLE_ACCOUNT, default SimplMaker)
+#   - scripts/release.local.env with those names (copy scripts/release.local.env.example; it is not in git)
 # Before running: bump VERSION, commit, and optionally write release-notes/<version>.html (a fragment).
 #
-# (The keychain names simplcad-notary and SimplCAD, and ~/.ssh/simplcad_deploy in publish.sh, predate the rename to
-# SimplMaker. They name credentials that already exist, so they keep their old spelling.)
 # The version in VERSION is the one released. The build number is the commit count, so every release
 # needs a new commit; an existing archive for the same version is never overwritten.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+. "$ROOT/scripts/release-env.sh"
 
 RELEASES_DIR="${RELEASES_DIR:-$HOME/SimplMakerReleases/v1}"
-NOTARY_PROFILE="${NOTARY_PROFILE:-simplcad-notary}"
-SPARKLE_ACCOUNT="${SPARKLE_ACCOUNT:-SimplCAD}"
 UPDATES_URL="${UPDATES_URL:-https://simplmaker.com/updates/v1}"
 VERSION="$(tr -d '[:space:]' < VERSION)"
 ARCHIVE="$RELEASES_DIR/SimplMaker-$VERSION.zip"
@@ -38,6 +36,7 @@ fi
 mkdir -p "$RELEASES_DIR"
 [ ! -e "$ARCHIVE" ] || { echo "$ARCHIVE exists: bump VERSION, or delete it if it was never published" >&2; exit 1; }
 xcrun --find notarytool >/dev/null
+require_notary
 xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null \
   || { echo "notarytool profile '$NOTARY_PROFILE' not found or invalid" >&2; exit 1; }
 

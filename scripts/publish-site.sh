@@ -18,19 +18,19 @@
 # so a visitor never sees a page that points at assets that are not there yet. Files you delete from the site
 # stay on the server until you remove them by hand: this script only adds and replaces.
 #
-# Settings (environment overrides): SFTP_USER, SFTP_HOST, SFTP_KEY, REMOTE_ROOT (relative to the SFTP home),
-# SITE_URL.
+# Settings (scripts/release.local.env, or the environment): SFTP_USER, SFTP_HOST, SFTP_KEY (no defaults: nothing about the
+# server is in the repository), REMOTE_ROOT (relative to the SFTP home), SITE_URL, and for --protect HTPASSWD_PATH.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT/scripts/release-env.sh"
 
-SFTP_USER="${SFTP_USER:-sftp-user}"
-SFTP_HOST="${SFTP_HOST:-ssh.example.com}"
-SFTP_KEY="${SFTP_KEY:-$HOME/.ssh/simplcad_deploy}"
 REMOTE_ROOT="${REMOTE_ROOT:-webroots/by-route/simplmaker.com_}"
 SITE_URL="${SITE_URL:-https://simplmaker.com}"
 SITE_AUTH_FILE="${SITE_AUTH_FILE:-$HOME/.simplmaker-site-auth}"
-# Absolute path of the SFTP home as Apache sees it (printed by sftp's pwd); the .htpasswd lives there, not in the web root.
-HTPASSWD_PATH="${HTPASSWD_PATH:-/customers/2/a/0/account/users/sftp-user/.htpasswd-simplmaker}"
+# --protect only: the .htpasswd lives in the SFTP home, not in the web root. HTPASSWD_REMOTE is its name there;
+# HTPASSWD_PATH is the absolute path of that file as Apache sees it (the SFTP home printed by sftp's pwd, then the name).
+HTPASSWD_REMOTE="${HTPASSWD_REMOTE:-.htpasswd-simplmaker}"
+HTPASSWD_PATH="${HTPASSWD_PATH:-}"
 DRY=0; PRINT=0; PROTECT=0; UNPROTECT=0
 for arg in "$@"; do
   case "$arg" in
@@ -43,12 +43,12 @@ for arg in "$@"; do
 done
 
 SFTP=(sftp -i "$SFTP_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20)
-[ -r "$SFTP_KEY" ] || { echo "SSH key $SFTP_KEY not found" >&2; exit 1; }
+require_sftp
 
 if [ "$UNPROTECT" = 1 ]; then
   [ "$DRY" = 0 ] || { echo "--unprotect has nothing to print"; exit 0; }
   printf '%s\n' "-rm \"$REMOTE_ROOT/.htaccess\"" "-rm \"$REMOTE_ROOT/updates/.htaccess\"" "-rm \"$REMOTE_ROOT/t/.htaccess\"" \
-    "-rm \"${HTPASSWD_PATH#/customers/2/a/0/account/users/sftp-user/}\"" |
+    "-rm \"$HTPASSWD_REMOTE\"" |
     "${SFTP[@]}" -b - "$SFTP_USER@$SFTP_HOST" >/dev/null
   echo "Password protection removed from $SITE_URL"; exit 0
 fi
@@ -56,6 +56,7 @@ fi
 CURL_AUTH=()
 PROTECT_DIR=""
 if [ "$PROTECT" = 1 ]; then
+  [ -n "$HTPASSWD_PATH" ] || { echo "HTPASSWD_PATH is not set: see scripts/release.local.env.example" >&2; exit 1; }
   if [ ! -s "$SITE_AUTH_FILE" ]; then
     ( umask 077; echo "preview:$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)" > "$SITE_AUTH_FILE" )
     echo "Created $SITE_AUTH_FILE with a random password."
@@ -97,7 +98,7 @@ ORDER=("${ASSETS[@]}" "${PAGES[@]}")
 echo "Server: $SFTP_USER@$SFTP_HOST:$REMOTE_ROOT"
 echo "Files:  ${#ORDER[@]} (${#ASSETS[@]} assets, ${#PAGES[@]} pages)"
 protect_batch() {
-  echo "put \"$PROTECT_DIR/htpasswd\" \"${HTPASSWD_PATH#/customers/2/a/0/account/users/sftp-user/}\""
+  echo "put \"$PROTECT_DIR/htpasswd\" \"$HTPASSWD_REMOTE\""
   echo "-mkdir \"$REMOTE_ROOT/updates\""
   echo "-mkdir \"$REMOTE_ROOT/t\""
   echo "put \"$PROTECT_DIR/open\" \"$REMOTE_ROOT/updates/.htaccess\""
