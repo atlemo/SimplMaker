@@ -1,5 +1,6 @@
 // The options of the FDM print preview: layer height and nozzle. Opens with the preview (View ▸ FDM 3D Print Preview).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 
 struct PrintPreviewPanel: View {

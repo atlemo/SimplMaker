@@ -1,6 +1,7 @@
 // The parametric document: parameters + an ordered feature timeline.
 // It stores design intent only; geometry is always regenerated from it.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 public typealias FeatureID = String

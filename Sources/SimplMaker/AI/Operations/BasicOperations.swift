@@ -1,5 +1,6 @@
 // The first operations: a box, a change to a feature's settings, a named parameter. (Sketches, extrudes: their own files.)
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

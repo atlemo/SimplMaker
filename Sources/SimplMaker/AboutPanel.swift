@@ -1,6 +1,7 @@
 // The About panel: the standard macOS one, with credits naming what SimplMaker is built on and
 // carrying the licence notices those components ask every copy of the app to include.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADKernel
 
@@ -37,16 +38,16 @@ enum AboutPanel {
         var notice: String
     }
 
-    /// What the LGPL asks of an application that uses OCCT without being under it: tell the user the library
-    /// is separate and replaceable, and where its source is.
+    /// What the LGPL asks of an application that uses OCCT: tell the user the library is separate and replaceable,
+    /// and where its source is. (SimplMaker's own source is public too, which makes relinking straightforward.)
     private static let occtReplacement = """
         SimplMaker uses Open CASCADE Technology as a separate library, libSimplOCCT.dylib, in the Frameworks \
         folder inside the SimplMaker application package. It is built, unmodified, from the Open CASCADE \
         Technology \(occtVersion) source (https://github.com/Open-Cascade-SAS/OCCT, tag V\(occtVersion.replacingOccurrences(of: ".", with: "_"))). \
         You may replace it with your own build of a compatible version of that library; macOS then requires \
         the application to be signed again (codesign --force --deep --sign - SimplMaker.app). The build settings \
-        and replacement steps are at https://simplmaker.com/docs/reference/open-cascade/ . You may also \
-        reverse engineer SimplMaker as far as needed to debug your changes to the library.
+        and replacement steps are at https://simplmaker.com/docs/reference/open-cascade/ , and SimplMaker's own \
+        source code is at https://github.com/atlemo/SimplMaker .
         """
 
     private static let components = [
@@ -115,6 +116,9 @@ enum AboutPanel {
 
         // The copyright line is already under the credits, from Info.plist.
         add("Acknowledgements", font: .boldSystemFont(ofSize: small + 1))
+        add("SimplMaker is free software, released under the GNU General Public License, version 3 or later.",
+            color: .secondaryLabelColor)
+        add("github.com/atlemo/SimplMaker", link: "https://github.com/atlemo/SimplMaker")
         add("SimplMaker makes use of facilities provided by the Open CASCADE Technology software.",
             color: .secondaryLabelColor)
         for c in components {

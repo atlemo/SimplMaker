@@ -1,5 +1,6 @@
 // Choosing where a new sketch goes: the three origin planes shown in the viewport, or a flat face.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import simd

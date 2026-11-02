@@ -1,7 +1,8 @@
 // Toolbar tool groups: each group shows the tools pinned to it as buttons, with the group's name
 // underneath. The name opens the whole group, where any tool can be run, and pinned to the
 // toolbar or unpinned, so the toolbar needn't grow as tools are added.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 
 /// Which of a group's tools show as toolbar buttons (the rest are in the group's list), saved per

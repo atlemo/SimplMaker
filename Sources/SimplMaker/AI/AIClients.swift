@@ -1,6 +1,7 @@
 // The assistants a user may connect, found on this Mac, and what is known about the ones that have connected: so Settings can
 // offer a "Connect" for what is installed instead of instructions for everything.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import Foundation
 

@@ -1,6 +1,6 @@
 # SimplMaker — plan and feasibility
 
-A simple, native macOS, parametric CAD tool in the spirit of Fusion 360:
+A simple, native macOS, parametric CAD tool for makers:
 **sketch → constrain → extrude → go back and change anything → model regenerates.**
 
 ## 0. Decisions (settled)
@@ -8,7 +8,7 @@ A simple, native macOS, parametric CAD tool in the spirit of Fusion 360:
 | Topic | Decision |
 |---|---|
 | Distribution | Self-distributed (no Mac App Store). Developer ID signing + notarization when shared. |
-| License | **Proprietary, closed source** (changed from GPL-3.0 before any release). Rules out GPL components such as SolveSpace's `libslvs`. OCCT (LGPL-2.1) must be linked so users can replace it: see the Licensing risk. |
+| License | **GPL-3.0-or-later, free and open source** (it was proprietary for the first releases, 1.0 to 1.1.x, and was opened in 1.2.0). Rules out components under licences that cannot be combined with the GPL. OCCT (LGPL-2.1) is linked as a separate dylib so that it can be replaced: see the Licensing note. |
 | Target | **macOS 26+, Apple Silicon only.** Newest SwiftUI/Observation APIs, no availability checks. |
 | Priority | **Fillet and chamfer are high priority.** They are part of the first milestones, which requires persistent *edge* naming and edge picking early. |
 | Build | Swift Package (no Xcode project needed), OCCT 8.0.1 built static by `scripts/build-occt.sh`, `.app` assembled by `scripts/bundle-app.sh`. |
@@ -194,7 +194,7 @@ Testing:
 | OCCT build/packaging friction on macOS | Low | `scripts/build-occt.sh` builds a minimal static OCCT with no external dependencies; CI caches it. |
 | OCCT boolean or fillet failures on edge cases | Medium (fillets) / Low (extrude+booleans) | Fillet/chamfer results are validated with `BRepCheck_Analyzer`. Failures (e.g. radius too big) become red timeline errors, never crashes; the kernel tests cover this. Next: `ShapeFix` healing and fuzzy booleans where needed. |
 | Swift ↔ kernel boundary | Low | Plain C API with opaque handles, so there's no Swift C++ interop to break. |
-| Licensing | **Open** | SimplMaker is proprietary. OCCT's LGPL-2.1 exception covers only material from OCCT's header files, not static linking, so a closed app must let users swap OCCT: ship it as dynamic libraries (TODO: scripts/build-occt.sh, Package.swift, bundle-app.sh) or offer the app's object files for relinking. Have a lawyer confirm. Also needed: an EULA. |
+| Licensing | **Settled** | SimplMaker is GPL-3.0-or-later. OCCT's LGPL-2.1 exception covers only material from OCCT's header files, not static linking, so OCCT ships as `libSimplOCCT.dylib` (scripts/build-occt.sh, scripts/bundle-app.sh) and the About panel carries the replace-it notice. The name SimplMaker and the app icon are not under the GPL (see TRADEMARK.md). |
 | Scope creep toward Fusion parity | High | This document's MVP list is the contract. |
 
 ## 10. Open questions

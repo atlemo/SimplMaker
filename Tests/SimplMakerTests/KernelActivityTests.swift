@@ -1,5 +1,6 @@
 // Quitting waits for a rebuild that is inside the geometry kernel, and no new one starts meanwhile.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Testing
 @testable import SimplMaker
 

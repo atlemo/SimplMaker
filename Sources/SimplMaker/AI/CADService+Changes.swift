@@ -3,7 +3,8 @@
 // does the real document get it, in one step. So a change either happens whole, as one entry in Undo, or not at all; a half-made
 // model never exists. The document is changed only through `DocumentModel.mutate`, the same path the interface uses (licence
 // check, undo, rebuild). The functions here are the single-operation entry points; the operations themselves are in Operations/.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation
@@ -59,7 +60,6 @@ extension CADService {
     }
 
     private func step(documentID: String, expectedRevision: Int?, undoing: Bool) async throws -> HistoryResult {
-        try checkLicense()
         let (id, model) = try resolve(documentID)
         try refuseIfBusy(model)
         await model.rebuilt()

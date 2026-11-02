@@ -6,7 +6,8 @@
 // its name, so a user who renames things, reorders them or does a step twice still gets sensible hints.
 // The sections' geometry is read from the sketch as the kernel last solved it, for the parameters now,
 // so a step stays done when the last step changes `width` and `depth`.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

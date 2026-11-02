@@ -7,7 +7,8 @@
 //  - not a web page: a request whose Host isn't the loopback address, or that names a foreign Origin, is refused
 //    (that is what a DNS-rebinding attack looks like), and a browser can't send the secret anyway;
 //  - only with the secret: the token the Settings window shows, as "Authorization: Bearer <token>".
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 struct HTTPRequest: Equatable, Sendable {

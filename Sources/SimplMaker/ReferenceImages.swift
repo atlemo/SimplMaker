@@ -1,6 +1,7 @@
 // Reference images (Canvas): reading a picture, placing it on a plane or flat face, and what the
 // viewport needs to draw it.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
 import CADKernel

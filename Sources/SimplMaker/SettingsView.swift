@@ -1,5 +1,6 @@
 // App settings (⌘,).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 
 enum Preferences {
@@ -145,12 +146,11 @@ struct SettingsView: View {
     @AppStorage(Preferences.sendUsageStatistics) private var sendUsageStatistics = true
     @ObservedObject private var updater = Updater.shared
     private enum Pane: String, CaseIterable, Identifiable {
-        case general = "General", license = "License", navigation = "Navigation", viewport = "Viewport", shortcuts = "Shortcuts", ai = "AI"
+        case general = "General", navigation = "Navigation", viewport = "Viewport", shortcuts = "Shortcuts", ai = "AI"
         var id: String { rawValue }
         var icon: String {
             switch self {
             case .general: return "gearshape"
-            case .license: return "key"
             case .navigation: return "hand.draw"
             case .viewport: return "cube"
             case .shortcuts: return "keyboard"
@@ -162,7 +162,7 @@ struct SettingsView: View {
     @Environment(\.accent) private var accent
 
     private var panes: [Pane] {
-        Pane.allCases.filter { ($0 != .license || LicenseManager.shared.isEnforced) && ($0 != .ai || AIFeature.isAvailable) }
+        Pane.allCases.filter { $0 != .ai || AIFeature.isAvailable }
     }
 
     /// The categories, as a row of buttons in the app's accent colour (a TabView draws its selection grey).
@@ -198,7 +198,6 @@ struct SettingsView: View {
             Divider()
             switch pane {
             case .general: generalPane
-            case .license: LicenseView(license: .shared)
             case .navigation: navigationPane
             case .viewport: viewportPane
             case .shortcuts: ShortcutsPane()
@@ -232,11 +231,13 @@ struct SettingsView: View {
                     get: { updater.automaticallyChecksForUpdates },
                     set: { updater.automaticallyChecksForUpdates = $0 }))
             }
-            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
-                Toggle("Share anonymous usage statistics", isOn: $sendUsageStatistics)
-                Text("Helps improve SimplMaker: which version and macOS you use, and which features get used. Never your parts, file names or anything personal. Takes full effect the next time SimplMaker starts.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if Telemetry.isOfficialBuild {
+                VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                    Toggle("Share anonymous usage statistics", isOn: $sendUsageStatistics)
+                    Text("Helps improve SimplMaker: which version and macOS you use, and which features get used. Never your parts, file names or anything personal. Takes full effect the next time SimplMaker starts.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

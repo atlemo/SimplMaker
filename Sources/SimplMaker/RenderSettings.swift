@@ -1,5 +1,6 @@
 // The Render view: a solid floor and a light you set, to make the model ready for presentation.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 import simd
 

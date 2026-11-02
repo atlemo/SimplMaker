@@ -3,8 +3,8 @@
 #   scripts/bundle-app.sh           release build
 #   scripts/bundle-app.sh --debug   debug build (faster to build)
 #   scripts/bundle-app.sh --release release build signed with a Developer ID (see below), ready to notarize
-#   add --licensed to make a debug build ask for a license too (see Licensing below); without it a development
-#   build never does, so your own copy does not lock after 14 days
+#   add --official for the build the project publishes: it alone checks the project's update feed and sends anonymous
+#   usage statistics (see Updates below). scripts/release.sh passes it; a build you make yourself should not.
 #   add --open to launch it afterwards
 #   add --without-ai to leave the AI mode out. Every build has it by default (the AI interface: a local MCP server, Settings > AI,
 #   the stdio relay in Contents/Helpers); it is off until the user turns it on. The Info.plist key SCAIEnabled, which this script
@@ -18,17 +18,11 @@
 #
 # Updates (Sparkle): the app only turns its updater on when the bundle names a feed and a public key.
 #   Packaging/sparkle-public-key.txt   the public EdDSA key (from Sparkle's generate_keys), committed
-#   SPARKLE_FEED_URL                   overrides the feed (default https://simplmaker.com/updates/v<generation>/appcast.xml)
-# Without the key file the bundle has no updater (no "Check for Updates…").
-#
-# Licensing: the 14-day trial and license keys (Polar) are enforced only when the bundle names an organization:
-# --release builds always do, other builds only with --licensed (or LICENSE=1).
-#   Packaging/licensing.conf           POLAR_ORGANIZATION_ID, BUY_URL, POLAR_BENEFIT_ID, LICENSE_GENERATION
-#                                      (copy licensing.conf.example); one product and one feed per major version
-#   LICENSING_CONF=Packaging/licensing.sandbox.conf scripts/bundle-app.sh --debug --licensed
-#                                      tests against Polar's sandbox with another file (leave it out of git)
-# Without it the build is not license-enforced (development builds). --release refuses to build without it,
-# unless ALLOW_UNLICENSED=1.
+#   SPARKLE_FEED_URL                   the feed (--official defaults to https://simplmaker.com/updates/v1/appcast.xml)
+# The updater is on only in an --official build, or when SPARKLE_FEED_URL names a feed (to test updates against your own
+# server; sign the archives with your own key and put its public half in the key file). Otherwise the bundle has no
+# updater (no "Check for Updates…"). The v1 in the default feed path is permanent: every copy ever released has it baked in.
+# Anonymous usage statistics (TelemetryDeck) are sent only by an --official build, and the user can turn them off.
 #
 # --release signs with a Developer ID Application certificate: SIGN_IDENTITY, or the only one in the keychain.
 # Then notarize and staple (scripts/release.sh):
@@ -36,17 +30,16 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-. "$ROOT/scripts/licensing-conf.sh"
 CONFIG=release
 OPEN=0
 RELEASE=0
 WITHOUT_AI="${WITHOUT_AI:-0}"
-ENFORCE="${LICENSE:-0}"
+OFFICIAL=0
 for arg in "$@"; do
   case "$arg" in
     --debug) CONFIG=debug ;;
     --release) RELEASE=1 ;;
-    --licensed) ENFORCE=1 ;;
+    --official) OFFICIAL=1 ;;
     --open) OPEN=1 ;;
     --without-ai) WITHOUT_AI=1 ;;
     *) echo "unknown option $arg" >&2; exit 2 ;;
@@ -92,34 +85,12 @@ else
   echo "note: this build has no AI mode (--without-ai)"
 fi
 
-# Licensing configuration.
-POLAR_ORGANIZATION_ID="$(conf_get POLAR_ORGANIZATION_ID)"
-BUY_URL="$(conf_get BUY_URL)"
-POLAR_BENEFIT_ID="$(conf_get POLAR_BENEFIT_ID)"
-POLAR_API_BASE="${POLAR_API_BASE:-$(conf_get POLAR_API_BASE)}"
-[ "$RELEASE" != 1 ] || ENFORCE=1
-if [ "$ENFORCE" != 1 ]; then
-  echo "note: development build, not license-enforced (--licensed to test the trial and keys)"
-elif [ -n "$POLAR_ORGANIZATION_ID" ] && [ -n "$BUY_URL" ]; then
-  # Without the product id a key of any SimplMaker major version would be accepted.
-  if [ -z "$POLAR_BENEFIT_ID" ] && [ "$RELEASE" = 1 ] && [ "${ALLOW_UNLICENSED:-0}" != 1 ]; then
-    echo "Packaging/licensing.conf has no POLAR_BENEFIT_ID: a key for any major version would unlock this one" >&2
-    exit 1
-  fi
-  plist_set SCPolarOrganizationID "$POLAR_ORGANIZATION_ID"
-  plist_set SCBuyURL "$BUY_URL"
-  plist_set SCLicenseGeneration "$LICENSE_GENERATION"
-  [ -z "$POLAR_BENEFIT_ID" ] || plist_set SCPolarBenefitID "$POLAR_BENEFIT_ID"
-  if [ -n "${POLAR_API_BASE:-}" ]; then
-    # Polar's sandbox, for testing. A release must talk to the real API.
-    [ "$RELEASE" != 1 ] || { echo "POLAR_API_BASE is set (a sandbox); a release must use the real Polar API" >&2; exit 1; }
-    plist_set SCPolarAPIBase "$POLAR_API_BASE"
-  fi
-elif [ "$RELEASE" = 1 ] && [ "${ALLOW_UNLICENSED:-0}" != 1 ]; then
-  echo "no licensing.conf: a release would not ask for a license (ALLOW_UNLICENSED=1 to build one anyway)" >&2
-  exit 1
+# Official builds (see the header): the updater and the statistics. A real boolean, which the app reads as such.
+/usr/libexec/PlistBuddy -c "Delete :SCOfficialBuild" "$PLIST" 2>/dev/null || true
+if [ "$OFFICIAL" = 1 ]; then
+  /usr/libexec/PlistBuddy -c "Add :SCOfficialBuild bool true" "$PLIST"
 else
-  echo "note: no licensing configuration ($LICENSING_CONF), so this build is not license-enforced"
+  echo "note: not an --official build, so no update feed and no usage statistics"
 fi
 
 # Updater: Sparkle, embedded in Contents/Frameworks (the binary's rpath points there).
@@ -136,8 +107,10 @@ OCCT_LIB="${OCCT_ROOT:-$ROOT/ThirdParty/occt}/lib"
 cp "$OCCT_LIB/libSimplOCCT.dylib" "$APP/Contents/Frameworks/libSimplOCCT.dylib"
 install_name_tool -delete_rpath "$OCCT_LIB" "$APP/Contents/MacOS/SimplMaker" 2>/dev/null  # (invalidates the signature; signed below)
 KEY_FILE="$ROOT/Packaging/sparkle-public-key.txt"
-if [ -s "$KEY_FILE" ]; then
-  plist_set SUFeedURL "${SPARKLE_FEED_URL:-https://simplmaker.com/updates/v$LICENSE_GENERATION/appcast.xml}"
+if [ "$OFFICIAL" != 1 ] && [ -z "${SPARKLE_FEED_URL:-}" ]; then
+  :  # no updater
+elif [ -s "$KEY_FILE" ]; then
+  plist_set SUFeedURL "${SPARKLE_FEED_URL:-https://simplmaker.com/updates/v1/appcast.xml}"
   plist_set SUPublicEDKey "$(tr -d '[:space:]' < "$KEY_FILE")"
 else
   echo "note: no Packaging/sparkle-public-key.txt, so this build has no updater"

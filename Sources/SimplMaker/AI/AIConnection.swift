@@ -1,7 +1,8 @@
 // Starts and stops the AI interface: the MCP server on a loopback port, the secret that guards it, and the file
-// that tells a relay where it is. Off until the user turns it on in Settings ▸ AI; it also stays off without a valid
-// license or running trial. What it serves is CADService's: this class decides only whether there is a server.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// that tells a relay where it is. Off until the user turns it on in Settings ▸ AI.
+// What it serves is CADService's: this class decides only whether there is a server.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import Observation
 import os
@@ -12,8 +13,6 @@ final class AIConnection {
     enum Status: Equatable {
         case off
         case running(port: UInt16)
-        /// Turned on, but the trial has ended or the license isn't valid.
-        case needsLicense
         case failed(String)
     }
 
@@ -35,17 +34,15 @@ final class AIConnection {
     private let service: CADService
     /// What the assistants did, for Settings ▸ AI.
     let log: AIActivityLog
-    private let licensed: @MainActor () -> Bool
     private let version: String
     /// Whether this build has the AI mode at all (see AIFeature). Without it nothing here ever starts.
     let isAvailable: Bool
     @ObservationIgnored private var http: MCPHTTPServer?
 
     init(defaults: UserDefaults = .standard, file: MCPConnectionFile = .standard, service: CADService = CADService(),
-         licensed: @escaping @MainActor () -> Bool = { LicenseManager.shared.allowsEditing },
          version: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
          available: Bool = AIFeature.isAvailable, log: AIActivityLog = AIActivityLog()) {
-        self.defaults = defaults; self.file = file; self.service = service; self.licensed = licensed; self.version = version; self.log = log
+        self.defaults = defaults; self.file = file; self.service = service; self.version = version; self.log = log
         isAvailable = available
         isEnabled = available && defaults.bool(forKey: Self.enabledKey)
         let initial = file.read()?.token ?? MCPConnectionFile.makeToken()
@@ -76,12 +73,11 @@ final class AIConnection {
         Task { await refresh() }
     }
 
-    /// Makes the server match what is wanted: running when it is turned on and the license allows it, stopped otherwise.
+    /// Makes the server match what is wanted: running when it is turned on, stopped otherwise.
     func refresh() async {
         guard isAvailable else { isEnabled = false; status = .off; return }  // not in this build: no server, no file
         isEnabled = defaults.bool(forKey: Self.enabledKey)
         guard isEnabled else { stop(); status = .off; return }
-        guard licensed() else { stop(); status = .needsLicense; return }
         if case .running = status { return }
         let preferred = UInt16(exactly: defaults.integer(forKey: Self.portKey)).flatMap { $0 == 0 ? nil : $0 } ?? Self.defaultPort
         let handler = MCPHTTPHandler(

@@ -1,6 +1,7 @@
 // More ways to make and change shapes: a sweep along a path, a loft between sections, a thread, a draft angle, a construction
 // plane, a move (with turns) and a scale. Each makes the app's own feature, with the settings the app has.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

@@ -1,7 +1,8 @@
 // Which settings of a feature the AI interface can change, and how. One table per kind of feature; a kind that isn't here
 // can be read but not changed yet. The names are the ones FeatureDescriber returns, so what get_feature shows is what
 // modify_feature accepts.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

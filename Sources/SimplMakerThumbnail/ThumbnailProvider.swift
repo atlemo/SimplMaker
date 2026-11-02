@@ -1,6 +1,7 @@
 // Finder's icon and column-view picture for a .simplmaker file: the PNG the app stored in the file when it saved. A file
 // without one (made before this, or an empty part) gets no picture, so Finder shows the document icon instead.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import QuickLookThumbnailing
 

@@ -1,6 +1,7 @@
 // Rounds and cuts after threads: a body with threads has hundreds of helical faces, and the checks that follow a chamfer
 // or a cut must not integrate over every one of them, nor decide anything differently than on a body without threads.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CKernel
 @testable import CADCore
 import Foundation

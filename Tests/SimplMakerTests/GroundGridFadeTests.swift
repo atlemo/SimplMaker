@@ -1,5 +1,6 @@
 // The ground grid fades out as the view flattens toward the floor, and stays solid from above.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import simd
 import Testing

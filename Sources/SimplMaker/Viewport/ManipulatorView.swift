@@ -1,6 +1,7 @@
 // Draws the Move/Rotate manipulator over the viewport. It never takes the mouse: the viewport
 // asks the layout what a click hits (see ManipulatorLayout.hit).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
 

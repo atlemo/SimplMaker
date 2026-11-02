@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Uploads the releases in $RELEASES_DIR (made by scripts/release.sh) to simplmaker.com/updates/v<generation> over SFTP.
+# Uploads the releases in $RELEASES_DIR (made by scripts/release.sh) to simplmaker.com/updates/v1 over SFTP.
 #   scripts/publish.sh            upload, then check what the web server serves
 #   scripts/publish.sh --dry-run  show what would be uploaded
 #
@@ -11,14 +11,13 @@
 #   SFTP_USER, SFTP_HOST, SFTP_KEY, REMOTE_DIR (relative to the SFTP home), UPDATES_URL, RELEASES_DIR
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-. "$ROOT/scripts/licensing-conf.sh"
 
-RELEASES_DIR="${RELEASES_DIR:-$HOME/SimplMakerReleases/v$LICENSE_GENERATION}"
+RELEASES_DIR="${RELEASES_DIR:-$HOME/SimplMakerReleases/v1}"
 SFTP_USER="${SFTP_USER:-sftp-user}"
 SFTP_HOST="${SFTP_HOST:-ssh.example.com}"
 SFTP_KEY="${SFTP_KEY:-$HOME/.ssh/simplcad_deploy}"
-REMOTE_DIR="${REMOTE_DIR:-webroots/by-route/simplmaker.com_/updates/v$LICENSE_GENERATION}"
-UPDATES_URL="${UPDATES_URL:-https://simplmaker.com/updates/v$LICENSE_GENERATION}"
+REMOTE_DIR="${REMOTE_DIR:-webroots/by-route/simplmaker.com_/updates/v1}"
+UPDATES_URL="${UPDATES_URL:-https://simplmaker.com/updates/v1}"
 DRY=0
 for arg in "$@"; do
   case "$arg" in

@@ -1,5 +1,6 @@
 // Cubic Bézier math for sketch curves: evaluation, the closest point, splitting and flattening.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 public enum Bezier {

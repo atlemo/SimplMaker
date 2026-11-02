@@ -3,7 +3,8 @@
 // A sketch that cannot be solved is least-squares compromised by the solver: every constraint is a little wrong. The ones
 // that stay wrong are the ones that conflict. A constraint whose equations follow from the ones before it (its rows of the
 // Jacobian are dependent) is redundant: harmless while it agrees, a conflict when it does not.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 public struct SketchDiagnosis: Sendable, Equatable {

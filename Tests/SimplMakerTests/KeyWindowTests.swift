@@ -1,4 +1,5 @@
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Testing
 
 /// The suites that open a real window and drive it as the key window: its first responder, key events, the parameter

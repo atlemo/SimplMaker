@@ -1,6 +1,7 @@
 // Kernel regression test in plain C (also proves SimplKernel.h is valid C).
 // Build + run: scripts/test-kernel.sh
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "SimplKernel.h"
 
 #ifndef M_PI

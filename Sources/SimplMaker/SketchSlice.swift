@@ -1,6 +1,7 @@
 // Slice View for sketching: when part of the model stands between the camera and the sketch plane (a sketch
 // between walls), the sketch starts with the slice on, which cuts that part away so the plane can be reached.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADKernel
 import Foundation
 import simd

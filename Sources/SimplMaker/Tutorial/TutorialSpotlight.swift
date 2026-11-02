@@ -1,6 +1,7 @@
 // The pulsing ring the tutorial puts round what to use next: a toolbar button, the parameter list,
 // the inspector. Views opt in with `tutorialSpot`; the ring shows while the step asks for that id.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 
 extension EnvironmentValues {

@@ -1,6 +1,7 @@
 // What the viewport offers for the thing under the cursor: the right-click menu, double-click to
 // edit, and the small options panel shown next to a feature's drag handle.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

@@ -7,7 +7,8 @@
 // ThreadColdProbe (THREAD_COLD_PROBE=1) times threads of sizes the kernel has not built before.
 //
 // Run with: THREAD_PROBE_FILE=... swift test --filter ThreadPerfProbe
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 import Testing

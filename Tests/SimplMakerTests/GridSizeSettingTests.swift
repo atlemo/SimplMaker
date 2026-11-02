@@ -1,5 +1,6 @@
 // The grid-size and unit-system settings.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Testing
 import Foundation
 @testable import SimplMaker

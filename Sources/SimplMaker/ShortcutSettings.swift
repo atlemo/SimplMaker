@@ -1,5 +1,6 @@
 // The Shortcuts pane in Settings: every command with its shortcut, and a field that records a new one.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import SwiftUI
 

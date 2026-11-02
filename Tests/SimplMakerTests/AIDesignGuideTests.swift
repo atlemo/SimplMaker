@@ -1,5 +1,6 @@
 // The design guide's recipes, run through the real tools: a recipe that does not build is worse than none.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 import Testing

@@ -1,6 +1,7 @@
 // The Move manipulator's side of the model: which feature it is on, where it sits, and what
 // dragging one of its parts does to the feature (a live preview, then one undo step).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

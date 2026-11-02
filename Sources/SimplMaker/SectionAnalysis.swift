@@ -2,7 +2,8 @@
 // origin or construction plane, a flat face, a sketch or a canvas; an arrow in the view (or a typed distance)
 // slides it in and out, and the whole view turns on and off. It reads the model without changing it: no
 // feature, no undo step, nothing saved. The renderer does the cutting (see sectionFace in Shaders.swift).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

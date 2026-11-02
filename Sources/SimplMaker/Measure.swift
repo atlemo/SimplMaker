@@ -1,7 +1,8 @@
 // The Measure tool (Inspect group): click a face, an edge or a body for its size, or two of them for the
 // distance and angle between. This file holds the readout (what is measured and how it reads), the
 // tool's hooks into the document model, and the panel that shows it.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

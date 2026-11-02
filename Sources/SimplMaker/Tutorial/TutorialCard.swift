@@ -1,7 +1,8 @@
 // The card that walks the user through the tutorial: the step's title and text, what to do next
 // right now, a way to have it done, and a way out. It floats at the top of the viewport and can be
 // dragged aside or folded down to a line.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import SwiftUI
 

@@ -1,5 +1,6 @@
 // The Export dialog: file format and one part or many, for STEP and STL alike.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADKernel
 import UniformTypeIdentifiers

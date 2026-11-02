@@ -1,5 +1,6 @@
 // SimplMaker — a small parametric CAD tool for macOS.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
 import SwiftUI
@@ -34,12 +35,6 @@ struct SimplMakerApp: App {
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(Preferences.showsWelcome ? .presented : .suppressed)
 
-        Window("SimplMaker License", id: AppWindows.licenseID) {
-            LicenseWindow().modifier(AccentScope())
-        }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
-        .restorationBehavior(.disabled)
 
         // An ordinary window rather than a Settings scene, whose window SwiftUI keeps from being resized.
         // The "Settings…" item (⌘,) is in SimplMakerCommands.
@@ -59,7 +54,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Updater.shared.start()
         RenameDocument.shared.start()
         Telemetry.start()
-        LicenseManager.shared.start()
         if AIFeature.isAvailable { AIConnection.shared.startIfEnabled() }  // only when the user has turned it on in Settings ▸ AI
     }
 
@@ -100,7 +94,6 @@ struct SimplMakerCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shortcuts = ShortcutStore.shared  // the menus show the user's shortcuts
-    private let license = LicenseManager.shared
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     @AppStorage(Preferences.snapToGrid) private var snapToGrid = true
     @AppStorage(Preferences.showGrid) private var showGrid = true
@@ -116,11 +109,6 @@ struct SimplMakerCommands: Commands {
             if updater.isAvailable {
                 Button("Check for Updates…") { updater.checkForUpdates() }
                     .disabled(!updater.canCheckForUpdates)
-            }
-            if license.isEnforced {
-                Divider()
-                if !license.isLicensed { Button("Buy SimplMaker…") { license.buy() } }
-                Button("License…") { openWindow(id: AppWindows.licenseID) }
             }
         }
         CommandGroup(replacing: .help) {

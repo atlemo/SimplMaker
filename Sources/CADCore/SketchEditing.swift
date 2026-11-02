@@ -1,7 +1,8 @@
 // Editing operations on a sketch used by the interactive tools: snapping, deleting with
 // cascade, measuring, suggesting dimensions, constraint tools and drag-solving.
 // Kept UI-free so it can be unit-tested.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import simd
 

@@ -3,7 +3,8 @@
 // secret. The file lives in the user's Application Support folder, readable by this user only (0600), the same
 // trust as the user's own files; the token also keeps other websites and other users out. A file left behind by an app
 // that quit says `running: false`, and the relay confirms by trying to connect.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import Security
 

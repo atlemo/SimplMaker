@@ -1,6 +1,7 @@
 // The rest of what the app can make: a rib, a pipe, a split, a body laid on the floor, text or shapes projected onto a surface, a
 // reference image, and how a body looks (name, colour, shown or hidden). Each makes the app's own feature, with its own settings.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

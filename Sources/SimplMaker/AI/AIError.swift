@@ -1,11 +1,11 @@
 // Errors the AI-facing API returns. Written for a language model to read: a stable code to branch on, a sentence
 // saying what happened, and (where there is one) the reason and whether trying again differently can work.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 struct AIError: Error, Equatable, Encodable, CustomStringConvertible {
     enum Code: String, Encodable, Sendable {
-        case licenseRequired = "LICENSE_REQUIRED"
         case documentNotFound = "DOCUMENT_NOT_FOUND"
         case noActiveDocument = "NO_ACTIVE_DOCUMENT"
         case featureNotFound = "FEATURE_NOT_FOUND"
@@ -42,11 +42,6 @@ struct AIError: Error, Equatable, Encodable, CustomStringConvertible {
 
     var description: String { "\(code.rawValue): \(message)" }
 
-    /// The AI interface needs a valid licence or a running trial (the same rule as editing).
-    static let licenseRequired = AIError(
-        .licenseRequired, "SimplMaker's AI interface needs a valid license or a running trial.",
-        reason: "The trial has ended or the license is not valid. The user can buy or enter a license under SimplMaker ▸ License…",
-        recoverable: false)
 }
 
 extension AIError {

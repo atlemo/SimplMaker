@@ -1,4 +1,5 @@
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Icon glyphs from the "macOS Design System": Lucide line icons (lucide-static 0.460.0, ISC),
 // copied to stand in for SF Symbols the design system defines but AppKit doesn't ship as
 // system icons. Matches the design system's `ICON_NAMES`; see DesignIcon.swift for the renderer.

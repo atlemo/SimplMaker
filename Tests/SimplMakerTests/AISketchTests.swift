@@ -1,5 +1,6 @@
 // Sketches and extrudes made through the AI interface: shapes, dimensions, profiles, and the key ring that needs all of them.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

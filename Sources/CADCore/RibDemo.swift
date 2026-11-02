@@ -1,5 +1,6 @@
 // An example part built around the Rib feature.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 extension CADDocument {

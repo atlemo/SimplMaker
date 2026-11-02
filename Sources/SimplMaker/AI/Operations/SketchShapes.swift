@@ -2,7 +2,8 @@
 // (CADCore), so it carries the same constraints a shape drawn by hand has; sizes and positions become named dimensions
 // ("key.width", "hole.diameter", "key.x") that can be changed later, and all of them accept expressions that use the
 // part's parameters. Shapes the caller doesn't name get an id such as "rect1".
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

@@ -1,7 +1,8 @@
 // What an experienced designer knows and an assistant does not start out knowing: how to plan a part in SimplMaker, the numbers that
 // matter for 3D printing, and recipes that are known to build. Served by get_design_guide, a topic at a time so each answer is short.
 // The recipes' steps come from AIRecipes, which the tests run.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 struct DesignTopic: Sendable {

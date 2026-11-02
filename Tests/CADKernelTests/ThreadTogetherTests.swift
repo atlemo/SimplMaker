@@ -1,5 +1,6 @@
 // Threads on several faces of one feature are cut in one pass over the body, and must come out as if one after the other.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 @testable import CADCore
 import Foundation
 import Testing

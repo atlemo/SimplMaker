@@ -1,5 +1,6 @@
 // Changing a part through the AI interface: the transaction rules and the tools built on them.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation
@@ -279,15 +280,6 @@ import Testing
         do { _ = try args.requiredDocumentID() } catch let error as AIError {
             #expect(error.code == .invalidArguments && error.reason?.contains("list_documents") == true)
         }
-    }
-
-    @Test func withoutALicenseNothingChanges() async throws {
-        let t = await open()
-        let rig = AIServiceTests.Rig(licensed: false)
-        let (id, model) = await rig.open(CADDocument())
-        let e = await refusal { _ = try await rig.service.createBox(documentID: id, box()) }
-        #expect(e?.code == .licenseRequired && model.document.features.isEmpty)
-        _ = t
     }
 
     // MARK: set_parameter

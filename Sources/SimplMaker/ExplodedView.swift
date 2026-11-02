@@ -1,7 +1,8 @@
 // The Exploded View (View menu): the bodies slide apart in equal steps, a little or a lot, to show
 // how it is built up. A view setting like the section analysis: it reads the model without changing it, so no
 // feature, no undo step, nothing saved. The renderer draws each body shifted by its offset (see Renderer.setScene).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import simd
 import SwiftUI

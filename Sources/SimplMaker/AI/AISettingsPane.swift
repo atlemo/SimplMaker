@@ -1,7 +1,8 @@
 // Settings ▸ AI: connect an assistant in one click. It finds which Claude apps are installed and offers a Connect for each,
 // turns the interface on by itself, and shows when an assistant has connected. Everything technical (the address, the secret,
 // the command for a terminal) is under Advanced.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import SwiftUI
 
@@ -66,7 +67,7 @@ struct AISettingsPane: View {
         }
         .formStyle(.grouped)
         .task {
-            await ai.refresh()  // the license may have changed since the window was last open
+            await ai.refresh()  // the state may have changed since the window was last open
             codeRegistration = await Task.detached { ClaudeCodeConfig.registration() }.value
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -139,12 +140,6 @@ struct AISettingsPane: View {
                 Label("On · \(latest.displayName) is connected", systemImage: "circle.fill").foregroundStyle(.green)
             } else {
                 Label("On, waiting for an assistant to connect", systemImage: "circle.fill").foregroundStyle(.green)
-            }
-        case .needsLicense:
-            VStack(alignment: .leading, spacing: 4) {
-                Label("Waiting for a license", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                Text("AI connections need a valid license or a running trial. Choose SimplMaker ▸ License… to buy or enter one; this starts by itself once it is valid.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
         case .failed(let why):
             VStack(alignment: .leading, spacing: 4) {

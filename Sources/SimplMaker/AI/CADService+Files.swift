@@ -1,6 +1,7 @@
 // Files: export the bodies of a part to STL or STEP, and import a STEP or STL file as a body. Exports go to one folder, never over an
 // existing file; imports read only STEP and STL files, by an absolute path the assistant was given.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation
@@ -34,7 +35,6 @@ extension CADService {
 
     /// Writes bodies of a part to an STL, 3MF or STEP file in the exports folder. Nothing in the part changes.
     func exportFile(documentID: String?, bodyIDs: [String]?, format: String, fileName: String?, folder: URL? = nil) async throws -> ExportResult {
-        try checkLicense()
         guard let kind = ExportFormat(rawValue: format) else {
             throw AIError(.invalidArguments, "format \"\(format)\" is not stl, 3mf or step.", reason: "STL or 3MF for 3D printing, STEP for other CAD programs.")
         }

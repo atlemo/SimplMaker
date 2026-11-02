@@ -1,6 +1,7 @@
 // A run of smooth Bézier curves drawn point by point (the Curve tool): the chain being built and
 // the layout of its handles.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 /// The curves drawn so far by one run of the Curve tool, and the points they pass through.

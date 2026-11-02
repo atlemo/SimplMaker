@@ -1,7 +1,8 @@
 // The tools an AI client sees. Few, and designed for an AI rather than mirroring the CAD functions: the descriptions
 // say what a tool does, when to use it, what it needs and returns, and what can go wrong, because that text is all the
 // model has to go on. Each tool calls CADService, which owns the behaviour; nothing here touches a document.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 
@@ -87,8 +88,7 @@ enum AITools {
                 Arguments: none. Read-only: it changes nothing.
 
                 Returns {documents: [{id, name, path, is_active, feature_count}]}. path is null for a part that has not been \
-                saved; is_active marks the part in the front window. An empty list means no part is open. Requires a valid \
-                SimplMaker license or trial (otherwise LICENSE_REQUIRED).
+                saved; is_active marks the part in the front window. An empty list means no part is open.
                 """,
                 inputSchema: object([:], []), readOnly: true,
                 handler: { _ in try JSONValue(encoding: try await service.listDocuments()) }),
@@ -112,8 +112,8 @@ enum AITools {
                 (the features built from it). In parameters, a size is {expression, value, unit}: an expression such as \
                 "wall" means it follows the parameter of that name. Each body has an id, to use wherever a body is asked for.
 
-                Fails with NO_ACTIVE_DOCUMENT (no part open, or several and none in front: pass document_id), \
-                DOCUMENT_NOT_FOUND or LICENSE_REQUIRED.
+                Fails with NO_ACTIVE_DOCUMENT (no part open, or several and none in front: pass document_id) or \
+                DOCUMENT_NOT_FOUND.
                 """,
                 inputSchema: object(["document_id": documentID], []), readOnly: true,
                 handler: { args in
@@ -132,7 +132,7 @@ enum AITools {
 
                 Read-only. Returns {document_id, revision, feature, sketch}; sketch is null unless the feature is a sketch. \
                 Fails with FEATURE_NOT_FOUND (the id does not exist; ids of deleted features are not reused), \
-                NO_ACTIVE_DOCUMENT, DOCUMENT_NOT_FOUND or LICENSE_REQUIRED.
+                NO_ACTIVE_DOCUMENT or DOCUMENT_NOT_FOUND.
                 """,
                 inputSchema: object(["document_id": documentID,
                                      "feature_id": ["type": "string", "description": "The id of the feature, from get_document."]],
@@ -160,7 +160,7 @@ enum AITools {
                 selected: ask the user to select what they mean, or describe it with get_document. The selection can change \
                 at any moment, so read it again right before you use it.
 
-                Fails with NO_ACTIVE_DOCUMENT, DOCUMENT_NOT_FOUND or LICENSE_REQUIRED.
+                Fails with NO_ACTIVE_DOCUMENT or DOCUMENT_NOT_FOUND.
                 """,
                 inputSchema: object(["document_id": documentID], []), readOnly: true,
                 handler: { args in
@@ -181,7 +181,7 @@ enum AITools {
                 (unit says which; "" for a plain number); error says why a parameter has no value; used_by lists the features \
                 that use it, in timeline order.
 
-                Fails with NO_ACTIVE_DOCUMENT, DOCUMENT_NOT_FOUND or LICENSE_REQUIRED.
+                Fails with NO_ACTIVE_DOCUMENT or DOCUMENT_NOT_FOUND.
                 """,
                 inputSchema: object(["document_id": documentID], []), readOnly: true,
                 handler: { args in
@@ -210,7 +210,7 @@ enum AITools {
                 Returns {success, document_id, revision, message, feature, changes, bodies}. feature.id is the id to pass to \
                 modify_feature; the new body has the same id (see bodies, which also gives its bounding box and volume). Fails \
                 with INVALID_VALUE (a size that is zero, negative or not a valid expression), INVALID_ARGUMENTS, \
-                TIMELINE_ROLLED_BACK, USER_BUSY, STALE_REVISION, REBUILD_FAILED or LICENSE_REQUIRED; on any failure nothing is changed.
+                TIMELINE_ROLLED_BACK, USER_BUSY, STALE_REVISION or REBUILD_FAILED; on any failure nothing is changed.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -254,7 +254,7 @@ enum AITools {
                 {success, document_id, revision, message, feature, changes: [{field, before, after}], bodies}. Fails with \
                 FEATURE_NOT_FOUND, UNKNOWN_FIELD (lists the valid names), INVALID_VALUE, PARAMETER_LINKED, \
                 UNSUPPORTED_FEATURE_TYPE, REBUILD_FAILED (the new value would make this or a later feature unbuildable, with the \
-                reason; the part is unchanged), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                reason; the part is unchanged), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -284,7 +284,7 @@ enum AITools {
                 Changes the document in one undo step named "AI: Set …". Returns {success, document_id, revision, message, \
                 parameter, bodies}. Fails with INVALID_ARGUMENTS (bad name), INVALID_VALUE (the expression is invalid, circular, \
                 or would leave another parameter without a value), REBUILD_FAILED (a feature that uses it would no longer build; \
-                the part is unchanged), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                the part is unchanged), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -315,7 +315,7 @@ enum AITools {
 
                 Changes the document (one undo step "AI: Create …"). Returns {success, document_id, revision, message, feature, created: \
                 {sketch_id}, sketch}. Fails with INVALID_ARGUMENTS (an unknown plane or a face that is not flat), TIMELINE_ROLLED_BACK, \
-                USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -358,8 +358,8 @@ enum AITools {
                 {shapes: [{id, type, dimensions, curves}]}, sketch: {points, curves, constraints, dimensions, profiles: [{id, area, inside, \
                 bounds}], degrees_of_freedom}}. bounds is [min x, min y, max x, max y] of the profile in the sketch: use it to check that \
                 text fits. Fails with INVALID_ARGUMENTS (a missing or unknown setting, a repeated id), INVALID_VALUE (a size that is \
-                zero, too large, or a corner radius over half the shorter side), FEATURE_NOT_FOUND, REBUILD_FAILED, USER_BUSY, \
-                STALE_REVISION or LICENSE_REQUIRED.
+                zero, too large, or a corner radius over half the shorter side), FEATURE_NOT_FOUND, REBUILD_FAILED, USER_BUSY or \
+                STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -406,8 +406,8 @@ enum AITools {
                 sketch, cut twice, once each way. The sketch is hidden once used, as in the interface. Changes the document (one undo step \
                 "AI: Create …"). Returns {success, document_id, revision, message, feature, created: {profiles}, bodies}; the new body has \
                 the feature's id. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS (no profile at that point, a profile of another sketch, a \
-                missing distance), INVALID_VALUE, REBUILD_FAILED (the result would not build), TIMELINE_ROLLED_BACK, USER_BUSY, \
-                STALE_REVISION or LICENSE_REQUIRED.
+                missing distance), INVALID_VALUE, REBUILD_FAILED (the result would not build), TIMELINE_ROLLED_BACK, USER_BUSY or \
+                STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -438,8 +438,8 @@ enum AITools {
 
                 Changes the document (one undo step "AI: Create Fillet…"). Returns {success, document_id, revision, message, feature, \
                 changes, bodies}. The radius can be changed later with modify_feature ("size"). Fails with FEATURE_NOT_FOUND (an edge or \
-                face that does not exist), INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED, TIMELINE_ROLLED_BACK, USER_BUSY, \
-                STALE_REVISION or LICENSE_REQUIRED.
+                face that does not exist), INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED, TIMELINE_ROLLED_BACK, USER_BUSY or \
+                STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -502,7 +502,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. The \
                 size, depth and position can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS (a curved \
-                face; a position outside the face), INVALID_VALUE, REBUILD_FAILED, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                face; a position outside the face), INVALID_VALUE, REBUILD_FAILED, USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -539,7 +539,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. The thickness \
                 can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED \
-                (the wall is too thick for the shape; the part is unchanged), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                (the wall is too thick for the shape; the part is unchanged), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -568,7 +568,7 @@ enum AITools {
                 origin planes pass through the origin: "yz" mirrors left/right (x → -x), "xz" front/back, "xy" top/bottom.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
-                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED (for join: the copy does not touch the body), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED (for join: the copy does not touch the body), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -598,7 +598,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. count and \
                 spacing can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, \
-                REBUILD_FAILED (for join: a copy does not touch the body), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                REBUILD_FAILED (for join: a copy does not touch the body), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -628,8 +628,8 @@ enum AITools {
                 are); name, id, expected_revision.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
-                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED (the cut removes everything, or the bodies do not overlap), USER_BUSY, \
-                STALE_REVISION or LICENSE_REQUIRED.
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED (the cut removes everything, or the bodies do not overlap), USER_BUSY or \
+                STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -660,7 +660,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. The angle \
                 can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED \
-                (for instance when the profile crosses the axis), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                (for instance when the profile crosses the axis), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -692,7 +692,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
                 FEATURE_NOT_FOUND, INVALID_ARGUMENTS (profile and path in the same sketch), REBUILD_FAILED (the path turns too sharply for the \
-                profile; try a smaller profile or gentler curves), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                profile; try a smaller profile or gentler curves), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -722,7 +722,7 @@ enum AITools {
                 name, id, expected_revision. Sections with a similar number of corners blend best.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
-                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED, USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -756,7 +756,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
                 FEATURE_NOT_FOUND, INVALID_ARGUMENTS (not a round face, unknown size), REBUILD_FAILED (the size does not fit that face; the \
-                reason lists sizes that do), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                reason lists sizes that do), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -788,7 +788,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. The angle \
                 can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED \
-                (try a smaller angle), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                (try a smaller angle), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -816,7 +816,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}; use \
                 "plane:<id of the feature>" as plane in create_sketch, create_mirror and create_plane. offset and angle can be changed later with \
-                modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -844,7 +844,7 @@ enum AITools {
                 at least one value must be non-zero; name, id, expected_revision.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
-                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED, USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -874,8 +874,8 @@ enum AITools {
                 expression); name, id, expected_revision.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. factor can \
-                be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED, USER_BUSY, \
-                STALE_REVISION or LICENSE_REQUIRED.
+                be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED, USER_BUSY or \
+                STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -902,7 +902,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. thickness can \
                 be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED (the line does not \
-                touch the body, or it is closed), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                touch the body, or it is closed), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -929,7 +929,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. diameter and wall can \
                 be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED (a bend tighter than \
-                the pipe, say), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                the pipe, say), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -959,7 +959,7 @@ enum AITools {
                 lies on) or parts (true: no cut, a body that is really several loose pieces becomes one body per piece, biggest first); name, id, expected_revision.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
-                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED (the tool misses every body), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED (the tool misses every body), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -985,7 +985,7 @@ enum AITools {
                 Arguments: document_id; face (required: a flat face id from get_body, shape "plane"); name, id, expected_revision.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
-                FEATURE_NOT_FOUND, INVALID_ARGUMENTS (not a flat face), REBUILD_FAILED, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS (not a flat face), REBUILD_FAILED, USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -1012,7 +1012,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. height and mode \
                 can be changed later with modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED (nothing to project onto: \
-                flip it, or move the sketch to the other side of the body), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                flip it, or move the sketch to the other side of the body), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -1041,7 +1041,7 @@ enum AITools {
                 (optional: "#RRGGBB", or "default"); visible (optional: true or false); at least one of name, color, visible; expected_revision.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, bodies}. Fails with FEATURE_NOT_FOUND, \
-                INVALID_ARGUMENTS, INVALID_VALUE, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                INVALID_ARGUMENTS, INVALID_VALUE, USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -1068,8 +1068,8 @@ enum AITools {
                 degrees, default 0); opacity (optional, 0 to 1, default 0.5); name, id, expected_revision.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. u, v, width and \
-                angle can be changed later with modify_feature. Fails with INVALID_ARGUMENTS (no such file, not a picture), INVALID_VALUE, USER_BUSY, \
-                STALE_REVISION or LICENSE_REQUIRED.
+                angle can be changed later with modify_feature. Fails with INVALID_ARGUMENTS (no such file, not a picture), INVALID_VALUE, USER_BUSY or \
+                STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -1099,7 +1099,7 @@ enum AITools {
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
                 INVALID_ARGUMENTS (not an absolute path, not a STEP/STL file, missing, too large), REBUILD_FAILED (the kernel cannot make a body \
-                of it, for instance an STL with holes), USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                of it, for instance an STL with holes), USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -1123,7 +1123,7 @@ enum AITools {
                 together or one file per body with bodies.
 
                 Returns {success, document_id, message, path, format, bytes, bodies}. Fails with INVALID_ARGUMENTS (no bodies, bad format), \
-                FEATURE_NOT_FOUND (a body that does not exist) or LICENSE_REQUIRED.
+                FEATURE_NOT_FOUND (a body that does not exist).
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to export, from list_documents."],
@@ -1156,7 +1156,7 @@ enum AITools {
                 sketch that was hidden because the deleted feature used it is shown again.
 
                 Changes the document (one undo step "AI: Delete …"). Returns {success, document_id, revision, message, bodies}. Fails with \
-                FEATURE_NOT_FOUND, HAS_DEPENDENTS (the message lists them), USER_BUSY, STALE_REVISION, REBUILD_FAILED or LICENSE_REQUIRED.
+                FEATURE_NOT_FOUND, HAS_DEPENDENTS (the message lists them), USER_BUSY, STALE_REVISION or REBUILD_FAILED.
                 """,
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
@@ -1246,7 +1246,7 @@ enum AITools {
                 two faces it lies between. Coordinates are model coordinates in mm. Face and edge names can change when the part is edited: \
                 read them again after any change. truncated is true when there were more than 300 faces or 600 edges.
 
-                Fails with FEATURE_NOT_FOUND (no such body), NO_ACTIVE_DOCUMENT, DOCUMENT_NOT_FOUND or LICENSE_REQUIRED.
+                Fails with FEATURE_NOT_FOUND (no such body), NO_ACTIVE_DOCUMENT or DOCUMENT_NOT_FOUND.
                 """,
                 inputSchema: object(["document_id": documentID, "body_id": ["type": "string", "description": "The body, from get_document."]], ["body_id"]),
                 readOnly: true,
@@ -1273,8 +1273,8 @@ enum AITools {
                 faces' outward normals, 0 to 180. To measure the distance between the centres of two holes, measure the two round faces: their \
                 center values give it, or measure their edges (circles) and use distance minus the radii. All in mm and degrees.
 
-                Fails with FEATURE_NOT_FOUND (no such body, face or edge: names change after edits), INVALID_ARGUMENTS, NO_ACTIVE_DOCUMENT, \
-                DOCUMENT_NOT_FOUND or LICENSE_REQUIRED.
+                Fails with FEATURE_NOT_FOUND (no such body, face or edge: names change after edits), INVALID_ARGUMENTS, NO_ACTIVE_DOCUMENT or \
+                DOCUMENT_NOT_FOUND.
                 """,
                 inputSchema: object(["document_id": documentID,
                                      "a": ["type": "string", "description": "A body id, \"face:<body>/<name>\" or \"edge:<body>/<name>\"."],
@@ -1310,7 +1310,7 @@ enum AITools {
 
                 Read-only: does not change the part or the user's own view. Returns the image and {document_id, revision, view, width, \
                 height, orientation (which way X, Y and Z run in this picture), bodies}. Fails with INVALID_ARGUMENTS (nothing to show, bad \
-                size), DOCUMENT_NOT_FOUND or LICENSE_REQUIRED.
+                size) or DOCUMENT_NOT_FOUND.
                 """,
                 inputSchema: object([
                     "document_id": documentID,
@@ -1403,8 +1403,8 @@ enum AITools {
 
                 Arguments: document_id (optional, default the front window); bed (optional: [x, y, z] mm, default [220, 220, 250]); \
                 min_wall (optional: mm, default 1.2). Read-only. Returns {success, document_id, revision, summary, findings: [{severity \
-                ("error", "warning", "note"), code, message, about (ids), fix}], bed, min_wall}. Fails with INVALID_ARGUMENTS, \
-                DOCUMENT_NOT_FOUND or LICENSE_REQUIRED.
+                ("error", "warning", "note"), code, message, about (ids), fix}], bed, min_wall}. Fails with INVALID_ARGUMENTS or \
+                DOCUMENT_NOT_FOUND.
                 """,
                 inputSchema: object([
                     "document_id": documentID,
@@ -1463,7 +1463,7 @@ enum AITools {
                 last saw, which stops you undoing something of the user's).
 
                 Changes the document. Returns {success, document_id, revision, message, step, feature_count, bodies}. Fails with \
-                NOTHING_TO_UNDO, UNDO_UNAVAILABLE, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                NOTHING_TO_UNDO, UNDO_UNAVAILABLE, USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object(["document_id": ["type": "string", "description": "The part, from list_documents."], "expected_revision": expectedRevision],
                                     ["document_id"]),
@@ -1482,7 +1482,7 @@ enum AITools {
                 Arguments: document_id (required); expected_revision (optional).
 
                 Changes the document. Returns {success, document_id, revision, message, step, feature_count, bodies}. Fails with \
-                NOTHING_TO_REDO, UNDO_UNAVAILABLE, USER_BUSY, STALE_REVISION or LICENSE_REQUIRED.
+                NOTHING_TO_REDO, UNDO_UNAVAILABLE, USER_BUSY or STALE_REVISION.
                 """,
                 inputSchema: object(["document_id": ["type": "string", "description": "The part, from list_documents."], "expected_revision": expectedRevision],
                                     ["document_id"]),

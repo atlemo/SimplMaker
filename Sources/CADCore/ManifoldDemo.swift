@@ -1,5 +1,6 @@
 // An advanced example part: a manifold block, an O-ring, a flange with a curved pipe, and four threaded bolts.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 extension CADDocument {

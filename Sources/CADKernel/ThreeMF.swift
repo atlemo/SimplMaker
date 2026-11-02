@@ -1,6 +1,7 @@
 // 3MF export: the format slicers read, with units, one object per body and a colour for each (as a Materials-extension colour group).
 // A 3MF file is a zip with three small parts; the parts are stored without compression, which every reader accepts.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

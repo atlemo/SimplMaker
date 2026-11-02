@@ -1,7 +1,8 @@
 // What the assistants did: one line for each tool call, newest first, kept while the app runs. It is for the person to see what
 // happened (Settings ▸ AI), and to paste into a message when something went wrong. It holds no part data beyond a short sentence the
 // tool itself gave, and nothing is written to disk.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import Observation
 

@@ -1,6 +1,7 @@
 // Layout tokens from the "macOS Design System" (Claude Design), so custom-drawn UI here uses the
 // same spacing, radius and timing scale as the rest of the design system rather than ad hoc numbers.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import Foundation
 import SwiftUI

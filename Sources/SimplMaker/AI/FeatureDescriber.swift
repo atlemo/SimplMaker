@@ -1,6 +1,7 @@
 // Tells an AI what a feature is made of: its settings by name, with each size as the expression typed and the value
 // it comes to. The names are the ones the interface and the file format use, in snake_case.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

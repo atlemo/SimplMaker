@@ -1,6 +1,7 @@
 // "Do it for me": each tutorial step done through the same calls the interface makes, so what it
 // leaves behind is what the user would have made (and undo, the timeline and the browser all agree).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 import simd

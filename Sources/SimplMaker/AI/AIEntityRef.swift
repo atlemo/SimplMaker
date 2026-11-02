@@ -10,7 +10,8 @@
 // Nothing here is an index into what is on screen: every one of them is looked up again by name when it is used,
 // so it means the same thing after the model has been rebuilt. Faces and edges are named by the kernel's history
 // and can go away or split when the shape upstream changes; the others only go when what they name is deleted.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

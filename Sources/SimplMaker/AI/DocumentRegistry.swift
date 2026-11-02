@@ -1,7 +1,8 @@
 // The documents that are open, with an id for each that an AI client can use to say which one it means. The ids
 // are made up when a document's model is created and last until it is closed; a document that has been closed
 // has no id any more (a new one opened later gets a new id, never an old one).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 @MainActor

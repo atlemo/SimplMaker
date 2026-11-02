@@ -1,6 +1,7 @@
 // A design-system glyph: renders one of the vector icons in IconGlyphs.swift as a resizable,
 // tintable SwiftUI view — the same role an SF Symbol Image plays, for names macOS doesn't ship.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 
 /// Line-glyph icon (Lucide set standing in for SF Symbols; see IconGlyphs.swift and the design

@@ -1,5 +1,6 @@
 // The stdio relay: what it sends to the app, and what it says when the app isn't there.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import Testing
 @testable import SimplMakerMCP

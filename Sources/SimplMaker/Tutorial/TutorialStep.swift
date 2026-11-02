@@ -1,6 +1,7 @@
 // One step of the guided first part: what it says, how it knows the step is done, and what it can
 // do for a user who'd rather watch.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 /// What a step tells the user to do next, shown under its text and kept up to date as the part changes.

@@ -2,7 +2,8 @@
 // every copy of the app carries them. Copied verbatim from OCCT's LICENSE_LGPL_21.txt / OCCT_LGPL_EXCEPTION.txt (less the LGPL's form-feed page breaks),
 // OCCT's delabella.cpp and FlexLexer.h, and the LICENSE files of lucide-static 0.460.0 and
 // feather-icons 4.29.2.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 enum LicenseTexts {
     /// GNU Lesser General Public License, version 2.1 (OpenCASCADE).
     static let lgpl21 = #"""

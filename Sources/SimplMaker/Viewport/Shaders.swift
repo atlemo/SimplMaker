@@ -1,5 +1,6 @@
 // Metal shaders, compiled at runtime (SwiftPM builds don't run the Metal compiler).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 enum Shaders {
     static let source = """

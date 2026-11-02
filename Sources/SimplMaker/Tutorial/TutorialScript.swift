@@ -4,7 +4,8 @@
 // sketch on top of the floor traces its outline, insets it by the wall thickness as a guide, and hangs three
 // sections from the guide's corners with sizes typed as expressions. Extruding the thin
 // wall that is left raises the walls. The last step changes `width` and `depth` and watches everything follow.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

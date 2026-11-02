@@ -1,6 +1,7 @@
 // The Model Context Protocol layer: JSON, the JSON-RPC server, HTTP parsing and the rules about who is let in.
 // None of it knows about CAD; the tools here are made up.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import Testing
 @testable import SimplMaker

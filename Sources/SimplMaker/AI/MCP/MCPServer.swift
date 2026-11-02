@@ -1,7 +1,8 @@
 // The Model Context Protocol, server side: JSON-RPC 2.0 messages in, answers out. It offers tools and nothing else
 // (no resources, prompts or sampling). It is stateless: a connection needs no session, so a restart of the app
 // loses nothing a client could depend on. Transports (HTTP, in MCPHTTPServer.swift) only carry the bytes.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 /// One tool an AI can call. `description` is written for a language model: the tool descriptions are part of the product.

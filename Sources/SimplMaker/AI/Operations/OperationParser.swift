@@ -1,6 +1,7 @@
 // Turns what an AI sends into operations. One parser for the single-change tools and for batch, so a step in a batch
 // accepts exactly what its own tool accepts, and refuses exactly what it refuses.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

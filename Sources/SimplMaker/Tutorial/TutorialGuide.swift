@@ -3,7 +3,8 @@
 // The step is never counted. It's the first one the part doesn't satisfy yet (`current`), so
 // undoing work brings the guide back to the step that was undone, and a user who runs ahead is not
 // told to do what's done. Only the "read" steps (a welcome, a tour of the panels) need remembering.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import Observation
 

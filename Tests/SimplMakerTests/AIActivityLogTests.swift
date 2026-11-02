@@ -1,5 +1,6 @@
 // The record of what the assistants did: one line for each tool call, from the server's own hook, for Settings ▸ AI.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 import Testing

@@ -3,7 +3,8 @@
 // Like a pattern, a mirror is stored as a definition (what it copies, and the line it copies across) and its
 // images are generated: `refreshMirrors` makes them again from the originals, so they follow whatever changes
 // the originals or the line. The images are fixed points and curves whose ids are "<mirror>~<original>".
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 /// A mirror of a sketch: what it copies, and the line it copies across.

@@ -1,8 +1,9 @@
 // Anonymous usage statistics through TelemetryDeck (telemetrydeck.com): how many people use the app,
 // on which macOS and app version, and which features get used. No part contents, file names or
 // personal data are sent, and TelemetryDeck hashes the user identifier. Off with one switch in
-// Settings ▸ General; see legal/PRIVACY.md for the wording users see.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Settings ▸ General; the privacy page on simplmaker.com (website/src/pages/privacy) has the wording users see.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import TelemetryDeck
 
@@ -14,12 +15,16 @@ enum Telemetry {
     private static let namespace = "simpl.shot"
     private static var isStarted = false
 
+    /// Whether this is an official SimplMaker build (scripts/bundle-app.sh --official writes `SCOfficialBuild` into
+    /// Info.plist). A build made from the source never sends statistics to this dashboard, nor checks this project's update feed.
+    static let isOfficialBuild = Bundle.main.object(forInfoDictionaryKey: "SCOfficialBuild") as? Bool == true
+
     /// Whether usage statistics are sent (on by default).
     static var isEnabled: Bool { UserDefaults.standard.object(forKey: Preferences.sendUsageStatistics) as? Bool ?? true }
 
     /// Starts the SDK once the app has launched. Does nothing when the user has turned statistics off.
     static func start() {
-        guard isEnabled, !isStarted else { return }
+        guard isOfficialBuild, isEnabled, !isStarted else { return }
         isStarted = true
         TelemetryDeck.initialize(config: .init(appID: appID, namespace: namespace))
     }

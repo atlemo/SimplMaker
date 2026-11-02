@@ -1,5 +1,6 @@
 // Sketches of hundreds of curves: the cursor-move and per-frame work stays fast, and gives the answers it always did.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 @testable import CADCore
 import Foundation
 import Testing

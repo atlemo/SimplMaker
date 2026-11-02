@@ -1,5 +1,6 @@
 // SVG import: reads an SVG file's shapes and paths into a sketch (lines, arcs, circles and Bézier curves).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 #if canImport(FoundationXML)
 import FoundationXML

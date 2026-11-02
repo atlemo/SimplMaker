@@ -1,5 +1,6 @@
 // Main window: browser + parameters on the left, viewport in the middle, inspector on the right, timeline along the bottom.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
 import CADKernel
@@ -406,11 +407,6 @@ struct DocumentWindow: View {
                 .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset) + DS.ControlHeight.large + Panel.inset)
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.sketchSession?.isMirroring == true)
-        // Past the trial, the part can be looked at and exported, not edited.
-        .overlay(alignment: .top) {
-            LockedBanner(license: .shared)
-                .padding(.top, toolbarHeight + Panel.inset)
-        }
         // The cursor's prompt goes above everything, panels included.
         .overlay { CursorPrompt(model: model) }
     }

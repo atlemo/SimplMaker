@@ -1,6 +1,7 @@
 // The command palette (⌘K): type a few letters of anything the menus and toolbar can do, or of a feature in the
 // part, and press Return. The commands are the ones the menus run; this is only another way to reach them.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import SwiftUI
 

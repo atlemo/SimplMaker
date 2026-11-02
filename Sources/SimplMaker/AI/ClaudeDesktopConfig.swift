@@ -1,7 +1,8 @@
 // Claude Desktop starts MCP servers listed in its own config file. This adds SimplMaker's relay to that list, only
 // when the user asks (Settings ▸ AI ▸ Add to Claude Desktop), and without disturbing what else is in the file: the other
 // servers and settings are kept, and the original is copied aside the first time. A file that isn't valid JSON is left alone.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 enum ClaudeDesktopConfig {

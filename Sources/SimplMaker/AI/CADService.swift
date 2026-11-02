@@ -1,9 +1,8 @@
 // The internal API an AI client works through. It answers questions about the open documents from the model's own
 // state (the document and its last rebuild) and, from later steps on, changes them through the same editing path
 // the interface uses. It knows nothing of MCP or JSON-RPC; whatever carries the requests calls these functions.
-//
-// Every call checks the licence first: the AI interface works with a valid licence or a running trial, as editing does.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation
@@ -12,18 +11,12 @@ import simd
 @MainActor
 final class CADService {
     private let registry: DocumentRegistry
-    private let licensed: @MainActor () -> Bool
 
-    init(registry: DocumentRegistry = .shared, licensed: @escaping @MainActor () -> Bool = { LicenseManager.shared.allowsEditing }) {
+    init(registry: DocumentRegistry = .shared) {
         self.registry = registry
-        self.licensed = licensed
     }
 
     // MARK: resolving
-
-    func checkLicense() throws {
-        guard licensed() else { throw AIError.licenseRequired }
-    }
 
     /// The document asked for by id, or with no id the one in the front window.
     func resolve(_ id: String?) throws -> (id: String, model: DocumentModel) {
@@ -50,7 +43,6 @@ final class CADService {
     // MARK: documents
 
     func listDocuments() throws -> DocumentList {
-        try checkLicense()
         let front = registry.frontmost?.id
         return DocumentList(documents: registry.documents.map { id, model in
             DocumentSummary(id: id, name: Self.name(of: model), path: model.fileURL?.path, isActive: id == front,
@@ -59,7 +51,6 @@ final class CADService {
     }
 
     func getDocument(id: String? = nil) async throws -> DocumentDescription {
-        try checkLicense()
         let (docID, model) = try resolve(id)
         await model.rebuilt()
         let doc = model.document
@@ -74,7 +65,6 @@ final class CADService {
     }
 
     func getFeature(documentID: String? = nil, featureID: FeatureID) async throws -> FeatureDescription {
-        try checkLicense()
         let (docID, model) = try resolve(documentID)
         await model.rebuilt()
         guard let index = model.document.index(of: featureID) else {
@@ -89,7 +79,6 @@ final class CADService {
     }
 
     func listParameters(documentID: String? = nil) async throws -> [ParameterInfo] {
-        try checkLicense()
         let (_, model) = try resolve(documentID)
         await model.rebuilt()
         return parameters(of: model)
@@ -99,7 +88,6 @@ final class CADService {
 
     /// What is selected in the viewport, as ids that mean the same after the model is rebuilt.
     func getSelection(documentID: String? = nil) throws -> SelectionDescription {
-        try checkLicense()
         let (docID, model) = try resolve(documentID)
         var entities: [SelectedEntity] = []
         for pick in model.selection {

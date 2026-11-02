@@ -1,6 +1,7 @@
 // The solver's linear algebra is written with unsafe buffers and index loops for speed; it has to give the very same numbers as the
 // plain version, since every sketch's solved positions come from it.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 @testable import CADCore
 import Foundation
 import Testing

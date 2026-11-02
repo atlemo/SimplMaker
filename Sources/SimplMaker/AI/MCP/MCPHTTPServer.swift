@@ -1,6 +1,7 @@
 // Carries MCPHTTPHandler over a TCP listener that is bound to the loopback address, so nothing off this Mac can
 // even connect. One task per connection; a connection is dropped after a minute without a byte.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import Network
 import os

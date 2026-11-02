@@ -1,5 +1,6 @@
 // How the mouse, trackpad and wheel move the camera: which input does what, which way, and how fast.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import Foundation
 

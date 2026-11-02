@@ -1,5 +1,6 @@
 // Operations on sketches and what is made from them: a new sketch, shapes added to one, an extrude of its profiles.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

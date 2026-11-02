@@ -1,5 +1,6 @@
 // A planar face's frame normal points out of the solid, also for the faces a chamfer makes.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 import Testing

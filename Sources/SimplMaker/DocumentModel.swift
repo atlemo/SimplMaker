@@ -1,5 +1,6 @@
 // App state: the document, undo, background regeneration, selection, files.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
 import CADKernel
@@ -309,17 +310,10 @@ final class DocumentModel {
     // MARK: editing (every change goes through here: undo + regenerate)
 
     func mutate(_ actionName: String, _ change: (inout CADDocument) -> Void) {
-        // Past the trial (or a lapsed license) parts open and export but do not change.
-        guard LicenseManager.shared.allowsEditing else { reportEditingLocked(); return }
         var doc = document
         change(&doc)
         guard doc != document else { return }
         replace(with: doc, actionName: actionName)
-    }
-
-    private func reportEditingLocked() {
-        alert = AlertInfo(title: "Editing is turned off",
-                          message: LicenseManager.shared.status.summary + "\n\nChoose SimplMaker ▸ License… to buy or enter a license.")
     }
 
     /// Changes something that isn't part of the model (which handle a feature's typed field is for): no undo
@@ -2420,7 +2414,6 @@ final class DocumentModel {
     /// A side of a construction plane was grabbed: select the plane, and drag the side with `dragPlaneEdge`.
     func beginPlaneResize(_ pick: PickID) {
         guard let id = constructionPlane(ofEdge: pick) else { return }
-        guard LicenseManager.shared.allowsEditing else { return reportEditingLocked() }
         selection = []
         selectedFeature = id
         planeResize = PlaneResize(id: id, edge: pick.planeEdge, start: document)

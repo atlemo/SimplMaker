@@ -3,7 +3,8 @@
 // kernel. The runner (CADService.run) applies a list of them in order, rebuilding the copy on the side after each one so the next
 // can look at what was built (a sketch's profiles, a body's faces), refuses the whole list if any step fails or leaves anything
 // unbuildable, and gives the real document the result in a single undo step.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation
@@ -48,7 +49,6 @@ extension CADService {
         guard !operations.isEmpty else {
             throw AIError(.invalidArguments, "There is nothing to do: the list of operations is empty.")
         }
-        try checkLicense()
         let (id, model) = try resolve(documentID)
         try refuseIfBusy(model)
         model.aiActivity = operations.count == 1 ? operations[0].activity : "Making \(operations.count) changes"
@@ -88,9 +88,6 @@ extension CADService {
                           reason: "Read the part again with get_document and repeat the change if it still makes sense.")
         }
         model.mutate("AI: \(label ?? operations[0].label)") { $0 = doc }
-        guard model.document == doc else {  // mutate refuses when editing is locked (the trial has ended)
-            throw AIError.licenseRequired
-        }
         await model.rebuilt()
         return (id, model, outcomes)
     }

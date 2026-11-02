@@ -1,7 +1,8 @@
 // What the AI interface returns. Plain data, encoded to JSON by whoever carries it (keys in snake_case).
 // Everything is in the document's units: millimetres and degrees. Expressions are kept as typed, next to
 // the value they come to, so the AI can tell a size that follows a parameter ("wall") from a fixed one ("2 mm").
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

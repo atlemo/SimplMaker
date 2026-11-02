@@ -1,6 +1,7 @@
 // The goal of the sketch tools, as an assistant would use them: "a key ring with the name Jane Doe on it, about 35 mm long and 3 mm
 // thick", built through the JSON-RPC server in a single batch, then inspected and changed.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 import Testing

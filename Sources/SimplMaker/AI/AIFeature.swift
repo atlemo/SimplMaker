@@ -4,7 +4,8 @@
 // out the relay program and removes the Settings tab. That is decided when the app is built, not by the user, through the
 // Info.plist key `SCAIEnabled`: an explicit false turns the mode off, and a missing or unreadable value leaves it on.
 // A signed, notarized app can't have its Info.plist edited without breaking the signature.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 enum AIFeature {

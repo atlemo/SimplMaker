@@ -1,7 +1,8 @@
 // Not a test of behaviour: solves every sketch of the saved files in a folder, as stored and with the length dimensions made 25 %
 // larger, and writes status, iterations, time and the solved positions to a JSON file. Run before and after a change to the solver
 // and compare the two files (scripts/compare-solver-probe.py). Off unless SOLVER_PROBE_OUT is set; SOLVER_PROBE_DIR names the folder.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 @testable import CADCore
 import Foundation
 import Testing

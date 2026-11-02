@@ -1,5 +1,6 @@
 // End-to-end: document -> parameters -> solver -> OpenCASCADE -> named bodies.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 import Testing

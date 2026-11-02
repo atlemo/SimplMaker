@@ -1,5 +1,6 @@
 // Expressions with units, e.g. "width / 2 + 3 mm", "atan(h / w)", "45 deg".
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 /// A value with a (length, angle) dimension. Internal base units: millimetres and radians.

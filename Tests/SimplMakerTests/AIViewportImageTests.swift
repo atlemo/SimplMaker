@@ -1,5 +1,6 @@
 // The picture an assistant can ask for: made offscreen with the app's renderer, from named directions, as an image in the tool result.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
 import Foundation
@@ -175,11 +176,6 @@ import Testing
         let t = try await part()
         do { _ = try await t.rig.service.viewportImage(documentID: t.id, direction: .iso, azimuth: nil, elevation: nil, width: 10, height: 10, axes: true); Issue.record("size") } catch {
             #expect((error as? AIError)?.code == .invalidArguments)
-        }
-        let unlicensed = AIServiceTests.Rig(licensed: false)
-        let (uid, _) = await unlicensed.open(CADDocument())
-        do { _ = try await unlicensed.service.viewportImage(documentID: uid, direction: .iso, azimuth: nil, elevation: nil, width: 1024, height: 768, axes: true); Issue.record("licence") } catch {
-            #expect((error as? AIError) == AIError.licenseRequired || (error as? AIError)?.code == AIError.licenseRequired.code)
         }
     }
 

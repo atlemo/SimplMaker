@@ -1,7 +1,8 @@
 // A picture of the part as an assistant can look at it: the app's own renderer, in a window nobody sees, from a named direction,
 // framed to fit, with the red/green/blue axes through the origin to tell which way is which. It has its own renderer, so the
 // user's own view (camera, selection, hover) is not touched.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
 import CADKernel

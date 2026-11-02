@@ -1,6 +1,7 @@
 // Recipes the design guide shows, as the exact steps an assistant would send to `batch`. The guide prints them and the tests run them,
 // so what the guide teaches is what builds.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 enum AIRecipes {

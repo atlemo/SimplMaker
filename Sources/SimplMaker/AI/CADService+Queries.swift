@@ -1,6 +1,7 @@
 // Looking at the built geometry: a body's faces and edges, and measurements of them. Read-only, like the rest of the queries;
 // the numbers come from the kernel's own measurements (KBody.measure, KBody.distance), the same ones the Measure tool shows.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation
@@ -112,7 +113,6 @@ extension CADService {
     // MARK: get_body
 
     func getBody(documentID: String?, bodyID: String) async throws -> BodyDescription {
-        try checkLicense()
         let (docID, model) = try resolve(documentID)
         await model.rebuilt()
         guard let built = model.bodies.first(where: { $0.id == bodyID }) else {
@@ -188,7 +188,6 @@ extension CADService {
     }
 
     func measure(documentID: String?, a: String, b: String?) async throws -> MeasureResult {
-        try checkLicense()
         let (docID, model) = try resolve(documentID)
         await model.rebuilt()
         let first = try piece(a, in: model)
@@ -231,7 +230,6 @@ extension CADService {
     /// A picture of the part, from a direction (or an angle of your own).
     func viewportImage(documentID: String?, direction: SnapshotDirection, azimuth: Double?, elevation: Double?, width: Int, height: Int,
                        axes: Bool, options: SnapshotOptions = SnapshotOptions()) async throws -> ViewportImageResult {
-        try checkLicense()
         guard (256...1600).contains(width), (192...1200).contains(height) else {
             throw AIError(.invalidArguments, "The picture size must be 256–1600 wide and 192–1200 high (asked for \(width) × \(height)).",
                           reason: "The default of 1024 × 768 is good for most views.")

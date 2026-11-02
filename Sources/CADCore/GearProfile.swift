@@ -6,7 +6,8 @@
 // Tips and roots are arcs about the gear's centre. Where the root circle lies
 // inside the base circle (below about 41 teeth at 20°): the flank then starts with a short radial line down
 // to the root. There is no undercut or root fillet.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 public struct GearSpec: Equatable, Sendable {

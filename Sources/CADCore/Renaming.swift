@@ -1,5 +1,6 @@
 // Renaming parameters: every expression in the document that uses the old name is rewritten.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 extension Expressions {

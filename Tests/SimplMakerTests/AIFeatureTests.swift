@@ -1,5 +1,6 @@
 // The build-time switch for the AI mode: every build has it unless the bundle says no, and without it nothing starts or is written.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import Testing
 @testable import SimplMaker
@@ -22,8 +23,8 @@ import Testing
     @Test func aBuildWithoutTheModeNeverListensWritesOrAcceptsTheSwitch() async throws {
         let s = AIConnectionTests.Setup(); defer { s.cleanUp() }
         s.defaults.set(true, forKey: AIConnection.enabledKey)  // as if a user's preferences already say yes
-        let ai = AIConnection(defaults: s.defaults, file: s.file, service: CADService(registry: s.rig.registry, licensed: { true }),
-                              licensed: { true }, version: "t", available: false)
+        let ai = AIConnection(defaults: s.defaults, file: s.file, service: CADService(registry: s.rig.registry),
+                              version: "t", available: false)
         #expect(!ai.isAvailable && !ai.isEnabled, "it reads as off whatever the preferences say")
         await ai.refresh()
         ai.startIfEnabled()
@@ -41,8 +42,8 @@ import Testing
         #expect(Bundle.main.object(forInfoDictionaryKey: AIFeature.infoKey) == nil)
         #expect(AIFeature.isAvailable)
         let s = AIConnectionTests.Setup(); defer { s.cleanUp() }
-        let ai = AIConnection(defaults: s.defaults, file: s.file, service: CADService(registry: s.rig.registry, licensed: { true }),
-                              licensed: { true }, version: "t", available: AIFeature.isAvailable)
+        let ai = AIConnection(defaults: s.defaults, file: s.file, service: CADService(registry: s.rig.registry),
+                              version: "t", available: AIFeature.isAvailable)
         #expect(ai.isAvailable && !ai.isEnabled, "off by default")
     }
 }

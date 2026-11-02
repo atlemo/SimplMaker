@@ -1,5 +1,6 @@
 // Which parameters a feature reads, so a rebuild's cache key moves only when one of those changes.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

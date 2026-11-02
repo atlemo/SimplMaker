@@ -1,6 +1,7 @@
 // DXF: reads a drawing's lines, arcs, circles, polylines and ellipses into a sketch, and writes a sketch as DXF for laser
 // cutters, CNC and other CAD programs. Only the plain-text form of the format is read; the file is mm unless it says otherwise.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 public enum DXFImport {

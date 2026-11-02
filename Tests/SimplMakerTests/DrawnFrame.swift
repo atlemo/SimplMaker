@@ -1,5 +1,6 @@
 // Reading back what a viewport drew, in the tests that look at pixels.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Metal
 import MetalKit
 @testable import SimplMaker

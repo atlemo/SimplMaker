@@ -1,7 +1,8 @@
 // Edit ▸ Copy and Paste for bodies. A copied body travels as a STEP file on the pasteboard, so it can be
 // pasted into the same part, another part or another window, and comes back as an Import body (its
 // history stays behind, as with any imported part).
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
 import CADKernel

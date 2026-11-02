@@ -1,5 +1,6 @@
 // Measuring faces, edges and bodies: sizes, round geometry and the distance between two pieces.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import simd
 import Testing

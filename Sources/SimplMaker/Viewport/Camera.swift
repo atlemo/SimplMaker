@@ -1,5 +1,6 @@
 // Orbit camera, Z up. Angles in radians, distances in mm.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CoreGraphics
 import Foundation
 import simd

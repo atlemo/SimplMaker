@@ -1,6 +1,7 @@
 // Operations that work on whole bodies or on a face of one: a drilled hole, a shell, a mirror, a pattern of copies, a combine
 // of bodies, a revolve of sketch profiles. Each makes the app's own feature, with the settings the app has.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

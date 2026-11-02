@@ -1,6 +1,7 @@
 // A JSON value, for the messages of the Model Context Protocol (tool arguments and results are free-form JSON).
 // Nothing in the MCP/ folder knows about CAD.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 enum JSONValue: Codable, Equatable, Sendable {

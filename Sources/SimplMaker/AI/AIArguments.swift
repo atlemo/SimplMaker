@@ -1,7 +1,8 @@
 // Reading a tool's arguments, and turning what an AI writes into what the document stores. An AI sends a size as a number
 // (millimetres, or degrees for an angle) or as an expression ("2 in", "wall * 2"); the document stores expressions, so a
 // number becomes "120 mm". Every mistake comes back as an AIError that says what to send instead.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 

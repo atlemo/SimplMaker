@@ -6,7 +6,8 @@
 // the originals or the parameters. Generated entities carry "~" in their ids, made from the
 // pattern, the copy and the original ("<pattern>~<copy>~<original>"), so the same copy always has
 // the same id and profiles built on it stay valid. They are fixed points that no constraint refers to.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 /// How copies of sketch geometry are laid out. Counts include the original.

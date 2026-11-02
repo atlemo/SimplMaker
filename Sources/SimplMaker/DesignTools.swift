@@ -3,7 +3,8 @@
 // A tool runs straight away when the selection already has what it needs. Otherwise it waits
 // (`pendingTool`): the cursor says what to pick, clicks go to the tool, Return accepts defaults
 // (a revolve's axis, a loft's sections, fillet edges) and Esc cancels.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation

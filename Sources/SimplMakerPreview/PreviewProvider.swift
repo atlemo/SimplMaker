@@ -1,5 +1,6 @@
 // The space-bar preview of a .simplmaker file in Finder: the PNG the app stored in the file when it saved.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import QuickLookUI
 import UniformTypeIdentifiers

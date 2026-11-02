@@ -4,7 +4,8 @@
 // is why this is not built on a global-hotkey library. Only the changes are stored (UserDefaults, under
 // `Shortcuts.defaultsKey`, as {command id: "cmd+opt+g"}, or "" for no shortcut), so a default that
 // changes in a later version reaches everyone who never touched it.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import SwiftUI
 

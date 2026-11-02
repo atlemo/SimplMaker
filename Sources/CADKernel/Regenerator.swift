@@ -1,6 +1,7 @@
 // Replays a document's timeline through the kernel. This is what makes SimplMaker parametric:
 // change any parameter or feature, call regenerate, and every downstream feature is rebuilt.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CKernel
 import Foundation

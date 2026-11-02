@@ -1,6 +1,7 @@
 // The welcome window shown at launch, in the style of Xcode's: the app icon and the ways to start
 // on the left, recently opened parts on the right.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
 import SwiftUI
@@ -9,7 +10,6 @@ import SwiftUI
 @MainActor
 enum AppWindows {
     static let welcomeID = "welcome"
-    static let licenseID = "license"
     static let settingsID = "settings"
     static var openWindow: OpenWindowAction?
 
@@ -89,10 +89,6 @@ struct WelcomeView: View {
             .padding(.horizontal, 52)
 
             Spacer(minLength: DS.Spacing.space6)
-
-            LicenseNotice(license: .shared)
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, DS.Spacing.space3)
 
             Toggle("Show this window when SimplMaker launches", isOn: $showWelcome)
                 .toggleStyle(.checkbox)

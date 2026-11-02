@@ -1,7 +1,8 @@
 // A second pair of eyes on a part meant to be printed: what is likely to go wrong that the numbers of a single feature do not
 // show. It reads the built bodies (faces, sizes) and the feature list, and says what it finds; it never changes anything. The checks
 // are heuristics on flat faces and are worded as such.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 import simd
@@ -188,7 +189,6 @@ enum DesignChecker {
 
 extension CADService {
     func checkDesign(documentID: String?, bed: [Double]?, minWall: Double?) async throws -> DesignCheckResult {
-        try checkLicense()
         let bedSize = bed ?? [220, 220, 250]
         guard bedSize.count == 3, bedSize.allSatisfy({ $0 > 10 && $0 < 5000 }) else {
             throw AIError(.invalidArguments, "bed must be three sizes [x, y, z] in mm, for example [220, 220, 250].")
@@ -221,7 +221,6 @@ extension CADService {
     }
 
     func designGuide(topic: String?) throws -> JSONValue {
-        try checkLicense()
         guard let topic, !topic.isEmpty else {
             return ["topics": .array(AIDesignGuide.topics.map { ["id": .string($0.id), "title": .string($0.title), "when": .string($0.summary)] }),
                     "how_to_use": "Call get_design_guide again with one topic id. Read \"workflow\" and \"parameters\" first for any build."]

@@ -1,5 +1,6 @@
 // The AI interface's read side: the documents it names, what it says about them, and the rules around it.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 import Testing
@@ -16,7 +17,7 @@ import Testing
         let registry = DocumentRegistry()
         let service: CADService
         private var models: [DocumentModel] = []
-        init(licensed: Bool = true) { service = CADService(registry: registry, licensed: { licensed }) }
+        init() { service = CADService(registry: registry) }
 
         func open(_ doc: CADDocument) async -> (id: String, model: DocumentModel) {
             let model = DocumentModel(document: doc)
@@ -306,36 +307,6 @@ import Testing
         do { _ = try await service.getFeature(documentID: id, featureID: "nope"); Issue.record("should fail") } catch let e as AIError {
             #expect(e.code == .featureNotFound)
         }
-    }
-
-    // MARK: licence
-
-    @Test func withoutALicenseNothingWorks() async throws {
-        let rig = Rig(licensed: false); let service = rig.service
-        let (id, _) = await rig.open(.demo())
-        func refused(_ call: () async throws -> Void) async {
-            do { try await call(); Issue.record("should be refused") } catch let e as AIError {
-                #expect(e.code == .licenseRequired && !e.recoverable)
-            } catch { Issue.record("\(error)") }
-        }
-        await refused { _ = try service.listDocuments() }
-        await refused { _ = try await service.getDocument(id: id) }
-        await refused { _ = try await service.getFeature(documentID: id, featureID: "plate") }
-        await refused { _ = try await service.listParameters(documentID: id) }
-        await refused { _ = try service.getSelection(documentID: id) }
-    }
-
-    @Test func theLicenseIsCheckedOnEveryCall() async throws {
-        let registry = DocumentRegistry()
-        var allowed = true
-        let service = CADService(registry: registry, licensed: { allowed })
-        let model = DocumentModel(document: .demo())
-        registry.register(model)
-        await model.rebuilt()
-        _ = try service.listDocuments()
-        allowed = false  // the trial ends while the connection is open
-        #expect(throws: AIError.self) { try service.listDocuments() }
-        withExtendedLifetime(model) {}
     }
 
     // MARK: selection

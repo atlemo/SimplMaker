@@ -1,7 +1,8 @@
 // File ▸ Rename for document windows with a hidden title. macOS shows its own rename field attached to
 // the window title, and with the title hidden it has nothing to attach to, so the stock item does nothing.
 // This takes the item over and asks for the new name in a standard sheet instead.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 
 @MainActor

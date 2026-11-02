@@ -5,7 +5,8 @@
 // then, the client's start-up questions (initialize, tools/list) are answered from what the app said last time, so
 // starting the client never opens SimplMaker. If it can't be reached the answer says so in words the AI can act on:
 // SIMPLMAKER_NOT_RUNNING.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
 struct RelayConnection: Equatable {

@@ -1,26 +1,26 @@
 // The AI interface from the outside: a real server on a loopback port, spoken to over HTTP the way an MCP client does,
 // serving the real tools over documents opened in a test registry.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import Foundation
 import Testing
 @testable import SimplMaker
 
 @Suite @MainActor struct AIConnectionTests {
-    /// Everything one test needs: its own defaults, connection file, documents and licence switch.
+    /// Everything one test needs: its own defaults, connection file, and documents.
     @MainActor final class Setup {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("simplmaker-ai-\(UUID().uuidString)")
         let defaults: UserDefaults
         let suite = "simplmaker-ai-test-\(UUID().uuidString)"
         let rig = AIServiceTests.Rig()
-        var licensed = true
         lazy var file = MCPConnectionFile(url: directory.appendingPathComponent("mcp-connection.json"))
 
         init() { defaults = UserDefaults(suiteName: suite)! }
 
         func connection(version: String = "test") -> AIConnection {
-            AIConnection(defaults: defaults, file: file, service: CADService(registry: rig.registry, licensed: { [unowned self] in licensed }),
-                         licensed: { [unowned self] in licensed }, version: version, available: true)
+            AIConnection(defaults: defaults, file: file, service: CADService(registry: rig.registry),
+                         version: version, available: true)
         }
 
         func cleanUp() {
@@ -102,22 +102,6 @@ import Testing
         #expect(await isRefused(endpoint))
         let info = try #require(s.file.read())
         #expect(info.running == false && info.token == ai.token)
-    }
-
-    @Test func withoutALicenseItDoesNotStartAndStartsWhenOneAppears() async throws {
-        let s = Setup(); defer { s.cleanUp() }
-        s.licensed = false
-        let ai = s.connection()
-        s.defaults.set(true, forKey: AIConnection.enabledKey)
-        await ai.refresh()
-        #expect(ai.status == .needsLicense && ai.endpoint == nil)
-        s.licensed = true
-        await ai.refresh()
-        guard case .running = ai.status else { Issue.record("\(ai.status)"); return }
-        s.licensed = false  // the trial ends while it runs
-        await ai.refresh()
-        #expect(ai.status == .needsLicense)
-        ai.stop()
     }
 
     @Test func aTakenPortIsNoReasonNotToStart() async throws {
@@ -273,23 +257,6 @@ import Testing
         #expect(wrongType.json?["result"]?["structuredContent"]?["error"]?["code"] == "INVALID_ARGUMENTS")
         let noDoc = try await post(endpoint, token: token, rpc(4, "tools/call", ["name": "get_document", "arguments": ["document_id": "doc_999"]]))
         #expect(noDoc.json?["result"]?["structuredContent"]?["error"]?["code"] == "DOCUMENT_NOT_FOUND")
-    }
-
-    @Test func theLicenseIsCheckedOnEveryToolCall() async throws {
-        let s = Setup(); defer { s.cleanUp() }
-        _ = await s.rig.open(.demo())
-        let ai = s.connection()
-        s.defaults.set(true, forKey: AIConnection.enabledKey)
-        await ai.refresh()
-        defer { ai.stop() }
-        let endpoint = try #require(ai.endpoint), token = ai.token
-        let ok = try await post(endpoint, token: token, rpc(1, "tools/call", ["name": "list_documents"]))
-        #expect(ok.json?["result"]?["isError"] == nil)
-        s.licensed = false  // the trial ends; the server hasn't been told yet
-        let refused = try await post(endpoint, token: token, rpc(2, "tools/call", ["name": "list_documents"]))
-        #expect(refused.json?["result"]?["isError"] == true)
-        #expect(refused.json?["result"]?["structuredContent"]?["error"]?["code"] == "LICENSE_REQUIRED")
-        #expect(refused.json?["result"]?["structuredContent"]?["error"]?["recoverable"] == false)
     }
 
     @Test func aWrongOrOldTokenIsRefusedOverTheWire() async throws {

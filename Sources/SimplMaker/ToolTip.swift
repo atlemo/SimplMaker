@@ -1,5 +1,6 @@
 // A tooltip that AppKit shows for one view, in place of SwiftUI's `.help` where that misbehaves.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import SwiftUI
 

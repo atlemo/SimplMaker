@@ -1,6 +1,7 @@
 // The navigation cube in the viewport's corner: it turns with the camera, and clicking a face, an
 // edge or a corner turns the view to look from there; dragging it orbits, and the house goes home.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import simd
 

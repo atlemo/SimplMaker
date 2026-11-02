@@ -1,6 +1,7 @@
 // Operations that finish a body: round or bevel its edges. Both are the app's own Fillet and Chamfer features, with the
 // same settings, so they appear in the timeline and the inspector like the ones the user makes.
-// Copyright © 2026 Atle Mo. All rights reserved.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import CADKernel
 import Foundation
