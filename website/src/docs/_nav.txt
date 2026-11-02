@@ -70,7 +70,7 @@ ai/assistant
 reference/shortcuts
 reference/menus
 reference/settings
-reference/license
+reference/license-and-source
 reference/open-cascade
 reference/troubleshooting
 reference/glossary

@@ -3,7 +3,7 @@ title: Open CASCADE and replacing the library
 description: SimplMaker's geometry kernel is Open CASCADE Technology (LGPL 2.1). Where its source is, how it is built, and how to replace it with your own build.
 ---
 
-SimplMaker's geometry kernel, the part that makes extrusions, fillets, booleans and STEP files, is [Open CASCADE Technology](https://dev.opencascade.org) (OCCT), version 8.0.1. OCCT is free software under the **GNU LGPL 2.1 with the Open CASCADE exception**. SimplMaker itself is not, but the licence lets you replace OCCT with your own build. This page says how.
+SimplMaker's geometry kernel, the part that makes extrusions, fillets, booleans and STEP files, is [Open CASCADE Technology](https://dev.opencascade.org) (OCCT), version 8.0.1. OCCT is free software under the **GNU LGPL 2.1 with the Open CASCADE exception**. SimplMaker itself is free software too, under the [GNU GPL, version 3 or later](doc:reference/license-and-source). OCCT keeps its own licence, which lets you replace it with your own build. This page says how.
 
 ## What is inside the app
 
@@ -65,8 +65,8 @@ Your copy has to be a **compatible build**: the same OCCT version, or one with t
 Re-signing replaces our signature, so macOS no longer sees the app as signed by us. A SimplMaker update replaces your library with the standard one.
 :::
 
-You may modify OCCT for your own use and reverse engineer SimplMaker as far as needed to debug those changes. The [Licence agreement](/eula/) does not restrict either.
+You may modify OCCT for your own use. SimplMaker is open source, so you can read how it calls OCCT in its [source code](https://github.com/atlemo/SimplMaker).
 
 ## Other open-source components
 
-The other components SimplMaker includes, such as DelaBella, Sparkle and Lucide, and their licences are listed under **SimplMaker → About SimplMaker**.
+The other components SimplMaker includes, such as DelaBella, Sparkle and Lucide, and their licences are listed under **SimplMaker → About SimplMaker** and on [Licence and source](doc:reference/license-and-source).

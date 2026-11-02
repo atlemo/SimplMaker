@@ -53,7 +53,3 @@ Connects an AI assistant such as Claude to SimplMaker. It is off until you switc
 ## Shortcuts
 
 Give any tool or command another key. See [Keyboard shortcuts](doc:reference/shortcuts).
-
-## License
-
-Appears once licensing is on: your key, its status, and **Deactivate This Mac**. See [Licence and activation](doc:reference/license).

@@ -54,10 +54,6 @@ Click the side of a shaft or the wall of a hole, or a flat face next to one. See
 - Look at your slicer's scale setting.
 - Holes print small and pegs print large. Add a [tolerance parameter](doc:print/design-tips).
 
-## Editing is switched off
-
-The trial has ended or the licence needs checking. See [Licence and activation](doc:reference/license). You can still open and export parts.
-
 ## Still stuck?
 
 [Write to support](/support/) with your SimplMaker version (**SimplMaker → About**), your macOS version, what you did and what happened. A screenshot or the `.simplmaker` file helps a lot.

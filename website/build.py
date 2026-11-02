@@ -10,7 +10,7 @@ src/static/ is copied as it is. What ends up in public/ is exactly what gets upl
 (scripts/publish-site.sh), apart from /updates/ and the disk image in /download/, which belong to the release scripts.
 
 Placeholders available in pages and partials:
-    {{price}} {{trial_days}} {{min_os}} {{version}} {{buy_url}} {{support_email}} {{year}}
+    {{min_os}} {{version}} {{github_url}} {{support_email}} {{year}}
     {{asset:css/style.css}}                  the file's URL with a content hash, so browsers re-fetch changes
     {{clip:name|16/10|Label shown until the video exists}}   a looping video figure
     {{changelog}}                            the release notes from ../release-notes/*.html
@@ -24,24 +24,15 @@ SRC, OUT = ROOT / "src", ROOT / "public"
 
 SITE_URL = "https://simplmaker.com"
 
-
-def read_conf(path):
-    values = {}
-    if path.exists():
-        for line in path.read_text().splitlines():
-            if "=" in line and not line.lstrip().startswith("#"):
-                key, _, val = line.partition("=")
-                values[key.strip()] = val.strip()
-    return values
+# Pages that used to exist. Each becomes a small stub that sends visitors (and search engines) to the new place.
+# A meta refresh plus a canonical link works on any static host, with no server configuration.
+REDIRECTS = {"/pricing/": "/download/", "/refunds/": "/download/", "/terms/": "/license/", "/eula/": "/license/"}
 
 
-conf = read_conf(REPO / "Packaging" / "licensing.conf")
 VARS = {
-    "price": "49",                      # keep in step with the Polar product
-    "trial_days": "14",
     "min_os": "macOS 15",
     "version": (REPO / "VERSION").read_text().strip(),
-    "buy_url": conf.get("BUY_URL", "#"),
+    "github_url": "https://github.com/atlemo/SimplMaker",
     "support_email": "support@simplmaker.com",
     "year": "2026",
 }
@@ -111,7 +102,7 @@ def page_html(layout, *, title, description, nav="", route, content, body_class=
         # The docs search script is only needed on the docs.
         "docs_script": f'<script src="{asset("js/docs.js")}" defer></script>' if route.startswith("/docs/") else "",
     }
-    for item in ("features", "pricing", "compare", "docs"):
+    for item in ("features", "compare", "docs"):
         values[f"cur_{item}"] = ' aria-current="page"' if nav == item else ""
     out = layout
     for k, v in values.items():
@@ -126,6 +117,16 @@ def write(route, text):
         dest = OUT / route.strip("/") / "index.html" if route != "/" else OUT / "index.html"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(text)
+
+
+def redirect_html(target):
+    url = SITE_URL + target
+    return ("<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"UTF-8\" />"
+            f"<title>Moved · SimplMaker</title>"
+            f"<meta http-equiv=\"refresh\" content=\"0; url={target}\" />"
+            f"<link rel=\"canonical\" href=\"{url}\" />"
+            "<meta name=\"robots\" content=\"noindex, follow\" />"
+            f"</head><body><p>This page has moved to <a href=\"{target}\">{url}</a>.</p></body></html>\n")
 
 
 def lastmod(path):
@@ -272,28 +273,27 @@ def write_llms(pages, docs):
         url = route_or_url if route_or_url.startswith("http") else SITE_URL + route_or_url
         return f"- [{title}]({url}): {desc}"
 
-    short = {"/features/": "Features", "/pricing/": "Pricing", "/compare/": "Compare with other CAD tools",
+    short = {"/features/": "Features", "/compare/": "Compare with other CAD tools",
              "/download/": "Download", "/changelog/": "Changelog", "/support/": "Support",
-             "/privacy/": "Privacy policy", "/terms/": "Terms of sale and use", "/eula/": "Licence agreement",
-             "/refunds/": "Refunds"}
+             "/privacy/": "Privacy policy", "/license/": "Licence and source code"}
     for p in pages:
         p["title"] = short.get(p["route"], p["title"])
-    product = [p for p in pages if p["route"] in short and p["route"] not in ("/privacy/", "/terms/", "/eula/", "/refunds/")]
-    legal = [p for p in pages if p["route"] in ("/privacy/", "/terms/", "/eula/", "/refunds/")]
+    product = [p for p in pages if p["route"] in short and p["route"] not in ("/privacy/", "/license/")]
+    legal = [p for p in pages if p["route"] in ("/privacy/", "/license/")]
     lines = [
         "# SimplMaker", "",
         "> SimplMaker is native parametric CAD for Mac, made for makers who 3D print. Sketch a profile, extrude it, "
         "name the dimensions as parameters, and the whole part rebuilds when a number changes. It imports and exports "
-        "STEP and exports STL for the slicer. It costs $%s once (no subscription, no account) and has a free "
-        "%s-day trial with every feature. Requires macOS 15 or later on Apple Silicon." % (VARS["price"], VARS["trial_days"]),
+        "STEP and exports STL for the slicer. It is free and open source (GPL-3.0-or-later), with no subscription "
+        "and no account. Requires macOS 15 or later on Apple Silicon.",
         "",
         "## Key facts", "",
         f"- Product: SimplMaker, version {VARS['version']}, by Atle Mo",
         "- Platform: macOS 15 or later, Apple Silicon. No Windows, Linux or iPad version.",
-        f"- Price: ${VARS['price']} once per major version. Includes all 1.x updates. No subscription, no account.",
-        f"- Trial: {VARS['trial_days']} days, the full app, no card.",
+        "- Price: free. No subscription, no account, no licence key.",
+        f"- Source code: {VARS['github_url']}",
         "- Files: parts are plain files on the user's Mac. Imports STEP; exports STEP and STL.",
-        "- Licence: a key is entered in the app. It checks the key about once a week and keeps working offline for 30 days.",
+        "- Licence: GNU General Public License, version 3 or later. The name and icon are not covered by it.",
         "- Not included: assemblies, CAM, simulation, rendering.",
         f"- Support: {VARS['support_email']}", "",
         "## Product", "",
@@ -337,6 +337,8 @@ def build():
         if not meta.get("noindex"):
             urls.append((SITE_URL + route, lastmod(page)))
             pages.append({"route": route, "title": render(meta["title"]), "description": render(meta["description"])})
+    for old, new in REDIRECTS.items():
+        write(old, redirect_html(new))
     doc_count, missing = build_docs(layout, urls, docs)
     sitemap = "".join(f"<url><loc>{u}</loc><lastmod>{d}</lastmod></url>\n" for u, d in urls)
     (OUT / "sitemap.xml").write_text(
