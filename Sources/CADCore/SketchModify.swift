@@ -447,6 +447,47 @@ extension Sketch {
         }
     }
 
+    /// A representative point for every point in `ids` that shares its place with another: tied by a coincident
+    /// constraint, or closer than a micrometre (the solver leaves such a gap where a line only ends on an arc).
+    /// Points alone in their place are left out.
+    private static func places(of ids: [EntityID], constraints: [SketchConstraint], positions: [EntityID: SIMD2<Double>])
+        -> [EntityID: EntityID] {
+        var parent: [EntityID: EntityID] = [:]
+        func root(_ p: EntityID) -> EntityID {
+            var r = p
+            while let next = parent[r], next != r { r = next }
+            return r
+        }
+        func join(_ a: EntityID, _ b: EntityID) {
+            let ra = root(a), rb = root(b)
+            if ra != rb { parent[ra] = rb }
+        }
+        for c in constraints {
+            if case .coincident(let a, let b) = c.kind { join(a, b) }
+        }
+        // Nearby points: a grid of one tolerance per cell, each point checked against its own cell and the next.
+        let tolerance = 1e-3
+        var cells: [SIMD2<Int>: [EntityID]] = [:]
+        for p in Set(ids) {
+            guard let at = positions[p] else { continue }
+            let cell = SIMD2(Int((at.x / tolerance).rounded(.down)), Int((at.y / tolerance).rounded(.down)))
+            for dx in -1...1 {
+                for dy in -1...1 {
+                    for q in cells[cell &+ SIMD2(dx, dy)] ?? [] {
+                        if let other = positions[q], vlen(other - at) < tolerance { join(p, q) }
+                    }
+                }
+            }
+            cells[cell, default: []].append(p)
+        }
+        var result: [EntityID: EntityID] = [:]
+        for p in Set(ids) {
+            let r = root(p)
+            if r != p { result[p] = r }
+        }
+        return result
+    }
+
     /// Orders curves into connected chains; each entry is (curve id, reversed?) in travel order.
     /// Linear in the number of curves: the ends are looked up in tables made once (a sketch can hold hundreds of
     /// curves, and this runs on every cursor move of the drawing tools).
@@ -462,6 +503,10 @@ extension Sketch {
             case .circle, .ellipse: continue
             }
         }
+        // Ends that are one place count as one point: a corner made with a coincident constraint (as when a shape
+        // is drawn against projected edges) joins its curves as well as a shared point does.
+        let place = Self.places(of: ends.flatMap { [$0.0, $0.1] }, constraints: constraints, positions: positionTable())
+        ends = ends.map { (place[$0.0] ?? $0.0, place[$0.1] ?? $0.1) }
         // The curves at each point, in order (a curve once, even when both its ends are the point), and how many
         // are still free there.
         var at: [EntityID: [Int]] = [:]

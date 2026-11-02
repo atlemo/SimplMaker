@@ -99,6 +99,42 @@ func approxLine(_ g: CurveGeometry?, _ a: SIMD2<Double>, _ b: SIMD2<Double>) -> 
         #expect(r.status == .solved)
     }
 
+    /// A slot drawn against projected edges: every corner is a pair of points (tied by a coincident constraint,
+    /// or, at the last corner, only a micrometre apart), as the saved sketches hold it.
+    func splitCornerSlot(gap: Bool) -> (Sketch, [EntityID]) {
+        var s = Sketch()
+        let top = s.addLine(s.addPoint(0, 3.1), s.addPoint(5.8, 3.1))
+        let bottom = s.addLine(s.addPoint(5.8, 0), s.addPoint(0, 0))
+        let left = s.addArc(center: s.addPoint(0, 1.55), start: s.addPoint(0, 3.1), end: s.addPoint(0, 0))
+        let right = s.addArc(center: s.addPoint(5.8, 1.55), start: s.addPoint(5.8, 0), end: s.addPoint(5.8 + (gap ? 1e-4 : 0), 3.1))
+        func ends(_ id: EntityID) -> [EntityID] {
+            switch s.curve(id)!.geometry {
+            case .line(let a, let b), .arc(_, let a, let b): return [a, b]
+            default: return []
+            }
+        }
+        s.constrain(.coincident(ends(top)[0], ends(left)[0]))
+        s.constrain(.coincident(ends(left)[1], ends(bottom)[1]))
+        s.constrain(.coincident(ends(bottom)[0], ends(right)[0]))
+        if !gap { s.constrain(.coincident(ends(right)[1], ends(top)[1])) }
+        return (s, [top, bottom, left, right])
+    }
+
+    @Test(arguments: [true, false], [0.6, -0.4])
+    func offsetSlotWhoseCornersAreSeparatePoints(gap: Bool, distance: Double) throws {
+        var (s, ids) = splitCornerSlot(gap: gap)
+        let created = s.offset(ids, distance: distance, expression: "\(abs(distance)) mm")
+        #expect(created.count == 4)
+        // Every piece moved the same way: lines by the distance, arcs' radius by the same.
+        for id in created {
+            switch try #require(s.geometry(of: id)) {
+            case .line(let a, _): #expect(abs(abs(a.y - 1.55) - (1.55 + distance)) < 1e-6)
+            case .arc(_, let r, _, _): #expect(abs(r - (1.55 + distance)) < 1e-6)
+            default: Issue.record("unexpected curve")
+            }
+        }
+    }
+
     @Test func offsetCircleIsConcentric() {
         var s = Sketch()
         let c = s.addCircle(center: s.addPoint(0, 0), radius: 5)
