@@ -990,7 +990,12 @@ import simd
     @Test func aPartFromAFileAsAPicture() async throws {
         let env = ProcessInfo.processInfo.environment
         guard let path = env["RENDER_FILE"], env["RENDER_DUMP_DIR"] != nil else { return }
-        let doc = try JSONDecoder().decode(CADDocument.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        var doc = try JSONDecoder().decode(CADDocument.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        for id in (env["RENDER_HIDE"] ?? "").split(separator: ",") { doc.hidden.insert(String(id)) }
+        if let recolor = env["RENDER_RECOLOR"] {  // id=#hex
+            let parts = recolor.split(separator: "=")
+            if parts.count == 2, let c = BodyColor(hex: String(parts[1])) { doc.bodyColors[String(parts[0])] = c }
+        }
         let model = DocumentModel(document: doc)
         try await settle(model)
         let meshes = model.visibleMeshes

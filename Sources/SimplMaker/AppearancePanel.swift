@@ -161,10 +161,10 @@ struct AppearancePanel: View {
                 VStack(spacing: DS.Spacing.space1) {
                     ForEach(model.bodies) { b in
                         AppearanceBodyRow(name: b.name, color: model.displayColor(of: b.id)?.color ?? defaultColor,
-                                          selected: targets.contains(b.id), hidden: model.isHidden(b.id)) {
+                                          selected: targets.contains(b.id), hidden: model.isHidden(b.id), action: {
                             let flags = NSEvent.modifierFlags
                             model.selectBody(b.id, additive: flags.contains(.shift) || flags.contains(.command))
-                        }
+                        }, toggleHidden: { model.setHidden([b.id], !model.isHidden(b.id)) })
                     }
                 }
             }
@@ -352,7 +352,8 @@ struct MaterialTile: View {
     }
 }
 
-/// A body in the Appearance panel: its colour and name; a click selects it.
+/// A body in the Appearance panel: its colour and name (a click selects it) and an eye that shows or hides it. The eye of a
+/// hidden body is always there; a shown body's appears while the pointer is over the row.
 struct AppearanceBodyRow: View {
     @Environment(\.accent) private var accent
     let name: String
@@ -360,29 +361,41 @@ struct AppearanceBodyRow: View {
     let selected: Bool
     let hidden: Bool
     let action: () -> Void
+    let toggleHidden: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: DS.Spacing.labelGap) {
-                Circle()
-                    .fill(color)
-                    .overlay { Circle().strokeBorder(Color.primary.opacity(0.2), lineWidth: 1) }
-                    .frame(width: 14, height: 14)
-                Text(name).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 0)
-                if hidden {
-                    Image(systemName: "eye.slash").foregroundStyle(.secondary).help("Hidden")
+        HStack(spacing: DS.Spacing.labelGap) {
+            Button(action: action) {
+                HStack(spacing: DS.Spacing.labelGap) {
+                    Circle()
+                        .fill(color)
+                        .overlay { Circle().strokeBorder(Color.primary.opacity(0.2), lineWidth: 1) }
+                        .frame(width: 14, height: 14)
+                    Text(name).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
                 }
+                .foregroundStyle(hidden ? .secondary : .primary)
+                .contentShape(Rectangle())
             }
-            .foregroundStyle(hidden ? .secondary : .primary)
-            .padding(.horizontal, DS.Spacing.space3)
-            .frame(height: DS.ControlHeight.sidebarRow)
-            .background(selected ? accent.opacity(0.18) : hovering ? Color.primary.opacity(0.07) : .clear,
-                        in: RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous))
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            if hidden || hovering {
+                Button(action: toggleHidden) {
+                    Image(systemName: hidden ? "eye.slash" : "eye")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: DS.ControlHeight.sidebarRow)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(hidden ? "Show this body" : "Hide this body")
+                .accessibilityLabel(hidden ? "Show" : "Hide")  // the eye symbol's own name is always "Show"
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.leading, DS.Spacing.space3)
+        .padding(.trailing, DS.Spacing.space2)
+        .frame(height: DS.ControlHeight.sidebarRow)
+        .background(selected ? accent.opacity(0.18) : hovering ? Color.primary.opacity(0.07) : .clear,
+                    in: RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous))
         .onHover { hovering = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
