@@ -9,9 +9,10 @@ import Testing
     @Test func swiftLayoutsMatchShaderStructs() {
         #expect(MemoryLayout<FaceVertex>.stride == 28)       // packed_float3 ×2 + uint
         #expect(MemoryLayout<SegmentInstance>.stride == 28)  // packed_float3 ×2 + uint
-        #expect(MemoryLayout<Uniforms>.stride == 400)          // …, 4 × float4 colours, wholeBodies + 3 pad uints, then the section plane, camera direction, 4 more scalars, the render light and parameters, the light's matrix, and the shadow's, then the camera right and up, and the middle of the part
+        #expect(MemoryLayout<Uniforms>.stride == 656)          // …, 4 × float4 colours, wholeBodies + 3 pad uints, then the section plane, camera direction, 4 more scalars, the render light and parameters, the light's matrix, and the shadow's, then the camera right and up, and the middle of the part, then the inverse view matrix, three float4 of look settings, five of the room and four of the floor
+        #expect(MemoryLayout<PostParams>.stride == 48)         // 3 × float4
         #expect(MemoryLayout<FloorParams>.stride == 64)        // 4 × float4
-        #expect(MemoryLayout<DrawParams>.stride == 96)          // 3 × float4, then 11 scalars (thickness … material), padded
+        #expect(MemoryLayout<DrawParams>.stride == 112)         // 3 × float4, then 13 scalars (thickness … roughness), padded
     }
 
     @Test func shadersCompile() throws {

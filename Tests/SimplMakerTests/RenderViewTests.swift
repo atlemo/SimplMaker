@@ -41,7 +41,7 @@ import simd
 
     private func render(_ model: DocumentModel, name: String, settings: RenderSettings?, grid: Bool = true,
                         yaw: Float = -.pi / 3, pitch: Float = 0.55, orthographic: Bool = true,
-                        distance: Float = 260, materials: [UInt32] = [], colors: [SIMD4<Float>?] = [],
+                        distance: Float = 260, materials: [UInt32] = [], colors: [SIMD4<Float>?] = [], roughness: [Float] = [], focus: SIMD3<Float>? = nil, selected: [UInt32] = [],
                         target: SIMD3<Float> = SIMD3(45, 20, 15)) async throws -> (Picture, Renderer, ViewportMTKView) {
         let view = ViewportMTKView(frame: NSRect(x: 0, y: 0, width: 800, height: 560), device: nil)
         let renderer = try #require(Renderer())
@@ -58,6 +58,9 @@ import simd
         renderer.showAxes = grid
         renderer.renderSettings = settings
         renderer.bodyMaterials = materials
+        renderer.bodyRoughness = roughness
+        renderer.focusPoint = focus
+        renderer.selected = selected
         renderer.bodyColors = colors
         renderer.sceneBounds = model.sceneBounds
         renderer.camera.orthographic = orthographic
@@ -391,7 +394,9 @@ import simd
         let model = DocumentModel(document: CADDocument())
         model.renderSettings.floor = .mid
         model.renderSettings.softness = 0.95
-        let content = RenderPanel(model: model)
+        model.renderSettings.apply(.photo)
+        for tab in [RenderPanel.Tab.simple, .advanced] {
+        let content = RenderPanel(model: model, tab: tab)
             .padding(30)
             .background(Color(white: 0.16))
             .environment(\.colorScheme, .dark)
@@ -405,8 +410,9 @@ import simd
         host.layoutSubtreeIfNeeded()
         let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: rep)
-        try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: dir + "/panel.png"))
+        try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: dir + "/panel-\(tab.rawValue.lowercased()).png"))
         withExtendedLifetime(window) {}
+        }
     }
 
     /// Only for looking at: the Appearance panel with its material row.
@@ -437,12 +443,12 @@ import simd
     @Test func theRenderViewHidesTheBrowserAndInspectorAndBringsThemBack() async throws {
         let model = try await loaded()
         model.setRenderView(true)
-        #expect(!model.showSidebar && !model.showInspector)
+        #expect(!model.showSidebar && !model.showInspector && !model.showTimeline, "the timeline goes too, by default")
         model.showInspector = true  // the user brings one back
         model.setRenderView(true)   // asking again changes nothing
         #expect(model.showInspector)
         model.setRenderView(false)
-        #expect(model.showSidebar && model.showInspector, "what the render view hid is back when it goes off")
+        #expect(model.showSidebar && model.showInspector && model.showTimeline, "what the render view hid is back when it goes off")
         model.showSidebar = false   // closed by the user before
         model.setRenderView(true)
         model.setRenderView(false)
@@ -641,6 +647,387 @@ import simd
         settings.floor = .sand
         settings.showEdges = true
         _ = try await render(model, name: "soft", settings: settings, yaw: -.pi / 3, pitch: 0.9)
+    }
+
+    // MARK: quality
+
+    @Test func thePresetsAsPictures() async throws {
+        let model = try await loaded()
+        for quality in RenderSettings.Quality.allCases {
+            var settings = RenderSettings()
+            settings.apply(quality)
+            settings.noise = 0
+            let (picture, _, _) = try await render(model, name: "quality-\(quality.rawValue)", settings: settings, orthographic: false, distance: 220,
+                                                   materials: [0, 1], colors: [SIMD4(0.8, 0.45, 0.3, 1), nil])
+            #expect(picture.width > 0)
+        }
+    }
+
+    @Test func theQualityPresetsAreRecognisedAndLeaveTheLightAlone() {
+        var s = RenderSettings()
+        #expect(s.matchingQuality == .simple)
+        s.direction = 40
+        s.apply(.photo)
+        #expect(s.matchingQuality == .photo)
+        #expect(s.direction == 40, "a quality preset does not move the light")
+        #expect(s.physicalLight && s.occlusion > 0.5 && s.refraction)
+        #expect(s.depthOfField == 0, "no quality preset turns the depth blur on")
+        s.bloom = 0.9
+        #expect(s.matchingQuality == nil, "one advanced change leaves the preset for Custom")
+        s.apply(.realistic)
+        #expect(s.matchingQuality == .realistic)
+        #expect(RenderSettings.fresh.matchingQuality == .realistic)
+    }
+
+    @Test func settingsFromBeforeTheQualityPresetsLoadAsSimple() throws {
+        let old = #"{"floor":"sand","brightness":0.9,"noise":0.2}"#
+        let s = try JSONDecoder().decode(RenderSettings.self, from: Data(old.utf8))
+        #expect(s.matchingQuality == .simple)
+        #expect(s.floor == .sand && s.environment == .studio && s.exportQuality == .standard)
+        let again = try JSONDecoder().decode(RenderSettings.self, from: JSONEncoder().encode(RenderSettings.fresh))
+        #expect(again == RenderSettings.fresh)
+    }
+
+    @Test func theUniformsOfTheSimpleLookAreTheOldOnes() {
+        // The Studio room is the one the shader always had, so Simple looks as it did.
+        let u = Uniforms(viewProj: matrix_identity_float4x4, eye: .zero, viewport: .zero, hovered: 0, selectedCount: 0,
+                         faceColor: .zero, faceHoverColor: .zero, faceSelectedColor: .zero, regionColor: .zero)
+        let room = RenderSettings.Environment.studio.colors
+        #expect(SIMD3(u.envZenith.x, u.envZenith.y, u.envZenith.z) == room.zenith && u.envZenith.w == room.strips)
+        #expect(SIMD3(u.envSky.x, u.envSky.y, u.envSky.z) == room.skyHorizon && u.envSky.w == room.key)
+        #expect(SIMD3(u.envGroundA.x, u.envGroundA.y, u.envGroundA.z) == room.groundHorizon)
+        #expect(SIMD3(u.envGroundB.x, u.envGroundB.y, u.envGroundB.z) == room.groundDown)
+        #expect(u.look1.x == 0, "physical light is off")
+    }
+
+    @Test func thePhysicalFloorIsTheColourTheSettingsWorkOut() async throws {
+        let model = try await loaded()
+        var settings = RenderSettings.quiet
+        settings.apply(.realistic)
+        settings.vignette = 0
+        settings.bloom = 0
+        settings.occlusion = 0
+        settings.contactShadows = 0
+        let (picture, renderer, view) = try await render(model, name: "physical-floor", settings: settings)
+        let a = pixel(of: SIMD3(-10, 80, 0), picture, renderer, view)
+        let floor = picture.color(a.x, a.y)
+        #expect(abs(floor.x - settings.floorColor.x) < 0.04, "the floor: \(floor) vs \(settings.floorColor)")
+        #expect(settings.floorColor.x < 1, "the filmic curve keeps a white floor from clipping: \(settings.floorColor)")
+    }
+
+    @Test func occlusionDarkensTheFloorAtTheFootOfABody() async throws {
+        let model = try await loaded()
+        var off = RenderSettings.quiet
+        off.apply(.realistic)
+        off.vignette = 0; off.bloom = 0; off.contactShadows = 0; off.shadows = false
+        var on = off
+        on.occlusion = 1
+        let bounds = try #require(model.sceneBounds)
+        // Spots on the floor a few mm outside the part's footprint, on every side; the one that is seen darkest because of occlusion.
+        let middle = (bounds.min + bounds.max) / 2
+        var spots: [SIMD3<Float>] = []
+        for dx in [Float(-1), 0, 1] { for dy in [Float(-1), 0, 1] where dx != 0 || dy != 0 {
+            spots.append(SIMD3(dx < 0 ? bounds.min.x - 4 : dx > 0 ? bounds.max.x + 4 : middle.x, dy < 0 ? bounds.min.y - 4 : dy > 0 ? bounds.max.y + 4 : middle.y, 0))
+        } }
+        func floors(_ settings: RenderSettings, name: String) async throws -> [Float] {
+            let (picture, renderer, view) = try await render(model, name: name, settings: settings, orthographic: false)
+            return spots.map { let q = pixel(of: $0, picture, renderer, view); return picture.color(q.x, q.y).x }
+        }
+        let without = try await floors(off, name: "occlusion-off")
+        let with = try await floors(on, name: "occlusion-on")
+        let darkening = zip(without, with).map { $0 - $1 }
+        #expect(darkening.max()! > 0.03, "darker at the foot: \(darkening)")
+    }
+
+    @Test func theVignetteDarkensTheCornersAndTheGlowStaysWithinWhite() async throws {
+        let model = try await loaded()
+        var plain = RenderSettings.quiet
+        plain.apply(.realistic)
+        plain.vignette = 0; plain.bloom = 0
+        var shaded = plain
+        shaded.vignette = 1
+        shaded.bloom = 1
+        let (a, _, _) = try await render(model, name: "vignette-off", settings: plain)
+        let (b, _, _) = try await render(model, name: "vignette-on", settings: shaded)
+        #expect(b.color(3, 3).x < a.color(3, 3).x - 0.05, "darker corner: \(b.color(3, 3)) vs \(a.color(3, 3))")
+        let mid = (a.width / 2, a.height / 2)
+        #expect(simd_distance(a.color(mid.0, mid.1), b.color(mid.0, mid.1)) < 0.25, "the middle is hardly touched")
+    }
+
+    @Test func depthBlurSoftensWhatIsOutOfFocusAndKeepsThePartSharp() async throws {
+        let model = try await loaded()
+        var sharp = RenderSettings.quiet
+        sharp.apply(.realistic)
+        sharp.vignette = 0; sharp.bloom = 0; sharp.occlusion = 0; sharp.contactShadows = 0
+        var blurred = sharp
+        blurred.depthOfField = 1
+        let (a, _, _) = try await render(model, name: "dof-off", settings: sharp, yaw: -.pi / 3, pitch: 0.35, orthographic: false, distance: 150)
+        let (b, _, _) = try await render(model, name: "dof-on", settings: blurred, yaw: -.pi / 3, pitch: 0.35, orthographic: false, distance: 150)
+        // The horizon-side floor far behind the part is blurred, so an edge there (the floor fading) is the same or softer: compare
+        // the total variation of a row near the top of the picture.
+        func variation(_ p: Picture, row: Int) -> Float {
+            var sum: Float = 0
+            for x in 1..<p.width { sum += abs(p.color(x, row).x - p.color(x - 1, row).x) }
+            return sum
+        }
+        #expect(b.width == a.width)
+        #expect(variation(b, row: 8) <= variation(a, row: 8) + 0.01)
+    }
+
+    @Test func anExportMadeFromSeveralPicturesIsAPNGOfTheViewsSize() async throws {
+        let model = try await loaded()
+        var settings = RenderSettings.fresh
+        settings.exportQuality = .high
+        let (picture, _, view) = try await render(model, name: "export-source", settings: settings)
+        nonisolated(unsafe) var result: Data?
+        nonisolated(unsafe) var finished = false
+        view.exportPNG(frames: 4) { data in
+            result = data
+            finished = true
+        }
+        for _ in 0..<400 where !finished { try await Task.sleep(for: .milliseconds(25)) }
+        let png = try #require(result)
+        let image = try #require(NSBitmapImageRep(data: png))
+        #expect(image.pixelsWide == picture.width && image.pixelsHigh == picture.height)
+    }
+
+
+    /// Only for looking at: the materials and the glass under each quality preset.
+    @Test func theQualityPresetsOnMaterialsAndGlassAsPictures() async throws {
+        guard ProcessInfo.processInfo.environment["RENDER_DUMP_DIR"] != nil else { return }
+        var d = CADDocument()
+        let names = ["plain", "metal", "wood", "round"]
+        d.features = names.enumerated().map { i, n in
+            i == 3 ? Feature(id: n, name: n, .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, u: "\(i * 70 + 25) mm", v: "25 mm", height: "40", diameter: "40")))
+                   : Feature(id: n, name: n, .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "\(i * 70) mm", width: "50 mm", length: "50 mm", height: "40 mm")))
+        }
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let colors: [SIMD4<Float>?] = [SIMD4(0.75, 0.78, 0.82, 1), SIMD4(0.79, 0.8, 0.82, 1), SIMD4(0.71, 0.51, 0.31, 1), SIMD4(0.95, 0.75, 0.3, 1)]
+        for quality in [RenderSettings.Quality.simple, .realistic, .photo] {
+            var settings = RenderSettings()
+            settings.apply(quality)
+            settings.noise = 0
+            _ = try await render(model, name: "materials-\(quality.rawValue)", settings: settings, yaw: -.pi / 5, pitch: 0.5, orthographic: false,
+                                 distance: 520, materials: [0, 1, 3, 1], colors: colors, target: SIMD3(125, 25, 15))
+        }
+
+        var g = CADDocument()
+        g.features = [
+            Feature(id: "back", name: "back", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "0 mm", width: "40 mm", length: "120 mm", height: "50 mm"))),
+            Feature(id: "wood", name: "wood", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "100 mm", width: "40 mm", length: "40 mm", height: "30 mm"))),
+            Feature(id: "slab", name: "slab", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "20 mm", v: "-40 mm", width: "90 mm", length: "20 mm", height: "60 mm"))),
+            Feature(id: "cyl", name: "cyl", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, u: "70 mm", v: "50 mm", height: "45", diameter: "50"))),
+        ]
+        let glassModel = DocumentModel(document: g)
+        try await settle(glassModel)
+        let glassColors: [SIMD4<Float>?] = [SIMD4(0.15, 0.17, 0.2, 1), SIMD4(0.71, 0.51, 0.31, 1), SIMD4(0.75, 0.87, 0.92, 1), SIMD4(0.75, 0.87, 0.92, 1)]
+        for quality in [RenderSettings.Quality.simple, .realistic, .photo] {
+            var settings = RenderSettings()
+            settings.apply(quality)
+            settings.noise = 0
+            _ = try await render(glassModel, name: "glass-\(quality.rawValue)", settings: settings, yaw: -.pi / 5, pitch: 0.45, orthographic: false,
+                                 distance: 330, materials: [0, 3, 2, 2], colors: glassColors, target: SIMD3(60, 30, 20))
+        }
+    }
+
+
+    @Test func anEmptyPartRendersInEveryQuality() async throws {
+        let model = DocumentModel(document: CADDocument())
+        try await settle(model)
+        for quality in RenderSettings.Quality.allCases {
+            var settings = RenderSettings.quiet
+            settings.apply(quality)
+            let (picture, _, _) = try await render(model, name: "empty-\(quality.rawValue)", settings: settings)
+            #expect(picture.width > 0)
+        }
+    }
+
+    /// Only for timing (RENDER_TIMING=1): GPU time per frame of each quality preset, on the box and cylinder.
+    @Test func timeTheQualityPresets() async throws {
+        guard ProcessInfo.processInfo.environment["RENDER_TIMING"] != nil else { return }
+        let model = try await loaded()
+        for quality in RenderSettings.Quality.allCases {
+            var settings = RenderSettings()
+            settings.apply(quality)
+            let (_, renderer, view) = try await render(model, name: "timing-\(quality.rawValue)", settings: settings, orthographic: false,
+                                                       materials: [0, 2])
+            var times: [Double] = []
+            for _ in 0..<10 {
+                view.draw(view.bounds)
+                try await Task.sleep(for: .milliseconds(50))
+                times.append(renderer.lastGPUSeconds * 1000)
+            }
+            print("RENDER-TIMING \(quality.rawValue): median \(String(format: "%.2f", times.sorted()[times.count / 2])) ms (800x560 view)")
+        }
+    }
+
+
+    @Test func plasticHasARoughnessThatTheMaterialStartsWith() async throws {
+        let model = try await loaded()
+        let undo = UndoManager()
+        model.undoManager = undo
+        // Each change is its own undo group once the run loop has turned.
+        func step(_ change: () -> Void) async throws {
+            change()
+            try await Task.sleep(for: .milliseconds(60))
+        }
+        try await step { model.setBodyMaterial(.plastic, of: ["a"]) }
+        #expect(model.displayMaterial(of: "a") == .plastic)
+        #expect(model.displayRoughness(of: "a") == BodyMaterial.plastic.defaultRoughness)
+        #expect(model.displayColor(of: "a") == BodyColor(hex: "#E6E4DE"))
+        model.previewBodyRoughness(0.9, of: ["a"])
+        #expect(model.displayRoughness(of: "a") == 0.9, "the slider shows at once")
+        #expect(model.document.bodyRoughness["a"] == nil, "but the part has not changed yet")
+        try await step { model.setBodyRoughness(0.9, of: ["a"]) }
+        #expect(model.document.bodyRoughness["a"] == 0.9 && model.roughnessPreview == nil)
+        let back = try JSONDecoder().decode(CADDocument.self, from: JSONEncoder().encode(model.document))
+        #expect(back.bodyRoughness == ["a": 0.9] && back.bodyMaterials == ["a": .plastic])
+        undo.undo()
+        #expect(model.displayRoughness(of: "a") == BodyMaterial.plastic.defaultRoughness, "setting it is one undo step")
+        try await step { model.setBodyRoughness(0.1, of: ["a"]) }
+        try await step { model.setBodyMaterial(.glass, of: ["a"]) }
+        #expect(model.displayRoughness(of: "a") == nil && model.document.bodyRoughness["a"] == nil, "glass has none, and a new material starts afresh")
+        model.setBodyMaterial(.metal, of: ["c"])
+        #expect(model.displayRoughness(of: "c") == BodyMaterial.metal.defaultRoughness, "metal has one too")
+        #expect(!model.isRegenerating, "a roughness rebuilds nothing")
+    }
+
+    @Test func aRoughnessCopiesWithTheBody() throws {
+        let copied = CopiedBody(name: "x", color: nil, material: .plastic, roughness: 0.7, step: Data())
+        let back = try JSONDecoder().decode(CopiedBody.self, from: JSONEncoder().encode(copied))
+        #expect(back.roughness == 0.7 && back.material == .plastic)
+    }
+
+    /// Only for looking at: plastic from glossy to matte under each quality, next to a plain body.
+    @Test func plasticFromGlossyToMatteAsPictures() async throws {
+        guard ProcessInfo.processInfo.environment["RENDER_DUMP_DIR"] != nil else { return }
+        var d = CADDocument()
+        d.features = (0..<5).map { i in
+            Feature(id: "p\(i)", name: "p\(i)", .primitive(PrimitiveFeature(kind: i == 4 ? .box : .cylinder, plane: .xy, u: "\(i * 60) mm", v: "0 mm",
+                                                                               width: "40 mm", length: "40 mm", height: "40", diameter: "40")))
+        }
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let red = SIMD4<Float>(0.8, 0.12, 0.1, 1)
+        for quality in [RenderSettings.Quality.simple, .realistic] {
+            var settings = RenderSettings()
+            settings.apply(quality)
+            settings.noise = 0
+            _ = try await render(model, name: "plastic-\(quality.rawValue)", settings: settings, yaw: -.pi / 6, pitch: 0.4, orthographic: false,
+                                 distance: 460, materials: [4, 4, 4, 4, 0], colors: Array(repeating: red, count: 5),
+                                 roughness: [0, 0.25, 0.55, 1, -1], target: SIMD3(120, 0, 15))
+        }
+    }
+
+    @Test func aClickRayFindsWhereToFocus() async throws {
+        let model = try await loaded()
+        // Straight down onto the box's top (the box is 30 mm high), and past everything onto the floor.
+        let top = try #require(model.focusPoint(origin: SIMD3(0, 0, 200), direction: SIMD3(0, 0, -1)))
+        #expect(abs(top.z - 30) < 0.01, "the part first: \(top)")
+        let floor = try #require(model.focusPoint(origin: SIMD3(-200, -200, 100), direction: simd_normalize(SIMD3(1, 1, -1))))
+        #expect(abs(floor.z) < 1e-6, "else the floor: \(floor)")
+        #expect(model.focusPoint(origin: SIMD3(0, 0, 200), direction: SIMD3(0, 0, 1)) == nil, "a ray into the sky finds nothing")
+    }
+
+    @Test func pickingTheFocusSwitchesTheBlurOnAndAutoGoesBack() async throws {
+        let model = try await loaded()
+        model.renderSettings.depthOfField = 0
+        model.togglePickingRenderFocus()
+        #expect(model.pickingRenderFocus)
+        model.setRenderFocus(SIMD3(1, 2, 3))
+        #expect(!model.pickingRenderFocus && model.renderFocusPoint == SIMD3(1, 2, 3))
+        #expect(model.renderSettings.depthOfField > 0, "choosing the sharp spot turns the blur on")
+        model.setRenderFocus(nil)
+        #expect(model.renderFocusPoint == nil)
+    }
+
+    @Test func theFocusPointMovesTheSharpDistance() async throws {
+        let model = try await loaded()
+        var settings = RenderSettings.quiet
+        settings.apply(.realistic)
+        settings.vignette = 0; settings.bloom = 0; settings.occlusion = 0; settings.contactShadows = 0
+        settings.depthOfField = 1
+        // Focus on the floor at the middle of the view, then on the floor far away: the box's edge is sharp in the first, blurred in the second.
+        func edge(_ p: Picture, at q: (x: Int, y: Int)) -> Float {
+            var steepest: Float = 0
+            for x in (q.x - 14)..<(q.x + 14) { steepest = max(steepest, abs(p.color(x + 1, q.y).x - p.color(x, q.y).x)) }
+            return steepest
+        }
+        let spots: [SIMD3<Float>] = [SIMD3(45, 20, 0), SIMD3(400, 400, 0)]
+        var seen: [Float] = []
+        for focus in spots {
+            let (picture, renderer, view) = try await render(model, name: "focus-\(Int(focus.x))", settings: settings, yaw: -.pi / 3, pitch: 0.35,
+                                                              orthographic: false, distance: 150, focus: focus)
+            seen.append(edge(picture, at: pixel(of: SIMD3(30, -20, 15), picture, renderer, view)))
+        }
+        #expect(seen[0] > seen[1] * 1.3, "the box's edge is sharper when the focus is near it: \(seen)")
+    }
+
+
+    @Test func aSelectedBodyShowsNoOutlineInTheRenderViewUnlessEdgesAreOn() async throws {
+        let model = try await loaded()
+        var settings = RenderSettings.quiet
+        let whole = [PickID(wholeBody: 0).raw]
+        func darkestAlongTheBoxEdge(_ settings: RenderSettings, selected: [UInt32], name: String) async throws -> Float {
+            let (p, renderer, view) = try await render(model, name: name, settings: settings, selected: selected)
+            // The box's vertical front corner, a few pixels either side.
+            let q = pixel(of: SIMD3(30, -20, 15), p, renderer, view)
+            var darkest: Float = 1
+            for x in (q.x - 4)...(q.x + 4) { darkest = min(darkest, p.color(x, q.y).x) }
+            return darkest
+        }
+        settings.showEdges = false
+        let selected = try await darkestAlongTheBoxEdge(settings, selected: whole, name: "outline-selected")
+        settings.showEdges = true
+        let withEdges = try await darkestAlongTheBoxEdge(settings, selected: whole, name: "outline-edges-on")
+        // The selected body is tinted either way; the difference is the dark line along its edge.
+        #expect(withEdges < selected - 0.05, "with Show edges on the outline is drawn, without it it is not: \(withEdges) vs \(selected)")
+    }
+
+
+    /// Only for looking at a part of the user's: RENDER_FILE=path.simplmaker RENDER_DUMP_DIR=dir.
+    @Test func aPartFromAFileAsAPicture() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let path = env["RENDER_FILE"], env["RENDER_DUMP_DIR"] != nil else { return }
+        let doc = try JSONDecoder().decode(CADDocument.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        let model = DocumentModel(document: doc)
+        try await settle(model)
+        let meshes = model.visibleMeshes
+        let materials: [UInt32] = meshes.map { m in
+            switch model.displayMaterial(of: m.id) { case nil: 0; case .metal: 1; case .glass: 2; case .wood: 3; case .plastic: 4 }
+        }
+        let colors: [SIMD4<Float>?] = meshes.map { m in
+            model.displayColor(of: m.id).map { let (r, g, b) = $0.components; return SIMD4(Float(r), Float(g), Float(b), 1) }
+        }
+        let roughness: [Float] = meshes.map { m in model.displayRoughness(of: m.id).map { Float($0) } ?? -1 }
+        let b = try #require(model.sceneBounds)
+        let mid = (b.min + b.max) / 2
+        var settings = RenderSettings()
+        settings.apply(env["RENDER_QUALITY"].flatMap { RenderSettings.Quality(rawValue: $0) } ?? .realistic)
+        settings.noise = 0
+        if env["RENDER_NO_REFRACTION"] != nil { settings.refraction = false }
+        if env["RENDER_NO_AO"] != nil { settings.occlusion = 0; settings.contactShadows = 0 }
+        _ = try await render(model, name: env["RENDER_NAME"] ?? "file", settings: settings, yaw: -.pi / 4, pitch: 0.6, orthographic: true,
+                             distance: simd_length(b.max - b.min) * Float(env["RENDER_ZOOM"].flatMap { Double($0) } ?? 1.4), materials: materials, colors: colors, roughness: roughness,
+                             target: mid + SIMD3<Float>(Float(env["RENDER_DX"].flatMap { Double($0) } ?? 0), Float(env["RENDER_DY"].flatMap { Double($0) } ?? 0), 0))
+    }
+
+    @Test func glassBendsTheFloorBehindItAndIsDarkerWhereItIsThick() async throws {
+        let model = try await loaded()
+        var plain = RenderSettings.quiet
+        plain.apply(.realistic)
+        plain.refraction = false
+        var bent = plain
+        bent.refraction = true
+        let colors: [SIMD4<Float>?] = [SIMD4(0.75, 0.88, 0.95, 1), nil]
+        let (a, renderer, view) = try await render(model, name: "glass-plain", settings: plain, materials: [2, 0], colors: colors)
+        let (b, _, _) = try await render(model, name: "glass-refracted", settings: bent, materials: [2, 0], colors: colors)
+        #expect(a.width == b.width)
+        // The top of the glass box: bent, it shows the floor under it through the glass, as lit there and darker for the thickness.
+        let q = pixel(of: SIMD3(0, 0, 30), a, renderer, view)
+        #expect(simd_distance(a.color(q.x, q.y), b.color(q.x, q.y)) > 0.015,
+                "refraction changes what the glass shows: \(a.color(q.x, q.y)) vs \(b.color(q.x, q.y))")
     }
 }
 

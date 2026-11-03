@@ -346,34 +346,6 @@ struct DocumentWindow: View {
             }
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.showAppearance)
-        // The print preview's options float at the top left of the view.
-        .overlay(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: Panel.inset) {
-                if model.printPreview, model.showPrintOptions, model.visualStyle.isShaded, model.sketchSession == nil {
-                    PrintPreviewPanel(model: model)
-                        .transition(.opacity)
-                }
-                if model.renderView, model.showRenderOptions, model.sketchSession == nil {
-                    RenderPanel(model: model)
-                        .transition(.opacity)
-                }
-                if model.explodeOn, model.showExplodeOptions {
-                    ExplodePanel(model: model)
-                        .transition(.opacity)
-                }
-                // The Section Analysis tool's options go under it.
-                if model.section != nil, model.sketchSession == nil {
-                    SectionPanel(model: model)
-                        .transition(.opacity)
-                }
-            }
-            .padding(.top, Panel.inset)
-            .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
-        }
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.showPrintOptions && model.printPreview)
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.showRenderOptions && model.renderView)
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.section != nil)
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.explodeOn && model.showExplodeOptions)
         // The Measure tool's readout floats in the same corner.
         .overlay(alignment: .topTrailing) {
             if model.pendingTool == .measure, model.sketchSession == nil {
@@ -407,6 +379,36 @@ struct DocumentWindow: View {
                 .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset) + DS.ControlHeight.large + Panel.inset)
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.sketchSession?.isMirroring == true)
+        // The print preview's, Render and other options float at the top left of the view, above the status bar (a tall
+        // panel covers it rather than hiding behind it, and scrolls when the window is shorter still).
+        .overlay(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: Panel.inset) {
+                if model.printPreview, model.showPrintOptions, model.visualStyle.isShaded, model.sketchSession == nil {
+                    PrintPreviewPanel(model: model)
+                        .transition(.opacity)
+                }
+                if model.renderView, model.showRenderOptions, model.sketchSession == nil {
+                    RenderPanel(model: model)
+                        .transition(.opacity)
+                }
+                if model.explodeOn, model.showExplodeOptions {
+                    ExplodePanel(model: model)
+                        .transition(.opacity)
+                }
+                // The Section Analysis tool's options go under it.
+                if model.section != nil, model.sketchSession == nil {
+                    SectionPanel(model: model)
+                        .transition(.opacity)
+                }
+            }
+            .padding(.top, Panel.inset)
+            .padding(.bottom, Panel.inset)
+            .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.showPrintOptions && model.printPreview)
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.showRenderOptions && model.renderView)
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.section != nil)
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.explodeOn && model.showExplodeOptions)
         // The cursor's prompt goes above everything, panels included.
         .overlay { CursorPrompt(model: model) }
     }

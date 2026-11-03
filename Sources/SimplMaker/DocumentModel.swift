@@ -156,6 +156,8 @@ final class DocumentModel {
     var showAppearance = false
     /// A colour shown on bodies while it is being picked, before it is kept (see previewBodyColor).
     private(set) var colorPreview: (bodies: [FeatureID], color: BodyColor)?
+    /// A roughness being set with the slider, shown on bodies until it is let go (see previewBodyRoughness).
+    private(set) var roughnessPreview: (bodies: [FeatureID], roughness: Double)?
     /// Orthographic projection (View menu), on by default: sizes and alignments read truer than in perspective.
     var orthographic = true
     /// How bodies are drawn: shaded or wireframe, with or without edges (View ▸ Visual Style).
@@ -229,13 +231,62 @@ final class DocumentModel {
         didSet { renderSettings.save() }
     }
     var showRenderOptions = false
+    /// Where the Render view's depth blur is sharp, in the world; nil = the middle of the part. Not saved.
+    var renderFocusPoint: SIMD3<Double>?
+    /// The next click in the view sets the focus point (Select focus point in the Render options).
+    var pickingRenderFocus = false
+
+    /// Starts or cancels picking the focus point: the next click on the part (or the floor) sets it.
+    func togglePickingRenderFocus() {
+        pickingRenderFocus.toggle()
+        if pickingRenderFocus, pendingTool != nil { cancelTool() }
+        overlayRevision += 1
+    }
+
+    func setRenderFocus(_ point: SIMD3<Double>?) {
+        renderFocusPoint = point
+        pickingRenderFocus = false
+        // Choosing where it is sharp means wanting the blur: switch it on (gently) if it is off.
+        if point != nil, renderSettings.depthOfField == 0 { renderSettings.depthOfField = 0.35 }
+        overlayRevision += 1
+    }
+
+    /// Where a ray from the camera first meets the part (or, failing that, the floor): the point to focus on.
+    func focusPoint(origin o: SIMD3<Double>, direction d: SIMD3<Double>) -> SIMD3<Double>? {
+        var best: Double?
+        let shifts = explodeOffsets
+        let shown = visibleMeshes
+        for (n, body) in shown.enumerated() {
+            let shift = shifts.count == shown.count ? SIMD3<Double>(shifts[n]) : .zero
+            let p = body.mesh.positions, ix = body.mesh.indices
+            func vertex(_ i: UInt32) -> SIMD3<Double> { SIMD3(Double(p[Int(i) * 3]), Double(p[Int(i) * 3 + 1]), Double(p[Int(i) * 3 + 2])) + shift }
+            for t in stride(from: 0, to: ix.count - 2, by: 3) {
+                let a = vertex(ix[t]), b = vertex(ix[t + 1]), c = vertex(ix[t + 2])
+                let e1 = b - a, e2 = c - a
+                let h = simd_cross(d, e2)
+                let det = simd_dot(e1, h)
+                if abs(det) < 1e-12 { continue }
+                let f = 1 / det
+                let s = o - a
+                let u = f * simd_dot(s, h)
+                if u < 0 || u > 1 { continue }
+                let q = simd_cross(s, e1)
+                let v = f * simd_dot(d, q)
+                if v < 0 || u + v > 1 { continue }
+                let tHit = f * simd_dot(e2, q)
+                if tHit > 1e-6, best == nil || tHit < best! { best = tHit }
+            }
+        }
+        if best == nil, d.z < -1e-9, o.z > 0 { best = -o.z / d.z }  // the floor
+        return best.map { o + d * $0 }
+    }
     /// The 3D view, for the one thing the model asks of it: a picture of what it shows (Export render).
     @ObservationIgnored weak var viewportView: ViewportMTKView?
 
     /// Saves what the viewport shows as a PNG: asks for the picture first, so it is of the view as it is now, then for where to put it.
     func exportRender() {
         guard let view = viewportView else { return }
-        view.exportPNG { [weak self] png in
+        view.exportPNG(frames: renderSettings.exportQuality.frames) { [weak self] png in
             guard let self else { return }
             guard let png else {
                 alert = AlertInfo(title: "The render could not be saved", message: "The picture of the view could not be made. Try again.")
@@ -251,14 +302,15 @@ final class DocumentModel {
         }
     }
 
-    /// The browser and inspector the Render view hid when it came on (they were open), to bring back when it goes off
+    /// The browser, inspector and timeline the Render view hid when it came on (they were open), to bring back when it goes off
     /// (unless they have been opened since).
-    @ObservationIgnored private var panelsHiddenByRender = (sidebar: false, inspector: false)
+    @ObservationIgnored private var panelsHiddenByRender = (sidebar: false, inspector: false, timeline: false)
 
     private func restorePanelsHiddenByRender() {
         if panelsHiddenByRender.sidebar { showSidebar = true }
         if panelsHiddenByRender.inspector { showInspector = true }
-        panelsHiddenByRender = (false, false)
+        if panelsHiddenByRender.timeline { showTimeline = true }
+        panelsHiddenByRender = (false, false, false)
     }
 
     /// Turns the Render view on or off; on, it opens its options, hides the browser and inspector (the toolbar buttons
@@ -269,9 +321,10 @@ final class DocumentModel {
         if !on { restorePanelsHiddenByRender() }
         if on {
             if !wasOn {
-                panelsHiddenByRender = (showSidebar, showInspector)
+                panelsHiddenByRender = (showSidebar, showInspector, showTimeline)
                 showSidebar = false
                 showInspector = false
+                showTimeline = false
             }
             showRenderOptions = true
             printPreview = false
@@ -730,23 +783,50 @@ final class DocumentModel {
         document.bodyMaterials[id] ?? document.bodyMaterials[Regenerator.rootBody(id)]
     }
 
+    /// How rough a body is drawn (0 polished to 1 matte): what is being set, else its own, else its material's. Nil for a
+    /// material with no roughness.
+    func displayRoughness(of id: FeatureID) -> Double? {
+        guard let material = displayMaterial(of: id), material.hasRoughness else { return nil }
+        if let p = roughnessPreview, p.bodies.contains(id) { return p.roughness }
+        return document.bodyRoughness[id] ?? document.bodyRoughness[Regenerator.rootBody(id)] ?? material.defaultRoughness
+    }
+
+    /// Shows a roughness on bodies while the slider is dragged, without changing the document.
+    func previewBodyRoughness(_ roughness: Double, of ids: [FeatureID]) {
+        roughnessPreview = ids.isEmpty ? nil : (ids, roughness)
+        overlayRevision += 1
+    }
+
+    /// Gives bodies a roughness (nil goes back to their material's), as one undo step. Needs no rebuild.
+    func setBodyRoughness(_ roughness: Double?, of ids: [FeatureID]) {
+        roughnessPreview = nil
+        overlayRevision += 1
+        guard !ids.isEmpty else { return }
+        mutate(roughness == nil ? "Reset Roughness" : "Change Roughness") { doc in
+            for id in ids { doc.bodyRoughness[id] = roughness }
+        }
+    }
+
     /// Makes bodies of a material (nil = plain), as one undo step. Needs no rebuild. A material looks wrong over the
-    /// default grey, so bodies without a colour of their own are given one that suits it.
+    /// default grey, so bodies without a colour of their own are given one that suits it. A roughness set for the
+    /// old material is dropped: each material has its own to start from.
     func setBodyMaterial(_ material: BodyMaterial?, of ids: [FeatureID]) {
         guard !ids.isEmpty else { return }
         let fallback: BodyColor? = material.flatMap { BodyColor(hex: Self.materialColors[$0] ?? "") }
         let noun = ids.count == 1 ? "Material" : "Materials"
         colorPreview = nil
+        roughnessPreview = nil
         mutate(material == nil ? "Reset \(noun)" : "Change \(noun)") { doc in
             for id in ids {
                 doc.bodyMaterials[id] = material
+                doc.bodyRoughness[id] = nil
                 if let fallback, doc.bodyColors[id] == nil, doc.bodyColors[Regenerator.rootBody(id)] == nil { doc.bodyColors[id] = fallback }
             }
         }
     }
 
     /// The colour a body gets with a material when it has none of its own.
-    static let materialColors: [BodyMaterial: String] = [.metal: "#C9CDD2", .glass: "#BFDDEA", .wood: "#B5834F"]
+    static let materialColors: [BodyMaterial: String] = [.plastic: "#E6E4DE", .metal: "#C9CDD2", .glass: "#BFDDEA", .wood: "#B5834F"]
 
     /// Shows a colour on bodies while it's being picked, without changing the document.
     func previewBodyColor(_ color: BodyColor, of ids: [FeatureID]) {

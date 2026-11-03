@@ -227,16 +227,61 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     /// The picture of what the view shows now (what is drawn in it, not the panels and buttons over it), as PNG data at
-    /// the view's full pixel size. Draws one frame for it; nil if the frame could not be read.
-    func exportPNG(_ done: @escaping @MainActor @Sendable (Data?) -> Void) {
+    /// the view's full pixel size. Draws one frame for it; nil if the frame could not be read. With `frames` above 1
+    /// the picture is made from that many, each shifted by a part of a pixel and with its own sample patterns, and
+    /// averaged: smooth edges, and the soft shadows and occlusion of the Render view lose their grain.
+    func exportPNG(frames: Int = 1, _ done: @escaping @MainActor @Sendable (Data?) -> Void) {
         guard let renderer else { done(nil); return }
-        framebufferOnly = false  // the drawable is read back, which a view that only displays it does not allow
-        renderer.captureHandler = done
-        draw(bounds)
-        framebufferOnly = true
-        if let unused = renderer.captureHandler {  // nothing was drawn (the view has no size)
-            renderer.captureHandler = nil
-            unused(nil)
+        if frames <= 1 {
+            framebufferOnly = false  // the drawable is read back, which a view that only displays it does not allow
+            renderer.captureHandler = done
+            draw(bounds)
+            framebufferOnly = true
+            if let unused = renderer.captureHandler {  // nothing was drawn (the view has no size)
+                renderer.captureHandler = nil
+                unused(nil)
+            }
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return done(nil) }
+            var sum: [Float] = []
+            var size = (w: 0, h: 0)
+            var used = 0
+            for i in 0..<frames {
+                // A low-discrepancy spread of shifts (Halton 2 and 3) over one pixel.
+                func halton(_ index: Int, _ base: Int) -> Float {
+                    var f: Float = 1, r: Float = 0, n = index + 1
+                    while n > 0 { f /= Float(base); r += f * Float(n % base); n /= base }
+                    return r
+                }
+                renderer.jitter = SIMD2((halton(i, 2) - 0.5) * 2 / Float(max(drawableSize.width, 1)),
+                                        (halton(i, 3) - 0.5) * 2 / Float(max(drawableSize.height, 1)))
+                renderer.frameNumber = Float(i)
+                let frame: ([UInt8], Int, Int)? = await withCheckedContinuation { continuation in
+                    self.framebufferOnly = false
+                    renderer.rawCaptureHandler = { continuation.resume(returning: $0) }
+                    self.draw(self.bounds)
+                    self.framebufferOnly = true
+                    if let unused = renderer.rawCaptureHandler {  // nothing was drawn
+                        renderer.rawCaptureHandler = nil
+                        unused(nil)
+                    }
+                }
+                guard let (bytes, w, h) = frame else { break }
+                if sum.isEmpty { sum = [Float](repeating: 0, count: bytes.count); size = (w, h) }
+                guard bytes.count == sum.count else { break }
+                for k in 0..<bytes.count { sum[k] += Float(bytes[k]) }
+                used += 1
+            }
+            renderer.jitter = .zero
+            renderer.frameNumber = 0
+            self.draw(self.bounds)  // the view as it was
+            guard !sum.isEmpty else { return done(nil) }
+            let scale = 1 / Float(max(used, 1))
+            var bytes = [UInt8](repeating: 255, count: sum.count)
+            for k in 0..<sum.count { bytes[k] = UInt8(min(max(sum[k] * scale + 0.5, 0), 255)) }
+            done(ViewportSnapshot.png(bgra: bytes, width: size.w, height: size.h))
         }
     }
 
@@ -467,6 +512,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// Crosshair while drawing, hands over draggable geometry, arrow otherwise.
     private var currentCursor: NSCursor {
         guard let model else { return .arrow }
+        if model.pickingRenderFocus { return .crosshair }
         if manipulatorDrag != nil { return .closedHand }
         if manipulatorHover != nil { return .openHand }
         if sketchDrag, model.sketchSession?.tool == .select { return .closedHand }
@@ -828,8 +874,17 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             return
         }
         // A double-click's second release isn't a click: the double-click already did its job.
-        guard !dragged, event.clickCount < 2, renderer != nil, let model, model.sketchSession == nil else { return }
+        guard !dragged, event.clickCount < 2, let renderer, let model, model.sketchSession == nil else { return }
         let p = location(event)
+        if model.pickingRenderFocus {  // Select focus point: this click puts the sharp spot where it lands
+            let ray = renderer.camera.ray(at: p, viewSize: bounds.size)
+            if let hit = model.focusPoint(origin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                                          direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z))) {
+                model.setRenderFocus(hit)
+                refreshOverlay()
+            }
+            return
+        }
         let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
         let single = event.modifierFlags.contains(.option)  // one letter of a text, not all of it
         let pixel = pickPixel(p)
@@ -1045,7 +1100,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 return
             }
         } else if event.keyCode == 53 {
-            if model.isPickingSketchPlane { model.cancelSketchPlanePick() }
+            if model.pickingRenderFocus { model.togglePickingRenderFocus() }
+            else if model.isPickingSketchPlane { model.cancelSketchPlanePick() }
             else if model.pendingTool != nil { model.cancelTool() }
             else if model.selection.isEmpty, model.dragHandle != nil || model.featureWithoutHandle != nil { model.finishFeatureEdit() }
             else { model.clearSelection() }
@@ -2198,8 +2254,11 @@ struct ViewportView: NSViewRepresentable {
             case .metal: 1
             case .glass: 2
             case .wood: 3
+            case .plastic: 4
             }
         }
+        renderer.focusPoint = model.renderFocusPoint.map { SIMD3(Float($0.x), Float($0.y), Float($0.z)) }
+        renderer.bodyRoughness = model.visibleMeshes.map { m in model.displayRoughness(of: m.id).map { Float($0) } ?? -1 }
         // A fit asked for while the part is empty (a new document, at launch) is used up here, so the first body
         // added later doesn't pull the camera to itself.
         if c.fitRevision != fitRevision {

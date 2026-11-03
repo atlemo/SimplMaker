@@ -16,8 +16,10 @@ extension NSPasteboard.PasteboardType {
 struct CopiedBody: Codable {
     var name: String
     var color: BodyColor?
-    /// Metal, glass or wood (absent when it was plain, and in anything copied before materials existed).
+    /// Plastic, metal, glass or wood (absent when it was plain, and in anything copied before materials existed).
     var material: BodyMaterial?
+    /// The roughness it was given (absent: its material's own).
+    var roughness: Double?
     /// The body as a STEP file.
     var step: Data
 }
@@ -46,7 +48,7 @@ extension DocumentModel {
         guard !wanted.isEmpty else { return false }
         do {
             let copied = try wanted.map { b in
-                CopiedBody(name: b.name, color: document.bodyColors[b.id], material: document.bodyMaterials[b.id], step: try Self.stepData(of: b.body))
+                CopiedBody(name: b.name, color: document.bodyColors[b.id], material: document.bodyMaterials[b.id], roughness: document.bodyRoughness[b.id], step: try Self.stepData(of: b.body))
             }
             pasteboard.clearContents()
             pasteboard.setData(try JSONEncoder().encode(copied), forType: .simplMakerBodies)
@@ -82,6 +84,7 @@ extension DocumentModel {
                 doc.bodyNames[id] = name
                 if let color = body.color { doc.bodyColors[id] = color }
                 if let material = body.material { doc.bodyMaterials[id] = material }
+                if let roughness = body.roughness { doc.bodyRoughness[id] = roughness }
             }
         }
         guard let last = pasted.last?.id, document.index(of: last) != nil else { return false }  // editing was locked

@@ -1,6 +1,6 @@
 ---
 title: Render view
-description: Show a part on a solid floor with a light you set, soft shadows and a reflection, ready for a picture or a presentation.
+description: Show a part on a solid floor with a light you set, soft shadows and a reflection, with quality presets up to a photographic look, ready for a picture or a presentation.
 ---
 
 The **Render view** gives a part a presentation look. The grid gives way to a solid floor, the body edges go, and the part is lit by a light you can move, with soft shadows and a faint reflection in the floor. It only changes what you see. Nothing goes on the timeline and the view's own settings are not saved in the file. The one thing it shows that the file does remember is a body's [material](doc:modify/appearance): metal, glass or wood.
@@ -11,13 +11,28 @@ The **Render view** gives a part a presentation look. The grid gives way to a so
 
 Press the **Render** button (a camera) at the right end of the toolbar, left of the Inspector button. You can also choose **View → Render**, or right-click in the viewport and choose **Render View**.
 
-Press the button again to turn the view off. The options panel opens in the top left corner of the view while the view is on. The browser and the Inspector close when the view comes on, to give the part the whole window. The buttons in the toolbar bring them back, and they come back by themselves when the view goes off.
+Press the button again to turn the view off. The options panel opens in the top left corner of the view while the view is on. The browser, the Inspector and the timeline close when the view comes on, to give the part the whole window. The buttons in the toolbar bring them back, and they come back by themselves when the view goes off. The options panel floats above the status bar, and scrolls when the window is too short for it.
 
 - The view needs a shaded [visual style](doc:start/navigation). If you were in a wireframe style, turning it on switches to **Shaded with Visible Edges**.
 - It does not work together with the [3D Print Preview](doc:print/print-preview). Turning one on turns the other off.
 - While you [sketch](doc:sketch/start) the Render button is greyed out and you see the sketch as usual. The Render view comes back when you finish the sketch.
 - Finished sketches and construction planes are hidden, so the part is shown alone. They come back while a tool is waiting for you to pick something that needs them, such as a profile to extrude or a plane to sketch on. A [canvas](doc:create/canvas) picture stays.
 - You can keep working in it. Clicking and hovering pick faces and edges as always, and picks go through the floor.
+
+## Two tabs and a quality preset
+
+The options panel has two tabs. **Simple** holds what an everyday render needs: the quality preset, the floor, the room and the light, the shadows, and the export. **Advanced** holds, one by one, the settings that the quality presets switch on together.
+
+At the top of **Simple** you choose a **Quality**:
+
+| Quality | What you get |
+|---|---|
+| **Simple** | The fast look: flat light, soft shadows and a reflection. It stays smooth on any Mac, and it is the look this view always had. |
+| **Realistic** | Physical light with a filmic curve, ambient occlusion, contact shadows, a softbox overhead, a little glow and darker corners, and glass that bends what is behind it. |
+| **Photo** | All of that a bit stronger. The best picture, and the slowest to draw. Exports are made from 64 pictures. |
+| **Custom** | Where the settings are once you change one in the Advanced tab. It is a label, not something to click. |
+
+A quality preset does not move the light, the floor or the room. It only sets the quality settings. Settings from before the presets existed start as **Simple**, so nothing changes until you choose another. A new installation starts at **Realistic**.
 
 ## The floor
 
@@ -40,6 +55,7 @@ The light stays where you put it in the world. Turn the view and the part is lit
 - **Brightness** is the strength of the main light.
 - **Height** is how high the main light stands, from 5° (low and long shadows) to 90° (straight down).
 - **Ambient** is the light that comes from everywhere. More of it makes the shaded sides lighter.
+- **Room** is the room that shiny bodies reflect, and the colour of the light: **Studio**, **Light tent** (bright and even), **Overcast**, **Sunset** (warm and low) and **Dark studio** (almost black, with bright strips of light). The rooms are made in the program, not photographed, so they look the same on every Mac.
 
 A weak second light from the side keeps the faces turned away from the main light from going black.
 
@@ -53,9 +69,27 @@ With **Shadows** on, the bodies cast shadows on the floor and on each other. Und
 
 **Noise** adds a little grain over the whole picture: the backdrop, the floor, the reflection and the bodies. A touch of it takes the flat, digital look off smooth colours and hides banding in the soft shadows. It starts at 10%, which is subtle. At 100% it is plainly grainy, and at 0% it is off. The grain does not cover the lines of the edges or what you select, and it stays still on the screen while you turn the view.
 
+## The Advanced tab
+
+Each setting here is part of a quality preset. Change one and the preset becomes **Custom**.
+
+| Setting | What it does |
+|---|---|
+| **Physical light** | Works out the light as light and shows it through a filmic curve, so highlights roll off instead of clipping. Every body gets a finish and reflects the room, a bit more at grazing angles. It switches on the settings below it: **Exposure**, **Finish** (matte to gloss, for plain and wooden bodies) and **Softbox** (a big soft light overhead, which also shows in shiny bodies). |
+| **Occlusion** | Ambient occlusion. Corners, gaps and the foot of the part get darker, as they do where light can hardly reach. **Reach** is how far from a corner the darkening goes. |
+| **Contact** | Short, sharp shadows right where bodies touch the floor and each other. They sit under the soft shadow of the main light. |
+| **Glow** | A soft glow round what is brighter than the floor. Highlights on shiny bodies glow, and a white part on a white floor does not. |
+| **Vignette** | Darker corners of the picture. |
+| **Depth blur** | Depth of field: what is at the focus point stays sharp and what is nearer and farther blurs. No quality preset turns it on. It is off until you do. |
+| **Focus** | **Select focus point**, then click on the part (or the floor): that spot is sharp. The cursor is a crosshair until you click, and Esc cancels. Picking a point turns the blur on if it is off. **Auto** goes back to the middle of the part. The point is kept for the session, not in the file. |
+| **Glass refraction** | Glass bends the floor and the room behind it, and thicker glass is darker. A body standing behind the glass is seen through it, but not bent. It needs Physical light. |
+| **Noise** | The grain, as below. |
+
+Occlusion, glow and depth blur are made over the finished picture, so they need a little more work from the graphics chip. If turning the part feels slow, go back to **Simple**.
+
 ## Reset and double-click
 
-- **Reset** in the top right corner of the panel puts every setting back to its start.
+- **Reset** in the top right corner of the panel puts every setting back to its start (the **Realistic** preset).
 - **Double-click** a slider, or the dial, to put just that one back.
 
 The settings are kept between launches, and they are the same for every part. They are not saved in the part's file.
@@ -66,7 +100,8 @@ Press **Export render** at the bottom of the panel to save what the view shows a
 
 1. Put the part on the floor and set the view you want. [[⌘0]] fits it in the window. A bigger window makes a bigger picture.
 2. Click an empty place to clear any selection, and move the pointer off the part so nothing is lit up.
-3. Press **Export render**, and choose where to save it.
+3. Choose the **Export** quality. **Standard** is one picture, as you see it. **High** and **Maximum** make 16 or 64 pictures, each a little to one side, and average them: smooth edges, and occlusion and soft shadows without grain. It takes a moment.
+4. Press **Export render**, and choose where to save it.
 
 The picture an AI assistant makes of a part is not changed by the Render view. See [Work with AI](doc:ai/assistant).
 

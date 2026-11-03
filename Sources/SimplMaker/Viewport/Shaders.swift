@@ -35,6 +35,19 @@ enum Shaders {
         float4 cameraRight;     // xyz = the camera's right
         float4 cameraUp;        // xyz = the camera's up
         float4 sceneCenter;     // render view: xyz = the middle of the part, w = how far a shiny face's reflection reaches (the room's size)
+        float4x4 invViewProj;   // render view: from the screen back to the world, for the depth the occlusion and refraction read
+        float4 look1;           // render view: x = 1 for physical light, y = exposure (a multiplier), z = softbox, w = finish (gloss of plain bodies)
+        float4 look2;           // render view: x = occlusion strength, y = its reach in mm, z = its samples, w = contact shadow strength
+        float4 look3;           // render view: x = contact shadow reach in mm, y = this frame's number (turns the sample patterns), z = glass refraction (0 off)
+        float4 envZenith;       // the room: rgb = overhead, w = brightness of the soft boxes round it
+        float4 envSky;          // rgb = the sky at the horizon, w = the main light's reflection
+        float4 envGroundA;      // rgb = the ground at the horizon
+        float4 envGroundB;      // rgb = the ground straight down
+        float4 envTint;         // rgb = the main light's colour
+        float4 floorLit;        // the floor as the shader draws it (see FloorParams), for what glass shows of it: rgb lit, w = where it starts to fade
+        float4 floorShadow;     // rgb = in shadow, w = where the fade ends
+        float4 floorBack;       // rgb = the backdrop
+        float4 floorCenter;     // xy = the middle of the floor
     };
 
     struct FloorParams {
@@ -61,7 +74,8 @@ enum Shaders {
         float growSide;        // pixels; like grow, along an arrowhead's slanted sides (it fades to grow at the back)
         float dashPitch;       // pixels; a dashed line's dashes start this far apart
         float dashLength;      // pixels; (radius is half a dash's width, grow its outline)
-        uint material;         // render view: 0 plain, 1 metal, 2 glass, 3 wood
+        uint material;         // render view: 0 plain, 1 metal, 2 glass, 3 wood, 4 plastic
+        float roughness;       // render view: plastic and metal, 0 to 1; -1 = the material's own
     };
 
     struct FaceOut {
@@ -196,7 +210,7 @@ enum Shaders {
         constexpr sampler compare(coord::normalized, filter::linear, address::clamp_to_edge, compare_func::less_equal);
         float width = u.shadowParams.y;
         float2 extent = u.shadowExtent.xy;
-        float turn = 6.2831853 * fract(sin(dot(world, float3(12.9898, 78.233, 37.719))) * 43758.5453);
+        float turn = 6.2831853 * fract(sin(dot(world, float3(12.9898, 78.233, 37.719))) * 43758.5453 + u.look3.y * 0.61803);
         float2 search = min(width * range, 0.25 * min(extent.x, extent.y)) / extent;
         float blocked = 0.0, count = 0.0;
         for (int i = 0; i < 16; i++) {
@@ -217,20 +231,40 @@ enum Shaders {
         return u.viewDir.w > 0.5 ? -normalize(u.viewDir.xyz) : normalize(u.eye.xyz - world);
     }
 
-    // A plain studio for shiny things to reflect: a bright sky, a band of light along the horizon, a darker floor, and
-    // the main light as a soft box (as far as it reaches the point, `lit`).
-    static float3 studioEnv(float3 r, float3 L, float key, float lit, float sharp) {
+    // The room shiny things reflect (see RenderSettings.Environment): a sky overhead, a band at the horizon, the floor
+    // below, tall soft boxes round it, a big panel overhead (the softbox) and the main light as a soft box (as far as it
+    // reaches the point, `lit`). `rough` blurs it: a rough surface sees the room as a smooth gradient.
+    struct Env {
+        float3 zenith; float3 skyHorizon; float3 groundHorizon; float3 groundDown;
+        float strips; float key; float3 tint; float soft; float stripFrom; float stripTo;
+    };
+
+    static Env envOf(constant Uniforms& u) {
+        Env e;
+        e.zenith = u.envZenith.xyz; e.skyHorizon = u.envSky.xyz; e.groundHorizon = u.envGroundA.xyz; e.groundDown = u.envGroundB.xyz;
+        e.strips = u.envZenith.w; e.key = u.envSky.w; e.tint = u.envTint.xyz; e.soft = u.look1.z;
+        // Physical light shows the soft boxes lower, down to the horizon, which is where a standing body's sides look.
+        e.stripFrom = u.look1.x > 0.5 ? -0.3 : -0.05;
+        e.stripTo = u.look1.x > 0.5 ? 0.1 : 0.2;
+        return e;
+    }
+
+    static float3 studioEnv(float3 r, float3 L, float key, float lit, float sharp, float rough, Env e) {
         float up = r.z;
         float az = atan2(r.y, r.x);
         // A dim room with bright things in it, which is what makes a metal read as one: sky overhead, a darker band at
         // the horizon, the floor below (mostly light in the render view, darker straight down).
-        float3 sky = mix(float3(0.34, 0.37, 0.43), float3(1.05, 1.07, 1.1), smoothstep(0.15, 0.95, up));
-        float3 ground = mix(float3(0.62, 0.63, 0.65), float3(0.2, 0.21, 0.24), smoothstep(-0.1, -0.85, up));
-        float3 c = mix(ground, sky, smoothstep(-0.12, 0.12, up));
+        float3 sky = mix(e.skyHorizon, e.zenith, smoothstep(0.15, 0.95, up));
+        float3 ground = mix(e.groundHorizon, e.groundDown, smoothstep(-0.1, -0.85, up));
+        float edge = 0.12 + 0.55 * rough;
+        float3 c = mix(ground, sky, smoothstep(-edge, edge, up));
         // Tall soft boxes round the room, so faces turned different ways pick up different light.
-        float strips = smoothstep(0.86, 0.96, cos(az * 2.5 + 0.7));
-        c += 1.5 * strips * smoothstep(-0.05, 0.2, up) * smoothstep(0.85, 0.5, up);
-        c += key * lit * 2.2 * pow(max(dot(r, L), 0.0), sharp);
+        float contrast = (1.0 - rough) * (1.0 - rough);
+        float strips = mix(0.3, smoothstep(0.86, 0.96, cos(az * 2.5 + 0.7)), contrast);
+        c += e.strips * strips * smoothstep(e.stripFrom, e.stripTo, up) * smoothstep(0.85, 0.5, up);
+        c += e.soft * 1.6 * smoothstep(mix(0.78, 0.4, rough), mix(0.93, 0.9, rough), up);
+        float lobe = mix(sharp, min(sharp, 4.0), rough);
+        c += key * lit * e.key * e.tint * pow(max(dot(r, L), 0.0), lobe) * mix(1.0, 0.35, rough);
         return c;
     }
 
@@ -268,10 +302,174 @@ enum Shaders {
         return dot(n, toViewer(world, u)) < 0.0 ? -n : n;
     }
 
+    // MARK: render view, physical light
+
+    // Colours as light: the shader works in linear light and shows it through a filmic curve (the same as
+    // RenderSettings.display), so highlights roll off instead of clipping.
+    static float3 toLinear(float3 c) { return pow(max(c, float3(0.0)), float3(2.2)); }
+    static float3 display(float3 lin, float exposure) {
+        float3 x = max(lin * exposure, float3(0.0));
+        float3 t = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+        return pow(t, float3(1.0 / 2.2));
+    }
+
+    // A different number for every pixel, evenly spread (so the sample patterns don't clump).
+    static float ign(float2 p) { return fract(52.9829189 * fract(dot(p, float2(0.06711056, 0.00583715)))); }
+
+    // The world point at a screen position (uv, 0 to 1 from the top left) and a depth.
+    static float3 unproject(float2 uv, float depth, constant Uniforms& u) {
+        float4 p = u.invViewProj * float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
+        return p.xyz / p.w;
+    }
+
+    // Ambient occlusion: how much of the sky a point sees. Points in a hemisphere over the surface are looked up in the
+    // depth of the bodies as the camera sees them; one that lies behind what is seen there is in something, and the
+    // more of them are, the darker the corner. Returns 1 (open) to 0.
+    static float ambientOcclusion(float3 world, float3 n, float2 pixel, constant Uniforms& u, depth2d<float> depthMap) {
+        float strength = u.look2.x;
+        if (strength <= 0.0) return 1.0;
+        float radius = u.look2.y;
+        int count = int(u.look2.z);
+        constexpr sampler nearest(coord::normalized, filter::nearest, address::clamp_to_edge);
+        float3 helper = abs(n.z) < 0.99 ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
+        float3 t = normalize(cross(helper, n));
+        float3 b = cross(n, t);
+        float turn = 6.2831853 * ign(pixel + u.look3.y * 5.588238);
+        float3 origin = world + n * radius * 0.02;
+        float occluded = 0.0;
+        for (int i = 0; i < count; i++) {
+            float2 d = vogelDisc(i, count, turn);
+            float3 dir = t * d.x + b * d.y + n * sqrt(max(1.0 - dot(d, d), 0.0));
+            float k = (float(i) + 0.5) / float(count);
+            float3 s = origin + dir * radius * (0.12 + 0.88 * k);
+            float4 clip = u.viewProj * float4(s, 1.0);
+            float3 ndc = clip.xyz / clip.w;
+            float2 uv = ndc.xy * float2(0.5, -0.5) + 0.5;
+            if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) continue;
+            float seen = depthMap.sample(nearest, uv);
+            if (seen >= 1.0) continue;
+            float3 p = unproject(uv, seen, u);
+            if (dot(p - s, toViewer(s, u)) > radius * 0.03) {  // what is seen there is nearer the camera than the point: the point is inside it
+                occluded += 1.0 - smoothstep(radius * 0.5, radius * 1.4, length(p - world));
+            }
+        }
+        float open = 1.0 - clamp(occluded / float(count) * 1.7, 0.0, 1.0);
+        return mix(1.0, open * open, strength);
+    }
+
+    // Contact shadows: a short march from the point toward the main light through the same depth. Sharp where the
+    // shadow map's soft shadow is not, right where bodies touch the floor and each other.
+    static float contactShadow(float3 world, float3 n, float2 pixel, constant Uniforms& u, depth2d<float> depthMap) {
+        float strength = u.look2.w;
+        if (strength <= 0.0) return 1.0;
+        float3 L = normalize(u.lightDir.xyz);
+        if (dot(n, L) <= 0.0) return 1.0;
+        float reach = u.look3.x;
+        constexpr sampler nearest(coord::normalized, filter::nearest, address::clamp_to_edge);
+        float jitter = ign(pixel + u.look3.y * 3.17);
+        float3 origin = world + n * reach * 0.012;
+        float hit = 0.0;
+        for (int i = 0; i < 12; i++) {
+            float3 s = origin + L * reach * (0.04 + 0.96 * ((float(i) + jitter) / 12.0));
+            float4 clip = u.viewProj * float4(s, 1.0);
+            float3 ndc = clip.xyz / clip.w;
+            float2 uv = ndc.xy * float2(0.5, -0.5) + 0.5;
+            if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) continue;
+            float seen = depthMap.sample(nearest, uv);
+            if (seen >= 1.0) continue;
+            float3 p = unproject(uv, seen, u);
+            float inFront = dot(p - s, toViewer(s, u));
+            if (inFront > reach * 0.015 && inFront < reach * 0.3) hit = 1.0;
+        }
+        return 1.0 - strength * hit;
+    }
+
+    static float distributionGGX(float nh, float a) {
+        float a2 = a * a;
+        float d = nh * nh * (a2 - 1.0) + 1.0;
+        return a2 / (3.14159265 * d * d + 1e-5);
+    }
+
+    // Light on a body, in linear light: the main light (with a GGX highlight), a fill, ambient light from the room and
+    // the softbox (dimmed by occlusion), and the room reflected in it, more at grazing angles and blurrier the rougher
+    // the finish. Returns what the screen shows.
+    static float3 physicalShade(float3 n, float3 v, float3 world, float3 base, uint material, float lit, float ao,
+                                float roughness, constant Uniforms& u) {
+        Env e = envOf(u);
+        float3 L = normalize(u.lightDir.xyz);
+        float3 albedo = toLinear(base);
+        bool metal = material == 1u;
+        float rough = metal ? 0.2 : (material == 3u ? 0.5 : mix(0.85, 0.12, u.look1.w));
+        if (roughness >= 0.0) rough = mix(0.05, 0.95, roughness);  // plastic and metal: 0 polished, 1 matte
+        float nl = max(dot(n, L), 0.0), nv = max(dot(n, v), 1e-3);
+        float brightness = u.lightDir.w;
+        float3 key = e.tint * (brightness * 1.5);
+        float2 h = float2(L.x * -0.1736 - L.y * 0.9848, L.x * 0.9848 - L.y * 0.1736);
+        float3 fillDir = normalize(float3(h / max(length(h), 1e-4), 0.35));
+        float fill = max(dot(n, fillDir), 0.0) * 0.25 * brightness;
+        float3 sky = e.zenith * 0.8 + e.skyHorizon * 0.2;
+        float3 ambient = mix(e.groundHorizon * 0.5, sky, 0.5 + 0.5 * n.z) * (u.renderParams.y * 0.28);
+        float soft = u.look1.z * 0.3 * max(n.z, 0.0);
+        float3 irradiance = key * (nl * lit) + float3(fill) + (ambient + float3(soft)) * ao;
+        float3 f0 = metal ? albedo : float3(0.04);
+        float3 diffuse = metal ? float3(0.0) : albedo * 0.96;
+        float3 hv = normalize(L + v);
+        float nh = max(dot(n, hv), 0.0), vh = max(dot(v, hv), 0.0);
+        float a = max(rough * rough, 0.02);
+        float k = (rough + 1.0) * (rough + 1.0) / 8.0;
+        float visibility = 0.25 / ((nl * (1.0 - k) + k) * (nv * (1.0 - k) + k));
+        float3 fresnel = f0 + (1.0 - f0) * pow(1.0 - vh, 5.0);
+        float3 highlight = min(fresnel * (distributionGGX(nh, a) * visibility * nl) * key * lit, float3(6.0));
+        // The room reflected, looked up from the middle of the room so a big flat face shows a gradient.
+        float3 r = reflect(-v, n);
+        float3 look = normalize((world - u.sceneCenter.xyz) + normalize(mix(r, n, 0.2)) * u.sceneCenter.w);
+        float3 room = studioEnv(look, L, brightness, lit, mix(400.0, 6.0, rough), rough, e);
+        if (metal) room = pow(max(room, float3(0.0)), float3(1.7)) * 1.25;
+        else {
+            // The lights in a room are far brighter than the walls: a glossy plastic shows them as clear streaks and dots, a rough
+            // one only as a faint sheen (the room is blurred and flattened by the roughness, above, and the boost fades with it).
+            float gloss = 1.0 - rough;
+            room = mix(room, pow(max(room, float3(0.0)), float3(2.2)) * 3.5, gloss * gloss);
+        }  // a polished metal is all contrast: dark where the room is dim, bright where it is lit
+        float3 fEnv = f0 + (max(float3(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);
+        float3 reflected = room * fEnv * mix(1.0, ao, 0.85);
+        return display(diffuse * irradiance + highlight + reflected, u.look1.y);
+    }
+
+    // What a glass body shows of what lies behind it when the glass bends the light: the view ray is turned as it enters
+    // (index 1.5), travels as far as the glass is thick (the farthest glass surface behind this one) and comes out
+    // turned back about half way, to land on the floor (as lit and shadowed there) or on the room. Thicker glass is
+    // darker. rgb = what is seen (as it shows on the screen), a = how much of the picture it replaces: 0 where a body
+    // stands behind (that one is not bent, it is only seen through the glass).
+    static float4 glassRefraction(float3 world, float3 n, float3 v, float2 uv, float3 tint, constant Uniforms& u,
+                                  depth2d<float> shadowMap, depth2d<float> sceneDepth, depth2d<float> backDepth) {
+        constexpr sampler nearest(coord::normalized, filter::nearest, address::clamp_to_edge);
+        if (sceneDepth.sample(nearest, uv) < 1.0) return float4(0.0);
+        float room = u.sceneCenter.w;
+        float thickness = room * 0.08;
+        float back = backDepth.sample(nearest, uv);
+        if (back > 0.0) thickness = max(length(unproject(uv, back, u) - world), room * 0.005);
+        float3 d = refract(-v, n, 1.0 / 1.5);
+        float3 leaving = normalize(mix(d, -v, 0.5));
+        float3 exitPoint = world + d * thickness;
+        float3 color;
+        if (leaving.z < -0.01 && exitPoint.z > 0.0) {
+            float3 hit = exitPoint + leaving * (exitPoint.z / -leaving.z);
+            float lit = shadowVisibility(hit, float3(0.0, 0.0, 1.0), u, shadowMap);
+            float fade = smoothstep(u.floorLit.w, u.floorShadow.w, length(hit.xy - u.floorCenter.xy));
+            color = mix(mix(u.floorShadow.rgb, u.floorLit.rgb, lit), u.floorBack.rgb, fade);
+        } else {
+            color = display(studioEnv(leaving, normalize(u.lightDir.xyz), u.lightDir.w, 1.0, 40.0, 0.2, envOf(u)) * 0.9, u.look1.y);
+        }
+        float3 absorb = pow(clamp(tint, float3(0.05), float3(1.0)), float3(thickness / (room * 0.45)));
+        return float4(color * absorb, u.look3.z);
+    }
+
     // Lighting, hover and selection colours; `print` gives the surface the look of an FDM print. `lit` is how much of
     // the main light of the render view reaches the point (1 without shadows).
     static FragOut shadeFace(float3 normal, float3 world, uint id, bool print, float ring,
-                             constant Uniforms& u, constant uint* sel, constant DrawParams& p, float lit = 1.0) {
+                             constant Uniforms& u, constant uint* sel, constant DrawParams& p, float lit = 1.0, float occlusion = 1.0,
+                             float4 refraction = float4(0.0)) {
         float3 n = normalize(normal);
         float3 v = toViewer(world, u);
         if (u.evenLight != 0) v = -normalize(u.viewDir.xyz);  // the same for every pixel: a flat face is one shade
@@ -291,7 +489,7 @@ enum Shaders {
                            : pow(max(dot(reflect(-key, n), v), 0.0), 40.0) * 0.18;
         float lighting = 0.32 + 0.68 * diffuse;
         if (u.renderParams.x > 0.5 && u.evenLight == 0) {
-            // The render view: a main light that stays where it is set in the world, a weaker fill from the side, and ambient light that is stronger on faces turned up. (RenderSettings.floorShade is this sum
+            // The render view: a main light that stays where it is set in the world, a weaker fill from the side, and ambient light that is stronger on faces turned up. (RenderSettings.shade is this sum
             // for a face turned straight up.)
             float3 L = normalize(u.lightDir.xyz);
             // The fill stands 100° round from the main light and low, so it reaches the side the main light misses.
@@ -299,10 +497,19 @@ enum Shaders {
             float3 fillDir = normalize(float3(h / max(length(h), 1e-4), 0.35));
             float mainLight = max(dot(n, L), 0.0);
             float fill = max(dot(n, fillDir), 0.0);
-            lighting = u.renderParams.y * (0.7 + 0.3 * n.z) + u.lightDir.w * (0.7 * mainLight * lit + 0.3 * fill);
+            lighting = u.renderParams.y * (0.7 + 0.3 * n.z) * occlusion + u.lightDir.w * (0.7 * mainLight * lit + 0.3 * fill);
             spec = pow(max(dot(reflect(-L, n), v), 0.0), 40.0) * 0.2 * u.lightDir.w * step(0.001, mainLight) * lit;
         }
         if (u.evenLight != 0) spec = 0.0;
+        if (p.material == 4u && u.renderParams.x > 0.5 && u.evenLight == 0 && !print) {
+            // Plastic without physical light: the main light's highlight, tight and bright when it is glossy and broad and dull when it
+            // is rough, and a little sheen at grazing angles.
+            float r = p.roughness >= 0.0 ? p.roughness : 0.35;
+            float3 Lp = normalize(u.lightDir.xyz);
+            spec = pow(max(dot(reflect(-Lp, n), v), 0.0), mix(180.0, 7.0, r)) * mix(0.55, 0.08, r)
+                 * u.lightDir.w * step(0.001, max(dot(n, Lp), 0.0)) * lit
+                 + pow(1.0 - max(dot(n, v), 0.0), 4.0) * 0.12 * (1.0 - r);
+        }
         // The body's colour (its own from the Appearance panel, or the palette's), with hover and
         // selection colours made from it (see Renderer.tint).
         float3 base = p.color.rgb;
@@ -316,7 +523,12 @@ enum Shaders {
         FragOut o;
         o.color = (p.style & 4u) != 0 ? float4(base, 1.0) : float4(base * lighting * groove + spec, 1.0);
         float opacity = 1.0;
-        if (p.material != 0u && (p.style & 4u) == 0 && !print && u.renderParams.x > 0.5 && u.evenLight == 0) {
+        bool physical = u.look1.x > 0.5 && (p.style & 4u) == 0 && !print && u.renderParams.x > 0.5 && u.evenLight == 0;
+        if (physical && p.material != 2u) {
+            // Physical light: plain, metal and wood bodies are all lit the same way, only the finish differs.
+            float3 surface = p.material == 3u ? base * mix(0.6, 1.12, woodGrain(world)) : base;
+            o.color = float4(physicalShade(n, v, world, surface, p.material, lit, occlusion, p.roughness, u), 1.0);
+        } else if (p.material != 0u && p.material != 4u && (p.style & 4u) == 0 && !print && u.renderParams.x > 0.5 && u.evenLight == 0) {
             // Materials (render view). The colour is the metal's colour, the glass's tint, the wood's base shade.
             float3 L = normalize(u.lightDir.xyz);
             float ndv = clamp(dot(n, v), 0.0, 1.0);
@@ -324,7 +536,7 @@ enum Shaders {
             float3 r = reflect(-v, n);
             if (p.material == 1u) {
                 // The studio is a room round the part, not at infinity, so a big flat face reflects a gradient (the lookup runs from the room's middle).
-                float3 env = studioEnv(normalize((world - u.sceneCenter.xyz) + normalize(mix(r, n, 0.2)) * u.sceneCenter.w), L, u.lightDir.w, lit, 28.0) * mix(0.6, 1.0, lit);
+                float3 env = studioEnv(normalize((world - u.sceneCenter.xyz) + normalize(mix(r, n, 0.2)) * u.sceneCenter.w), L, u.lightDir.w, lit, 28.0, 0.0, envOf(u)) * mix(0.6, 1.0, lit);
                 float3 F = base + (1.0 - base) * fresnel;
                 o.color.rgb = F * env * 0.9 + base * lighting * 0.1;
             } else if (p.material == 3u) {
@@ -334,7 +546,8 @@ enum Shaders {
                 // Glass: see-through and tinted, with the studio mirrored in it (a little head-on, a lot at grazing angles), a hard
                 // highlight from the main light, and the inside of the far wall seen through the near one (drawn first, `glassBack`).
                 float3 rr = normalize((world - u.sceneCenter.xyz) + r * u.sceneCenter.w);
-                float3 room = studioEnv(rr, L, 0.0, 1.0, 1.0) * 1.35;
+                float3 room = studioEnv(rr, L, 0.0, 1.0, 1.0, 0.0, envOf(u)) * 1.35;
+                if (physical) room = display(room, u.look1.y);
                 float F = 0.11 + 0.89 * pow(1.0 - ndv, 3.5);
                 float highlight = clamp(u.lightDir.w * lit * 2.5 * pow(max(dot(rr, L), 0.0), 220.0), 0.0, 0.9);
                 float3 tint = base * (0.55 + 0.45 * lighting);
@@ -342,6 +555,12 @@ enum Shaders {
                     // The far wall: tinted light that has come through the glass, with a dimmer reflection of the room.
                     float a = clamp(0.2 + 0.45 * F, 0.0, 0.9);
                     o.color = float4((tint * 0.7 * 0.2 + room * F * 0.55 + highlight * 0.5) / max(a, 0.001), a);
+                } else if (physical && refraction.a > 0.0) {
+                    // Bent: the picture behind is replaced by what the glass shows (the transmitted part), plus the room reflected.
+                    float Fr = 0.05 + 0.95 * pow(1.0 - ndv, 4.0);
+                    float w = refraction.a;
+                    float a = clamp(1.0 - (1.0 - Fr) * (1.0 - w) + highlight, 0.0, 0.995);
+                    o.color = float4(((1.0 - Fr) * w * refraction.rgb + room * Fr + highlight) / max(a, 0.001), a);
                 } else {
                     float absorbed = 0.14;
                     float a = clamp(absorbed + F + highlight, 0.0, 0.97);
@@ -375,11 +594,19 @@ enum Shaders {
     fragment FragOut floorFragment(FloorOut in [[stage_in]],
                                    constant Uniforms& u [[buffer(1)]],
                                    constant FloorParams& f [[buffer(3)]],
-                                   depth2d<float> shadowMap [[texture(1)]]) {
-        float lit = shadowVisibility(float3(in.xy, f.centerHalf.z), float3(0.0, 0.0, 1.0), u, shadowMap);
+                                   depth2d<float> shadowMap [[texture(1)]],
+                                   depth2d<float> viewDepth [[texture(3)]],
+                                   texture2d<float> occlusionMap [[texture(5)]]) {
+        float3 spot = float3(in.xy, f.centerHalf.z);
+        float3 up = float3(0.0, 0.0, 1.0);
+        float lit = shadowVisibility(spot, up, u, shadowMap);
+        // Right at the foot of a body the floor is darker than its soft shadow says: contact shadow and occlusion.
+        lit = min(lit, contactShadow(spot, up, in.position.xy, u, viewDepth));
+        constexpr sampler nearestSampler(coord::normalized, filter::nearest, address::clamp_to_edge);
+        float occlusion = u.look2.x > 0.0 ? occlusionMap.sample(nearestSampler, in.position.xy / u.viewport).r : 1.0;
         float t = smoothstep(f.lit.w, f.backdrop.w, length(in.xy - f.centerHalf.xy));
         FragOut o;
-        o.color = float4(mix(mix(f.shadowed.rgb, f.lit.rgb, lit), f.backdrop.rgb, t), 1.0);
+        o.color = float4(mix(mix(f.shadowed.rgb, f.lit.rgb, lit) * occlusion, f.backdrop.rgb, t), 1.0);
         o.id = 0;
         return o;
     }
@@ -457,6 +684,177 @@ enum Shaders {
         float4 position [[position]];
     };
 
+    // The bodies as the camera sees them, depth only: what the occlusion and contact shadows read.
+    vertex ShadowOut viewDepthVertex(uint vid [[vertex_id]],
+                                     device const FaceVertex* verts [[buffer(0)]],
+                                     constant Uniforms& u [[buffer(1)]]) {
+        ShadowOut o;
+        o.position = u.viewProj * float4(float3(verts[vid].position), 1.0);
+        return o;
+    }
+
+    // A body's depth and ID with no colour: what the view draws of the bodies after the picture was made apart.
+    fragment FragOut idFragment(FaceOut in [[stage_in]]) {
+        FragOut o;
+        o.color = float4(0.0);
+        o.id = in.id;
+        return o;
+    }
+
+
+    struct PostParams {
+        float4 effects;   // x = glow, y = darker corners, z = blur in depth, w = the distance (mm along the view) that is sharp
+        float4 scene;     // x = the size of the part in mm, y = pixels to a point, z = where the glow starts, w = 0
+        float4 step;      // xy = one step of a blur in texels of what is read, zw = 1 / the size drawn into
+    };
+
+    // Ambient occlusion is made apart for the whole picture: the bodies' (and the floor's) depth and normals, the occlusion of
+    // each pixel from them, and a blur that keeps edges (the samples are few and turned differently at every pixel, so
+    // the raw result is grainy). The shaders then read it.
+    fragment float4 aoNormalFragment(FaceOut in [[stage_in]], constant Uniforms& u [[buffer(1)]]) {
+        return float4(facing(in.normal, in.world, u) * 0.5 + 0.5, 1.0);
+    }
+
+    fragment float4 aoFloorFragment(FloorOut in [[stage_in]]) {
+        return float4(0.5, 0.5, 1.0, 1.0);
+    }
+
+    fragment float4 aoFragment(NoiseOut in [[stage_in]], constant Uniforms& u [[buffer(1)]],
+                               depth2d<float> depthMap [[texture(0)]], texture2d<float> normals [[texture(1)]]) {
+        constexpr sampler nearest(coord::normalized, filter::nearest, address::clamp_to_edge);
+        float2 uv = in.position.xy / u.viewport;
+        float d = depthMap.sample(nearest, uv);
+        if (d >= 1.0) return float4(1.0);
+        float3 n = normalize(normals.sample(nearest, uv).xyz * 2.0 - 1.0);
+        return float4(ambientOcclusion(unproject(uv, d, u), n, in.position.xy, u, depthMap));
+    }
+
+    fragment float4 aoBlurFragment(NoiseOut in [[stage_in]], constant Uniforms& u [[buffer(1)]], constant PostParams& pp [[buffer(3)]],
+                                   texture2d<float> occlusion [[texture(0)]], depth2d<float> depthMap [[texture(1)]]) {
+        constexpr sampler nearest(coord::normalized, filter::nearest, address::clamp_to_edge);
+        float2 uv = in.position.xy / u.viewport;
+        float d0 = depthMap.sample(nearest, uv);
+        if (d0 >= 1.0) return float4(1.0);
+        float3 p0 = unproject(uv, d0, u);
+        float2 texel = pp.step.xy / u.viewport;
+        float sum = occlusion.sample(nearest, uv).r, weights = 1.0;
+        for (int i = -5; i <= 5; i++) {
+            if (i == 0) continue;
+            float2 tapUV = uv + texel * float(i);
+            float d = depthMap.sample(nearest, tapUV);
+            if (d >= 1.0) continue;
+            float w = exp(-float(i * i) / 12.0) * (1.0 - smoothstep(0.0, pp.scene.x * 0.25, length(unproject(tapUV, d, u) - p0)));
+            sum += occlusion.sample(nearest, tapUV).r * w;
+            weights += w;
+        }
+        return float4(sum / weights);
+    }
+
+    // MARK: the render view's finishing touches
+
+    // The glow starts with what is bright: a quarter of the size, four taps that each average 2 x 2 texels.
+    fragment float4 brightFragment(NoiseOut in [[stage_in]], constant PostParams& pp [[buffer(3)]], texture2d<float> source [[texture(0)]]) {
+        constexpr sampler lin(coord::normalized, filter::linear, address::clamp_to_edge);
+        float2 uv = in.position.xy * pp.step.zw;
+        float2 texel = 1.0 / float2(source.get_width(), source.get_height());
+        float3 sum = float3(0.0);
+        for (int i = 0; i < 4; i++) {
+            float2 o = float2(i & 1 ? 1.0 : -1.0, i & 2 ? 1.0 : -1.0) * texel * 1.0;
+            float3 c = source.sample(lin, uv + o).rgb;
+            sum += max(c - pp.scene.z, float3(0.0)) / max(1.0 - pp.scene.z, 0.05);
+        }
+        return float4(sum * 0.25, 1.0);
+    }
+
+    fragment float4 downFragment(NoiseOut in [[stage_in]], constant PostParams& pp [[buffer(3)]], texture2d<float> source [[texture(0)]]) {
+        constexpr sampler lin(coord::normalized, filter::linear, address::clamp_to_edge);
+        float2 uv = in.position.xy * pp.step.zw;
+        float2 texel = 1.0 / float2(source.get_width(), source.get_height());
+        float3 sum = float3(0.0);
+        for (int i = 0; i < 4; i++) sum += source.sample(lin, uv + float2(i & 1 ? 1.0 : -1.0, i & 2 ? 1.0 : -1.0) * texel).rgb;
+        return float4(sum * 0.25, 1.0);
+    }
+
+    // A Gaussian blur along `step.xy`, nine taps.
+    fragment float4 blurFragment(NoiseOut in [[stage_in]], constant PostParams& pp [[buffer(3)]], texture2d<float> source [[texture(0)]]) {
+        constexpr sampler lin(coord::normalized, filter::linear, address::clamp_to_edge);
+        float2 uv = in.position.xy * pp.step.zw;
+        float2 texel = pp.step.xy / float2(source.get_width(), source.get_height());
+        float w[5] = {0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216};
+        float3 sum = source.sample(lin, uv).rgb * w[0];
+        for (int i = 1; i < 5; i++) {
+            sum += source.sample(lin, uv + texel * float(i)).rgb * w[i];
+            sum += source.sample(lin, uv - texel * float(i)).rgb * w[i];
+        }
+        return float4(sum, 1.0);
+    }
+
+    // How far along the view a screen position is: the nearest body there, else the floor, else nothing (very far).
+    static float viewDistance(float2 uv, constant Uniforms& u, depth2d<float> depthMap) {
+        constexpr sampler nearest(coord::normalized, filter::nearest, address::clamp_to_edge);
+        float d = depthMap.sample(nearest, uv);
+        float3 p;
+        if (d < 1.0) {
+            p = unproject(uv, d, u);
+        } else {
+            float3 a = unproject(uv, 0.0, u), b = unproject(uv, 1.0, u);
+            float3 dir = b - a;
+            if (abs(dir.z) < 1e-6) return 1e6;
+            float t = -a.z / dir.z;
+            if (t < 0.0) return 1e6;
+            p = a + dir * t;
+        }
+        return dot(p - u.eye.xyz, normalize(u.viewDir.xyz));
+    }
+
+    // The picture made apart, with the finishing touches: blur for what is nearer or farther than the part, the glow
+    // laid over it (screen blend, so it never goes past white) and darker corners.
+    fragment FragOut compositeFragment(NoiseOut in [[stage_in]],
+                                       constant Uniforms& u [[buffer(1)]],
+                                       constant PostParams& pp [[buffer(3)]],
+                                       texture2d<float> picture [[texture(0)]],
+                                       texture2d<float> glowNear [[texture(1)]],
+                                       texture2d<float> glowFar [[texture(2)]],
+                                       depth2d<float> viewDepth [[texture(3)]]) {
+        constexpr sampler lin(coord::normalized, filter::linear, address::clamp_to_edge);
+        float2 uv = in.position.xy / u.viewport;
+        float3 color = picture.sample(lin, uv).rgb;
+        if (pp.effects.z > 0.005) {
+            float maxRadius = pp.effects.z * 7.0 * pp.scene.y;
+            float focus = pp.effects.w, span = max(pp.scene.x * 0.8, 1.0);
+            float centerDistance = viewDistance(uv, u, viewDepth);
+            float centerRadius = clamp(abs(centerDistance - focus) / span, 0.0, 1.0) * maxRadius;
+            if (centerRadius > 0.4) {
+                float turn = 6.2831853 * ign(in.position.xy);
+                float3 sum = color;
+                float weights = 1.0;
+                for (int i = 0; i < 24; i++) {
+                    float2 offset = vogelDisc(i, 24, turn) * centerRadius;
+                    float2 tapUV = uv + offset / u.viewport;
+                    float tapDistance = viewDistance(tapUV, u, viewDepth);
+                    float tapRadius = clamp(abs(tapDistance - focus) / span, 0.0, 1.0) * maxRadius;
+                    // A sharp thing in front of the blurred one does not smear over it, and a blurred thing reaches only as far as its blur.
+                    float weight = (tapDistance < centerDistance && tapRadius < length(offset)) ? 0.0 : 1.0;
+                    sum += picture.sample(lin, tapUV).rgb * weight;
+                    weights += weight;
+                }
+                color = sum / weights;
+            }
+        }
+        if (pp.effects.x > 0.0) {
+            float3 glow = glowNear.sample(lin, uv).rgb * 0.7 + glowFar.sample(lin, uv).rgb * 0.9;
+            color = 1.0 - (1.0 - color) * (1.0 - clamp(glow * pp.effects.x * 1.2, 0.0, 1.0));
+        }
+        if (pp.effects.y > 0.0) {
+            float2 q = (uv - 0.5) * float2(u.viewport.x / u.viewport.y, 1.0);
+            color *= 1.0 - pp.effects.y * 0.6 * smoothstep(0.3, 1.0, length(q) * 1.15);
+        }
+        FragOut o;
+        o.color = float4(color, 1.0);
+        o.id = 0;
+        return o;
+    }
+
     vertex ShadowOut shadowVertex(uint vid [[vertex_id]],
                                   device const FaceVertex* verts [[buffer(0)]],
                                   constant Uniforms& u [[buffer(1)]]) {
@@ -469,10 +867,28 @@ enum Shaders {
                                   constant Uniforms& u [[buffer(1)]],
                                   constant uint* sel [[buffer(2)]],
                                   constant DrawParams& p [[buffer(3)]],
-                                  depth2d<float> shadowMap [[texture(1)]]) {
+                                  depth2d<float> shadowMap [[texture(1)]],
+                                  depth2d<float> viewDepth [[texture(3)]],
+                                  depth2d<float> glassBack [[texture(4)]],
+                                  texture2d<float> occlusionMap [[texture(5)]]) {
         if (u.clipOn != 0 && dot(in.world, u.clipPlane.xyz) - u.clipPlane.w > 1e-4) discard_fragment();
-        float lit = u.renderParams.x > 0.5 ? shadowVisibility(in.world, facing(in.normal, in.world, u), u, shadowMap) : 1.0;
-        return shadeFace(in.normal, in.world, in.id, false, 1e9, u, sel, p, lit);
+        bool render = u.renderParams.x > 0.5;
+        float3 fn = facing(in.normal, in.world, u);
+        float lit = render ? shadowVisibility(in.world, fn, u, shadowMap) : 1.0;
+        float occlusion = 1.0;
+        float4 refraction = float4(0.0);
+        // Occlusion and contact shadows read the depth the camera sees, so they are left out of the mirrored view (the reflection).
+        if (render && u.renderParams.z < 0.5 && u.evenLight == 0) {
+            float2 uv = in.position.xy / u.viewport;
+            if (p.material != 2u) {
+                constexpr sampler nearestSampler(coord::normalized, filter::nearest, address::clamp_to_edge);
+                if (u.look2.x > 0.0) occlusion = occlusionMap.sample(nearestSampler, uv).r;
+                lit = min(lit, contactShadow(in.world, fn, in.position.xy, u, viewDepth));
+            } else if (u.look1.x > 0.5 && u.look3.z > 0.0 && (p.style & 4096u) != 0u) {
+                refraction = glassRefraction(in.world, fn, toViewer(in.world, u), uv, p.color.rgb, u, shadowMap, viewDepth, glassBack);
+            }
+        }
+        return shadeFace(in.normal, in.world, in.id, false, 1e9, u, sel, p, lit, occlusion, refraction);
     }
 
     // The print preview draws each triangle on its own, with what it takes to tell how far a point is from the

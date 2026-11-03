@@ -44,6 +44,7 @@ struct ColorPreset: Identifiable {
 struct AppearancePanel: View {
     let model: DocumentModel
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accent) private var accent
     /// A custom colour being picked: shown on the bodies at once, kept (one undo step) once the
     /// picking pauses, so dragging round the colour wheel doesn't fill the undo list.
     @State private var pending: PendingColor?
@@ -119,8 +120,29 @@ struct AppearancePanel: View {
                     MaterialTile(material: m, baseColor: sharedColor?.color ?? defaultColor, current: isCurrentMaterial(m)) { model.setBodyMaterial(m, of: targets) }
                 }
             }
+            if targets.contains(where: { model.displayMaterial(of: $0)?.hasRoughness == true }) {
+                roughnessRow
+            }
             Text("Materials show in the Render view.").font(.caption).foregroundStyle(.tertiary)
         }
+    }
+
+    /// How rough the selected plastic or metal bodies are. The Render view follows the slider while it is dragged; letting go is one undo step.
+    private var roughnessRow: some View {
+        let rough = targets.filter { model.displayMaterial(of: $0)?.hasRoughness == true }
+        let shown = rough.first.flatMap { model.displayRoughness(of: $0) } ?? 0.35
+        return HStack(spacing: DS.Spacing.space4) {
+            Text("Roughness").font(.callout)
+            Slider(value: Binding(get: { shown }, set: { model.previewBodyRoughness($0, of: rough) }), in: 0...1) { editing in
+                if !editing, let p = model.roughnessPreview { model.setBodyRoughness(p.roughness, of: rough) }
+            }
+            .tint(accent)
+            Text(shown < 0.25 ? "Glossy" : shown < 0.65 ? "Satin" : "Matte")
+                .font(.caption).foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
+        }
+        .padding(.top, DS.Spacing.space2)
+        .help("From a glossy, polished surface to a matte one. Double-click to go back to the material's own")
+        .simultaneousGesture(TapGesture(count: 2).onEnded { model.setBodyRoughness(nil, of: rough) })
     }
 
     /// Whether every selected body has this material (nil = plain).
@@ -257,6 +279,7 @@ struct MaterialTile: View {
     private var name: String {
         switch material {
         case nil: "Plain"
+        case .plastic: "Plastic"
         case .metal: "Metal"
         case .glass: "Glass"
         case .wood: "Wood"
@@ -293,6 +316,13 @@ struct MaterialTile: View {
         switch material {
         case nil:
             baseColor
+        case .plastic:
+            ZStack {
+                baseColor
+                // A soft glossy highlight and a darker underside, as on a moulded part.
+                LinearGradient(colors: [.clear, .black.opacity(0.22)], startPoint: .center, endPoint: .bottom)
+                Ellipse().fill(.white.opacity(0.7)).frame(width: 18, height: 7).blur(radius: 2.5).offset(x: -6, y: -8)
+            }
         case .metal:
             LinearGradient(stops: [.init(color: baseColor.shifted(toward: NSColor.white, by: 0.55), location: 0),
                                    .init(color: baseColor, location: 0.35),

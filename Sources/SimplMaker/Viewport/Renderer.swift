@@ -184,6 +184,34 @@ struct Uniforms {
     var cameraUp: SIMD4<Float> = SIMD4(0, 0, 1, 0)
     /// The Render view: xyz = the middle of the part, w = the size of the room a shiny face reflects (see shadeFace).
     var sceneCenter: SIMD4<Float> = SIMD4(0, 0, 0, 100)
+    /// The Render view: from the screen back to the world (for the depth that occlusion, contact shadows and refraction read).
+    var invViewProj = matrix_identity_float4x4
+    /// x = 1 for physical light, y = exposure (a multiplier), z = softbox, w = finish (how glossy plain bodies are).
+    var look1: SIMD4<Float> = SIMD4(0, 1, 0, 0.5)
+    /// x = occlusion strength, y = its reach in mm, z = its samples, w = contact shadow strength.
+    var look2: SIMD4<Float> = .zero
+    /// x = contact shadow reach in mm, y = this frame's number (turns the sample patterns), z = glass refraction (0 = off).
+    var look3: SIMD4<Float> = .zero
+    /// The room: overhead (w = how bright the soft boxes are), sky at the horizon (w = the main light's reflection), ground at the
+    /// horizon, ground straight down, and the main light's colour. The Studio room is what the shader always had.
+    var envZenith = SIMD4<Float>(1.05, 1.07, 1.1, 1.5)
+    var envSky = SIMD4<Float>(0.34, 0.37, 0.43, 2.2)
+    var envGroundA = SIMD4<Float>(0.62, 0.63, 0.65, 0)
+    var envGroundB = SIMD4<Float>(0.2, 0.21, 0.24, 0)
+    var envTint = SIMD4<Float>(1, 1, 1, 0)
+    /// The floor as drawn (see FloorParams), for what glass shows of it: lit (w = where it starts to fade), in shadow (w = where
+    /// the fade ends), the backdrop, and the middle.
+    var floorLit: SIMD4<Float> = .zero
+    var floorShadow: SIMD4<Float> = .zero
+    var floorBack: SIMD4<Float> = .zero
+    var floorCenter: SIMD4<Float> = .zero
+}
+
+/// The Render view's finishing touches, as the post shaders read them (see PostParams there).
+struct PostParams {
+    var effects: SIMD4<Float> = .zero
+    var scene: SIMD4<Float> = .zero
+    var step: SIMD4<Float> = .zero
 }
 
 /// The Render view's floor, as the shader reads it (see floorVertex).
@@ -344,6 +372,8 @@ struct DrawParams {
     var dashLength: Float = 0
     /// The Render view's material: 0 plain, 1 metal, 2 glass, 3 wood (see shadeFace).
     var material: UInt32 = 0
+    /// How rough a plastic or metal body is, 0 to 1; -1 = the shader's own for the material.
+    var roughness: Float = -1
 }
 
 /// Ways of drawing, as DrawParams.style bits.
@@ -451,12 +481,50 @@ final class Renderer {
     private let noiseTakePipeline: MTLRenderPipelineState
     private var reflectionTexture: MTLTexture?
     private var reflectionDepth: MTLTexture?
+    /// The bodies' depth as the camera sees it (what occlusion, contact shadows and depth of field read), and the glass bodies'
+    /// farthest surface (their thickness).
+    private let viewDepthPipeline: MTLRenderPipelineState
+    private let idPipeline: MTLRenderPipelineState
+    private let farthestDepthState: MTLDepthStencilState
+    private var viewDepth: MTLTexture?
+    private var glassBackDepth: MTLTexture?
+    /// Every body's depth, the glass too, for depth of field (the glass is blurred as far away as it is, not as the floor behind it).
+    private var blurDepth: MTLTexture?
+    /// Ambient occlusion, made apart: depth and normals of the bodies and the floor, the occlusion from them, and it blurred
+    /// (`occlusionMap`, what the shaders read; `emptyOcclusion` where there is none).
+    private let occlusionNormalPipeline: MTLRenderPipelineState
+    private let occlusionFloorPipeline: MTLRenderPipelineState
+    private let occlusionPipeline: MTLRenderPipelineState
+    private let occlusionBlurPipeline: MTLRenderPipelineState
+    private let emptyOcclusion: MTLTexture
+    private var occlusionDepth: MTLTexture?
+    private var occlusionNormals: MTLTexture?
+    private var occlusionRaw: MTLTexture?
+    private var occlusionMap: MTLTexture?
+    /// The render view's finishing touches: the picture is drawn apart (`sceneMSAA` resolved into `sceneColor`), the glow made from
+    /// it in small textures, and all of it laid into the view by `compositePipeline`.
+    private let compositePipeline: MTLRenderPipelineState
+    private let brightPipeline: MTLRenderPipelineState
+    private let downPipeline: MTLRenderPipelineState
+    private let blurPipeline: MTLRenderPipelineState
+    private var sceneMSAA: MTLTexture?
+    private var sceneDepth: MTLTexture?
+    private var sceneColor: MTLTexture?
+    private var glow: [MTLTexture] = []
+    /// A picture is made from several, each a little to one side (the exported render): how far to shift this one, in clip units,
+    /// and the number of the picture (it turns the soft effects' sample patterns).
+    var jitter: SIMD2<Float> = .zero
+    var frameNumber: Float = 0
+    /// Asks the next frame to hand over its pixels as they are (BGRA, with the size), or nil if they could not be read.
+    var rawCaptureHandler: (@MainActor @Sendable (([UInt8], Int, Int)?) -> Void)?
     /// How many mirror views make up a blurred reflection.
     static let reflectionViews = 16
     private var shadowMap: MTLTexture?
     /// Bound where no shadow map is wanted, as the shaders always take one.
     private let emptyShadowMap: MTLTexture
     static let shadowMapSize = 2048
+    /// How far (in depth steps) the far-side faces of glass are pushed back, so that faces lying on another body don't fight with it.
+    static let glassContactBias: Float = 150
     private let depthState: MTLDepthStencilState
     /// Body edges while the section analysis cuts: not where its cut face shows (stencil 1, set by `capState`).
     private let depthCutState: MTLDepthStencilState
@@ -487,8 +555,12 @@ final class Renderer {
     /// Each body's own colour, in the order of setScene's meshes; nil = the palette's face colour.
     /// Set apart from the meshes, so a colour change doesn't upload them again.
     var bodyColors: [SIMD4<Float>?] = []
-    /// Each body's material (0 plain, 1 metal, 2 glass, 3 wood), in the same order. Only the Render view shows them.
+    /// Each body's material (0 plain, 1 metal, 2 glass, 3 wood, 4 plastic), in the same order. Only the Render view shows them.
     var bodyMaterials: [UInt32] = []
+    /// Each body's roughness (plastic and metal), in the same order; -1 = the material's own.
+    var bodyRoughness: [Float] = []
+    /// Where depth of field is sharp, in the world; nil = the middle of the part.
+    var focusPoint: SIMD3<Float>?
     /// How long the GPU took over the last frame, in seconds (for timing tests).
     nonisolated(unsafe) private(set) var lastGPUSeconds: Double = 0
     /// The ground grid (the XY plane when not sketching): rebuilt as the view moves, to cover what's in view.
@@ -599,6 +671,13 @@ final class Renderer {
               let pickBuffer = device.makeBuffer(length: 16, options: .storageModeShared),
               let empty = device.makeTexture(descriptor: emptyDescriptor) else { return nil }
         self.emptyShadowMap = empty
+        let emptyOcclusionDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Unorm, width: 1, height: 1, mipmapped: false)
+        emptyOcclusionDescriptor.usage = .shaderRead
+        emptyOcclusionDescriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
+        guard let emptyOcclusion = device.makeTexture(descriptor: emptyOcclusionDescriptor) else { return nil }
+        var open: UInt8 = 255
+        emptyOcclusion.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &open, bytesPerRow: 1)
+        self.emptyOcclusion = emptyOcclusion
         let samples = Self.sampleCount(for: device)
         self.sampleCount = samples
         self.device = device
@@ -695,6 +774,44 @@ final class Renderer {
             shadow.vertexFunction = library.makeFunction(name: "shadowVertex")
             shadow.depthAttachmentPixelFormat = .depth32Float
             shadowPipeline = try device.makeRenderPipelineState(descriptor: shadow)
+            let seen = MTLRenderPipelineDescriptor()
+            seen.vertexFunction = library.makeFunction(name: "viewDepthVertex")
+            seen.depthAttachmentPixelFormat = .depth32Float
+            viewDepthPipeline = try device.makeRenderPipelineState(descriptor: seen)
+            idPipeline = try pipeline("faceVertex", "idFragment", writesColor: false)
+            func occlusionPass(_ vertex: String, _ fragment: String, _ format: MTLPixelFormat, depth: Bool) throws -> MTLRenderPipelineState {
+                let d = MTLRenderPipelineDescriptor()
+                d.vertexFunction = library.makeFunction(name: vertex)
+                d.fragmentFunction = library.makeFunction(name: fragment)
+                d.colorAttachments[0].pixelFormat = format
+                if depth { d.depthAttachmentPixelFormat = .depth32Float }
+                return try device.makeRenderPipelineState(descriptor: d)
+            }
+            occlusionNormalPipeline = try occlusionPass("faceVertex", "aoNormalFragment", .rgba8Unorm, depth: true)
+            occlusionFloorPipeline = try occlusionPass("floorVertex", "aoFloorFragment", .rgba8Unorm, depth: true)
+            occlusionPipeline = try occlusionPass("noiseVertex", "aoFragment", .r8Unorm, depth: false)
+            occlusionBlurPipeline = try occlusionPass("noiseVertex", "aoBlurFragment", .r8Unorm, depth: false)
+            // The finished picture goes into the view like the grain does: over everything, no ID.
+            let composite = MTLRenderPipelineDescriptor()
+            composite.rasterSampleCount = samples
+            composite.vertexFunction = library.makeFunction(name: "noiseVertex")
+            composite.fragmentFunction = library.makeFunction(name: "compositeFragment")
+            composite.colorAttachments[0].pixelFormat = Renderer.colorFormat
+            composite.colorAttachments[1].pixelFormat = .r32Uint
+            composite.colorAttachments[1].writeMask = []
+            composite.depthAttachmentPixelFormat = Renderer.depthFormat
+            composite.stencilAttachmentPixelFormat = Renderer.depthFormat
+            compositePipeline = try device.makeRenderPipelineState(descriptor: composite)
+            func smallPass(_ fragment: String) throws -> MTLRenderPipelineState {
+                let d = MTLRenderPipelineDescriptor()
+                d.vertexFunction = library.makeFunction(name: "noiseVertex")
+                d.fragmentFunction = library.makeFunction(name: fragment)
+                d.colorAttachments[0].pixelFormat = .rgba16Float
+                return try device.makeRenderPipelineState(descriptor: d)
+            }
+            brightPipeline = try smallPass("brightFragment")
+            downPipeline = try smallPass("downFragment")
+            blurPipeline = try smallPass("blurFragment")
         } catch {
             print("SimplMaker: Metal setup failed: \(error)")
             return nil
@@ -714,6 +831,9 @@ final class Renderer {
         let over = MTLDepthStencilDescriptor()
         over.depthCompareFunction = .always
         over.isDepthWriteEnabled = false
+        let farthest = MTLDepthStencilDescriptor()
+        farthest.depthCompareFunction = .greater
+        farthest.isDepthWriteEnabled = true
         // Section analysis: mark where the cut face shows, and keep edges off those pixels.
         func stencil(_ d: MTLDepthStencilDescriptor, compare: MTLCompareFunction, replace: Bool) -> MTLDepthStencilDescriptor {
             let copy = MTLDepthStencilDescriptor()
@@ -736,7 +856,9 @@ final class Renderer {
               let onTop = device.makeDepthStencilState(descriptor: top),
               let noWriteState = device.makeDepthStencilState(descriptor: noWrite),
               let behindState = device.makeDepthStencilState(descriptor: behind),
-              let overState = device.makeDepthStencilState(descriptor: over) else { return nil }
+              let overState = device.makeDepthStencilState(descriptor: over),
+              let farthestState = device.makeDepthStencilState(descriptor: farthest) else { return nil }
+        self.farthestDepthState = farthestState
         self.depthState = depthState
         self.depthCutState = depthCut
         self.noWriteCutState = noWriteCut
@@ -1112,7 +1234,8 @@ final class Renderer {
                 for (i, b) in bodies.enumerated() {
                     guard let faces = b.faces, let indices = b.indices else { continue }
                     var params = DrawParams(color: tints[i].face, hoverColor: tints[i].faceHover, selectColor: tints[i].faceSelected,
-                                            thickness: 0, depthBias: 0, pickable: 0, material: materials[i])
+                                            thickness: 0, depthBias: 0, pickable: 0, material: materials[i],
+                                            roughness: bodyRoughness[safe: i] ?? -1)
                     enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
                     enc.setVertexBuffer(faces, offset: 0, index: 0)
                     enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
@@ -1151,21 +1274,210 @@ final class Renderer {
         enc.endEncoding()
     }
 
-    /// The Render view's floor: a square on the XY plane around the part that fades into the backdrop, drawn behind
-    /// nothing and in front of everything below it (it writes no depth and no ID, so picking goes through).
-    private func drawFloor(_ enc: MTLRenderCommandEncoder, _ look: RenderSettings) {
+    /// The Render view's floor, as the shader reads it: a square on the XY plane around the part that fades into the backdrop.
+    private func floorParams(_ look: RenderSettings) -> FloorParams {
         let lo = sceneBounds?.min ?? SIMD3(-50, -50, 0), hi = sceneBounds?.max ?? SIMD3(50, 50, 0)
         let size = max(hi.x - lo.x, hi.y - lo.y, hi.z - lo.z, 20)
         let fadeStart = size * 1.2, fadeEnd = size * 3.2
-        var params = FloorParams(centerHalf: SIMD4((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, 0, fadeEnd * 1.1),
-                                 lit: SIMD4(look.floorColor, fadeStart),
-                                 backdrop: SIMD4(look.backdropColor, fadeEnd),
-                                 shadowed: SIMD4(look.floorShadowColor, Float(look.reflectionBlur)))
+        return FloorParams(centerHalf: SIMD4((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, 0, fadeEnd * 1.1),
+                           lit: SIMD4(look.floorColor, fadeStart),
+                           backdrop: SIMD4(look.backdropColor, fadeEnd),
+                           shadowed: SIMD4(look.floorShadowColor, Float(look.reflectionBlur)))
+    }
+
+    /// The Render view's floor, drawn behind nothing and in front of everything below it (it writes no depth and no ID,
+    /// so picking goes through).
+    private func drawFloor(_ enc: MTLRenderCommandEncoder, _ look: RenderSettings) {
+        var params = floorParams(look)
         enc.setRenderPipelineState(floorPipeline)
         enc.setDepthStencilState(noWriteDepthState)
         enc.setVertexBytes(&params, length: MemoryLayout<FloorParams>.stride, index: 3)
         enc.setFragmentBytes(&params, length: MemoryLayout<FloorParams>.stride, index: 3)
         enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+    }
+
+    private func depthTarget(_ w: Int, _ h: Int) -> MTLTexture? {
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: w, height: h, mipmapped: false)
+        d.usage = [.renderTarget, .shaderRead]
+        d.storageMode = .private
+        return device.makeTexture(descriptor: d)
+    }
+
+    /// The bodies' depth as the camera sees them (the glass left out, and then, apart, the farthest surface of the glass,
+    /// whose distance from the nearest is its thickness). Ambient occlusion, contact shadows, depth of field and refraction read them.
+    private func drawCameraDepth(_ cmd: MTLCommandBuffer, _ uniforms: Uniforms, size: CGSize, materials: [UInt32], glass: Bool, blurred: Bool) {
+        let w = Int(size.width), h = Int(size.height)
+        if viewDepth?.width != w || viewDepth?.height != h {
+            viewDepth = depthTarget(w, h)
+            glassBackDepth = depthTarget(w, h)
+            blurDepth = depthTarget(w, h)
+        }
+        var u = uniforms
+        func pass(_ texture: MTLTexture?, clear: Double, state: MTLDepthStencilState, bodiesWhere include: (UInt32) -> Bool) {
+            let d = MTLRenderPassDescriptor()
+            d.depthAttachment.texture = texture
+            d.depthAttachment.loadAction = .clear
+            d.depthAttachment.clearDepth = clear
+            d.depthAttachment.storeAction = .store
+            guard let enc = cmd.makeRenderCommandEncoder(descriptor: d) else { return }
+            enc.setRenderPipelineState(viewDepthPipeline)
+            enc.setDepthStencilState(state)
+            enc.setCullMode(.none)
+            enc.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
+            for (i, b) in bodies.enumerated() {
+                guard let faces = b.faces, let indices = b.indices, include(materials[i]) else { continue }
+                enc.setVertexBuffer(faces, offset: 0, index: 0)
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
+                                          indexBuffer: indices, indexBufferOffset: 0)
+            }
+            enc.endEncoding()
+        }
+        pass(viewDepth, clear: 1, state: depthState) { $0 != 2 }
+        if blurred { pass(blurDepth, clear: 1, state: depthState) { _ in true } }
+        pass(glassBackDepth, clear: 0, state: farthestDepthState) { $0 == 2 }
+    }
+
+    /// Ambient occlusion for the picture: depth and normals of the bodies and the floor, the occlusion of every pixel from them,
+    /// and two blurs along the surface (see aoFragment). Leaves `occlusionMap` for the shaders.
+    private func drawOcclusion(_ cmd: MTLCommandBuffer, _ uniforms: Uniforms, size: CGSize, materials: [UInt32], floor: RenderSettings?) {
+        let w = Int(size.width), h = Int(size.height)
+        func target(_ format: MTLPixelFormat, depth: Bool = false) -> MTLTexture? {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: w, height: h, mipmapped: false)
+            d.usage = [.renderTarget, .shaderRead]
+            d.storageMode = .private
+            return device.makeTexture(descriptor: d)
+        }
+        if occlusionDepth?.width != w || occlusionDepth?.height != h {
+            occlusionDepth = target(.depth32Float)
+            occlusionNormals = target(.rgba8Unorm)
+            occlusionRaw = target(.r8Unorm)
+            occlusionMap = target(.r8Unorm)
+        }
+        guard let occlusionDepth, let occlusionNormals, let occlusionRaw, let occlusionMap else { return }
+        var u = uniforms
+        let first = MTLRenderPassDescriptor()
+        first.colorAttachments[0].texture = occlusionNormals
+        first.colorAttachments[0].loadAction = .clear
+        first.colorAttachments[0].clearColor = MTLClearColor(red: 0.5, green: 0.5, blue: 1, alpha: 1)
+        first.colorAttachments[0].storeAction = .store
+        first.depthAttachment.texture = occlusionDepth
+        first.depthAttachment.loadAction = .clear
+        first.depthAttachment.clearDepth = 1
+        first.depthAttachment.storeAction = .store
+        if let enc = cmd.makeRenderCommandEncoder(descriptor: first) {
+            enc.setDepthStencilState(depthState)
+            enc.setCullMode(.none)
+            enc.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
+            enc.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
+            enc.setRenderPipelineState(occlusionNormalPipeline)
+            for (i, b) in bodies.enumerated() {
+                guard let faces = b.faces, let indices = b.indices, materials[i] != 2 else { continue }
+                enc.setVertexBuffer(faces, offset: 0, index: 0)
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
+                                          indexBuffer: indices, indexBufferOffset: 0)
+            }
+            if let floor, !camera.isBelowGround {
+                var params = floorParams(floor)
+                enc.setRenderPipelineState(occlusionFloorPipeline)
+                enc.setVertexBytes(&params, length: MemoryLayout<FloorParams>.stride, index: 3)
+                enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            }
+            enc.endEncoding()
+        }
+        func fullScreen(_ pipeline: MTLRenderPipelineState, into target: MTLTexture, reading: [(MTLTexture, Int)], step: SIMD2<Float> = .zero) {
+            let d = MTLRenderPassDescriptor()
+            d.colorAttachments[0].texture = target
+            d.colorAttachments[0].loadAction = .dontCare
+            d.colorAttachments[0].storeAction = .store
+            guard let enc = cmd.makeRenderCommandEncoder(descriptor: d) else { return }
+            var pp = PostParams()
+            pp.step = SIMD4(step.x, step.y, 0, 0)
+            pp.scene.x = u.look2.y  // how far the occlusion reaches: what the blur keeps apart
+            enc.setRenderPipelineState(pipeline)
+            enc.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
+            enc.setFragmentBytes(&pp, length: MemoryLayout<PostParams>.stride, index: 3)
+            for (texture, index) in reading { enc.setFragmentTexture(texture, index: index) }
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            enc.endEncoding()
+        }
+        fullScreen(occlusionPipeline, into: occlusionRaw, reading: [(occlusionDepth, 0), (occlusionNormals, 1)])
+        fullScreen(occlusionBlurPipeline, into: occlusionMap, reading: [(occlusionRaw, 0), (occlusionDepth, 1)], step: SIMD2(1, 0))
+        fullScreen(occlusionBlurPipeline, into: occlusionRaw, reading: [(occlusionMap, 0), (occlusionDepth, 1)], step: SIMD2(0, 1))
+        swap(&self.occlusionMap, &self.occlusionRaw)  // the second blur's result is `occlusionRaw` now: that is the map
+    }
+
+    /// The textures the picture is made in apart from the view (for the finishing touches), for a view of this size.
+    private func prepareSceneTargets(_ w: Int, _ h: Int) -> Bool {
+        if sceneColor?.width == w, sceneColor?.height == h { return true }
+        func make(_ format: MTLPixelFormat, _ w: Int, _ h: Int, samples: Int = 1, shaderRead: Bool) -> MTLTexture? {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: max(w, 1), height: max(h, 1), mipmapped: false)
+            if samples > 1 {
+                d.textureType = .type2DMultisample
+                d.sampleCount = samples
+            }
+            d.usage = shaderRead ? [.renderTarget, .shaderRead] : .renderTarget
+            d.storageMode = .private
+            return device.makeTexture(descriptor: d)
+        }
+        sceneColor = make(Renderer.colorFormat, w, h, shaderRead: true)
+        sceneMSAA = sampleCount > 1 ? make(Renderer.colorFormat, w, h, samples: sampleCount, shaderRead: false) : nil
+        sceneDepth = make(Renderer.depthFormat, w, h, samples: sampleCount, shaderRead: false)
+        glow = [make(.rgba16Float, w / 4, h / 4, shaderRead: true), make(.rgba16Float, w / 4, h / 4, shaderRead: true),
+                make(.rgba16Float, w / 8, h / 8, shaderRead: true), make(.rgba16Float, w / 8, h / 8, shaderRead: true)].compactMap { $0 }
+        return sceneColor != nil && sceneDepth != nil && glow.count == 4 && (sampleCount == 1 || sceneMSAA != nil)
+    }
+
+    /// The pass that draws the picture into `sceneColor` (resolved from the multisampled colour) instead of the view.
+    private func sceneRenderPass(clear c: SIMD3<Float>) -> MTLRenderPassDescriptor {
+        let d = MTLRenderPassDescriptor()
+        d.colorAttachments[0].texture = sceneMSAA ?? sceneColor
+        d.colorAttachments[0].loadAction = .clear
+        d.colorAttachments[0].clearColor = MTLClearColor(red: Double(c.x), green: Double(c.y), blue: Double(c.z), alpha: 1)
+        if sceneMSAA != nil {
+            d.colorAttachments[0].resolveTexture = sceneColor
+            d.colorAttachments[0].storeAction = .multisampleResolve
+        } else {
+            d.colorAttachments[0].storeAction = .store
+        }
+        // The bodies' IDs are written by the pipelines but not wanted here: the view gets them in its own pass.
+        d.colorAttachments[1].texture = idTexture
+        d.colorAttachments[1].loadAction = .dontCare
+        d.colorAttachments[1].storeAction = .dontCare
+        d.depthAttachment.texture = sceneDepth
+        d.depthAttachment.loadAction = .clear
+        d.depthAttachment.clearDepth = 1
+        d.depthAttachment.storeAction = .dontCare
+        d.stencilAttachment.texture = sceneDepth
+        d.stencilAttachment.loadAction = .clear
+        d.stencilAttachment.clearStencil = 0
+        d.stencilAttachment.storeAction = .dontCare
+        return d
+    }
+
+    /// The glow: what is brighter than `threshold` in the picture, blurred wide at a quarter and an eighth of its size.
+    private func drawGlow(_ cmd: MTLCommandBuffer, threshold: Float) {
+        guard glow.count == 4, let sceneColor else { return }
+        func run(_ pipeline: MTLRenderPipelineState, from: MTLTexture, to: MTLTexture, direction: SIMD2<Float> = .zero) {
+            let d = MTLRenderPassDescriptor()
+            d.colorAttachments[0].texture = to
+            d.colorAttachments[0].loadAction = .dontCare
+            d.colorAttachments[0].storeAction = .store
+            guard let enc = cmd.makeRenderCommandEncoder(descriptor: d) else { return }
+            var pp = PostParams()
+            pp.scene.z = threshold
+            pp.step = SIMD4(direction.x, direction.y, 1 / Float(to.width), 1 / Float(to.height))
+            enc.setRenderPipelineState(pipeline)
+            enc.setFragmentTexture(from, index: 0)
+            enc.setFragmentBytes(&pp, length: MemoryLayout<PostParams>.stride, index: 3)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            enc.endEncoding()
+        }
+        run(brightPipeline, from: sceneColor, to: glow[0])
+        run(blurPipeline, from: glow[0], to: glow[1], direction: SIMD2(1.6, 0))
+        run(blurPipeline, from: glow[1], to: glow[0], direction: SIMD2(0, 1.6))
+        run(downPipeline, from: glow[0], to: glow[2])
+        run(blurPipeline, from: glow[2], to: glow[3], direction: SIMD2(1.6, 0))
+        run(blurPipeline, from: glow[3], to: glow[2], direction: SIMD2(0, 1.6))
     }
 
     /// How much of the ground grid to draw, 0...1, from the view direction: full while the view looks down at
@@ -1266,6 +1578,12 @@ final class Renderer {
         uniforms.viewDir = SIMD4(forward.x, forward.y, forward.z, camera.orthographic ? 1 : 0)
         uniforms.cameraRight = SIMD4(camera.right, 0)
         uniforms.cameraUp = SIMD4(camera.up, 0)
+        if jitter != .zero {  // an exported render is made of several pictures, each shifted by a part of a pixel
+            let shift = simd_float4x4(columns: (SIMD4(1, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(jitter.x, jitter.y, 0, 1)))
+            uniforms.viewProj = shift * uniforms.viewProj
+        }
+        uniforms.invViewProj = uniforms.viewProj.inverse
+        uniforms.look3.y = frameNumber
         var cutPlane = sectionPlane
         if cutPlane == nil, let s = sketchSlice {
             // The side of the sketch plane the camera is on goes; a hair of room keeps a face lying in the plane.
@@ -1282,6 +1600,35 @@ final class Renderer {
         let tints = bodies.indices.map { Self.tint(bodyColors[safe: $0].flatMap { $0 }, palette: palette) }
         // Materials show in the Render view only, and not in the section analysis or print preview, which draw their own way.
         let materials: [UInt32] = bodies.indices.map { look != nil && !sectioning && !printing ? bodyMaterials[safe: $0] ?? 0 : 0 }
+        // The Render view's finer lighting and effects: the room, the occlusion and contact shadows (which read the depth the
+        // camera sees), the glass, and whether the picture is made apart to be touched up.
+        var cameraDepth = false, refractingGlass = false, postPath = false
+        if let look {
+            let room = look.environment.colors
+            uniforms.envZenith = SIMD4(room.zenith, room.strips)
+            uniforms.envSky = SIMD4(room.skyHorizon, room.key)
+            uniforms.envGroundA = SIMD4(room.groundHorizon, 0)
+            uniforms.envGroundB = SIMD4(room.groundDown, 0)
+            uniforms.envTint = SIMD4(room.tint, 0)
+            uniforms.look1 = SIMD4(look.physicalLight ? 1 : 0, look.exposureScale, look.physicalLight ? Float(look.softbox) : 0, Float(look.finish))
+            let floor = floorParams(look)
+            uniforms.floorLit = floor.lit
+            uniforms.floorShadow = SIMD4(floor.shadowed.x, floor.shadowed.y, floor.shadowed.z, floor.backdrop.w)
+            uniforms.floorBack = SIMD4(floor.backdrop.x, floor.backdrop.y, floor.backdrop.z, 0)
+            uniforms.floorCenter = SIMD4(floor.centerHalf.x, floor.centerHalf.y, 0, 0)
+            let part = max(sceneBounds.map { simd_length($0.max - $0.min) } ?? 100, 20)
+            refractingGlass = look.refraction && look.physicalLight && materials.contains(2) && !sectioning
+            cameraDepth = !sectioning && !bodies.isEmpty && size.width >= 16 && size.height >= 16
+                && (look.occlusion > 0.005 || look.contactShadows > 0.005 || look.depthOfField > 0.005 || refractingGlass)
+            if cameraDepth {
+                uniforms.look2 = SIMD4(Float(look.occlusion), part * Float(look.occlusionRadius) * 0.25, look.occlusion > 0.7 ? 24 : 16,
+                                       Float(look.contactShadows))
+                uniforms.look3.x = part * 0.05
+                uniforms.look3.z = refractingGlass ? 1 : 0
+            }
+            postPath = look.usesPostEffects && !sectioning && size.width >= 16 && size.height >= 16
+                && prepareSceneTargets(Int(size.width), Int(size.height))
+        }
         var sel = Array(selected.prefix(256))
         let group = Array(hoverGroup.prefix(256))
         sel += group  // after the selected ids, which are the first `selectedCount`
@@ -1290,6 +1637,9 @@ final class Renderer {
         let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
 
         if shadowing { drawShadowMap(cmd, &uniforms, materials: materials) }
+        if cameraDepth { drawCameraDepth(cmd, uniforms, size: size, materials: materials, glass: refractingGlass, blurred: (look?.depthOfField ?? 0) > 0.005) }
+        let occluding = cameraDepth && (look?.occlusion ?? 0) > 0.005
+        if occluding { drawOcclusion(cmd, uniforms, size: size, materials: materials, floor: look) }
         // A reflection with blur is made in its own passes first; without, it is drawn straight into the view.
         let blurredReflection = look.map { $0.reflectionStrength > 0 && $0.reflectionBlur > 0.02 && !sectioning && !bodies.isEmpty
                                           && !camera.isBelowGround } ?? false
@@ -1297,16 +1647,29 @@ final class Renderer {
             drawBlurredReflection(cmd, uniforms, strength: look.reflectionStrength, blur: Float(look.reflectionBlur), size: size,
                                   tints: tints, materials: materials, shadowing: shadowing)
         }
-        guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
-        enc.setFragmentTexture(shadowing ? shadowMap : emptyShadowMap, index: 1)
-        enc.setDepthStencilState(depthState)
-        enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
-        enc.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
-        enc.setVertexBytes(&sel, length: MemoryLayout<UInt32>.stride * sel.count, index: 2)  // selected edges draw thicker
-        enc.setFragmentBytes(&sel, length: MemoryLayout<UInt32>.stride * sel.count, index: 2)
-
-        enc.setCullMode(.none)
-        enc.setStencilReferenceValue(1)
+        // With the finishing touches the picture (floor, bodies, glass) is drawn apart first, then laid into the view.
+        var enc: MTLRenderCommandEncoder
+        if postPath, let look, let scene = cmd.makeRenderCommandEncoder(descriptor: sceneRenderPass(clear: look.backdropColor)) {
+            enc = scene
+        } else {
+            postPath = false
+            guard let main = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
+            enc = main
+        }
+        func bindState() {
+            enc.setFragmentTexture(shadowing ? shadowMap : emptyShadowMap, index: 1)
+            enc.setFragmentTexture(cameraDepth ? viewDepth : emptyShadowMap, index: 3)
+            enc.setFragmentTexture(refractingGlass ? glassBackDepth : emptyShadowMap, index: 4)
+            enc.setFragmentTexture(occluding ? occlusionMap : emptyOcclusion, index: 5)
+            enc.setDepthStencilState(depthState)
+            enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+            enc.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+            enc.setVertexBytes(&sel, length: MemoryLayout<UInt32>.stride * sel.count, index: 2)  // selected edges draw thicker
+            enc.setFragmentBytes(&sel, length: MemoryLayout<UInt32>.stride * sel.count, index: 2)
+            enc.setCullMode(.none)
+            enc.setStencilReferenceValue(1)
+        }
+        bindState()
         let style = printing || (look != nil && look?.showEdges == false) ? VisualStyle.shaded : visualStyle
         /// Faces: shaded, or in the wireframe styles flat in the background colour (hiding what's
         /// behind them) with hover and selection as a light wash. Wireframe draws them later, unseen.
@@ -1337,14 +1700,86 @@ final class Renderer {
                                  thickness: 0, depthBias: 0, pickable: 1, style: DrawStyle.flat)
                     : DrawParams(color: t.face, hoverColor: t.faceHover, selectColor: t.faceSelected,
                                  thickness: 0, depthBias: 0, pickable: 1, style: (capsOnly ? DrawStyle.capsOnly : 0) | glassSide,
-                                 material: materials[i])
+                                 material: materials[i], roughness: bodyRoughness[safe: i] ?? -1)
                 enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
                 enc.setVertexBuffer(faces, offset: 0, index: 0)
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
                                           indexBuffer: indices, indexBufferOffset: 0)
             }
         }
-        if style != .wireframe {
+        /// The floor, its reflection and the glass: what the Render view draws over the bodies (see `drawFaces`).
+        func drawRenderScene(_ look: RenderSettings) {
+            if !camera.isBelowGround {
+                drawFloor(enc, look)
+                if blurredReflection {
+                    enc.setRenderPipelineState(blurCompositePipeline)
+                    enc.setFragmentTexture(reflectionTexture, index: 2)
+                    enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+                } else if look.reflectionStrength > 0, !sectioning, !bodies.isEmpty {
+                    // The bodies again, upside down under the floor, over it where nothing stands in their way.
+                    var mirrored = uniforms
+                    mirrored.viewProj = uniforms.viewProj * simd_float4x4(diagonal: SIMD4(1, 1, -1, 1))
+                    mirrored.eye.z = -mirrored.eye.z
+                    mirrored.viewDir.z = -mirrored.viewDir.z
+                    mirrored.clipPlane = SIMD4(0, 0, -1, 0)  // what stands below the floor is not reflected
+                    mirrored.clipOn = 1
+                    mirrored.renderParams.z = 1
+                    enc.setVertexBytes(&mirrored, length: MemoryLayout<Uniforms>.stride, index: 1)
+                    enc.setFragmentBytes(&mirrored, length: MemoryLayout<Uniforms>.stride, index: 1)
+                    enc.setDepthStencilState(depthState)
+                    drawFaces(reflectDepthPipeline, wireframe: false, withGlass: true)
+                    enc.setDepthStencilState(noWriteDepthState)
+                    drawFaces(reflectPipeline, wireframe: false, withGlass: true)
+                    enc.setDepthStencilState(depthState)
+                    enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+                    enc.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+                }
+            }
+            // Glass, over the floor and what stands behind it: the far wall, then a depth pass, so only the nearest surface is blended over it.
+            if materials.contains(2) {
+                enc.setDepthStencilState(noWriteDepthState)
+                // Where glass touches another body (a peg on a face, a lid on a base) the glass's far-side face lies exactly on that
+                // body's surface; both then claim the pixels at random (z-fighting) and shimmer through as bright crescents. A little bias
+                // pushes the far-side faces behind whatever they touch.
+                enc.setDepthBias(Self.glassContactBias, slopeScale: 2, clamp: 0)
+                drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassBack)
+                enc.setDepthBias(0, slopeScale: 0, clamp: 0)
+                enc.setDepthStencilState(depthState)
+                drawFaces(faceIDPipeline, wireframe: false, glassOnly: true)
+                enc.setDepthStencilState(noWriteDepthState)
+                drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassFront)
+                enc.setDepthStencilState(depthState)
+            }
+        }
+        if postPath, let look {
+            // The picture apart: bodies, floor, reflection, glass. Then the glow made from it, and a new pass into the view
+            // that lays it in, with blur, glow and darker corners, and draws the bodies' depth and IDs (no colour) for the
+            // edges, picking and everything drawn over.
+            drawFaces(facePipeline, wireframe: false)
+            drawRenderScene(look)
+            enc.endEncoding()
+            let part = max(sceneBounds.map { simd_length($0.max - $0.min) } ?? 100, 20)
+            let floorLuma = look.floorColor.x * 0.3 + look.floorColor.y * 0.59 + look.floorColor.z * 0.11
+            let threshold = min(max(floorLuma + 0.03, 0.7), 0.98)  // only what is brighter than the floor glows
+            if look.bloom > 0.005 { drawGlow(cmd, threshold: threshold) }
+            guard let main = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
+            enc = main
+            bindState()
+            let middle = focusPoint ?? sceneBounds.map { ($0.min + $0.max) * 0.5 } ?? .zero
+            var post = PostParams(effects: SIMD4(Float(look.bloom), Float(look.vignette), cameraDepth ? Float(look.depthOfField) : 0,
+                                                 max(simd_dot(middle - camera.eye, camera.forward), 1)),
+                                  scene: SIMD4(part, Float(view.window?.backingScaleFactor ?? 2), threshold, 0), step: .zero)
+            enc.setRenderPipelineState(compositePipeline)
+            enc.setDepthStencilState(overEverythingDepthState)
+            enc.setFragmentBytes(&post, length: MemoryLayout<PostParams>.stride, index: 3)
+            enc.setFragmentTexture(sceneColor, index: 0)
+            enc.setFragmentTexture(glow[0], index: 1)
+            enc.setFragmentTexture(glow[2], index: 2)
+            if cameraDepth, look.depthOfField > 0.005 { enc.setFragmentTexture(blurDepth, index: 3) }
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            enc.setDepthStencilState(depthState)
+            drawFaces(idPipeline, wireframe: false, withGlass: true)
+        } else if style != .wireframe {
             let cutting = sectioning && style.isShaded
             let pipeline = printing ? (cutting ? sectionPrintPipeline : printFacePipeline) : (cutting ? sectionFacePipeline : facePipeline)
             drawFaces(pipeline, wireframe: !style.isShaded)
@@ -1404,42 +1839,7 @@ final class Renderer {
             line(b.axisU, 1, p.sketchAxisU, 1.2)
             line(b.axisV, 1, p.sketchAxisV, 1.2)
         } else if let look {
-            if !camera.isBelowGround {
-                drawFloor(enc, look)
-                if blurredReflection {
-                    enc.setRenderPipelineState(blurCompositePipeline)
-                    enc.setFragmentTexture(reflectionTexture, index: 2)
-                    enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-                } else if look.reflectionStrength > 0, !sectioning, !bodies.isEmpty {
-                    // The bodies again, upside down under the floor, over it where nothing stands in their way.
-                    var mirrored = uniforms
-                    mirrored.viewProj = uniforms.viewProj * simd_float4x4(diagonal: SIMD4(1, 1, -1, 1))
-                    mirrored.eye.z = -mirrored.eye.z
-                    mirrored.viewDir.z = -mirrored.viewDir.z
-                    mirrored.clipPlane = SIMD4(0, 0, -1, 0)  // what stands below the floor is not reflected
-                    mirrored.clipOn = 1
-                    mirrored.renderParams.z = 1
-                    enc.setVertexBytes(&mirrored, length: MemoryLayout<Uniforms>.stride, index: 1)
-                    enc.setFragmentBytes(&mirrored, length: MemoryLayout<Uniforms>.stride, index: 1)
-                    enc.setDepthStencilState(depthState)
-                    drawFaces(reflectDepthPipeline, wireframe: false, withGlass: true)
-                    enc.setDepthStencilState(noWriteDepthState)
-                    drawFaces(reflectPipeline, wireframe: false, withGlass: true)
-                    enc.setDepthStencilState(depthState)
-                    enc.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
-                    enc.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
-                }
-            }
-            // Glass, over the floor and what stands behind it: the far wall, then a depth pass, so only the nearest surface is blended over it.
-            if materials.contains(2) {
-                enc.setDepthStencilState(noWriteDepthState)
-                drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassBack)
-                enc.setDepthStencilState(depthState)
-                drawFaces(faceIDPipeline, wireframe: false, glassOnly: true)
-                enc.setDepthStencilState(noWriteDepthState)
-                drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassFront)
-                enc.setDepthStencilState(depthState)
-            }
+            if !postPath { drawRenderScene(look) }
             // Grain over all of it: the backdrop, the floor, the bodies and the reflection (not what is drawn after, like edges).
             if look.noise > 0 {
                 enc.setDepthStencilState(overEverythingDepthState)
@@ -1548,7 +1948,10 @@ final class Renderer {
             }
         }
         enc.setDepthStencilState(style == .wireframe ? overEverythingDepthState : cuttingShaded ? depthCutState : depthState)
-        for (i, b) in bodies.enumerated() {
+        // In the Render view without edges, a hovered or selected body shows no outline either: it would hide the very
+        // material being judged. (The invisible band above still lets edges be picked.)
+        let outlinesHidden = look?.showEdges == false
+        for (i, b) in bodies.enumerated() where !outlinesHidden {
             segments(b.segments, b.segmentCount,
                      DrawParams(color: edgeColor, hoverColor: tints[i].edgeHover, selectColor: tints[i].edgeSelected,
                                 thickness: 0.8 * scale, depthBias: 0.0004, pickable: 1,
@@ -1717,8 +2120,10 @@ final class Renderer {
                 Task { @MainActor in callback?(id, pick) }
             }
         }
-        if let handler = captureHandler {
+        if captureHandler != nil || rawCaptureHandler != nil {
+            let handler = captureHandler, raw = rawCaptureHandler
             captureHandler = nil
+            rawCaptureHandler = nil
             let texture = drawable.texture
             let (w, h) = (texture.width, texture.height)
             if let buffer = device.makeBuffer(length: w * h * 4, options: .storageModeShared), let blit = cmd.makeBlitCommandEncoder() {
@@ -1729,11 +2134,17 @@ final class Renderer {
                 nonisolated(unsafe) let pixels = buffer
                 cmd.addCompletedHandler { _ in
                     let bytes = [UInt8](UnsafeBufferPointer(start: pixels.contents().assumingMemoryBound(to: UInt8.self), count: w * h * 4))
-                    let png = ViewportSnapshot.png(bgra: bytes, width: w, height: h)
-                    Task { @MainActor in handler(png) }
+                    if let handler {
+                        let png = ViewportSnapshot.png(bgra: bytes, width: w, height: h)
+                        Task { @MainActor in handler(png) }
+                    }
+                    if let raw { Task { @MainActor in raw((bytes, w, h)) } }
                 }
             } else {
-                Task { @MainActor in handler(nil) }
+                Task { @MainActor in
+                    handler?(nil)
+                    raw?(nil)
+                }
             }
         }
         cmd.addCompletedHandler { [weak self] c in self?.lastGPUSeconds = c.gpuEndTime - c.gpuStartTime }
