@@ -328,7 +328,7 @@ struct RenderSettings: Codable, Equatable {
 
 /// The Render view's options, at the top left of the view while it is on, in two tabs. Simple: the quality preset, the
 /// floor, the room, the light and the shadows, and the export, everything an everyday render needs. Advanced: each of the
-/// settings a quality preset sets, one by one. Orange marks values and the selection, nothing else. A double-click on a
+/// settings a quality preset sets, one by one. Orange marks values, the selection and the one main button (Export render). A double-click on a
 /// control puts it back to its default and Reset puts back all of them. The X hides the panel (the view stays on); the
 /// Render button in the toolbar turns the view off.
 struct RenderPanel: View {
@@ -520,7 +520,7 @@ struct RenderPanel: View {
                 Label("Export render", systemImage: "square.and.arrow.up")
                     .frame(maxWidth: .infinity)
             }
-            .controlSize(.large)
+            .buttonStyle(SolidAccentButtonStyle(accent: accent))
             .help("Save what the view shows as a picture, with or without the background")
             Text("While rendering, the floor replaces the grid. Double-click any control to reset it.")
                 .font(.callout)
@@ -716,5 +716,21 @@ private struct DirectionDial: View {
         .simultaneousGesture(TapGesture(count: 2).onEnded { bearing = reset })
         .accessibilityLabel("Light direction")
         .accessibilityValue("\(Int(bearing.rounded())) degrees")
+    }
+}
+
+
+/// The panel's one main button: solid in the accent colour with white text.
+private struct SolidAccentButtonStyle: ButtonStyle {
+    let accent: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.vertical, DS.Spacing.space4)
+            .background(RoundedRectangle(cornerRadius: DS.Radius.lg).fill(accent))
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .contentShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
     }
 }
