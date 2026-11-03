@@ -39,7 +39,6 @@ The pane lists a few things to try, each with a copy button:
 
 - *What's in my open SimplMaker part?*
 - *Make a key ring with the name Jane Doe on it, about 35 mm long and 3 mm thick.*
-- *Create a 60 × 40 × 20 mm box, then make it 10 mm taller.*
 
 The first time the assistant changes your part, Claude asks you for permission. Choose **Always allow** to stop it asking each time.
 

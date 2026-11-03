@@ -1,5 +1,5 @@
 // The About panel: the standard macOS one, with credits naming what SimplMaker is built on and
-// carrying the licence notices those components ask every copy of the app to include.
+// carrying the license notices those components ask every copy of the app to include.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
@@ -28,7 +28,7 @@ enum AboutPanel {
         for sub in view.subviews { styleCredits(in: sub) }
     }
 
-    /// Something SimplMaker includes, credited by name, with its licence notice further down.
+    /// Something SimplMaker includes, credited by name, with its license notice further down.
     private struct Component {
         var name: String
         var role: String
@@ -72,7 +72,7 @@ enum AboutPanel {
         Component(name: "Sparkle",
                   role: "Software updates.",
                   copyright: "Copyright © 2006–2017 Andy Matuschak and contributors.",
-                  license: "MIT License; bundled code under BSD and zlib-style licences.",
+                  license: "MIT License; bundled code under BSD and zlib-style licenses.",
                   url: "https://sparkle-project.org",
                   notice: LicenseTexts.sparkle),
         Component(name: "TelemetryDeck SDK",
@@ -89,7 +89,7 @@ enum AboutPanel {
                   notice: LicenseTexts.lucide + "\n\n" + LicenseTexts.feather),
     ]
 
-    /// Built the first time the panel opens: the licence texts are long.
+    /// Built the first time the panel opens: the license texts are long.
     private static let credits: NSAttributedString = {
         let text = NSMutableAttributedString()
         let small = NSFont.systemFontSize(for: .small)
@@ -128,7 +128,7 @@ enum AboutPanel {
             if let url = c.url { add(url.replacingOccurrences(of: "https://", with: ""), link: url) }
         }
 
-        // The notices, then the long licence last.
+        // The notices, then the long license last.
         let notices = components.map { ($0.name, $0.notice) }
             + [("GNU Lesser General Public License 2.1 (Open CASCADE Technology)", LicenseTexts.lgpl21)]
         for (name, notice) in notices {
@@ -138,7 +138,7 @@ enum AboutPanel {
         return text
     }()
 
-    /// Hard-wrapped licence text as one line per paragraph, so it wraps to the narrow panel. A blank
+    /// Hard-wrapped license text as one line per paragraph, so it wraps to the narrow panel. A blank
     /// line ends a paragraph, and so does a line that starts a numbered item or a copyright notice.
     static func reflowed(_ text: String) -> String {
         var paragraphs: [String] = [], lines: [String] = []

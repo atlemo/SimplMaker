@@ -64,7 +64,6 @@ enum AIClients {
     static let examplePrompts = [
         "What's in my open SimplMaker part?",
         "Make a key ring with the name Jane Doe on it, about 35 mm long and 3 mm thick.",
-        "Create a 60 × 40 × 20 mm box, then make it 10 mm taller.",
     ]
 }
 

@@ -1,4 +1,4 @@
-// Full texts of the licences of the code SimplMaker includes, shown in the About panel's credits so
+// Full texts of the licenses of the code SimplMaker includes, shown in the About panel's credits so
 // every copy of the app carries them. Copied verbatim from OCCT's LICENSE_LGPL_21.txt / OCCT_LGPL_EXCEPTION.txt (less the LGPL's form-feed page breaks),
 // OCCT's delabella.cpp and FlexLexer.h, and the LICENSE files of lucide-static 0.460.0 and
 // feather-icons 4.29.2.
@@ -643,7 +643,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """#
 
-    /// Sparkle, the update framework (MIT), with the licences of the code it bundles.
+    /// Sparkle, the update framework (MIT), with the licenses of the code it bundles.
     static let sparkle = #"""
 Copyright (c) 2006-2013 Andy Matuschak.
 Copyright (c) 2009-2013 Elgato Systems GmbH.

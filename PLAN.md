@@ -8,7 +8,7 @@ A simple, native macOS, parametric CAD tool for makers:
 | Topic | Decision |
 |---|---|
 | Distribution | Self-distributed (no Mac App Store). Developer ID signing + notarization when shared. |
-| License | **GPL-3.0-or-later, free and open source** (it was proprietary for the first releases, 1.0 to 1.1.x, and was opened in 1.2.0). Rules out components under licences that cannot be combined with the GPL. OCCT (LGPL-2.1) is linked as a separate dylib so that it can be replaced: see the Licensing note. |
+| License | **GPL-3.0-or-later, free and open source** (it was proprietary for the first releases, 1.0 to 1.1.x, and was opened in 1.2.0). Rules out components under licenses that cannot be combined with the GPL. OCCT (LGPL-2.1) is linked as a separate dylib so that it can be replaced: see the Licensing note. |
 | Target | **macOS 26+, Apple Silicon only.** Newest SwiftUI/Observation APIs, no availability checks. |
 | Priority | **Fillet and chamfer are high priority.** They are part of the first milestones, which requires persistent *edge* naming and edge picking early. |
 | Build | Swift Package (no Xcode project needed), OCCT 8.0.1 built static by `scripts/build-occt.sh`, `.app` assembled by `scripts/bundle-app.sh`. |

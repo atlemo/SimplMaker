@@ -19,7 +19,7 @@ SimplMaker is free and works offline. It needs the internet only to look for upd
 
 The first thing you see is the [welcome window](doc:start/examples-and-tutorial).
 
-There is no licence key, no account and no sign-in. SimplMaker is open source; see [Licence and source](doc:reference/license-and-source) if you would rather build it yourself.
+There is no license key, no account and no sign-in. SimplMaker is open source; see [License and source](doc:reference/license-and-source) if you would rather build it yourself.
 
 ## Updates
 

@@ -4,7 +4,7 @@ import CADKernel
 import Testing
 @testable import SimplMaker
 
-/// The About panel's credits: hard-wrapped licence texts reflow to fit its narrow text view.
+/// The About panel's credits: hard-wrapped license texts reflow to fit its narrow text view.
 @Suite @MainActor struct AboutPanelTests {
     @Test func reflowJoinsWrappedLinesAndKeepsParagraphsAndItems() {
         let text = """

@@ -275,7 +275,7 @@ def write_llms(pages, docs):
 
     short = {"/features/": "Features", "/compare/": "Compare with other CAD tools",
              "/download/": "Download", "/changelog/": "Changelog", "/support/": "Support",
-             "/privacy/": "Privacy policy", "/license/": "Licence and source code"}
+             "/privacy/": "Privacy policy", "/license/": "License and source code"}
     for p in pages:
         p["title"] = short.get(p["route"], p["title"])
     product = [p for p in pages if p["route"] in short and p["route"] not in ("/privacy/", "/license/")]
@@ -290,10 +290,10 @@ def write_llms(pages, docs):
         "## Key facts", "",
         f"- Product: SimplMaker, version {VARS['version']}, by Atle Mo",
         "- Platform: macOS 15 or later, Apple Silicon. No Windows, Linux or iPad version.",
-        "- Price: free. No subscription, no account, no licence key.",
+        "- Price: free. No subscription, no account, no license key.",
         f"- Source code: {VARS['github_url']}",
         "- Files: parts are plain files on the user's Mac. Imports STEP; exports STEP and STL.",
-        "- Licence: GNU General Public License, version 3 or later. The name and icon are not covered by it.",
+        "- License: GNU General Public License, version 3 or later. The name and icon are not covered by it.",
         "- Not included: assemblies, CAM, simulation, rendering.",
         f"- Support: {VARS['support_email']}", "",
         "## Product", "",

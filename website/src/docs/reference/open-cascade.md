@@ -3,13 +3,13 @@ title: Open CASCADE and replacing the library
 description: SimplMaker's geometry kernel is Open CASCADE Technology (LGPL 2.1). Where its source is, how it is built, and how to replace it with your own build.
 ---
 
-SimplMaker's geometry kernel, the part that makes extrusions, fillets, booleans and STEP files, is [Open CASCADE Technology](https://dev.opencascade.org) (OCCT), version 8.0.1. OCCT is free software under the **GNU LGPL 2.1 with the Open CASCADE exception**. SimplMaker itself is free software too, under the [GNU GPL, version 3 or later](doc:reference/license-and-source). OCCT keeps its own licence, which lets you replace it with your own build. This page says how.
+SimplMaker's geometry kernel, the part that makes extrusions, fillets, booleans and STEP files, is [Open CASCADE Technology](https://dev.opencascade.org) (OCCT), version 8.0.1. OCCT is free software under the **GNU LGPL 2.1 with the Open CASCADE exception**. SimplMaker itself is free software too, under the [GNU GPL, version 3 or later](doc:reference/license-and-source). OCCT keeps its own license, which lets you replace it with your own build. This page says how.
 
 ## What is inside the app
 
 - OCCT is a **separate library**, `libSimplOCCT.dylib`, in the app's `Contents/Frameworks` folder. SimplMaker links to it dynamically.
 - It is built **unmodified** from the upstream source, tag `V8_0_1`: [github.com/Open-Cascade-SAS/OCCT](https://github.com/Open-Cascade-SAS/OCCT). We have not patched OCCT. If we ever do, we publish the changes here.
-- The licence texts are under **SimplMaker → About SimplMaker**.
+- The license texts are under **SimplMaker → About SimplMaker**.
 
 ## Get the source
 
@@ -69,4 +69,4 @@ You may modify OCCT for your own use. SimplMaker is open source, so you can read
 
 ## Other open-source components
 
-The other components SimplMaker includes, such as DelaBella, Sparkle and Lucide, and their licences are listed under **SimplMaker → About SimplMaker** and on [Licence and source](doc:reference/license-and-source).
+The other components SimplMaker includes, such as DelaBella, Sparkle and Lucide, and their licenses are listed under **SimplMaker → About SimplMaker** and on [License and source](doc:reference/license-and-source).

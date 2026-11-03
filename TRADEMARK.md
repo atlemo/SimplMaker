@@ -1,7 +1,7 @@
 # The name and the icon
 
 The code of SimplMaker is free software under the GPL (see [LICENSE](LICENSE)). The **name SimplMaker** and the **app icon**
-(`Packaging/AppIcon.*` and `Packaging/DocIcon.*`) are not part of that licence. They identify the version of the app that
+(`Packaging/AppIcon.*` and `Packaging/DocIcon.*`) are not part of that license. They identify the version of the app that
 Atle Mo publishes, and the project asks that they keep doing so. The name is not a registered trademark, but it is used as one.
 
 What you may do:

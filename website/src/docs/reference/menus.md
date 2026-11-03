@@ -7,7 +7,7 @@ description: What is in each menu, and where to find every command.
 
 | Item | Does |
 |---|---|
-| **About SimplMaker** | Version, credits and open-source licences |
+| **About SimplMaker** | Version, credits and open-source licenses |
 | **Check for Updates…** | Looks for a new version |
 | **Settings…** ([[⌘,]]) | The settings window, including the AI connection. See [Settings](doc:reference/settings) and [Work with an AI assistant](doc:ai/assistant). |
 

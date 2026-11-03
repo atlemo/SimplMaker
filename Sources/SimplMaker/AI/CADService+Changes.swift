@@ -1,7 +1,7 @@
 // How an AI assistant changes a part. Every change is an operation (see Operations/AIOperation.swift) run through one
 // transaction: the edit is made on a copy of the document, the copy is rebuilt on the side to see that it builds, and only then
 // does the real document get it, in one step. So a change either happens whole, as one entry in Undo, or not at all; a half-made
-// model never exists. The document is changed only through `DocumentModel.mutate`, the same path the interface uses (licence
+// model never exists. The document is changed only through `DocumentModel.mutate`, the same path the interface uses (license
 // check, undo, rebuild). The functions here are the single-operation entry points; the operations themselves are in Operations/.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later

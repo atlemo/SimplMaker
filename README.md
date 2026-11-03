@@ -54,14 +54,14 @@ See [PLAN.md](PLAN.md) for the design notes and roadmap, and [docs/FEATURE-NOTES
 
 Bug reports, ideas and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Licence
+## License
 
 SimplMaker is free software: you can redistribute it and change it under the terms of the
 [GNU General Public License](LICENSE), version 3 or later. Copyright © 2026 Atle Mo.
 
 The name **SimplMaker** and the app icon are not covered by the GPL: see [TRADEMARK.md](TRADEMARK.md) before you publish a modified version.
 
-SimplMaker builds on other free software, whose licences are shown under **SimplMaker → About SimplMaker** (the texts are in
+SimplMaker builds on other free software, whose licenses are shown under **SimplMaker → About SimplMaker** (the texts are in
 `Sources/SimplMaker/LicenseTexts.swift`):
 
 - [OpenCASCADE Technology](https://dev.opencascade.org), the geometry kernel: LGPL-2.1 with the OCCT exception. It is built unmodified
