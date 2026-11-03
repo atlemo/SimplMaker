@@ -2569,6 +2569,9 @@ private struct DocumentDialogs: ViewModifier {
             } message: { p in
                 Text("This size comes from the expression “\(p.expression)”. Using the dragged value replaces it with a fixed number, so it will no longer follow your parameters.")
             }
+            .sheet(isPresented: Binding(get: { model.showExportImage }, set: { model.showExportImage = $0 })) {
+                ExportImageDialog(model: model)
+            }
             .alert(model.alert?.title ?? "", isPresented: alertShown, presenting: model.alert) { _ in
                 Button("OK") { model.alert = nil }
             } message: { info in

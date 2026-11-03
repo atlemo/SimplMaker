@@ -244,45 +244,106 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             return
         }
         Task { @MainActor [weak self] in
-            guard let self else { return done(nil) }
-            var sum: [Float] = []
-            var size = (w: 0, h: 0)
-            var used = 0
-            for i in 0..<frames {
+            guard let self, let picture = await self.captureFrames(frames) else { return done(nil) }
+            done(ViewportSnapshot.png(bgra: picture.bytes, width: picture.width, height: picture.height))
+        }
+    }
+
+    /// `frames` pictures of the view, each shifted by a part of a pixel (none for a single one) and with its own sample patterns,
+    /// averaged, as BGRA bytes. With `matte` the backdrop is that colour and the Render view's floor and effects over it are left out
+    /// (see `Renderer.matte`). The pictures are drawn into a view of the same size that nobody sees, from the renderer's state as the
+    /// view on screen left it, so nothing of them flashes in the view. Nil if a frame could not be read.
+    private func captureFrames(_ frames: Int, matte: SIMD3<Float>? = nil) async -> (bytes: [UInt8], width: Int, height: Int)? {
+        guard let renderer, drawableSize.width >= 1, drawableSize.height >= 1 else { return nil }
+        let pixels = drawableSize
+        let hidden = MTKView(frame: bounds, device: renderer.device)
+        hidden.colorPixelFormat = Renderer.colorFormat
+        hidden.depthStencilPixelFormat = Renderer.depthFormat
+        hidden.sampleCount = renderer.sampleCount
+        hidden.framebufferOnly = false
+        hidden.autoResizeDrawable = false
+        hidden.isPaused = true
+        hidden.enableSetNeedsDisplay = true
+        let window = NSWindow(contentRect: bounds, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = hidden
+        ViewportSnapshot.pin(hidden, width: Int(pixels.width), height: Int(pixels.height))
+        defer { withExtendedLifetime(window) {} }
+        var sum: [Float] = []
+        var size = (w: 0, h: 0)
+        var used = 0
+        for i in 0..<max(frames, 1) {
+            var shift = SIMD2<Float>.zero
+            if frames > 1 {
                 // A low-discrepancy spread of shifts (Halton 2 and 3) over one pixel.
                 func halton(_ index: Int, _ base: Int) -> Float {
                     var f: Float = 1, r: Float = 0, n = index + 1
                     while n > 0 { f /= Float(base); r += f * Float(n % base); n /= base }
                     return r
                 }
-                renderer.jitter = SIMD2((halton(i, 2) - 0.5) * 2 / Float(max(drawableSize.width, 1)),
-                                        (halton(i, 3) - 0.5) * 2 / Float(max(drawableSize.height, 1)))
-                renderer.frameNumber = Float(i)
-                let frame: ([UInt8], Int, Int)? = await withCheckedContinuation { continuation in
-                    self.framebufferOnly = false
+                shift = SIMD2((halton(i, 2) - 0.5) * 2 / Float(pixels.width), (halton(i, 3) - 0.5) * 2 / Float(pixels.height))
+            }
+            // A frame of another size, or none (a fresh view's first drawables may be slow to come), is drawn again.
+            var frame: ([UInt8], Int, Int)?
+            for _ in 0..<5 {
+                frame = await withCheckedContinuation { continuation in
                     renderer.rawCaptureHandler = { continuation.resume(returning: $0) }
-                    self.draw(self.bounds)
-                    self.framebufferOnly = true
+                    renderer.matte = matte
+                    renderer.jitter = shift
+                    renderer.frameNumber = Float(i)
+                    renderer.draw(in: hidden)  // all of it before anything else can draw with these set
+                    renderer.matte = nil
+                    renderer.jitter = .zero
+                    renderer.frameNumber = 0
                     if let unused = renderer.rawCaptureHandler {  // nothing was drawn
                         renderer.rawCaptureHandler = nil
                         unused(nil)
                     }
                 }
-                guard let (bytes, w, h) = frame else { break }
-                if sum.isEmpty { sum = [Float](repeating: 0, count: bytes.count); size = (w, h) }
-                guard bytes.count == sum.count else { break }
-                for k in 0..<bytes.count { sum[k] += Float(bytes[k]) }
-                used += 1
+                if let frame, frame.1 == Int(pixels.width), frame.2 == Int(pixels.height) { break }
+                frame = nil
+                try? await Task.sleep(for: .milliseconds(40))
             }
-            renderer.jitter = .zero
-            renderer.frameNumber = 0
-            self.draw(self.bounds)  // the view as it was
-            guard !sum.isEmpty else { return done(nil) }
-            let scale = 1 / Float(max(used, 1))
-            var bytes = [UInt8](repeating: 255, count: sum.count)
-            for k in 0..<sum.count { bytes[k] = UInt8(min(max(sum[k] * scale + 0.5, 0), 255)) }
-            done(ViewportSnapshot.png(bgra: bytes, width: size.w, height: size.h))
+            guard let (bytes, w, h) = frame else { break }
+            if sum.isEmpty { sum = [Float](repeating: 0, count: bytes.count); size = (w, h) }
+            guard bytes.count == sum.count else { break }
+            for k in 0..<bytes.count { sum[k] += Float(bytes[k]) }
+            used += 1
         }
+        guard !sum.isEmpty else { return nil }
+        let scale = 1 / Float(max(used, 1))
+        var bytes = [UInt8](repeating: 255, count: sum.count)
+        for k in 0..<sum.count { bytes[k] = UInt8(min(max(sum[k] * scale + 0.5, 0), 255)) }
+        return (bytes, size.w, size.h)
+    }
+
+    private var isExporting = false
+
+    /// The view's picture as a file's data: PNG or JPEG, from `frames` pictures averaged. With `transparent` (PNG only) the backdrop is
+    /// left out: the view is drawn twice, over black and over white, and what the white one shows more of than the black one is what the
+    /// bodies do not cover, so every pixel's opacity and colour follow from the two (soft edges and glass included).
+    func exportImage(_ format: PictureFormat, transparent: Bool, frames: Int) async -> Data? {
+        // One picture at a time (the dialog's preview may still be being made when Export is pressed): they share the renderer's state.
+        while isExporting { try? await Task.sleep(for: .milliseconds(30)) }
+        isExporting = true
+        defer { isExporting = false }
+        guard transparent, format.hasAlpha else {
+            guard let picture = await captureFrames(frames) else { return nil }
+            return ViewportSnapshot.image(bgra: picture.bytes, width: picture.width, height: picture.height, format: format)
+        }
+        guard let black = await captureFrames(frames, matte: .zero),
+              let white = await captureFrames(frames, matte: SIMD3(repeating: 1)),
+              black.bytes.count == white.bytes.count, black.width == white.width else { return nil }
+        var out = black.bytes
+        for i in stride(from: 0, to: out.count, by: 4) {
+            // Over black a pixel is colour x opacity, over white that plus what the opacity lets through (1 - opacity).
+            var alpha: Float = 0
+            for c in 0..<3 { alpha += 1 - (Float(white.bytes[i + c]) - Float(black.bytes[i + c])) / 255 }
+            alpha = min(max(alpha / 3, 0), 1)
+            let a = UInt8(alpha * 255 + 0.5)
+            for c in 0..<3 { out[i + c] = a == 0 ? 0 : min(black.bytes[i + c], a) }  // premultiplied: never above the opacity
+            out[i + 3] = a
+        }
+        return ViewportSnapshot.image(bgra: out, width: black.width, height: black.height, format: .png, premultipliedAlpha: true)
     }
 
     // MARK: view cube

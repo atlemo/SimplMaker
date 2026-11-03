@@ -156,6 +156,7 @@ struct SimplMakerCommands: Commands {
             .disabled(model == nil)
             Divider()
             Button("Export…") { model?.exportWithDialog() }.disabled(model == nil)
+            Button("Export Image…") { model?.exportImageWithDialog() }.disabled(model == nil)
         }
         CommandGroup(before: .toolbar) {
             Button("Command Palette…") { model?.showPalette.toggle() }

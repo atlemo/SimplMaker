@@ -245,7 +245,7 @@ enum ViewportSnapshot {
     /// Pins the view's drawables to `width` × `height` pixels. Its layer takes the window's scale only on a later pass of the
     /// run loop and then sizes its drawables by its own size and scale, so until then (or after, on a screen of another scale)
     /// a frame can come at half or double the pixels asked for. Given the scale the pixel size implies, it stays as asked.
-    private static func pin(_ view: MTKView, width: Int, height: Int) {
+    static func pin(_ view: MTKView, width: Int, height: Int) {
         let pixels = CGSize(width: width, height: height)
         view.layer?.contentsScale = CGFloat(width) / max(view.bounds.width, 1)
         (view.layer as? CAMetalLayer)?.drawableSize = pixels
@@ -266,16 +266,23 @@ enum ViewportSnapshot {
 
     /// Not on the main actor: the renderer calls it from the GPU's completion handler.
     nonisolated static func png(bgra: [UInt8], width: Int, height: Int) -> Data? {
+        image(bgra: bgra, width: width, height: height, format: .png)
+    }
+
+    /// A picture file's data from BGRA bytes: opaque, or with the fourth byte as opacity (colours already multiplied by it).
+    nonisolated static func image(bgra: [UInt8], width: Int, height: Int, format: PictureFormat, premultipliedAlpha: Bool = false) -> Data? {
         var rgba = bgra
         for i in stride(from: 0, to: rgba.count, by: 4) { rgba.swapAt(i, i + 2) }
+        let alpha: CGImageAlphaInfo = premultipliedAlpha ? .premultipliedLast : .noneSkipLast
         guard let provider = CGDataProvider(data: Data(rgba) as CFData),
               let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                  bitmapInfo: CGBitmapInfo(rawValue: alpha.rawValue),
                                   provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return nil }
         let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(destination, image, nil)
+        guard let destination = CGImageDestinationCreateWithData(data, format.type.identifier as CFString, 1, nil) else { return nil }
+        let options: [CFString: Any] = format == .jpeg ? [kCGImageDestinationLossyCompressionQuality: 0.92] : [:]
+        CGImageDestinationAddImage(destination, image, options as CFDictionary)
         return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 }

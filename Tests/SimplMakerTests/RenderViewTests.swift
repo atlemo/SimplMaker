@@ -288,6 +288,79 @@ import simd
         #expect(view.framebufferOnly, "the view goes back to only displaying its frames")
     }
 
+    /// Transparent export: the backdrop and floor are see-through, the body is solid and keeps the colour it has in the opaque picture.
+    @Test func aTransparentExportLeavesOutTheBackgroundAndKeepsTheBody() async throws {
+        let model = try await loaded()
+        var settings = RenderSettings.fresh
+        settings.exportQuality = .standard
+        let (picture, _, view) = try await render(model, name: "transparent-source", settings: settings)
+        let opaque = try #require(await view.exportImage(.png, transparent: false, frames: 1))
+        let clear = try #require(await view.exportImage(.png, transparent: true, frames: 1))
+        if let dir = ProcessInfo.processInfo.environment["RENDER_DUMP_DIR"] { try clear.write(to: URL(fileURLWithPath: dir + "/transparent.png")) }
+        let solid = try #require(NSBitmapImageRep(data: opaque))
+        let rep = try #require(NSBitmapImageRep(data: clear))
+        #expect(rep.hasAlpha && rep.pixelsWide == picture.width && rep.pixelsHigh == picture.height)
+        func rgba(_ r: NSBitmapImageRep, _ x: Int, _ y: Int) -> [Int] {
+            var raw = [Int](repeating: 0, count: 5)
+            r.getPixel(&raw, atX: x, y: y)
+            return raw
+        }
+        for (x, y) in [(5, 5), (picture.width - 5, picture.height - 5), (picture.width / 2, picture.height - 8)] {
+            #expect(rgba(rep, x, y)[3] == 0, "background at \(x),\(y) is see-through: \(rgba(rep, x, y))")
+        }
+        // The middle of the box's top: solid, and the same colour as with the background.
+        let (x, y) = (picture.width / 4, picture.height / 2)
+        let body = rgba(rep, x, y), plain = rgba(solid, x, y)
+        #expect(body[3] == 255, "the body is solid: \(body)")
+        #expect(zip(body.prefix(3), plain.prefix(3)).allSatisfy { abs($0 - $1) <= 6 }, "the body's colour is kept: \(body) vs \(plain)")
+        #expect(view.renderer?.matte == nil && view.renderer?.jitter == .zero, "the renderer goes back to how it was")
+    }
+
+    /// The pictures of an export are drawn apart: the view on screen draws what it drew before, never the black or white one.
+    @Test func anExportDoesNotDrawIntoTheViewOnScreen() async throws {
+        let model = try await loaded()
+        let (picture, renderer, view) = try await render(model, name: "export-apart", settings: RenderSettings.quiet)
+        let task = Task { @MainActor in await view.exportImage(.png, transparent: true, frames: 2) }
+        // While it runs the view is drawn over and over, as it is when the pointer moves: every frame is the same one.
+        for _ in 0..<8 {
+            view.draw(view.bounds)
+            let texture = try #require(view.fullSizeTexture)
+            var bytes = [UInt8](repeating: 0, count: texture.width * texture.height * 4)
+            texture.getBytes(&bytes, bytesPerRow: texture.width * 4, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
+            #expect(renderer.matte == nil && renderer.jitter == .zero)
+            #expect(bytes == picture.bgra, "the view still shows its own picture")
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        #expect(await task.value != nil)
+    }
+
+    /// The plain 3D view too: the grid and axes are part of the background.
+    @Test func aTransparentExportOfThePlainViewHasNoGrid() async throws {
+        let model = try await loaded()
+        let (picture, _, view) = try await render(model, name: "transparent-plain-source", settings: nil)
+        let clear = try #require(await view.exportImage(.png, transparent: true, frames: 1))
+        let rep = try #require(NSBitmapImageRep(data: clear))
+        var seen = 0
+        for y in stride(from: 0, to: picture.height, by: 6) {
+            for x in stride(from: 0, to: picture.width / 8, by: 6) {  // the left strip is empty of body
+                var raw = [Int](repeating: 0, count: 5)
+                rep.getPixel(&raw, atX: x, y: y)
+                if raw[3] != 0 { seen += 1 }
+            }
+        }
+        #expect(seen == 0, "nothing but the body is drawn: \(seen) pixels were not see-through")
+    }
+
+    @Test func aJPEGExportIsOpaqueAndOfTheViewsSize() async throws {
+        let model = try await loaded()
+        let (picture, _, view) = try await render(model, name: "jpeg-source", settings: RenderSettings.quiet)
+        // JPEG cannot be see-through: asking for it still gives the picture with its background.
+        let data = try #require(await view.exportImage(.jpeg, transparent: true, frames: 1))
+        let rep = try #require(NSBitmapImageRep(data: data))
+        #expect(!rep.hasAlpha && rep.pixelsWide == picture.width)
+        #expect(data.starts(with: [0xFF, 0xD8]), "a JPEG")
+    }
+
     /// The Render view shows the part alone: no sketch curves, profile fills or construction planes, until a tool needs them.
     @Test func theRenderViewLeavesOutSketchesAndPlanes() async throws {
         var sketch = Sketch()
@@ -412,6 +485,24 @@ import simd
         host.cacheDisplay(in: host.bounds, to: rep)
         try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: dir + "/panel-\(tab.rawValue.lowercased()).png"))
         withExtendedLifetime(window) {}
+        }
+    }
+
+    /// Only for looking at: the Export Image dialog (without a preview: that is made when it is shown in a window).
+    @Test func theExportImageDialogAsAPicture() throws {
+        guard let dir = ProcessInfo.processInfo.environment["RENDER_DUMP_DIR"] else { return }
+        let model = DocumentModel(document: CADDocument())
+        for render in [false, true] {
+            model.renderView = render
+            let host = NSHostingView(rootView: ExportImageDialog(model: model).background(Color(nsColor: .windowBackgroundColor)))
+            host.frame = NSRect(origin: .zero, size: host.fittingSize)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: dir + "/export-dialog-\(render ? "render" : "plain").png"))
+            withExtendedLifetime(window) {}
         }
     }
 

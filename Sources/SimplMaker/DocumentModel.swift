@@ -231,6 +231,8 @@ final class DocumentModel {
         didSet { renderSettings.save() }
     }
     var showRenderOptions = false
+    /// Whether the Export Image dialog is open.
+    var showExportImage = false
     /// Where the Render view's depth blur is sharp, in the world; nil = the middle of the part. Not saved.
     var renderFocusPoint: SIMD3<Double>?
     /// The next click in the view sets the focus point (Select focus point in the Render options).
@@ -280,27 +282,8 @@ final class DocumentModel {
         if best == nil, d.z < -1e-9, o.z > 0 { best = -o.z / d.z }  // the floor
         return best.map { o + d * $0 }
     }
-    /// The 3D view, for the one thing the model asks of it: a picture of what it shows (Export render).
+    /// The 3D view, for the one thing the model asks of it: a picture of what it shows (Export Image).
     @ObservationIgnored weak var viewportView: ViewportMTKView?
-
-    /// Saves what the viewport shows as a PNG: asks for the picture first, so it is of the view as it is now, then for where to put it.
-    func exportRender() {
-        guard let view = viewportView else { return }
-        view.exportPNG(frames: renderSettings.exportQuality.frames) { [weak self] png in
-            guard let self else { return }
-            guard let png else {
-                alert = AlertInfo(title: "The render could not be saved", message: "The picture of the view could not be made. Try again.")
-                return
-            }
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [.png]
-            panel.nameFieldStringValue = (fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled") + " render.png"
-            guard panel.runModal() == .OK, let url = panel.url else { return }
-            do { try png.write(to: url) } catch {
-                alert = AlertInfo(title: "The render could not be saved", message: "\(error.localizedDescription)")
-            }
-        }
-    }
 
     /// The browser, inspector and timeline the Render view hid when it came on (they were open), to bring back when it goes off
     /// (unless they have been opened since).

@@ -516,20 +516,12 @@ struct RenderPanel: View {
 
     private var exportGroup: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space6) {
-            row("Export") {
-                Picker("Export quality", selection: $model.renderSettings.exportQuality) {
-                    ForEach(RenderSettings.ExportQuality.allCases) { Text($0.title).tag($0) }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-            }
-            .help("An exported render is made from several pictures, each a little to one side, and averaged: smooth edges, soft effects without grain. Standard is one picture; High is 16, Maximum 64.")
-            Button { model.exportRender() } label: {
+            Button { model.exportImageWithDialog() } label: {
                 Label("Export render", systemImage: "square.and.arrow.up")
                     .frame(maxWidth: .infinity)
             }
             .controlSize(.large)
-            .help("Save what the view shows as a PNG picture")
+            .help("Save what the view shows as a picture, with or without the background")
             Text("While rendering, the floor replaces the grid. Double-click any control to reset it.")
                 .font(.callout)
                 .foregroundStyle(.tertiary)

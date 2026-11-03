@@ -514,6 +514,10 @@ final class Renderer {
     /// A picture is made from several, each a little to one side (the exported render): how far to shift this one, in clip units,
     /// and the number of the picture (it turns the soft effects' sample patterns).
     var jitter: SIMD2<Float> = .zero
+    /// A transparent export is made from two pictures, one over black and one over white: this is the backdrop of the one being
+    /// drawn (set only around that one draw, into a view nobody sees, so the view on screen never draws it). While it is set the floor and its reflection, the ground grid and axes, grain, glow and the darker corners are left out,
+    /// so what is left of the backdrop is only what the bodies and their edges cover.
+    var matte: SIMD3<Float>?
     var frameNumber: Float = 0
     /// Asks the next frame to hand over its pixels as they are (BGRA, with the size), or nil if they could not be read.
     var rawCaptureHandler: (@MainActor @Sendable (([UInt8], Int, Int)?) -> Void)?
@@ -1543,9 +1547,9 @@ final class Renderer {
         let aspect = Float(size.width / size.height)
         if (showGrid || showAxes) && sketchGrid == nil && renderSettings == nil { updateWorldGrid(viewSize: view.bounds.size) }
         let printing = printPreview && visualStyle.isShaded
-        let look = visualStyle.isShaded && sketchGrid == nil && !printing ? renderSettings : nil
-        if let look {
-            let c = look.backdropColor
+        var look = visualStyle.isShaded && sketchGrid == nil && !printing ? renderSettings : nil
+        if matte != nil { look?.noise = 0; look?.bloom = 0; look?.vignette = 0 }
+        if let c = matte ?? look?.backdropColor {
             pass.colorAttachments[0].clearColor = MTLClearColor(red: Double(c.x), green: Double(c.y), blue: Double(c.z), alpha: 1)
         }
         var uniforms = Uniforms(viewProj: camera.projectionMatrix(aspect: aspect) * camera.viewMatrix(),
@@ -1639,17 +1643,17 @@ final class Renderer {
         if shadowing { drawShadowMap(cmd, &uniforms, materials: materials) }
         if cameraDepth { drawCameraDepth(cmd, uniforms, size: size, materials: materials, glass: refractingGlass, blurred: (look?.depthOfField ?? 0) > 0.005) }
         let occluding = cameraDepth && (look?.occlusion ?? 0) > 0.005
-        if occluding { drawOcclusion(cmd, uniforms, size: size, materials: materials, floor: look) }
+        if occluding { drawOcclusion(cmd, uniforms, size: size, materials: materials, floor: matte == nil ? look : nil) }
         // A reflection with blur is made in its own passes first; without, it is drawn straight into the view.
         let blurredReflection = look.map { $0.reflectionStrength > 0 && $0.reflectionBlur > 0.02 && !sectioning && !bodies.isEmpty
-                                          && !camera.isBelowGround } ?? false
+                                          && !camera.isBelowGround && matte == nil } ?? false
         if blurredReflection, let look {
             drawBlurredReflection(cmd, uniforms, strength: look.reflectionStrength, blur: Float(look.reflectionBlur), size: size,
                                   tints: tints, materials: materials, shadowing: shadowing)
         }
         // With the finishing touches the picture (floor, bodies, glass) is drawn apart first, then laid into the view.
         var enc: MTLRenderCommandEncoder
-        if postPath, let look, let scene = cmd.makeRenderCommandEncoder(descriptor: sceneRenderPass(clear: look.backdropColor)) {
+        if postPath, let look, let scene = cmd.makeRenderCommandEncoder(descriptor: sceneRenderPass(clear: matte ?? look.backdropColor)) {
             enc = scene
         } else {
             postPath = false
@@ -1709,7 +1713,7 @@ final class Renderer {
         }
         /// The floor, its reflection and the glass: what the Render view draws over the bodies (see `drawFaces`).
         func drawRenderScene(_ look: RenderSettings) {
-            if !camera.isBelowGround {
+            if !camera.isBelowGround && matte == nil {
                 drawFloor(enc, look)
                 if blurredReflection {
                     enc.setRenderPipelineState(blurCompositePipeline)
@@ -1851,7 +1855,7 @@ final class Renderer {
                 }
                 enc.setDepthStencilState(depthState)
             }
-        } else if showGrid, !camera.isBelowGround, let g = worldGrid {  // seen from under the floor the grid would only be in the way
+        } else if showGrid, matte == nil, !camera.isBelowGround, let g = worldGrid {  // seen from under the floor the grid would only be in the way
             // Seen almost edge-on the lines pile up into moiré, so the grid fades out as the view flattens. Blended
             // (fadePipeline) so the opacity shows; at full opacity it is the same as drawing it solid.
             let opacity = Self.groundGridOpacity(forward: camera.forward)
@@ -1918,7 +1922,7 @@ final class Renderer {
             enc.setDepthStencilState(depthState)
         }
 
-        for (i, (buffer, _)) in axes.enumerated() where showAxes && look == nil {
+        for (i, (buffer, _)) in axes.enumerated() where showAxes && look == nil && matte == nil {
             let color = i == 0 ? p.axes.x : i == 1 ? p.axes.y : p.axes.z
             segments(buffer, 1, DrawParams(color: color, hoverColor: color, selectColor: color,
                                            thickness: 1.5 * scale, depthBias: 0.0001, pickable: 0))

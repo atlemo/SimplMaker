@@ -115,6 +115,7 @@ extension DocumentModel {
         add("Inspector", "View", keywords: "properties show hide", shortcut: .inspector, detail: state(showInspector)) { self.showInspector.toggle() }
 
         add("Export…", "File", keywords: "save stl step 3mf print") { self.exportWithDialog() }
+        add("Export Image…", "File", keywords: "save picture render screenshot png jpeg transparent") { self.exportImageWithDialog() }
         add("Import STEP…", "File", keywords: "open", shortcut: .importSTEP) { self.importSTEP() }
         add("Import STL…", "File", keywords: "open mesh") { self.importSTL() }
         add("Import SVG as Sketch…", "File", keywords: "open drawing vector") { self.importSVG() }

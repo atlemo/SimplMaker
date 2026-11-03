@@ -96,12 +96,19 @@ The settings are kept between launches, and they are the same for every part. Th
 
 ## Make a picture
 
-Press **Export render** at the bottom of the panel to save what the view shows as a PNG file. It is the view alone, at its full pixel size, without the panels, the toolbar and the navigation cube. Anything drawn in the view goes in it, including a selection and the edge lines if they are on.
+Press **Export render** at the bottom of the panel (or choose **File → Export Image…**) to save what the view shows as a picture. It is the view alone, at its full pixel size, without the panels, the toolbar and the navigation cube. Anything drawn in the view goes in it, including a selection and the edge lines if they are on. File → Export Image… works the same way in the ordinary 3D view, with the Render view off.
 
 1. Put the part on the floor and set the view you want. [[⌘0]] fits it in the window. A bigger window makes a bigger picture.
 2. Click an empty place to clear any selection, and move the pointer off the part so nothing is lit up.
-3. Choose the **Export** quality. **Standard** is one picture, as you see it. **High** and **Maximum** make 16 or 64 pictures, each a little to one side, and average them: smooth edges, and occlusion and soft shadows without grain. It takes a moment.
-4. Press **Export render**, and choose where to save it.
+3. In the dialog that opens, a small preview shows the picture. Choose the **Format**, **PNG** or **JPEG**.
+4. Choose the **Quality**. **Standard** is one picture, as you see it. **High** and **Maximum** make 16 or 64 pictures, each a little to one side, and average them: smooth edges, and occlusion and soft shadows without grain. It takes a moment.
+5. Press **Export…**, and choose where to save it.
+
+### A transparent background
+
+Switch on **Transparent background** to leave the backdrop out, so the picture is only the part, with see-through pixels around it. Put it on a web page, a slide or a photo and it takes the colour behind it. Soft edges and glass come out right. Only **PNG** can be see-through, so the switch is off for JPEG.
+
+In the Render view the floor is left out too, with its shadows and reflection, and so are the grain, glow and darker corners (they would tint the see-through part). In the ordinary 3D view the grid and the axes go.
 
 The picture an AI assistant makes of a part is not changed by the Render view. See [Work with AI](doc:ai/assistant).
 

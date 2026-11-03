@@ -25,6 +25,7 @@ description: What is in each menu, and where to find every command.
 | **Import ▸ STL…** | Add a watertight STL mesh as a body |
 | **Import ▸ SVG as Sketch…** | Turn an SVG into a sketch |
 | **Export…** | Write the bodies to STL or STEP files, as one part or as individual parts |
+| **Export Image…** | Save what the 3D view shows as a PNG or JPEG picture, with a preview, and for PNG with a transparent background |
 
 ## Edit
 
