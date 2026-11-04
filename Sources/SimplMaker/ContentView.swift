@@ -105,6 +105,8 @@ struct DocumentWindow: View {
     private var sketchTint: Bool { model.sketchSession != nil && activeState != .inactive }
     /// The pointer is over the toolbar strip, which fades in a background, and how tall that strip is.
     @State private var toolbarHovered = false
+    /// Files are being dragged over the window.
+    @State private var fileDropTargeted = false
     @State private var toolbarHeight: CGFloat = 65
 
     /// What the panel toggles draw in while the toolbar is tinted: black or white by contrast with the tint; nil off the tint.
@@ -217,6 +219,10 @@ struct DocumentWindow: View {
             if let fileURL { RecentParts.note(fileURL) }  // saved for the first time, or saved as
         }
         .modifier(DocumentDialogs(model: model))
+        // STEP, STL, SVG and DXF files dropped anywhere on the window are imported.
+        .onDrop(of: [.fileURL], isTargeted: $fileDropTargeted) { model.importDropped(providers: $0) }
+        .overlay { if fileDropTargeted { FileDropHighlight() } }
+        .animation(.easeOut(duration: DS.Duration.fast), value: fileDropTargeted)
     }
 
     /// The window's content and its floating panels. The toolbar and the dialogs are added in `body`.
