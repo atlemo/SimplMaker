@@ -219,6 +219,33 @@ import Testing
         }
     }
 
+    @Test func wrappedTextLandsOnTheSideTheSketchLooksAtOnAnExtrudedPost() throws {
+        // A post made by extruding a circle (not the primitive): the text must land on the side facing the sketch.
+        var circle = Sketch()
+        let c = circle.addPoint(0, 0)
+        circle.constrain(.fix(c, x: 0, y: 0))
+        _ = circle.addCircle(center: c, radius: 20)
+        var s = Sketch()
+        let p = s.addPoint(-6, 25)
+        s.constrain(.fix(p, x: -6, y: 25))
+        s.texts = [SketchText(id: "T", text: "Hi", position: p, height: "10 mm")]
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "cs", name: "Sketch0", .sketch(SketchFeature(plane: .xy, sketch: circle))),
+            Feature(id: "post", name: "Extrude1", .extrude(ExtrudeFeature(sketch: "cs", profiles: [ProfileRef(curves: [], hintU: 0, hintV: 0)], extent: .distance("60 mm")))),
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .yz, sketch: s))),
+            Feature(id: "pr", name: "Project1", .project(ProjectFeature(
+                sketch: "sk", profiles: (0..<2).map { ProfileRef(curves: ["T#\($0)"]) }, target: "post", mode: .emboss, height: "1 mm", flipped: true, wrap: true))),
+        ]
+        // Sketch normal is +X; flipped, the projector looks along -X, so the letters belong on the +X side.
+        for wrap in [false, true] {
+            let r = Regenerator.regenerate(wrapped(d, wrap))
+            #expect(r.errors.isEmpty, "wrap \(wrap): \(r.errors)")
+            let box = try #require(r.body("post")?.bounds)
+            #expect(box.max.x > 20.9 && box.min.x > -20.05, "wrap \(wrap): letters on the +X side only: \(box)")
+        }
+    }
+
     @Test func aSignedHeightSaysWhichWayTheProfilesGo() {
         var pf = ProjectFeature(sketch: "sk", profiles: [], target: "post")
         #expect(pf.mode == .emboss && pf.signedHeight == "1 mm")

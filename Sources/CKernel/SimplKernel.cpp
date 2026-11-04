@@ -3155,12 +3155,14 @@ bool wrapOntoCylinder(const TopoDS_Face &face, const std::vector<Profile *> &ps,
   const double b = qPerp.Dot(dPerp) / a, c = (qPerp.SquareMagnitude() - radius * radius) / a;
   const double disc = b * b - c;
   if (disc < 0) return false;
-  const double side = face.Orientation() == TopAbs_REVERSED ? -1.0 : 1.0;  // the way the face's outside points
   double hit = 0;
   bool found = false;
   for (double t : {-b - std::sqrt(disc), -b + std::sqrt(disc)}) {
-    const gp_Vec radial = (qPerp + dPerp * t) / radius;
-    if (side * radial.Dot(gp_Vec(dir)) < 0) {
+    // Which way the body's surface faces there is the face's own say (a cylinder can be built either way round).
+    gp_Pnt on;
+    gp_Dir normal;
+    if (!faceNormalNear(face, centre.Translated(gp_Vec(dir) * t), on, normal)) continue;
+    if (normal.Dot(dir) < 0) {
       hit = t;
       found = true;
       break;
