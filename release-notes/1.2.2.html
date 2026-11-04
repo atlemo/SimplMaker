@@ -1,7 +1,8 @@
 <h2>SimplMaker 1.2.2</h2>
-<p>A new way to make things that turn, and a way for an AI assistant to read a scanned part instead of squinting at it.</p>
+<p>A new way to make things that turn, a way for an AI assistant to read a scanned part instead of squinting at it, and one less trip through the File menu.</p>
 <ul>
   <li><strong>Twist Sweep</strong>: a new Create tool (<strong>⇧W</strong>). Draw a closed profile, and it is pushed along a straight line while turning, like a fan blade, a propeller, a drill bit or a twisted vase. Drag the arrow for the length and the dot on the dial for the end angle, or type both. Join, New, Cut and Intersect work like they do for Extrude.</li>
   <li>The Inspector has the rest: start angle, a curve that bends the turn (slow at the root, quick at the tip), a slide sideways while turning, and a turning point you can move off the middle of the profile. The profile can have holes, and they twist along.</li>
   <li>For AI assistants: <strong>slice_body</strong> cuts a body, an imported STL for instance, at any position along an axis and returns each outline's size, centre and tilt. <strong>create_sections</strong> draws those slices as ordinary sketches on their own planes, and <strong>create_loft</strong> can now take its sections inline in one step. Together they are the quick way to rebuild an imported mesh as a part you can edit. There is also a new design guide topic, "scan_to_part", with a twisted blade recipe.</li>
+  <li><strong>Drop files on the window</strong>: drag a STEP, STL, SVG or DXF file from Finder onto SimplMaker and it is imported, just as if you had gone through File ▸ Import. STEP and STL files become bodies, SVG and DXF files become sketches, and you can drop several at once. A frame lights up while the file is over the window, so you know it is listening.</li>
 </ul>
