@@ -186,4 +186,119 @@ import simd
         #expect(missing?.code == .invalidArguments, "end_angle is required")
         #expect(t.model.document.features.count == 1, "nothing was added by the refusals: only the sketch is there")
     }
+
+    // MARK: create_sections and loft stations
+
+    /// The corners of a square of side `s` about the origin, as the JSON an AI would send.
+    private static func squarePoints(_ s: Double) -> JSONValue {
+        let h = s / 2
+        let corners: [[Double]] = [[-h, -h], [h, -h], [h, h], [-h, h]]
+        return .array(corners.map { .array($0.map { .double($0) }) })
+    }
+
+    @Test func sectionsOfATwistedBarAreSketchesThatLoftBackToTheSameBar() async throws {
+        let t = await open()
+        try await bar(t)
+        _ = try await run(t, "create_twist_sweep", ["sketch_id": "bar_sk", "profiles": "solid", "distance": 40, "end_angle": 60, "id": "twisted"])
+        let original = try #require(t.model.result?.bodies.first { $0.id == "twisted" }?.body).volume
+        let r = try await run(t, "create_sections", ["body": "twisted", "axis": "x", "from": 0.5, "to": 39.5, "count": 14, "tolerance": 0.02, "id": "sec"])
+        let made = try #require(r.created?["sections"]?.array)
+        #expect(made.count == 14 && made[0]["sketch_id"]?.string == "sec_s1" && made[0]["plane_id"]?.string == "sec_p1", "\(r.message)")
+        #expect(made.allSatisfy { ($0["outlines"]?.number ?? 0) == 1 && ($0["corners"]?.number ?? 0) >= 4 && ($0["corners"]?.number ?? 0) <= 8 })
+        // Each sketch is a drawing of the cut on a plane at its station: the 10 × 2 section, turned.
+        let first = try #require(t.model.result?.sketches["sec_s1"])
+        #expect(first.regions.count == 1 && abs(first.regions[0].area - 20) < 0.5, "\(first.regions.map(\.area))")
+        let plane = try #require(t.model.result?.planes["sec_p1"])
+        #expect(abs(plane.origin.x - 0.5) < 1e-6, "on the plane at x = 0.5: \(plane.origin)")
+        // Lofted back through, the sections give the bar again, within what 14 stations can tell.
+        let sections: [JSONValue] = (1...14).map { ["sketch_id": .string("sec_s\($0)"), "profile": "solid"] }
+        _ = try await run(t, "create_loft", ["sections": .array(sections), "id": "again"])
+        let again = try #require(t.model.result?.bodies.first { $0.id == "again" }?.body)
+        #expect(again.isValid && abs(again.volume - original * 38.99 / 40) / original < 0.05, "\(again.volume) against \(original)")
+    }
+
+    @Test func sectionsAcrossYSitOnTheirPlanesDespiteTheXzPlanesFlippedNormal() async throws {
+        let t = await open()
+        _ = try await run(t, "create_box", ["width": 10, "length": 30, "height": 4, "id": "slab"])
+        let r = try await run(t, "create_sections", ["body": "slab", "axis": "y", "offsets": [-10, 5], "id": "cut"])
+        #expect(r.created?["sections"]?.array?.count == 2, "\(r.message)")
+        for (id, y) in [("cut_p1", -10.0), ("cut_p2", 5.0)] {
+            let plane = try #require(t.model.result?.planes[id])
+            #expect(abs(plane.origin.y - y) < 1e-6, "\(id) should be at y = \(y): \(plane.origin)")
+        }
+        let s = try #require(t.model.result?.sketches["cut_s2"])
+        #expect(abs((s.regions.first?.area ?? 0) - 40) < 0.1, "10 wide, 4 high: \(s.regions.map(\.area))")
+    }
+
+    @Test func stationsGivenInlineMakeThePlanesSketchesAndTheLoft() async throws {
+        let t = await open()
+        func square(_ s: Double) -> JSONValue { Self.squarePoints(s) }
+        let r = try await run(t, "create_loft", ["axis": "z", "ruled": true, "id": "frustum",
+                                                  "stations": [["offset": 0, "points": square(10)], ["offset": 10, "points": square(4)]]])
+        #expect(r.feature?.type == "Loft" && r.message.contains("frustum_s1"), "\(r.message)")
+        let body = try #require(t.model.result?.bodies.first { $0.id == "frustum" }?.body)
+        // a frustum of 10 × 10 to 4 × 4 over 10 mm: h / 3 × (A1 + A2 + √(A1 A2))
+        #expect(abs(body.volume - 10.0 / 3 * (100 + 16 + 40)) < 0.5, "\(body.volume)")
+        #expect(t.model.document.features.map(\.id).contains("frustum_p2") && t.model.document.features.map(\.id).contains("frustum_s2"))
+    }
+
+    @Test func aRingStationLoftsHollowAndAStationAlongYIsInThePlaneItSays() async throws {
+        let t = await open()
+        func ring(_ outer: Double, _ inner: Double) -> JSONValue {
+            return [Self.squarePoints(outer), Self.squarePoints(inner)]
+        }
+        _ = try await run(t, "create_loft", ["axis": "y", "ruled": true, "id": "tube",
+                                              "stations": [["offset": 0, "loops": ring(10, 6)], ["offset": 20, "loops": ring(10, 6)]]])
+        let body = try #require(t.model.result?.bodies.first { $0.id == "tube" }?.body)
+        #expect(body.isValid && abs(body.volume - (100 - 36) * 20) < 1, "a square tube 20 long: \(body.volume)")
+        let b = try body.measure(.body).bounds
+        #expect(abs(b.min.y) < 0.05 && abs(b.max.y - 20) < 0.05, "from y = 0 to 20: \(b)")
+    }
+
+    @Test func sectionsAndStationsRefuseWhatCannotWork() async throws {
+        let t = await open()
+        _ = try await run(t, "create_box", ["width": 10, "length": 10, "height": 10, "id": "b"])
+        let ghost = await refusal { _ = try await run(t, "create_sections", ["body": "ghost", "axis": "x", "offsets": [1]]) }
+        #expect(ghost?.code == .featureNotFound)
+        let miss = await refusal { _ = try await run(t, "create_sections", ["body": "b", "axis": "x", "offsets": [500]]) }
+        #expect(miss?.code == .invalidValue)
+        let axis = await refusal { _ = try await run(t, "create_sections", ["body": "b", "axis": "q", "offsets": [1]]) }
+        #expect(axis?.code == .invalidArguments)
+        let few = await refusal { _ = try await run(t, "create_loft", ["axis": "z", "stations": [["offset": 0, "points": [[0, 0], [1, 0]]], ["offset": 5, "points": [[0, 0], [1, 0], [1, 1]]]]]) }
+        #expect(few?.code == .invalidArguments, "a station needs three points at least")
+        let both = await refusal { _ = try await run(t, "create_loft", ["axis": "z", "sections": [["sketch_id": "a", "profile": "solid"]], "stations": []]) }
+        #expect(both?.code == .invalidArguments)
+        let noAxis = await refusal { _ = try await run(t, "create_loft", ["stations": [["offset": 0, "points": [[0, 0], [1, 0], [1, 1]]], ["offset": 5, "points": [[0, 0], [1, 0], [1, 1]]]]]) }
+        #expect(noAxis?.code == .invalidArguments)
+        #expect(t.model.document.features.count == 1, "nothing was left behind by the refusals")
+    }
+
+    // MARK: through the tool handlers, as a client calls them
+
+    @Test func theToolsAnswerWhenCalledTheWayAClientCallsThem() async throws {
+        let t = await open()
+        _ = try await run(t, "create_box", ["width": 40, "length": 30, "height": 20, "id": "b"])
+        let tools = AITools.make(service: t.service)
+        func call(_ name: String, _ arguments: JSONValue) async throws -> JSONValue {
+            try await #require(tools.first { $0.name == name }).handler(arguments)
+        }
+        // offsets, and from/to/count: both ways of naming the stations
+        let listed = try await call("slice_body", ["document_id": .string(t.id), "body_id": "b", "axis": "z", "offsets": [5, 15], "points": false])
+        #expect(listed["sections"]?.array?.count == 2 && listed["plane"]?.string == "xy", "\(listed)")
+        let ranged = try await call("slice_body", ["document_id": .string(t.id), "body_id": "b", "axis": "x", "from": -15, "to": 15, "count": 4])
+        #expect(ranged["sections"]?.array?.count == 4 && ranged["sections"]?.array?[0]["loops"]?.array?.first?["points"]?.array?.count == 4, "\(ranged)")
+        let both = await refusal { _ = try await call("slice_body", ["body_id": "b", "axis": "z", "offsets": [1], "from": 0, "to": 5, "count": 3]) }
+        #expect(both?.code == .invalidArguments)
+        let neither = await refusal { _ = try await call("slice_body", ["body_id": "b", "axis": "z"]) }
+        #expect(neither?.code == .invalidArguments)
+        let stray = await refusal { _ = try await call("slice_body", ["body_id": "b", "axis": "z", "offsets": [1], "offset": 3]) }
+        #expect(stray?.code == .invalidArguments, "a misspelled setting is refused, not ignored")
+        // the same stations draw sketches
+        let made = try await call("create_sections", ["document_id": .string(t.id), "body": "b", "axis": "z", "from": 2, "to": 18, "count": 3, "id": "cut"])
+        #expect(made["success"]?.bool == true && made["created"]?["sections"]?.array?.count == 3, "\(made)")
+        let loft = try await call("create_loft", ["document_id": .string(t.id), "axis": "z", "ruled": true, "id": "blockagain", "stations": [
+            ["offset": 0, "points": [[0, 0], [10, 0], [10, 10], [0, 10]]], ["offset": 8, "points": [[0, 0], [10, 0], [10, 10], [0, 10]]]]])
+        #expect(loft["success"]?.bool == true, "\(loft)")
+        #expect(abs((t.model.result?.bodies.first { $0.id == "blockagain" }?.body.volume ?? 0) - 800) < 0.5)
+    }
 }

@@ -271,7 +271,8 @@ enum AIDesignGuide {
             1) Look first: get_viewport_image from the top, the front and the side (the scan is in the document as a body: get_document). Decide what \
             it is made of: a plate, a block, a leaf-shaped outline, a twisted blade, round bosses. Note which direction it is longest in: that is the axis to slice across.
             2) Overall size: get_document gives the body's bounds; measure gives its volume to compare against later.
-            3) Slice it. slice_body with axis = the long direction and from/to/count, say 12 to 20 stations (points: false first: just the \
+            3) Slice it. (create_sections draws the same cuts as sketches on planes, ready to loft: create_loft with sections [{"sketch_id": "sec_s1", "profile": "solid"}, …], \
+            or give create_loft stations with the outline points directly; a loft of drawn sections is an exact copy but not an editable one: rebuild in features after.) slice_body with axis = the long direction and from/to/count, say 12 to 20 stations (points: false first: just the \
             sizes). Each section says length (the chord), width (the thickness of a plate), centroid [u, v] (where the middle is) and \
             major_axis_degrees (the tilt of a plate). Read how they change along the length: constant thickness is a plate; a tilt that grows is a \
             twist; a centroid that moves steadily is a rise or a lean; length that goes up and down is the outline. Then slice with points: true at a \

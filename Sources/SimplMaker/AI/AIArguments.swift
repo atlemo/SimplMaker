@@ -71,6 +71,32 @@ struct AIArguments {
     }
 
     func expectedRevision() throws -> Int? { try integer("expected_revision") }
+
+    /// The stations of slice_body and create_sections: "offsets": [mm, …], or "from", "to" and "count" for evenly spaced ones.
+    func sliceOffsets() throws -> [Double] {
+        var offsets: [Double] = []
+        if let list = try array("offsets") {
+            offsets = try list.enumerated().map { index, item in
+                guard let n = item.number else { throw AIError(.invalidArguments, "offsets[\(index)] must be a number (mm).") }
+                return n
+            }
+        }
+        let hasRange = json["from"] != nil || json["to"] != nil || json["count"] != nil
+        guard offsets.isEmpty == hasRange else {
+            throw AIError(.invalidArguments, offsets.isEmpty ? "Send offsets, or from, to and count." : "Send either offsets or from/to/count, not both.",
+                          reason: "For example offsets: [-200, -150, -100], or from: -230, to: -80, count: 16.")
+        }
+        if hasRange {
+            guard let from = json["from"]?.number, let to = json["to"]?.number, let count = try integer("count"), count >= 2 else {
+                throw AIError(.invalidArguments, "from, to and count (2 or more) are all needed for evenly spaced positions.")
+            }
+            guard count <= CADService.maxSliceOffsets else {
+                throw AIError(.invalidArguments, "count can be at most \(CADService.maxSliceOffsets) (ask for fewer, or slice twice).")
+            }
+            offsets = (0..<count).map { from + (to - from) * Double($0) / Double(count - 1) }
+        }
+        return offsets
+    }
 }
 
 enum AIValues {

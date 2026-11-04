@@ -55,6 +55,9 @@ struct LoftSectionRequest: Sendable {
 
 struct CreateLoftOperation: AIOperation {
     let sections: [LoftSectionRequest]
+    /// Stations given inline instead of sketches: the loft makes a plane and a sketch for each (see SectionSketches), along `axis`.
+    var stations: [SectionStation]?
+    var axis: String?
     let ruled: Bool
     let operation: BodyOperation
     let target: FeatureID?
@@ -66,11 +69,15 @@ struct CreateLoftOperation: AIOperation {
 
     func apply(to doc: inout CADDocument, context: OperationContext) throws -> OperationOutcome {
         try CADService.refuseRolledBack(doc)
-        guard sections.count >= 2 else {
-            throw AIError(.invalidArguments, "A loft needs at least two sections (sketches with a closed shape each).", reason: "Draw each section in its own sketch, on planes at different heights, and pass them in order.")
-        }
         var made: [LoftSection] = []
-        for (n, section) in sections.enumerated() {
+        if let stations {
+            made = try sectionsFromStations(stations, axis: axis ?? "", doc: &doc, context: context)
+        } else {
+            guard sections.count >= 2 else {
+                throw AIError(.invalidArguments, "A loft needs at least two sections (sketches with a closed shape each).", reason: "Draw each section in its own sketch, on planes at different heights, and pass them in order, or give stations with an axis.")
+            }
+        }
+        for (n, section) in sections.enumerated() where stations == nil {
             guard let sketchFeature = doc.features.first(where: { $0.id == section.sketchID }), case .sketch = sketchFeature.kind else {
                 throw AIError(.featureNotFound, "sections[\(n)]: there is no sketch with the id \(section.sketchID).")
             }
@@ -89,7 +96,9 @@ struct CreateLoftOperation: AIOperation {
         let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("Loft")
         doc.addFeature(Feature(id: featureID, name: featureName, .loft(LoftFeature(sections: made, ruled: ruled, operation: operation, target: target))))
         return OperationOutcome(featureID: featureID,
-                                message: "Created \(featureName): a \(ruled ? "ruled" : "smooth") loft through \(made.count) sections (\(AIOperationNames.name(operation))).")
+                                message: "Created \(featureName): a \(ruled ? "ruled" : "smooth") loft through \(made.count) sections"
+                                    + (stations == nil ? "" : " (planes \(id ?? "loft")_p1…, sketches \(id ?? "loft")_s1… made from the stations)")
+                                    + " (\(AIOperationNames.name(operation))).")
     }
 }
 

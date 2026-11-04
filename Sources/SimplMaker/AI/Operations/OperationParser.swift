@@ -49,7 +49,7 @@ extension AIArguments {
 
 enum AIOperationParser {
     /// The tools that make changes, which a batch can run.
-    static let changeTools = ["create_box", "create_sketch", "edit_sketch", "create_extrude", "create_fillet", "create_chamfer", "create_hole", "create_shell", "create_mirror", "create_pattern", "create_combine", "create_revolve", "create_sweep", "create_twist_sweep", "create_loft", "create_thread", "create_draft", "create_plane", "create_move", "create_scale", "create_rib", "create_pipe", "create_split", "create_lay_on_floor", "create_project", "create_image", "set_body", "import_file", "modify_feature", "set_parameter", "delete_feature"]
+    static let changeTools = ["create_box", "create_sketch", "edit_sketch", "create_extrude", "create_fillet", "create_chamfer", "create_hole", "create_shell", "create_mirror", "create_pattern", "create_combine", "create_revolve", "create_sweep", "create_twist_sweep", "create_loft", "create_sections", "create_thread", "create_draft", "create_plane", "create_move", "create_scale", "create_rib", "create_pipe", "create_split", "create_lay_on_floor", "create_project", "create_image", "set_body", "import_file", "modify_feature", "set_parameter", "delete_feature"]
 
     /// `names` are the part's feature names by id, for naming steps in Undo.
     static func parse(tool: String, arguments: JSONValue, names: [FeatureID: String] = [:]) throws -> any AIOperation {
@@ -212,8 +212,39 @@ enum AIOperationParser {
                 flipped: try a.bool("flipped") ?? false, operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody),
                 target: try a.string("target"), name: try a.string("name"), id: try a.string("id"))
 
+        case "create_sections":
+            try a.rejectUnknown(["document_id", "body", "axis", "offsets", "from", "to", "count", "tolerance", "id", "expected_revision"], in: tool)
+            return CreateSectionsOperation(
+                body: try a.requiredString("body", hint: "The body to cut, from get_document: an imported mesh, say."),
+                axis: try a.requiredString("axis", hint: "\"x\", \"y\" or \"z\": the planes are square to it."), offsets: try a.sliceOffsets(),
+                tolerance: arguments["tolerance"]?.number ?? 0.05, id: try a.string("id") ?? "sec")
+
         case "create_loft":
-            try a.rejectUnknown(["document_id", "sections", "ruled", "operation", "target", "name", "id", "expected_revision"], in: tool)
+            try a.rejectUnknown(["document_id", "sections", "stations", "axis", "ruled", "operation", "target", "name", "id", "expected_revision"], in: tool)
+            if let list = try a.array("stations") {
+                guard try a.array("sections") == nil else { throw AIError(.invalidArguments, "Send either sections (sketches you made) or stations (outlines given here), not both.") }
+                let stations: [SectionStation] = try list.enumerated().map { index, item in
+                    let s = AIArguments(item)
+                    try s.rejectUnknown(["offset", "points", "loops"], in: "stations[\(index)]")
+                    var loops: [[SketchPoint2]] = []
+                    func outline(_ v: JSONValue, _ field: String) throws -> [SketchPoint2] {
+                        guard let points = v.array else { throw AIError(.invalidArguments, "\(field) must be a list of [u, v] points.") }
+                        return try points.enumerated().map { try AIArguments.point($1, field: "\(field)[\($0)]") }
+                    }
+                    if let points = item["points"] { loops = [try outline(points, "stations[\(index)].points")] }
+                    if let more = try s.array("loops") {
+                        guard loops.isEmpty else { throw AIError(.invalidArguments, "stations[\(index)] has both points and loops: send one outline as points, or several (outer first, then holes) as loops.") }
+                        loops = try more.enumerated().map { try outline($1, "stations[\(index)].loops[\($0)]") }
+                    }
+                    guard !loops.isEmpty else {
+                        throw AIError(.invalidArguments, "stations[\(index)] needs points (one closed outline, [[u, v], …]) or loops (outer outline first, then holes).")
+                    }
+                    return SectionStation(offset: try s.requiredQuantity("offset", kind: .length, hint: "Where the station is along the axis, mm."), loops: loops)
+                }
+                return CreateLoftOperation(sections: [], stations: stations, axis: try a.requiredString("axis", hint: "\"x\", \"y\" or \"z\": the stations lie in planes square to it, in the sketch coordinates of the \"yz\", \"xz\" or \"xy\" plane."),
+                                           ruled: try a.bool("ruled") ?? false, operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody),
+                                           target: try a.string("target"), name: try a.string("name"), id: try a.string("id"))
+            }
             let sections: [LoftSectionRequest] = try (a.array("sections") ?? []).enumerated().map { index, item in
                 let sectionArgs = AIArguments(item)
                 try sectionArgs.rejectUnknown(["sketch_id", "profile"], in: "sections[\(index)]")

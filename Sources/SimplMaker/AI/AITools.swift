@@ -719,10 +719,16 @@ enum AITools {
                 change along their length: a bottle neck, a funnel, a square-to-round adapter, a boat hull. Draw each section in its own \
                 sketch (on planes at different heights: create_plane makes one) and pass them in order, bottom to top.
 
-                Arguments: document_id; sections (required: at least two, in order; each {sketch_id, profile} where profile is a profile \
-                id from get_feature, "solid" when the sketch has just one shape, or {"at": [u, v]}); ruled (optional, default false: straight \
-                sides between sections instead of a smooth blend); operation ("new_body" (default), "join", "cut", "intersect"), target, \
-                name, id, expected_revision. Sections with a similar number of corners blend best.
+                Arguments: document_id; EITHER sections (at least two, in order; each {sketch_id, profile} where profile is a profile \
+                id from get_feature, "solid" when the sketch has just one shape, or {"at": [u, v]}) OR stations, for a loft you can describe in one \
+                step: axis ("x", "y" or "z": the stations lie in planes square to it) and stations: a list of {offset (mm or expression, along \
+                the axis), points: [[u, v], …] (one closed outline) or loops: [[[u, v], …], …] (the outer outline first, then any holes)}, in order. \
+                u and v are the sketch coordinates of the plane: axis x → (Y, Z), y → (X, Z), z → (X, Y), the same as slice_body gives. A plane and a \
+                sketch are made for each station (ids "<id>_p1", "<id>_s1", … where id is the loft's id, or "loft"), so the sections can be \
+                edited by hand afterwards; each outline is drawn as a closed polyline, so give every station the same number of corners in the \
+                same order for the cleanest blend. ruled (optional, default false: straight sides between sections instead of a smooth \
+                blend); operation ("new_body" (default), "join", "cut", "intersect"), target, name, id, expected_revision. Sections with a similar number \
+                of corners blend best. To rebuild something you have read with slice_body, create_sections draws the stations of a body for you.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
                 FEATURE_NOT_FOUND, INVALID_ARGUMENTS, REBUILD_FAILED, USER_BUSY or STALE_REVISION.
@@ -732,15 +738,62 @@ enum AITools {
                     "sections": ["type": "array", "minItems": 2, "description": "The sections in order.", "items": [
                         "type": "object", "properties": ["sketch_id": ["type": "string"], "profile": ["description": "Profile id, \"solid\" or {\"at\": [u, v]}."]],
                         "required": ["sketch_id", "profile"]]],
+                    "axis": ["type": "string", "enum": ["x", "y", "z"], "description": "With stations: the planes are square to this axis."],
+                    "stations": ["type": "array", "minItems": 2, "maxItems": 60, "description": "Outlines given here instead of sketches, in order.", "items": [
+                        "type": "object", "properties": [
+                            "offset": ["type": ["number", "string"], "description": "Where along the axis, mm."],
+                            "points": ["type": "array", "items": ["type": "array", "items": ["type": ["number", "string"]], "minItems": 2, "maxItems": 2],
+                                       "description": "One closed outline, [[u, v], …]."],
+                            "loops": ["type": "array", "items": ["type": "array", "items": ["type": "array"]], "description": "Outer outline first, then holes."]],
+                        "required": ["offset"]]],
                     "ruled": ["type": "boolean", "description": "Straight sides between sections (default false: smooth)."],
                     "operation": ["type": "string", "enum": ["new_body", "join", "cut", "intersect"], "description": "Default new_body."],
                     "target": ["type": "string", "description": "The body to combine with (default the newest)."],
                     "name": ["type": "string", "description": "A name for the feature (default Loft1…)."],
                     "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
                     "expected_revision": expectedRevision,
-                ], ["document_id", "sections"]),
+                ], ["document_id"]),
                 readOnly: false, destructive: false, idempotent: false,
                 handler: { args in try await changeTool("create_loft", service: service, args) }),
+
+            MCPTool(
+                name: "create_sections", title: "Draw a body's sections as sketches",
+                description: """
+                Cuts a body with planes square to X, Y or Z at one or more positions and draws each cut as a SKETCH on a plane at that position \
+                (outlines as closed polylines, holes included). It is slice_body that draws instead of telling: use it to start rebuilding a \
+                shape you cannot read from its features, an imported STL above all. Read the sections first with slice_body (sizes only), \
+                choose the stations, then create_sections, then create_loft through the sketches (sections [{"sketch_id": "sec_s1", "profile": \
+                "solid"}, …]) for an exact copy, or read them (get_feature) and rebuild the shape in a few features that the user can edit \
+                (create_twist_sweep for a twisted plate, extrudes for blocks), which is usually the better part. Hide or delete the sections \
+                afterwards: they are only the drawings you worked from.
+
+                Arguments: document_id; body (required: from get_document); axis (required: "x", "y" or "z"); the stations as either offsets: \
+                [mm, …] or from, to and count (2 to 60, both ends included); tolerance (optional, mm, default 0.05: corners within this of a \
+                straight line are dropped, so a scan's section has a handful of corners, not hundreds; raise it for a rough scan); id (optional, \
+                default "sec": the planes are "<id>_p1", "<id>_p2"…, the sketches "<id>_s1"…); expected_revision.
+
+                Plane and sketch coordinates: axis x → plane "yz" (sketch x = Y, y = Z), y → "xz" (x = X, y = Z; the plane's offset runs along -Y, so the \
+                plane for y = 5 has offset -5), z → "xy". A station where the plane misses the body is skipped (the answer says which). Each outline \
+                may have at most 400 corners (raise the tolerance if it has more).
+
+                Changes the document (one undo step; it adds 2 features per station). Returns {success, document_id, revision, message, feature, \
+                created: {sections: [{sketch_id, plane_id, offset, outlines, corners, area}]}, bodies}. Fails with FEATURE_NOT_FOUND, \
+                INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED, USER_BUSY or STALE_REVISION.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "body": ["type": "string", "description": "The body to cut, from get_document."],
+                    "axis": ["type": "string", "enum": ["x", "y", "z"], "description": "The planes are square to this axis."],
+                    "offsets": ["type": "array", "items": ["type": "number"], "description": "Positions along the axis, mm."],
+                    "from": ["type": "number", "description": "First position, mm (with to and count)."],
+                    "to": ["type": "number", "description": "Last position, mm."],
+                    "count": ["type": "integer", "description": "How many evenly spaced positions, 2 to 60."],
+                    "tolerance": ["type": "number", "description": "Drop corners within this of a straight line, mm (default 0.05)."],
+                    "id": ["type": "string", "description": "Starts the ids of the planes and sketches (default \"sec\")."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "body", "axis"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_sections", service: service, args) }),
 
             MCPTool(
                 name: "create_twist_sweep", title: "Sweep a profile along a line while it twists",
@@ -1229,7 +1282,7 @@ enum AITools {
                 then resize the whole part by changing one number.
 
                 Arguments: document_id (required); operations (required): a list of {tool, arguments}, where tool is one of create_box, \
-                create_sketch, edit_sketch, create_extrude, create_revolve, create_fillet, create_chamfer, create_hole, create_shell, create_mirror, create_pattern, create_combine, create_sweep, create_twist_sweep, create_loft, create_thread, create_draft, create_plane, create_move, create_scale, create_rib, create_pipe, create_split, create_lay_on_floor, create_project, create_image, set_body, import_file, modify_feature, set_parameter, delete_feature and arguments are that tool's arguments WITHOUT \
+                create_sketch, edit_sketch, create_extrude, create_revolve, create_fillet, create_chamfer, create_hole, create_shell, create_mirror, create_pattern, create_combine, create_sweep, create_twist_sweep, create_loft, create_sections, create_thread, create_draft, create_plane, create_move, create_scale, create_rib, create_pipe, create_split, create_lay_on_floor, create_project, create_image, set_body, import_file, modify_feature, set_parameter, delete_feature and arguments are that tool's arguments WITHOUT \
                 document_id; label (optional: the name of the undo step); expected_revision (optional). Give your own ids to what you create \
                 (id: "outline") so later steps can name it; ids made for you cannot be known in advance.
 
@@ -1342,7 +1395,8 @@ enum AITools {
                 loops of points, with the cut's area, centre, bounds, longest direction, length and width. Use it to READ a shape you \
                 cannot read from its features: above all an imported STL, which is a lump of triangles with no feature tree. Slice it \
                 along its length, read each section's chord (length), thickness (width), tilt (major_axis_degrees) and offset, and draw the \
-                same sections again (create_plane + create_sketch + edit_sketch + create_loft, or create_twist_sweep for a twisted plate). It \
+                same sections again: create_sections draws them as sketches for you and create_loft blends them (or give create_loft stations with the \
+                points directly), and create_twist_sweep rebuilds a twisted plate as one feature. It \
                 works on any body, so it also measures what you built: compare a slice of your part with a slice of the original.
 
                 Arguments: body_id (required: from get_document's bodies); axis (required: "x", "y" or "z": the plane is square to it); \
@@ -1358,7 +1412,8 @@ enum AITools {
                 the u axis, -90 to 90: a thin plate's tilt), length (along it: a plate's chord) and width (across it: its thickness). u and v \
                 are the sketch coordinates of the plane: axis x → plane "yz" with u = Y, v = Z; axis y → "xz" with u = X, v = Z; axis z → "xy" \
                 with u = X, v = Y. So a point from a slice can go straight into edit_sketch on a sketch made on a plane (create_plane, \
-                base = that plane, offset = the slice's offset). A plane that misses the body gives an empty section.
+                base = that plane, offset = the slice's offset; for axis y the "xz" plane's normal points to -Y, so the offset is minus the slice's). \
+                create_sections does all of this for you and draws the sketches. A plane that misses the body gives an empty section.
 
                 Fails with FEATURE_NOT_FOUND (no such body), INVALID_ARGUMENTS, INVALID_VALUE, NO_ACTIVE_DOCUMENT or DOCUMENT_NOT_FOUND.
                 """,
@@ -1377,27 +1432,7 @@ enum AITools {
                 handler: { args in
                     let a = AIArguments(args)
                     try a.rejectUnknown(["document_id", "body_id", "axis", "offsets", "from", "to", "count", "tolerance", "points"], in: "slice_body")
-                    var offsets: [Double] = []
-                    if let list = try a.array("offsets") {
-                        offsets = try list.enumerated().map { index, item in
-                            guard let n = item.number else { throw AIError(.invalidArguments, "offsets[\(index)] must be a number (mm).") }
-                            return n
-                        }
-                    }
-                    let hasRange = args["from"] != nil || args["to"] != nil || args["count"] != nil
-                    guard offsets.isEmpty != hasRange else {
-                        throw AIError(.invalidArguments, offsets.isEmpty ? "Send offsets, or from, to and count." : "Send either offsets or from/to/count, not both.",
-                                      reason: "For example offsets: [-200, -150, -100], or from: -230, to: -80, count: 16.")
-                    }
-                    if hasRange {
-                        guard let from = args["from"]?.number, let to = args["to"]?.number, let count = try a.integer("count"), count >= 2 else {
-                            throw AIError(.invalidArguments, "from, to and count (2 or more) are all needed for evenly spaced positions.")
-                        }
-                        guard count <= CADService.maxSliceOffsets else {
-                            throw AIError(.invalidArguments, "count can be at most \(CADService.maxSliceOffsets) (ask for fewer, or slice twice).")
-                        }
-                        offsets = (0..<count).map { from + (to - from) * Double($0) / Double(count - 1) }
-                    }
+                    let offsets = try a.sliceOffsets()
                     let tolerance = args["tolerance"]?.number ?? 0.02
                     return try JSONValue(encoding: try await service.sliceBody(
                         documentID: try a.string("document_id"), bodyID: try a.requiredString("body_id", hint: "Take it from the bodies of get_document."),

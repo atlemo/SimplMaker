@@ -1959,7 +1959,7 @@ final class DocumentModel {
     var showsDial: Bool {
         guard sketchSession == nil, pendingTool == nil, holeMoveStart == nil, let id = selectedFeature else { return false }
         switch document.features.first(where: { $0.id == id })?.kind {
-        case .extrude?, .draft?, .revolve?: return true
+        case .extrude?, .draft?, .revolve?, .twistSweep?: return true
         default: return false
         }
     }
@@ -1967,6 +1967,12 @@ final class DocumentModel {
     /// A draft is selected: its dial leans the faces rather than tapering an extrusion.
     var selectedIsDraft: Bool {
         guard let id = selectedFeature, case .draft? = document.features.first(where: { $0.id == id })?.kind else { return false }
+        return true
+    }
+
+    /// A twist sweep is selected: its dial sets how far the profile has turned at the far end.
+    var selectedIsTwist: Bool {
+        guard let id = selectedFeature, case .twistSweep? = document.features.first(where: { $0.id == id })?.kind else { return false }
         return true
     }
 
@@ -2015,6 +2021,7 @@ final class DocumentModel {
             if case .twoSides = e.extent { slots = [0, 1] } else { slots = [0] }  // one arrow each way
             slots.append(Self.taperSlot)  // and the dial for the taper
         case .draft: slots = [Self.taperSlot]  // the angle is all there is, on a dial
+        case .twistSweep: slots = [0, Self.taperSlot]  // the length on an arrow, and the turn at the far end on a dial
         default: slots = [0]
         }
         return slots.compactMap { handle(for: id, slot: $0) }
@@ -2242,8 +2249,59 @@ final class DocumentModel {
             // Out along the picture's width from its middle: the arrow spans half the width; the height follows.
             guard let placed = result.images[id] else { return nil }
             return handle("Width", placed.frame.origin, placed.frame.xAxis, imf.width, per: 0.5)
-        case .sketch, .sweep, .loft, .twistSweep, .combine, .split, .layOnFloor, .mirror, .pattern, .importBody:
+        case .twistSweep(let tw):
+            guard let sr = result.sketches[tw.sketch], let ref = tw.profiles.first, let region = Regenerator.region(ref, in: sr),
+                  let slotIndex = sr.regions.firstIndex(where: { $0.index == region.index }),
+                  let middle = Self.centroid(of: sr.regionMeshes[slotIndex]) else { return nil }
+            let normal = sr.frame.normal
+            let along = normal * (tw.flipped ? -1 : 1)
+            let start = middle
+            if slot == Self.taperSlot {
+                // A dial round the turning line at the far end, where the profile's x axis points at an angle of nothing: the dot
+                // stands where the end of the profile is, and swings round as the end angle grows.
+                let length = (try? params.value(of: tw.distance, kind: .length)) ?? 0
+                let slide = ((try? params.value(of: tw.shiftU, kind: .length)) ?? 0) * sr.frame.xAxis
+                    + ((try? params.value(of: tw.shiftV, kind: .length)) ?? 0) * sr.frame.yAxis
+                var turnsAbout = start
+                if tw.pivotU != nil || tw.pivotV != nil {
+                    let pu = (try? tw.pivotU.map { try params.value(of: $0, kind: .length) } ?? 0) ?? 0
+                    let pv = (try? tw.pivotV.map { try params.value(of: $0, kind: .length) } ?? 0) ?? 0
+                    turnsAbout = sr.frame.point(pu, pv)
+                }
+                let center = turnsAbout + along * length + slide
+                let radial = Self.points(of: sr.regionMeshes[slotIndex]).map { q -> Double in
+                    let d = q - turnsAbout
+                    return simd_length(d - simd_dot(d, normal) * normal)
+                }.max() ?? 10
+                let clear = 10 * (dialView?.mmPerPoint ?? 0.25)
+                var h = handle("End angle", center, sr.frame.xAxis, tw.endAngle, unit: .angle, max: 8 * .pi, negative: true)
+                h.dial = DragHandle.Dial(side: sr.frame.yAxis, radius: max(radial, 2) + clear, reach: .pi)
+                h.allowsZero = true
+                return h
+            }
+            return handle("Length", start, along, tw.distance)
+        case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .pattern, .importBody:
             return nil
+        }
+    }
+
+    /// The middle of a flat region's triangles (by area), in world coordinates.
+    static func centroid(of mesh: Mesh) -> SIMD3<Double>? {
+        var area = 0.0, sum = SIMD3<Double>(0, 0, 0)
+        let pts = points(of: mesh), idx = mesh.indices
+        for t in 0..<(idx.count / 3) {
+            let a = pts[Int(idx[3 * t])], b = pts[Int(idx[3 * t + 1])], c = pts[Int(idx[3 * t + 2])]
+            let size = simd_length(simd_cross(b - a, c - a)) / 2
+            area += size
+            sum += (a + b + c) / 3 * size
+        }
+        return area > 1e-12 ? sum / area : nil
+    }
+
+    /// A mesh's vertices, in world coordinates.
+    static func points(of mesh: Mesh) -> [SIMD3<Double>] {
+        stride(from: 0, to: mesh.positions.count - 2, by: 3).map {
+            SIMD3(Double(mesh.positions[$0]), Double(mesh.positions[$0 + 1]), Double(mesh.positions[$0 + 2]))
         }
     }
 
@@ -2741,7 +2799,10 @@ final class DocumentModel {
         case .image(var im):
             im.width = text
             doc.features[i].kind = .image(im)
-        case .sketch, .sweep, .loft, .twistSweep, .combine, .split, .layOnFloor, .mirror, .importBody:
+        case .twistSweep(var t):
+            if slot == Self.taperSlot { t.endAngle = text } else { t.distance = text }
+            doc.features[i].kind = .twistSweep(t)
+        case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .importBody:
             break
         }
     }

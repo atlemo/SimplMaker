@@ -701,10 +701,14 @@ struct StatusBar: View {
                                         ? "Drag an arrow, square or ring dot · or type the \(h.label.lowercased()) in the field"
                                         : h.dial != nil && model.selectedIsDraft
                                         ? "Drag the dot round the arc to lean the drafted faces, or click it and type the angle · positive narrows the body away from the face that stays put, negative widens it"
+                                        : h.dial != nil && model.selectedIsTwist
+                                        ? "Drag the dot round the end of the shape to set how far it has turned by the far end, or click it and type the angle"
                                         : h.dial != nil && model.selectedIsRevolve
                                         ? "Drag the dot round the body to set the angle, or click it and type the angle"
                                         : h.dial != nil
                                         ? "Drag the dot round the arc to taper the sides, or click it and type the angle · negative narrows, positive widens"
+                                        : model.selectedIsTwist
+                                        ? "Drag the orange arrow to change the length, or type it in the field next to it · the dot at the far end sets the turn"
                                         : model.showsDial
                                         ? "Drag the orange arrow to change the \(h.label.lowercased()), or type it in the field next to it · the dot on the arc tapers the sides"
                                         : "Drag the orange arrow to change the \(h.label.lowercased()), or type it in the field next to it")
