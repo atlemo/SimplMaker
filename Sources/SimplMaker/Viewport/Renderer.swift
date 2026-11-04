@@ -569,8 +569,6 @@ final class Renderer {
     nonisolated(unsafe) private(set) var lastGPUSeconds: Double = 0
     /// The ground grid (the XY plane when not sketching): rebuilt as the view moves, to cover what's in view.
     private var worldGrid: (key: WorldGridKey, minor: MTLBuffer?, minorCount: Int, major: MTLBuffer?, majorCount: Int)?
-    /// The outline of the ground grid: seen edge-on it is the line of the floor.
-    private var worldGridOutline: MTLBuffer?
     private var axes: [(MTLBuffer, SIMD4<Float>)] = []
     private var axesLength: Float = 0
     /// While sketching: the grid in the sketch's plane (replaces the world grid and axes).
@@ -1122,12 +1120,6 @@ final class Renderer {
                 if j % ratio == 0 { major.append(s) } else { minor.append(s) }
             }
             worldGrid = (key, makeBuffer(minor), minor.count, makeBuffer(major), major.count)
-            worldGridOutline = makeBuffer([
-                SegmentInstance(ax: x0, ay: y0, az: 0, bx: x1, by: y0, bz: 0, id: 0),
-                SegmentInstance(ax: x1, ay: y0, az: 0, bx: x1, by: y1, bz: 0, id: 0),
-                SegmentInstance(ax: x1, ay: y1, az: 0, bx: x0, by: y1, bz: 0, id: 0),
-                SegmentInstance(ax: x0, ay: y1, az: 0, bx: x0, by: y0, bz: 0, id: 0),
-            ])
         }
         // The axes run out to the edge of the grid, and the vertical one stands a few major steps high.
         let length = Float(max(200, Double(key.i1) * key.minor, Double(key.j1) * key.minor, 5 * key.major))
@@ -1876,16 +1868,25 @@ final class Renderer {
                 }
                 enc.setDepthStencilState(depthState)
             }
-        } else if showGrid, matte == nil, !camera.isBelowGround, let g = worldGrid {  // seen from under the floor the grid would only be in the way
-            // Seen almost edge-on the lines pile up into moiré, so the grid fades to a faint one as the view flattens, and the floor's outline takes over. Blended
+        } else if showGrid, matte == nil, let g = worldGrid {
+            // Seen almost edge-on the lines pile up into moiré, so the grid fades to a faint one as the view flattens, and a line for the floor takes over. Blended
             // (fadePipeline) so the opacity shows; at full opacity it is the same as drawing it solid.
             let opacity = Self.groundGridOpacity(forward: camera.forward)
             func faded(_ c: SIMD4<Float>) -> SIMD4<Float> { SIMD4(c.x, c.y, c.z, c.w * opacity) }
+            // The floor's line: through the point looked at, across the view, in the floor's plane. Seen edge-on, that is
+            // where the floor is. One line at the depth of the target, so it is never clipped by the near or far plane.
             let outline = Self.groundOutlineOpacity(forward: camera.forward)
-            if outline > 0 {
+            let across = SIMD3<Float>(camera.right.x, camera.right.y, 0)
+            if outline > 0, simd_length(across) > 1e-4 {
+                let d = simd_normalize(across)
+                let aspect = Float(view.bounds.width / max(view.bounds.height, 1))
+                let reach = camera.halfHeight * max(aspect, 1) * 3
+                let a = SIMD3<Float>(camera.target.x, camera.target.y, 0)
                 let c = faded(p.grid), line = SIMD4(c.x, c.y, c.z, outline)
-                segments(worldGridOutline, 4, DrawParams(color: line, hoverColor: line, selectColor: line,
-                                                         thickness: 1.5 * scale, depthBias: 0, pickable: 0), pipeline: fadePipeline)
+                let one = makeBuffer([SegmentInstance(ax: a.x - d.x * reach, ay: a.y - d.y * reach, az: 0,
+                                                      bx: a.x + d.x * reach, by: a.y + d.y * reach, bz: 0, id: 0)])
+                segments(one, 1, DrawParams(color: line, hoverColor: line, selectColor: line,
+                                            thickness: 1.5 * scale, depthBias: 0, pickable: 0), pipeline: fadePipeline)
             }
             if opacity > 0 {
                 segments(g.minor, g.minorCount, DrawParams(color: faded(p.gridMinor), hoverColor: faded(p.gridMinor), selectColor: faded(p.gridMinor),
