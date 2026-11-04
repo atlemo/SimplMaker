@@ -148,5 +148,25 @@ enum AIRecipes {
         step("create_extrude", ["sketch_id": "b_sk", "profiles": "solid", "distance": "k", "id": "hinge_b"]),
     ]
 
+    /// A twisted fan or propeller blade: a flat plate that turns along its length (and rises toward the root), cut to a leaf outline.
+    /// The blade runs along +X from its tip at the origin; the sections are on the yz plane, so u = Y (across) and v = Z (up).
+    static let twistedBlade: [JSONValue] = [
+        param("blade_len", 150), param("blade_w", 70), param("blade_t", 1.5),
+        step("set_parameter", ["name": "root_twist", "value": -22, "unit": "deg"]), param("rise", 20),
+        step("create_sketch", ["plane": "yz", "id": "sec_sk"]),
+        step("edit_sketch", ["sketch_id": "sec_sk", "add": [
+            ["type": "rectangle", "id": "sec", "center": [0, 0], "width": "blade_w + 20", "height": "blade_t"]]]),
+        step("create_twist_sweep", ["sketch_id": "sec_sk", "profiles": "solid", "distance": "blade_len", "end_angle": "root_twist", "curve": 2,
+                                    "shift": [0, "rise"], "id": "plate"]),
+        step("create_sketch", ["plane": "xy", "id": "plan_sk"]),
+        step("edit_sketch", ["sketch_id": "plan_sk", "add": [
+            ["type": "spline", "id": "leaf", "closed": true, "points": [
+                [0, 0], ["0.12 * blade_len", "0.30 * blade_w"], ["0.40 * blade_len", "0.50 * blade_w"], ["0.75 * blade_len", "0.42 * blade_w"],
+                ["blade_len", "0.34 * blade_w"], ["blade_len", "-0.34 * blade_w"], ["0.75 * blade_len", "-0.42 * blade_w"],
+                ["0.40 * blade_len", "-0.50 * blade_w"], ["0.12 * blade_len", "-0.30 * blade_w"]]]]]),
+        step("create_extrude", ["sketch_id": "plan_sk", "profiles": "solid", "distance": "4 * (blade_w + rise)", "direction": "symmetric",
+                                "operation": "intersect", "target": "plate", "id": "blade"]),
+    ]
+
     static func text(_ steps: [JSONValue]) -> String { steps.map { "  " + $0.text() }.joined(separator: ",\n") }
 }

@@ -49,10 +49,13 @@ enum AITools {
     A picture can cut the part open (section), show only some bodies (only) and draw sketches: use the section to check walls, hollows \
     and snap fits.
 
-    More than extrudes: create_revolve, create_sweep and create_pipe follow a path or an axis; create_loft blends sections; create_rib \
+    More than extrudes: create_revolve, create_sweep and create_pipe follow a path or an axis; create_loft blends sections; create_twist_sweep \
+    pushes a profile straight along a line while it turns (a twisted bar, a propeller or fan blade); create_rib \
     braces a corner; create_project puts text or a logo on a curved surface; create_split cuts a body into pieces and \
     create_lay_on_floor sets how each sits for printing; set_body names, colours or hides a body; create_image places a reference picture \
-    to trace. The guide has recipes and numbers for these (hinges, screw-post cases, multi-part prints).
+    to trace. The guide has recipes and numbers for these (hinges, screw-post cases, multi-part prints). To rebuild an imported STL or any \
+    body you cannot read the sizes of, cut it with slice_body (sections along an axis: outline, thickness, tilt, centre) and draw it again in \
+    features; the guide's topic "scan_to_part" shows how.
 
     Changes: every change tool needs document_id (never guess which part), is applied whole or not at all, and is one step \
     in the user's Undo (named "AI: …"). It answers with the part as it is now and its new revision. Pass expected_revision \
@@ -740,6 +743,52 @@ enum AITools {
                 handler: { args in try await changeTool("create_loft", service: service, args) }),
 
             MCPTool(
+                name: "create_twist_sweep", title: "Sweep a profile along a line while it twists",
+                description: """
+                Pushes a closed sketch profile straight along the sketch's normal while it TURNS about that line (and, if you like, slides \
+                sideways), like the Twist Sweep tool. Use it for anything twisted: a twisted bar or ribbon, a drill or screw-like shape, a \
+                spiral vase, and above all a PROPELLER, FAN or TURBINE BLADE, whose section turns from tip to root. Build such a blade from \
+                two features: a twisted flat plate (this tool, a thin rectangle as the profile) and the blade's outline extruded straight \
+                through it (create_extrude with operation "intersect" and target the plate); the result has the outline's vertical edges and \
+                the plate's twist. To copy a scanned blade, read its sections first with slice_body (major_axis_degrees gives the tilt at each \
+                station, centroid the rise) and fit start_angle, end_angle, curve and shift to them.
+
+                Arguments: document_id; sketch_id (required: the sketch with the profile, on the plane the sweep starts from, square to the \
+                direction it runs: e.g. the "yz" plane, or a create_plane offset of it, to sweep along X); profiles ("solid", ids, or {"at": [u, v]}, \
+                as for create_extrude); distance (required: how far it runs along the sketch's normal, mm; flipped: true runs against it); \
+                end_angle (required: the turn at the far end, degrees, counter-clockwise seen from the sketch's front); start_angle (optional, \
+                default 0: the turn at the start, from the profile as drawn); curve (optional, default 1: 1 turns evenly; 2 keeps the start \
+                flat and turns mostly toward the end, like a blade's pitch growing toward the hub; 0.5 turns early); shift (optional [u, v] \
+                mm: how far the profile has slid by the end, in the sketch's x and y: a lean, or a blade's rise along its length); pivot \
+                (optional [u, v]: the sketch point it turns about; default the middle of the profile); operation ("new_body" (default), \
+                "join", "cut", "intersect"); target; name; id; expected_revision. The turn at a fraction t of the way is start_angle + \
+                (end_angle - start_angle) * t^curve, and the slide is shift * t. Smooth: a loft through a section about every 3 degrees of turn.
+
+                Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
+                FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, REBUILD_FAILED (a profile that turns through itself or a twist too sharp), \
+                USER_BUSY or STALE_REVISION. modify_feature changes distance, start_angle, end_angle, curve, shift_u, shift_v (and pivot_u, pivot_v).
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part to change, from list_documents."],
+                    "sketch_id": ["type": "string", "description": "The sketch with the profile."],
+                    "profiles": ["description": "\"solid\", or a list of profile ids and {\"at\": [u, v]} points."],
+                    "distance": ["type": ["number", "string"], "description": "How far it runs, mm."],
+                    "end_angle": ["type": ["number", "string"], "description": "The turn at the far end, degrees."],
+                    "start_angle": ["type": ["number", "string"], "description": "The turn at the start, degrees (default 0)."],
+                    "curve": ["type": ["number", "string"], "description": "How the turn is spread: 1 even, above 1 late, below 1 early (default 1)."],
+                    "shift": position("How far the profile has slid by the end, in the sketch's x and y (default none)."),
+                    "pivot": position("The sketch point it turns about (default the profile's middle)."),
+                    "flipped": ["type": "boolean", "description": "Run against the sketch's normal."],
+                    "operation": ["type": "string", "enum": ["new_body", "join", "cut", "intersect"], "description": "Default new_body."],
+                    "target": ["type": "string", "description": "The body to combine with (default the newest)."],
+                    "name": ["type": "string", "description": "A name for the feature (default Twist Sweep1…)."],
+                    "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
+                    "expected_revision": expectedRevision,
+                ], ["document_id", "sketch_id", "profiles", "distance", "end_angle"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in try await changeTool("create_twist_sweep", service: service, args) }),
+
+            MCPTool(
                 name: "create_thread", title: "Cut a screw thread",
                 description: """
                 Cuts a real screw thread into a round face, like the Thread tool: the outside of a shaft or the inside of a hole. The face is \
@@ -1180,7 +1229,7 @@ enum AITools {
                 then resize the whole part by changing one number.
 
                 Arguments: document_id (required); operations (required): a list of {tool, arguments}, where tool is one of create_box, \
-                create_sketch, edit_sketch, create_extrude, create_revolve, create_fillet, create_chamfer, create_hole, create_shell, create_mirror, create_pattern, create_combine, create_sweep, create_loft, create_thread, create_draft, create_plane, create_move, create_scale, create_rib, create_pipe, create_split, create_lay_on_floor, create_project, create_image, set_body, import_file, modify_feature, set_parameter, delete_feature and arguments are that tool's arguments WITHOUT \
+                create_sketch, edit_sketch, create_extrude, create_revolve, create_fillet, create_chamfer, create_hole, create_shell, create_mirror, create_pattern, create_combine, create_sweep, create_twist_sweep, create_loft, create_thread, create_draft, create_plane, create_move, create_scale, create_rib, create_pipe, create_split, create_lay_on_floor, create_project, create_image, set_body, import_file, modify_feature, set_parameter, delete_feature and arguments are that tool's arguments WITHOUT \
                 document_id; label (optional: the name of the undo step); expected_revision (optional). Give your own ids to what you create \
                 (id: "outline") so later steps can name it; ids made for you cannot be known in advance.
 
@@ -1284,6 +1333,76 @@ enum AITools {
                     let a = AIArguments(args)
                     return try JSONValue(encoding: try await service.measure(documentID: try a.string("document_id"),
                                                                               a: try a.requiredString("a"), b: try a.string("b")))
+                }),
+
+            MCPTool(
+                name: "slice_body", title: "Cut a body with a plane and read the outline",
+                description: """
+                Cuts a body with a plane square to X, Y or Z, at one or several positions, and returns the outline of each cut as closed \
+                loops of points, with the cut's area, centre, bounds, longest direction, length and width. Use it to READ a shape you \
+                cannot read from its features: above all an imported STL, which is a lump of triangles with no feature tree. Slice it \
+                along its length, read each section's chord (length), thickness (width), tilt (major_axis_degrees) and offset, and draw the \
+                same sections again (create_plane + create_sketch + edit_sketch + create_loft, or create_twist_sweep for a twisted plate). It \
+                works on any body, so it also measures what you built: compare a slice of your part with a slice of the original.
+
+                Arguments: body_id (required: from get_document's bodies); axis (required: "x", "y" or "z": the plane is square to it); \
+                the positions as either offsets: [mm, …] or from, to and count (evenly spaced, count 2 to 100, both ends included); \
+                tolerance (optional, mm, default 0.02: corners within this of a straight line are dropped, 0 keeps every point; raise it \
+                to 0.1–0.3 for a rough outline of a scan); points (optional, default true: false leaves the points out and returns just \
+                the sizes, which is much shorter); document_id (optional).
+
+                Read-only. Returns {document_id, revision, body, axis, plane, coordinates, body_range, tolerance, sections}. body_range is \
+                how far the body reaches along the axis, to choose offsets in. Each section has offset, loops ([{area, hole, closed, points}]: \
+                outer outlines run counter-clockwise, holes clockwise; closed false means the mesh has a gap), and when the plane hits the \
+                body: area, centroid [u, v], bounds [min u, min v, max u, max v], major_axis_degrees (the direction the cut is longest in, from \
+                the u axis, -90 to 90: a thin plate's tilt), length (along it: a plate's chord) and width (across it: its thickness). u and v \
+                are the sketch coordinates of the plane: axis x → plane "yz" with u = Y, v = Z; axis y → "xz" with u = X, v = Z; axis z → "xy" \
+                with u = X, v = Y. So a point from a slice can go straight into edit_sketch on a sketch made on a plane (create_plane, \
+                base = that plane, offset = the slice's offset). A plane that misses the body gives an empty section.
+
+                Fails with FEATURE_NOT_FOUND (no such body), INVALID_ARGUMENTS, INVALID_VALUE, NO_ACTIVE_DOCUMENT or DOCUMENT_NOT_FOUND.
+                """,
+                inputSchema: object([
+                    "document_id": documentID,
+                    "body_id": ["type": "string", "description": "The body, from get_document."],
+                    "axis": ["type": "string", "enum": ["x", "y", "z"], "description": "The plane is square to this axis."],
+                    "offsets": ["type": "array", "items": ["type": "number"], "description": "Positions along the axis, mm."],
+                    "from": ["type": "number", "description": "First position, mm (with to and count)."],
+                    "to": ["type": "number", "description": "Last position, mm."],
+                    "count": ["type": "integer", "description": "How many evenly spaced positions, 2 to 100."],
+                    "tolerance": ["type": "number", "description": "Drop corners within this of a straight line, mm (default 0.02; 0 keeps all)."],
+                    "points": ["type": "boolean", "description": "Include the outline points (default true)."],
+                ], ["body_id", "axis"]),
+                readOnly: true,
+                handler: { args in
+                    let a = AIArguments(args)
+                    try a.rejectUnknown(["document_id", "body_id", "axis", "offsets", "from", "to", "count", "tolerance", "points"], in: "slice_body")
+                    var offsets: [Double] = []
+                    if let list = try a.array("offsets") {
+                        offsets = try list.enumerated().map { index, item in
+                            guard let n = item.number else { throw AIError(.invalidArguments, "offsets[\(index)] must be a number (mm).") }
+                            return n
+                        }
+                    }
+                    let hasRange = args["from"] != nil || args["to"] != nil || args["count"] != nil
+                    guard offsets.isEmpty != hasRange else {
+                        throw AIError(.invalidArguments, offsets.isEmpty ? "Send offsets, or from, to and count." : "Send either offsets or from/to/count, not both.",
+                                      reason: "For example offsets: [-200, -150, -100], or from: -230, to: -80, count: 16.")
+                    }
+                    if hasRange {
+                        guard let from = args["from"]?.number, let to = args["to"]?.number, let count = try a.integer("count"), count >= 2 else {
+                            throw AIError(.invalidArguments, "from, to and count (2 or more) are all needed for evenly spaced positions.")
+                        }
+                        guard count <= CADService.maxSliceOffsets else {
+                            throw AIError(.invalidArguments, "count can be at most \(CADService.maxSliceOffsets) (ask for fewer, or slice twice).")
+                        }
+                        offsets = (0..<count).map { from + (to - from) * Double($0) / Double(count - 1) }
+                    }
+                    let tolerance = args["tolerance"]?.number ?? 0.02
+                    return try JSONValue(encoding: try await service.sliceBody(
+                        documentID: try a.string("document_id"), bodyID: try a.requiredString("body_id", hint: "Take it from the bodies of get_document."),
+                        axis: try a.requiredString("axis", hint: "\"x\", \"y\" or \"z\"."), offsets: offsets, tolerance: tolerance,
+                        includePoints: try a.bool("points") ?? true))
                 }),
 
             MCPTool(

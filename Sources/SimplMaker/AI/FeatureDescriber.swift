@@ -76,6 +76,15 @@ struct FeatureDescriber {
         case .loft(let f):
             out["sections"] = .list(f.sections.map { AIEntityRef.profile(sketch: $0.sketch, curves: $0.profile.curves, copy: 0).string })
             out["ruled"] = .flag(f.ruled); operation(f.operation); target(f.target)
+        case .twistSweep(let f):
+            out["sketch"] = .text(f.sketch); out["profiles"] = profiles(f.profiles, in: f.sketch)
+            out["distance"] = length(f.distance); out["flipped"] = .flag(f.flipped)
+            out["start_angle"] = angle(f.startAngle); out["end_angle"] = angle(f.endAngle); out["curve"] = number(f.curve)
+            out["shift_u"] = length(f.shiftU); out["shift_v"] = length(f.shiftV)
+            if let u = f.pivotU { out["pivot_u"] = length(u) }
+            if let v = f.pivotV { out["pivot_v"] = length(v) }
+            operation(f.operation); target(f.target)
+            if let targets = f.targets { out["targets"] = .list(targets) }
         case .rib(let f):
             out["path"] = path(f.path); out["thickness"] = length(f.thickness); target(f.target)
         case .hole(let f):

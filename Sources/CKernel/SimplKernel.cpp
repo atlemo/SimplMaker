@@ -130,6 +130,7 @@
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Solid.hxx>
 #include <NCollection_Map.hxx>
+#include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Circ.hxx>
@@ -139,6 +140,7 @@
 #include <gp_Sphere.hxx>
 #include <gp_Torus.hxx>
 #include <gp_Trsf.hxx>
+#include <gp_Vec.hxx>
 
 namespace {
 
@@ -2417,45 +2419,49 @@ TopoDS_Wire forwardWire(const TopoDS_Wire &w, TopoDS_Edge &edge) {
   return BRepBuilderAPI_MakeWire(mk.Edge()).Wire();
 }
 
-SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *featureId) {
-  SK_TRY
-  const std::string feat = featureOrDefault(featureId, "loft");
-  std::vector<std::shared_ptr<Object>> keep;
-  std::vector<Profile *> ps;
-  if (!profilesOf(profiles, count, keep, ps, "loft")) return 0;
-  if (count < 2) {
-    setError("a loft needs at least two profiles");
-    return 0;
-  }
+/// The name tag of a profile edge, for a copy of the profile that was moved by `at`.
+std::string edgeTagAt(const Profile &p, const TopLoc_Location &at, const TopoDS_Shape &edge) {
+  for (const Named &t : p.edgeTags)
+    if (t.shape.Moved(at).IsSame(edge)) return t.name;
+  return "?";
+}
+
+/// Lofts through the outer boundaries of `faces` (one per section, in order), cutting out the holes they all share. Side faces
+/// are named after the edges of `tagProfile`, which `faces[0]` is a copy of moved by `tagAt`.
+bool loftFaces(const std::vector<TopoDS_Face> &faces, const Profile &tagProfile, const TopLoc_Location &tagAt, bool ruled,
+               const std::string &feat, TopoDS_Shape &outShape, std::vector<Named> &outNames) {
   BRepOffsetAPI_ThruSections loft(true, ruled);
   std::vector<TopoDS_Wire> wires;
-  for (Profile *p : ps) {
-    wires.push_back(BRepTools::OuterWire(p->face));
+  for (const TopoDS_Face &f : faces) {
+    wires.push_back(BRepTools::OuterWire(f));
     loft.AddWire(wires.back());
   }
   loft.Build();
   if (!loft.IsDone()) {
     setError("loft failed (are the profiles far enough apart, and not crossing?)");
-    return 0;
+    return false;
   }
   std::vector<Named> names{{loft.FirstShape(), feat + ".start"}, {loft.LastShape(), feat + ".end"}};
   for (TopExp_Explorer ex(wires[0], TopAbs_EDGE); ex.More(); ex.Next()) {
     TopoDS_Shape g = loft.GeneratedFace(ex.Current());
-    if (!g.IsNull()) names.push_back({g, feat + ".side." + edgeTag(*ps[0], ex.Current())});
+    if (!g.IsNull()) names.push_back({g, feat + ".side." + edgeTagAt(tagProfile, tagAt, ex.Current())});
   }
 
   // Holes in the profiles (a ring, say) loft too, and are cut out of the outer loft. Every profile
   // must have the same number of holes; each hole is matched to the nearest one in the previous profile.
-  std::vector<std::vector<TopoDS_Wire>> holes(ps.size());
-  for (size_t k = 0; k < ps.size(); ++k)
-    for (TopExp_Explorer wx(ps[k]->face, TopAbs_WIRE); wx.More(); wx.Next())
+  std::vector<std::vector<TopoDS_Wire>> holes(faces.size());
+  for (size_t k = 0; k < faces.size(); ++k)
+    for (TopExp_Explorer wx(faces[k], TopAbs_WIRE); wx.More(); wx.Next())
       if (!wx.Current().IsSame(wires[k])) holes[k].push_back(TopoDS::Wire(wx.Current()));
-  if (std::all_of(holes.begin(), holes.end(), [](auto &h) { return h.empty(); }))
-    return storeChecked(loft.Shape(), names, feat, "loft produced an invalid solid");
+  if (std::all_of(holes.begin(), holes.end(), [](auto &h) { return h.empty(); })) {
+    outShape = loft.Shape();
+    outNames = names;
+    return true;
+  }
   for (auto &h : holes)
     if (h.size() != holes[0].size()) {
       setError("every profile in a loft needs the same number of holes");
-      return 0;
+      return false;
     }
   auto centre = [](const TopoDS_Wire &w) {
     GProp_GProps g;
@@ -2464,7 +2470,7 @@ SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *fe
   };
   std::vector<std::vector<TopoDS_Wire>> chains(holes[0].size());  // chains[hole][profile]
   for (size_t h = 0; h < holes[0].size(); ++h) chains[h].push_back(holes[0][h]);
-  for (size_t k = 1; k < ps.size(); ++k) {
+  for (size_t k = 1; k < faces.size(); ++k) {
     std::vector<bool> used(holes[k].size(), false);
     for (auto &chain : chains) {
       const gp_Pnt from = centre(chain.back());
@@ -2493,18 +2499,18 @@ SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *fe
     bore.Build();
     if (!bore.IsDone()) {
       setError("could not loft the profiles' holes");
-      return 0;
+      return false;
     }
     for (TopExp_Explorer ex(firstWire, TopAbs_EDGE); ex.More(); ex.Next()) {
       TopoDS_Shape g = bore.GeneratedFace(ex.Current());
       // the rebuilt wire has one edge; its tag is the profile edge's
       const TopoDS_Shape &tagged = firstWire.IsSame(chains[h][0]) ? ex.Current() : firstEdge;
-      if (!g.IsNull()) boreNames.push_back({g, feat + ".hole." + edgeTag(*ps[0], tagged)});
+      if (!g.IsNull()) boreNames.push_back({g, feat + ".hole." + edgeTagAt(tagProfile, tagAt, tagged)});
     }
     BRepAlgoAPI_Cut cut(result, bore.Shape());
     if (!cut.IsDone() || cut.HasErrors()) {
       setError("could not hollow the loft");
-      return 0;
+      return false;
     }
     std::vector<Named> carriedOuter, carriedBore;
     carry(cut, names, carriedOuter);
@@ -2514,7 +2520,89 @@ SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *fe
     boreNames.clear();
     result = cut.Shape();
   }
-  return storeChecked(result, names, feat, "loft produced an invalid solid");
+  outShape = result;
+  outNames = names;
+  return true;
+}
+
+
+SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "loft");
+  std::vector<std::shared_ptr<Object>> keep;
+  std::vector<Profile *> ps;
+  if (!profilesOf(profiles, count, keep, ps, "loft")) return 0;
+  if (count < 2) {
+    setError("a loft needs at least two profiles");
+    return 0;
+  }
+  std::vector<TopoDS_Face> faces;
+  for (Profile *p : ps) faces.push_back(p->face);
+  TopoDS_Shape shape;
+  std::vector<Named> names;
+  if (!loftFaces(faces, *ps[0], TopLoc_Location(), ruled, feat, shape, names)) return 0;
+  return storeChecked(shape, names, feat, "loft produced an invalid solid");
+  SK_CATCH(0)
+}
+
+SKHandle sk_twist_sweep(const SKHandle *profiles, int count, double dx, double dy, double dz, double distance, bool hasPivot,
+                        double px, double py, double pz, double startAngle, double endAngle, double power, double shiftX,
+                        double shiftY, double shiftZ, int sections, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "twist");
+  if (count < 1) {
+    setError("a twist sweep needs at least one profile");
+    return 0;
+  }
+  if (std::fabs(distance) <= Precision::Confusion()) {
+    setError("the twist sweep length is zero");
+    return 0;
+  }
+  if (sections < 2 || sections > 200) {
+    setError("a twist sweep needs between 2 and 200 sections");
+    return 0;
+  }
+  if (!(power > 0) || !std::isfinite(power)) {
+    setError("the twist curve has to be a positive number (1 = even)");
+    return 0;
+  }
+  const gp_Dir dir(dx, dy, dz);
+  const gp_Vec shift(shiftX, shiftY, shiftZ);
+  std::vector<TopoDS_Shape> solids;
+  std::vector<Named> names;
+  for (int k = 0; k < count; ++k) {
+    Profile *p;
+    auto keep = lookup(profiles[k], p);
+    if (!p) return 0;
+    // The profile turns about the line through the pivot along the sweep direction: the point given, else the profile's own middle.
+    gp_Pnt pivot(px, py, pz);
+    if (!hasPivot) {
+      GProp_GProps props;
+      BRepGProp::SurfaceProperties(p->face, props);
+      pivot = props.CentreOfMass();
+    }
+    std::vector<TopoDS_Face> faces;
+    TopLoc_Location first;
+    for (int i = 0; i <= sections; ++i) {
+      const double t = double(i) / sections;
+      const double angle = startAngle + (endAngle - startAngle) * std::pow(t, power);
+      gp_Trsf turn;
+      turn.SetRotation(gp_Ax1(pivot, dir), angle);
+      gp_Trsf move;
+      move.SetTranslation(gp_Vec(dir) * (distance * t) + shift * t);
+      const TopLoc_Location at(move.Multiplied(turn));  // turn first, then move
+      faces.push_back(TopoDS::Face(p->face.Moved(at)));
+      if (i == 0) first = at;
+    }
+    TopoDS_Shape solid;
+    std::vector<Named> own;
+    if (!loftFaces(faces, *p, first, false, feat, solid, own)) return 0;
+    solids.push_back(solid);
+    names.insert(names.end(), own.begin(), own.end());
+  }
+  TopoDS_Shape result;
+  if (!fuseAll(solids, names, result)) return 0;
+  return storeChecked(result, names, feat, "the twist sweep produced an invalid solid (does the profile turn through itself?)");
   SK_CATCH(0)
 }
 

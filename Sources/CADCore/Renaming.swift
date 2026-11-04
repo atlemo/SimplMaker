@@ -62,6 +62,11 @@ extension Feature.Kind {
             self = .chamfer(f)
         case .revolve(var f): f.angle = change(f.angle); self = .revolve(f)
         case .sweep, .loft, .combine, .split, .layOnFloor: break
+        case .twistSweep(var f):
+            f.distance = change(f.distance); f.startAngle = change(f.startAngle); f.endAngle = change(f.endAngle)
+            f.curve = change(f.curve); f.shiftU = change(f.shiftU); f.shiftV = change(f.shiftV)
+            f.pivotU = f.pivotU.map(change); f.pivotV = f.pivotV.map(change)
+            self = .twistSweep(f)
         case .rib(var f): f.thickness = change(f.thickness); self = .rib(f)
         case .hole(var f):
             f.u = change(f.u); f.v = change(f.v); f.diameter = change(f.diameter); f.depth = f.depth.map(change)
@@ -157,6 +162,7 @@ extension Feature {
         case .revolve(let f): add(f.sketch); add(f.target)
         case .sweep(let f): add(f.sketch); add(f.path.sketch); add(f.target)
         case .loft(let f): f.sections.forEach { add($0.sketch) }; add(f.target)
+        case .twistSweep(let f): add(f.sketch); add(f.target); f.targets?.forEach { add($0) }
         case .rib(let f): add(f.path.sketch); add(f.target)
         case .hole(let f): add(f.face.body)
         case .thread(let f): add(f.face.body)
@@ -202,6 +208,7 @@ extension Feature {
         case .revolve(let f): if f.operation != .newBody { add(f.target) }
         case .sweep(let f): if f.operation != .newBody { add(f.target) }
         case .loft(let f): if f.operation != .newBody { add(f.target) }
+        case .twistSweep(let f): if f.operation != .newBody { add(f.target); f.targets?.forEach { add($0) } }
         case .rib(let f): add(f.target)
         case .hole(let f): out.insert(f.face.body)
         case .thread(let f): out.insert(f.face.body)

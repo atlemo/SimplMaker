@@ -41,6 +41,7 @@ struct InspectorView: View {
                 case .revolve(let f): RevolveInspector(model: model, id: id, revolve: f)
                 case .sweep(let f): SweepInspector(model: model, id: id, sweep: f)
                 case .loft(let f): LoftInspector(model: model, id: id, loft: f)
+                case .twistSweep(let f): TwistSweepInspector(model: model, id: id, twist: f)
                 case .rib(let f): RibInspector(model: model, id: id, rib: f)
                 case .hole(let f): HoleInspector(model: model, id: id, hole: f)
                 case .thread(let f): ThreadInspector(model: model, id: id, thread: f)
@@ -752,6 +753,53 @@ struct LoftInspector: View {
                 }
             } else {
                 Text("Click a profile in another sketch to add it.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+struct TwistSweepInspector: View {
+    let model: DocumentModel
+    let id: FeatureID
+    let twist: TwistSweepFeature
+
+    var edit: FeatureEdit<TwistSweepFeature> {
+        FeatureEdit(model: model, id: id, get: { if case .twistSweep(let t) = $0 { t } else { nil } }, wrap: { .twistSweep($0) })
+    }
+
+    var body: some View {
+        Section("Twist Sweep") {
+            edit.row("Length", twist.distance, "Edit Length") { $0.distance = $1 }
+            Toggle("Flip direction", isOn: Binding(get: { twist.flipped }, set: { v in edit.update("Flip Direction") { $0.flipped = v } }))
+            edit.row("Start angle", twist.startAngle, "Edit Start Angle") { $0.startAngle = $1 }
+            edit.row("End angle", twist.endAngle, "Edit End Angle") { $0.endAngle = $1 }
+            edit.row("Curve", twist.curve, "Edit Twist Curve") { $0.curve = $1 }
+            Text("Curve 1 turns evenly. Above 1 the turn comes late (flat at the start, steep at the end); below 1 it comes early.")
+                .font(.caption).foregroundStyle(.secondary)
+            edit.row("Slide across (x)", twist.shiftU, "Edit Slide") { $0.shiftU = $1 }
+            edit.row("Slide up (y)", twist.shiftV, "Edit Slide") { $0.shiftV = $1 }
+            Toggle("Turn about the profile's middle", isOn: Binding(
+                get: { twist.pivotU == nil && twist.pivotV == nil },
+                set: { middle in
+                    edit.update("Change Turning Point") { t in
+                        if middle { t.pivotU = nil; t.pivotV = nil } else { t.pivotU = "0 mm"; t.pivotV = "0 mm" }
+                    }
+                }))
+            if let u = twist.pivotU, let v = twist.pivotV {
+                edit.row("Turning point x", u, "Edit Turning Point") { $0.pivotU = $1 }
+                edit.row("Turning point y", v, "Edit Turning Point") { $0.pivotV = $1 }
+            }
+            edit.operation(twist.operation) { $0.operation = $1 }
+            if twist.operation != .newBody {
+                AffectedBodiesList(model: model, id: id, operation: twist.operation, targets: twist.targets) { targets in
+                    edit.update("Change Affected Bodies") { $0.targets = targets }
+                }
+            }
+            LabeledContent("Profiles") {
+                HStack {
+                    Text("\(twist.profiles.count) in \(model.featureName(twist.sketch))")
+                    Button("Reselect…") { model.reselectProfiles(id) }.help("Pick the profiles to sweep again")
+                }
             }
         }
     }

@@ -285,6 +285,7 @@ public enum Regenerator {
                 case .revolve(let f): try revolve(f, feature, &r)
                 case .sweep(let f): try sweep(f, feature, &r)
                 case .loft(let f): try loft(f, feature, &r)
+                case .twistSweep(let f): try twistSweep(f, feature, &r)
                 case .rib(let f): try rib(f, feature, &r)
                 case .hole(let f): try hole(f, feature, &r)
                 case .thread(let f): try thread(f, feature, &r)
@@ -993,6 +994,35 @@ public enum Regenerator {
         let profiles = try f.sections.map { s in try Self.profiles([s.profile], in: try sketchResult(s.sketch, r))[0] }
         let tool = try KBody.loft(profiles, ruled: f.ruled, featureID: feature.id)
         try combine(tool, f.operation, target: f.target, feature, &r)
+    }
+
+    static func twistSweep(_ f: TwistSweepFeature, _ feature: Feature, _ r: inout RegenResult) throws {
+        let sk = try sketchResult(f.sketch, r)
+        let profiles = try profiles(f.profiles, in: sk)
+        let p = r.parameters
+        let distance = try p.value(of: f.distance, kind: .length)
+        guard distance > 1e-9 else { throw KernelError(message: "the length of a twist sweep has to be more than zero") }
+        let start = try p.value(of: f.startAngle, kind: .angle), end = try p.value(of: f.endAngle, kind: .angle)
+        let curve = try p.value(of: f.curve, kind: .none)
+        guard curve > 1e-6, curve < 1e6 else { throw KernelError(message: "the twist curve has to be more than zero (1 turns evenly)") }
+        let shift = try p.value(of: f.shiftU, kind: .length) * sk.frame.xAxis + p.value(of: f.shiftV, kind: .length) * sk.frame.yAxis
+        var pivot: SIMD3<Double>?
+        if f.pivotU != nil || f.pivotV != nil {
+            pivot = sk.frame.point(try f.pivotU.map { try p.value(of: $0, kind: .length) } ?? 0,
+                                   try f.pivotV.map { try p.value(of: $0, kind: .length) } ?? 0)
+        }
+        // A section about every 3° of turn is smooth enough that the loft through them is not visibly faceted.
+        let sections = min(max(Int((abs(end - start) * 180 / .pi / 3).rounded(.up)), 8), 80)
+        // The turn is always about the sketch's normal, so a positive angle is counter-clockwise seen from the sketch's front
+        // whichever way the sweep runs; a flipped sweep just goes the other way along the normal.
+        let tool = try KBody.twistSweep(profiles, direction: sk.frame.normal, distance: f.flipped ? -distance : distance, pivot: pivot,
+                                        startAngle: start, endAngle: end, power: curve, shift: shift, sections: sections,
+                                        featureID: feature.id)
+        if let targets = f.targets {
+            try combine(tool, f.operation, targets: targets, feature, &r)
+        } else {
+            try combine(tool, f.operation, target: f.target, feature, &r)
+        }
     }
 
     static func targetIndex(_ target: FeatureID?, _ r: RegenResult) throws -> Int {

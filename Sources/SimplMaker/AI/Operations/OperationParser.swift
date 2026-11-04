@@ -49,7 +49,7 @@ extension AIArguments {
 
 enum AIOperationParser {
     /// The tools that make changes, which a batch can run.
-    static let changeTools = ["create_box", "create_sketch", "edit_sketch", "create_extrude", "create_fillet", "create_chamfer", "create_hole", "create_shell", "create_mirror", "create_pattern", "create_combine", "create_revolve", "create_sweep", "create_loft", "create_thread", "create_draft", "create_plane", "create_move", "create_scale", "create_rib", "create_pipe", "create_split", "create_lay_on_floor", "create_project", "create_image", "set_body", "import_file", "modify_feature", "set_parameter", "delete_feature"]
+    static let changeTools = ["create_box", "create_sketch", "edit_sketch", "create_extrude", "create_fillet", "create_chamfer", "create_hole", "create_shell", "create_mirror", "create_pattern", "create_combine", "create_revolve", "create_sweep", "create_twist_sweep", "create_loft", "create_thread", "create_draft", "create_plane", "create_move", "create_scale", "create_rib", "create_pipe", "create_split", "create_lay_on_floor", "create_project", "create_image", "set_body", "import_file", "modify_feature", "set_parameter", "delete_feature"]
 
     /// `names` are the part's feature names by id, for naming steps in Undo.
     static func parse(tool: String, arguments: JSONValue, names: [FeatureID: String] = [:]) throws -> any AIOperation {
@@ -199,6 +199,18 @@ enum AIOperationParser {
                                         profiles: try profileSelectors(a, arguments), path: path,
                                         operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody), target: try a.string("target"),
                                         name: try a.string("name"), id: try a.string("id"))
+
+        case "create_twist_sweep":
+            try a.rejectUnknown(["document_id", "sketch_id", "profiles", "distance", "end_angle", "start_angle", "curve", "shift", "pivot", "flipped", "operation", "target", "name", "id", "expected_revision"], in: tool)
+            return CreateTwistSweepOperation(
+                sketchID: try a.requiredString("sketch_id", hint: "The sketch holding the profile to sweep, drawn on the plane the sweep starts from."),
+                profiles: try profileSelectors(a, arguments),
+                distance: try a.requiredQuantity("distance", kind: .length, hint: "How far the sweep runs along the sketch's normal, in mm."),
+                startAngle: try a.quantity("start_angle", kind: .angle) ?? "0 deg",
+                endAngle: try a.requiredQuantity("end_angle", kind: .angle, hint: "The turn at the far end, in degrees (counter-clockwise seen from the sketch's front); the twist is end_angle minus start_angle."),
+                curve: try a.quantity("curve", kind: .none) ?? "1", shift: try a.point("shift"), pivot: try a.point("pivot"),
+                flipped: try a.bool("flipped") ?? false, operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody),
+                target: try a.string("target"), name: try a.string("name"), id: try a.string("id"))
 
         case "create_loft":
             try a.rejectUnknown(["document_id", "sections", "ruled", "operation", "target", "name", "id", "expected_revision"], in: tool)

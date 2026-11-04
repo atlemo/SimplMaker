@@ -93,6 +93,65 @@ struct CreateLoftOperation: AIOperation {
     }
 }
 
+// MARK: twist sweep
+
+struct CreateTwistSweepOperation: AIOperation {
+    let sketchID: FeatureID
+    let profiles: [ProfileSelector]
+    let distance: String
+    let startAngle: String
+    let endAngle: String
+    let curve: String
+    /// How far the profile slides by the end, in the sketch's x and y.
+    let shift: SketchPoint2?
+    /// The point of the sketch the profile turns about; nil = the profile's own middle.
+    let pivot: SketchPoint2?
+    let flipped: Bool
+    let operation: BodyOperation
+    let target: FeatureID?
+    let name: String?
+    let id: String?
+    var toolName: String { "create_twist_sweep" }
+    var label: String { "Create \(name?.nonEmpty ?? "Twist Sweep")" }
+    var activity: String { "Creating \(name?.nonEmpty ?? "a twist sweep")" }
+
+    func apply(to doc: inout CADDocument, context: OperationContext) throws -> OperationOutcome {
+        try CADService.refuseRolledBack(doc)
+        guard let sketchFeature = doc.features.first(where: { $0.id == sketchID }), case .sketch = sketchFeature.kind else {
+            throw AIError(.featureNotFound, "There is no sketch with the id \(sketchID).", reason: "Create one with create_sketch, or take the id from get_document.")
+        }
+        guard let built = context.built.sketches[sketchID] else {
+            throw AIError(.invalidValue, "\(sketchFeature.name) has no profiles to sweep: it is empty or failed to build.", reason: "Add a closed shape with edit_sketch first.")
+        }
+        let refs = try CreateExtrudeOperation.resolve(profiles, sketchID: sketchID, in: built, sketchName: sketchFeature.name, values: context.values)
+        guard !refs.isEmpty else { throw AIError(.invalidArguments, "profiles is empty.") }
+        let v = context.values
+        _ = try AIValues.evaluate(distance, kind: .length, field: "distance", positive: true, values: v)
+        let a0 = try AIValues.evaluate(startAngle, kind: .angle, field: "start_angle", positive: false, values: v)
+        let a1 = try AIValues.evaluate(endAngle, kind: .angle, field: "end_angle", positive: false, values: v)
+        _ = try AIValues.evaluate(curve, kind: .none, field: "curve", positive: true, values: v)
+        guard abs(a1 - a0) < 8 * .pi else {
+            throw AIError(.invalidValue, "The twist is more than 4 turns (\(AIValues.number((a1 - a0) * 180 / .pi)) degrees).",
+                          reason: "Use a smaller angle; for a screw-like shape several turns are fine up to 1440 degrees.")
+        }
+        let su = shift?.x ?? "0 mm", sv = shift?.y ?? "0 mm"
+        _ = try AIValues.evaluate(su, kind: .length, field: "shift.x", positive: false, values: v)
+        _ = try AIValues.evaluate(sv, kind: .length, field: "shift.y", positive: false, values: v)
+        if let pivot {
+            _ = try AIValues.evaluate(pivot.x, kind: .length, field: "pivot.x", positive: false, values: v)
+            _ = try AIValues.evaluate(pivot.y, kind: .length, field: "pivot.y", positive: false, values: v)
+        }
+        try AIChecks.requireBody(for: operation, target: target, in: doc)
+        let featureID = try AIValues.newFeatureID(id, in: doc)
+        let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("Twist Sweep")
+        doc.addFeature(Feature(id: featureID, name: featureName, .twistSweep(TwistSweepFeature(
+            sketch: sketchID, profiles: refs, distance: distance, flipped: flipped, startAngle: startAngle, endAngle: endAngle, curve: curve,
+            shiftU: su, shiftV: sv, pivotU: pivot?.x, pivotV: pivot?.y, operation: operation, target: target))))
+        return OperationOutcome(featureID: featureID,
+                                message: "Created \(featureName): \(refs.count) profile\(refs.count == 1 ? "" : "s") of \(sketchFeature.name) swept \(distance) turning from \(startAngle) to \(endAngle) (\(AIOperationNames.name(operation))).")
+    }
+}
+
 // MARK: thread
 
 struct CreateThreadOperation: AIOperation {

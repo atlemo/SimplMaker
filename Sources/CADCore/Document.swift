@@ -280,6 +280,42 @@ public struct LoftFeature: Codable, Hashable, Sendable {
     }
 }
 
+/// A profile swept along a straight line while it turns about that line and slides sideways: a twisted bar, a propeller or
+/// turbine blade, a screw-like vase. The profile (drawn in `sketch`) is the section where the sweep starts; along the way it
+/// turns by an angle that goes from `startAngle` to `endAngle` and moves by (`shiftU`, `shiftV`) in the sketch's own x and y.
+/// Join, cut or intersect it with a body to shape it further: a twisted plate intersected with an extruded outline is a blade.
+public struct TwistSweepFeature: Codable, Hashable, Sendable {
+    public var sketch: FeatureID
+    public var profiles: [ProfileRef]
+    /// How far it runs, along the sketch's normal (against it when `flipped`).
+    public var distance: String
+    public var flipped: Bool
+    /// The turn at the start and at the end of the run, counter-clockwise seen from the sketch's front. At the start the profile
+    /// is turned by `startAngle` from where it was drawn.
+    public var startAngle: String
+    public var endAngle: String
+    /// How the turn is spread along the run: 1 is evenly; above 1 it comes late (flat at the start, steep at the end), below 1 early.
+    public var curve: String
+    /// How far the profile has slid by the end, in the sketch's x and y (a lean or a rise along the run).
+    public var shiftU: String
+    public var shiftV: String
+    /// The point of the sketch the profile turns about, in the sketch's x and y; nil is the middle of the profile.
+    public var pivotU: String?
+    public var pivotV: String?
+    public var operation: BodyOperation
+    public var target: FeatureID?
+    /// The bodies a Join, Cut or Intersect works on (see `SweepFeature.targets`).
+    public var targets: [FeatureID]?
+    public init(sketch: FeatureID, profiles: [ProfileRef], distance: String = "20 mm", flipped: Bool = false,
+                startAngle: String = "0 deg", endAngle: String = "90 deg", curve: String = "1", shiftU: String = "0 mm",
+                shiftV: String = "0 mm", pivotU: String? = nil, pivotV: String? = nil, operation: BodyOperation = .newBody,
+                target: FeatureID? = nil) {
+        self.sketch = sketch; self.profiles = profiles; self.distance = distance; self.flipped = flipped
+        self.startAngle = startAngle; self.endAngle = endAngle; self.curve = curve; self.shiftU = shiftU; self.shiftV = shiftV
+        self.pivotU = pivotU; self.pivotV = pivotV; self.operation = operation; self.target = target
+    }
+}
+
 /// A thin wall grown from an open sketch curve until it meets the body, thickened across the sketch plane.
 public struct RibFeature: Codable, Hashable, Sendable {
     public var path: CurveRef
@@ -758,6 +794,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case revolve(RevolveFeature)
         case sweep(SweepFeature)
         case loft(LoftFeature)
+        case twistSweep(TwistSweepFeature)
         case rib(RibFeature)
         case hole(HoleFeature)
         case thread(ThreadFeature)
@@ -796,6 +833,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .revolve: return "Revolve"
         case .sweep: return "Sweep"
         case .loft: return "Loft"
+        case .twistSweep: return "Twist Sweep"
         case .rib: return "Rib"
         case .hole: return "Hole"
         case .thread: return "Thread"
@@ -829,6 +867,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .revolve(let r): return [r.sketch]
         case .sweep(let s): return [s.sketch, s.path.sketch]
         case .loft(let l): return l.sections.map(\.sketch)
+        case .twistSweep(let t): return [t.sketch]
         case .rib(let r): return [r.path.sketch]
         case .pipe(let p): return [p.path.sketch]
         }
@@ -841,6 +880,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .revolve(let r): return r.operation == .newBody
         case .sweep(let s): return s.operation == .newBody
         case .loft(let l): return l.operation == .newBody
+        case .twistSweep(let t): return t.operation == .newBody
         case .primitive(let p): return p.operation == .newBody
         case .pipe(let p): return p.operation == .newBody
         case .mirror(let m): return m.operation == .newBody

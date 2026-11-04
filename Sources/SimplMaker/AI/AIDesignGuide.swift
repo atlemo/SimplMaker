@@ -17,7 +17,7 @@ enum AIDesignGuide {
     static func topic(_ id: String) -> DesignTopic? { topics.first { $0.id == id.lowercased() } }
 
     static let topics: [DesignTopic] = [workflow, parameters, printBasics, snapFitLid, roundedBox, nameTag, screwPostCase, hingesAndPrintInPlace,
-                                        multiPartPrint, holesAndFasteners, threads, featureOrder, facesAndEdges, textAndLabels, photoToPart, fixingErrors]
+                                        multiPartPrint, scanToPart, holesAndFasteners, threads, featureOrder, facesAndEdges, textAndLabels, photoToPart, fixingErrors]
 
     // MARK: how to work
 
@@ -258,6 +258,47 @@ enum AIDesignGuide {
         Exporting for the printer: export_file with format "stl" (or "step") and bodies: the ones that should be printed together; one file per \
         plate. Say which way up each piece goes if you did not lay it flat.
         """)
+
+    // MARK: reverse engineering
+
+    static var scanToPart: DesignTopic {
+        DesignTopic(
+            id: "scan_to_part", title: "Rebuilding an imported STL as real features, and twisted shapes like fan blades (verified recipe)",
+            summary: "Reading a mesh with slice_body, then drawing it again parametrically; create_twist_sweep for blades, propellers and spirals.",
+            body: """
+            An imported STL is a lump of triangles: no sketches, no sizes. To turn it into a part the user can edit, READ it, then BUILD it again with \
+            parameters, and compare.
+            1) Look first: get_viewport_image from the top, the front and the side (the scan is in the document as a body: get_document). Decide what \
+            it is made of: a plate, a block, a leaf-shaped outline, a twisted blade, round bosses. Note which direction it is longest in: that is the axis to slice across.
+            2) Overall size: get_document gives the body's bounds; measure gives its volume to compare against later.
+            3) Slice it. slice_body with axis = the long direction and from/to/count, say 12 to 20 stations (points: false first: just the \
+            sizes). Each section says length (the chord), width (the thickness of a plate), centroid [u, v] (where the middle is) and \
+            major_axis_degrees (the tilt of a plate). Read how they change along the length: constant thickness is a plate; a tilt that grows is a \
+            twist; a centroid that moves steadily is a rise or a lean; length that goes up and down is the outline. Then slice with points: true at a \
+            few stations where the outline is not a plain rectangle, and read the shape from the points. Slice along another axis too (the outline from above is \
+            slice_body with axis "z"). Use tolerance 0.1 to 0.3 on a rough scan.
+            4) Build the parts as features, not as one loft of sections, wherever the shape is really made of simple ones: a plate, an outline extruded straight \
+            through it, a block. A loft through 20 sections is exact but not editable; features with a few named numbers are what the user wants. \
+            Round measurements to sensible numbers and make them parameters.
+            5) Twisted plates: create_twist_sweep. The section is a rectangle drawn on the plane the blade starts from (a "yz" plane for a blade along X), \
+            wider than the blade. Fit it to the slices: end_angle is the tilt at the far end, start_angle the tilt at the start; curve shapes the turn between them \
+            (the turn at a fraction t of the way is start + (end - start) × t^curve: try curve 2 when the tilt grows faster toward the end; fit it by comparing the \
+            tilt at the middle with half of the total); shift [0, rise] is how far the section's middle has risen by the end. Then cut the blade's outline: draw it \
+            on "xy" (a spline through 8 to 12 points read from the slices' bounds, closed), create_extrude it with operation "intersect", target the plate, direction "symmetric" and \
+            a distance bigger than the plate's height. This gives the outline's vertical edges, like a molded blade.
+            This recipe makes a blade 150 mm long and 70 mm wide, 1.5 mm thick, twisting 22° and rising 20 mm along its length. One batch (label "Blade"):
+            [
+            \(AIRecipes.text(AIRecipes.twistedBlade))
+            ]
+            It makes one body, plate (the blade; the id of the first feature stays). To fit it to a scan change the numbers, and to compare, slice both bodies at the same \
+            offsets (body ids differ, offsets are the same) and compare length, width, centroid and major_axis_degrees section by section: differences over 0.3 mm or 1° are worth another pass.
+            6) A block or hub that the blade attaches to: draw its outline on "xy" (read it with slice_body axis "z" at a height through it), extrude it, \
+            round it if the scan shows a round end (an arc through three points), and join the blade into it (create_combine). Text engraved on it: create_extrude of an \
+            edit_sketch text with operation "cut".
+            7) Say what you could not tell: fillets where the blade meets the hub, small blends, and the thickness variation of a scan are usually left out; give the volume of the \
+            scan and of your part and say how close they are.
+            """)
+    }
 
     // MARK: parts
 

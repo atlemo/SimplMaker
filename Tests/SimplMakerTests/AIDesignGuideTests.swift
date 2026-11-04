@@ -125,6 +125,23 @@ import Testing
         #expect(wider.allSatisfy { abs(abs($0.center[0]) - 35) < 0.01 }, "\(wider.map(\.center))")
     }
 
+    @Test func theTwistedBladeRecipeMakesOneValidThinBody() async throws {
+        let t = await open()
+        let r = try await batch(t, "Blade", AIRecipes.twistedBlade)
+        #expect(r.success && t.model.result?.errors.isEmpty == true, "\(t.model.result?.errors ?? [:])")
+        #expect(r.bodies.map(\.id) == ["plate"] && r.bodies[0].isValid, "\(r.bodies.map(\.id))")
+        let b = try #require(r.bodies.first)
+        // 150 long along X from the tip at the origin, 70 wide at most; the plate is 1.5 thick, so the volume is about area × 1.5
+        #expect(b.boundsMin[0] > -1 && b.boundsMax[0] < 152, "\(b.boundsMin) \(b.boundsMax)")
+        #expect((b.boundsMax[1] - b.boundsMin[1]) > 64 && (b.boundsMax[1] - b.boundsMin[1]) < 72, "\(b.boundsMin) \(b.boundsMax)")
+        #expect((b.volume ?? 0) > 6_000 && (b.volume ?? 0) < 14_000, "\(b.volume ?? -1)")
+        // sliced across, a station is a thin tilted plate: 1.5 thick, and tilted more toward the root
+        let slice = try await t.service.sliceBody(documentID: t.id, bodyID: "plate", axis: "x", offsets: [40, 140], tolerance: 0.05, includePoints: false)
+        let tilts = slice.sections.map { $0.majorAxisDegrees ?? .nan }
+        #expect(abs(tilts[0]) < abs(tilts[1]) && abs(tilts[1]) > 10, "\(tilts)")
+        #expect(slice.sections.allSatisfy { ($0.width ?? 9) < 2.2 }, "\(slice.sections.map { $0.width ?? -1 })")
+    }
+
     @Test func thePrintInPlaceHingeMakesTwoBodiesThatDoNotTouch() async throws {
         let t = await open()
         let r = try await batch(t, "Hinge", AIRecipes.printInPlaceHinge)
@@ -181,6 +198,8 @@ import Testing
         #expect(posts.contains(AIRecipes.text(AIRecipes.screwPostCase)) && posts.contains("pilot_d"))
         let hinge = try #require(try t.service.designGuide(topic: "hinges_and_print_in_place")["guide"]?.string)
         #expect(hinge.contains(AIRecipes.text(AIRecipes.printInPlaceHinge)) && hinge.contains("clr"))
+        let scan = try #require(try t.service.designGuide(topic: "scan_to_part")["guide"]?.string)
+        #expect(scan.contains(AIRecipes.text(AIRecipes.twistedBlade)) && scan.contains("slice_body"))
     }
 
     @Test func guideTopicsDoNotPromiseToolsThatDoNotExist() throws {

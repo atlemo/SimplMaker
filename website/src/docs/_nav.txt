@@ -33,6 +33,7 @@ sketch/dxf
 create/extrude
 create/revolve
 create/sweep
+create/twist-sweep
 create/loft
 create/rib
 create/pipe

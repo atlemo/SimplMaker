@@ -11,7 +11,7 @@ import Foundation
 import simd
 
 enum DesignTool: String, CaseIterable, Identifiable, Sendable {
-    case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
+    case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", twistSweep = "Twist Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
     case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", scale = "Scale", combine = "Combine", split = "Split Body", layOnFloor = "Lay on Floor"
     case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell", draft = "Draft", canvas = "Canvas"
@@ -22,7 +22,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
 
     /// Toolbar and menu groups: shapes built from sketches, ready-made primitives, and tools that
     /// change an existing body.
-    static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .loft, .rib, .pipe]
+    static let shapes: [DesignTool] = [.extrude, .revolve, .sweep, .twistSweep, .loft, .rib, .pipe]
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
     static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .draft, .project, .move, .scale, .layOnFloor, .combine, .split]
     /// Construction planes, copies of bodies, and reference images.
@@ -36,6 +36,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .extrude: return "extrude"
         case .revolve: return "revolve"
         case .sweep: return "spline"
+        case .twistSweep: return "rotate-3d"
         case .loft: return "layers-2"
         case .rib: return "square-split-horizontal"
         case .hole: return "hole"
@@ -73,6 +74,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .extrude: return "e"
         case .revolve: return "r"
         case .sweep: return "w"
+        case .twistSweep: return "w"  // with ⇧ (see defaultModifiers): every plain letter is taken
         case .loft: return "l"
         case .rib: return "b"
         case .pipe: return "p"
@@ -103,7 +105,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Held with the letter by default. Every plain letter has a tool (or Appearance), so a tool added since has ⇧ with one.
-    var defaultModifiers: KeyChord.Modifiers { self == .draft || self == .split || self == .layOnFloor || self == .sectionAnalysis ? .shift : [] }
+    var defaultModifiers: KeyChord.Modifiers { self == .draft || self == .split || self == .layOnFloor || self == .sectionAnalysis || self == .twistSweep ? .shift : [] }
 
     /// The tooltip: the name, its current shortcut, and what the tool does.
     var help: String {
@@ -116,6 +118,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .extrude: return "push a profile into a solid"
         case .revolve: return "turn a profile around an axis"
         case .sweep: return "move a profile along a path"
+        case .twistSweep: return "push a profile along a straight line while it turns, for a twisted bar, a propeller or fan blade or a spiral vase"
         case .loft: return "blend between two or more profiles"
         case .rib: return "a thin wall from an open sketch line to the body"
         case .hole: return "drill a hole in a flat face"
@@ -182,6 +185,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .extrude: return kind == .region || kind == .face
         case .loft: return kind == .region
         case .revolve, .sweep: return kind == .region || kind == .sketchCurve
+        case .twistSweep: return kind == .region
         case .rib, .pipe: return kind == .sketchCurve
         case .hole, .thread: return kind == .face
         case .box, .cylinder, .sphere, .torus, .coil: return kind == .plane || kind == .face
@@ -300,6 +304,7 @@ extension DocumentModel {
         case .revolve:
             return profiles == 0 ? "Select a profile to revolve" : "Select a line as the axis · Return uses the sketch's vertical axis"
         case .sweep: return profiles == 0 ? "Select the profile to sweep" : "Select the path to sweep along"
+        case .twistSweep: return "Select the profile to twist along its length · Return uses \(profiles) selected"
         case .loft:
             return profiles < 2 ? "Select profiles in order (\(profiles) so far)" : "Select more profiles, or press Return to loft \(profiles)"
         case .rib: return "Select an open sketch curve for the rib"
@@ -399,6 +404,11 @@ extension DocumentModel {
             let refs = profiles.filter { $0.sketch == first.sketch }.map(\.ref)
             add(Feature(name: document.nextName("Sweep"), .sweep(SweepFeature(
                 sketch: first.sketch, profiles: refs, path: path, operation: noBodies ? .newBody : .join))))
+        case .twistSweep:
+            guard let first = profiles.first else { return false }
+            let refs = profiles.filter { $0.sketch == first.sketch }.map(\.ref)
+            add(Feature(name: document.nextName("Twist Sweep"), .twistSweep(TwistSweepFeature(
+                sketch: first.sketch, profiles: refs, operation: noBodies ? .newBody : .join))))
         case .loft:
             var seen = Set<FeatureID>()
             let sections = profiles.filter { seen.insert($0.sketch).inserted }.map { LoftSection(sketch: $0.sketch, profile: $0.ref) }
@@ -614,6 +624,7 @@ extension DocumentModel {
         case .extrude(let e)? where e.face == nil: return (e.sketch, e.profiles, .extrude)
         case .revolve(let r)?: return (r.sketch, r.profiles, .revolve)
         case .sweep(let s)?: return (s.sketch, s.profiles, .sweep)
+        case .twistSweep(let t)?: return (t.sketch, t.profiles, .twistSweep)
         case .project(let p)?: return (p.sketch, p.profiles, .project)
         default: return nil
         }
@@ -653,6 +664,7 @@ extension DocumentModel {
             case .extrude(var e): e.profiles = refs; f.kind = .extrude(e)
             case .revolve(var r): r.profiles = refs; if let axis { r.axis = .line(axis) }; f.kind = .revolve(r)
             case .sweep(var s): s.profiles = refs; f.kind = .sweep(s)
+            case .twistSweep(var t): t.profiles = refs; f.kind = .twistSweep(t)
             case .project(var p): p.profiles = refs; f.kind = .project(p)
             default: break
             }

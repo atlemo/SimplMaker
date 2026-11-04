@@ -183,6 +183,23 @@ enum FeatureFields {
             return [FieldSpec(name: "factor", unit: .none, positive: true,
                               read: { if case .scale(let x) = $0 { return x.factor } else { return nil } },
                               write: { kind, text in if case .scale(var x) = kind { x.factor = text; kind = .scale(x) } })]
+        case .twistSweep(let t):
+            func twist(_ name: String, _ unit: UnitKind, _ positive: Bool, _ path: WritableKeyPath<TwistSweepFeature, String>) -> FieldSpec {
+                FieldSpec(name: name, unit: unit, positive: positive,
+                          read: { if case .twistSweep(let x) = $0 { return x[keyPath: path] } else { return nil } },
+                          write: { kind, text in if case .twistSweep(var x) = kind { x[keyPath: path] = text; kind = .twistSweep(x) } })
+            }
+            func pivot(_ name: String, _ path: WritableKeyPath<TwistSweepFeature, String?>) -> FieldSpec {
+                FieldSpec(name: name, unit: .length, positive: false,
+                          read: { if case .twistSweep(let x) = $0 { return x[keyPath: path] } else { return nil } },
+                          write: { kind, text in if case .twistSweep(var x) = kind { x[keyPath: path] = text; kind = .twistSweep(x) } })
+            }
+            var out = [twist("distance", .length, true, \.distance), twist("start_angle", .angle, false, \.startAngle),
+                       twist("end_angle", .angle, false, \.endAngle), twist("curve", .none, true, \.curve),
+                       twist("shift_u", .length, false, \.shiftU), twist("shift_v", .length, false, \.shiftV)]
+            if t.pivotU != nil { out.append(pivot("pivot_u", \.pivotU)) }
+            if t.pivotV != nil { out.append(pivot("pivot_v", \.pivotV)) }
+            return out
         case .rib:
             return [FieldSpec(name: "thickness", unit: .length, positive: true,
                               read: { if case .rib(let x) = $0 { return x.thickness } else { return nil } },
@@ -214,7 +231,7 @@ enum FeatureFields {
     }
 
     /// For the message when a feature can't be changed.
-    static let supportedTypes = "Box, Cylinder, Sphere, Torus and Coil (their sizes), Sketch (its dimensions and text heights), Extrude (distance, taper), Fillet and Chamfer (size, second), Hole (diameter, depth, position…), Shell (thickness), Revolve (angle), Pattern (count, spacing), Thread (length, tolerance), Draft (angle), Plane (offset, angle), Move (distances, turns), Scale (factor), Rib (thickness), Pipe (diameter, wall), Project (height) and Canvas image (u, v, width, angle)"
+    static let supportedTypes = "Box, Cylinder, Sphere, Torus and Coil (their sizes), Sketch (its dimensions and text heights), Extrude (distance, taper), Fillet and Chamfer (size, second), Hole (diameter, depth, position…), Shell (thickness), Revolve (angle), Pattern (count, spacing), Thread (length, tolerance), Draft (angle), Plane (offset, angle), Move (distances, turns), Scale (factor), Rib (thickness), Twist Sweep (distance, angles, curve, shifts), Pipe (diameter, wall), Project (height) and Canvas image (u, v, width, angle)"
 
     private static func size(_ name: String, _ path: WritableKeyPath<PrimitiveFeature, String>, unit: UnitKind = .length) -> FieldSpec {
         primitive(name, unit, true, path)

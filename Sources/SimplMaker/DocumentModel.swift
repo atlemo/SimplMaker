@@ -2242,7 +2242,7 @@ final class DocumentModel {
             // Out along the picture's width from its middle: the arrow spans half the width; the height follows.
             guard let placed = result.images[id] else { return nil }
             return handle("Width", placed.frame.origin, placed.frame.xAxis, imf.width, per: 0.5)
-        case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .pattern, .importBody:
+        case .sketch, .sweep, .loft, .twistSweep, .combine, .split, .layOnFloor, .mirror, .pattern, .importBody:
             return nil
         }
     }
@@ -2741,7 +2741,7 @@ final class DocumentModel {
         case .image(var im):
             im.width = text
             doc.features[i].kind = .image(im)
-        case .sketch, .sweep, .loft, .combine, .split, .layOnFloor, .mirror, .importBody:
+        case .sketch, .sweep, .loft, .twistSweep, .combine, .split, .layOnFloor, .mirror, .importBody:
             break
         }
     }

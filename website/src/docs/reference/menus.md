@@ -64,7 +64,7 @@ While you are editing a sketch, the menu also lists the sketch tools, **Offset S
 
 ## Create
 
-**Extrude**, **Revolve**, **Sweep**, **Loft**, **Rib**, **Pipe**; **Box**, **Cylinder**, **Sphere**, **Torus**, **Coil**; **Construction Plane**, **Canvas (Reference Image)…**; and **Rebuild** ([[⌘R]]).
+**Extrude**, **Revolve**, **Sweep**, **Twist Sweep**, **Loft**, **Rib**, **Pipe**; **Box**, **Cylinder**, **Sphere**, **Torus**, **Coil**; **Construction Plane**, **Canvas (Reference Image)…**; and **Rebuild** ([[⌘R]]).
 
 ## Modify
 

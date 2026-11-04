@@ -16,6 +16,7 @@ extension Feature {
         case .revolve: return DesignTool.revolve.symbol
         case .sweep: return DesignTool.sweep.symbol
         case .loft: return DesignTool.loft.symbol
+        case .twistSweep: return DesignTool.twistSweep.symbol
         case .rib: return DesignTool.rib.symbol
         case .hole: return DesignTool.hole.symbol
         case .thread: return DesignTool.thread.symbol

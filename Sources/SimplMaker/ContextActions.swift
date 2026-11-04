@@ -279,6 +279,7 @@ extension DocumentModel {
         case .revolve(let r)?: return r.operation
         case .sweep(let s)?: return s.operation
         case .loft(let l)?: return l.operation
+        case .twistSweep(let t)?: return t.operation
         case .primitive(let p)?: return p.operation
         case .pipe(let p)?: return p.operation
         default: return nil
@@ -294,6 +295,7 @@ extension DocumentModel {
             case .revolve(var r): r.operation = op; f.kind = .revolve(r)
             case .sweep(var s): s.operation = op; f.kind = .sweep(s)
             case .loft(var l): l.operation = op; f.kind = .loft(l)
+            case .twistSweep(var t): t.operation = op; f.kind = .twistSweep(t)
             case .primitive(var p): p.operation = op; f.kind = .primitive(p)
             case .pipe(var p): p.operation = op; f.kind = .pipe(p)
             default: break
