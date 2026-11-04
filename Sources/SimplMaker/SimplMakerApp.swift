@@ -190,6 +190,9 @@ struct SimplMakerCommands: Commands {
             Toggle("Render Options", isOn: Binding(get: { model?.showRenderOptions ?? false },
                                                    set: { model?.showRenderOptions = $0 }))
                 .disabled(model == nil || !(model?.renderView ?? false))
+            Toggle("Turntable", isOn: Binding(get: { model?.renderSpinning ?? false },
+                                              set: { model?.renderSpinning = $0 }))
+                .disabled(model == nil || !(model?.renderView ?? false))
             Toggle("Section Analysis", isOn: Binding(get: { model?.sectionActive ?? false },
                                                      set: { model?.setSectionAnalysis($0) }))
                 .disabled(model == nil)

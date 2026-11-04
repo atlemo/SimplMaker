@@ -355,6 +355,30 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// Whether the view is moving by itself (a turn to a view, leaving a sketch).
     var isAnimatingCamera: Bool { cameraAnimation != nil }
 
+    private var spinTask: Task<Void, Never>?
+    /// The turntable's pace: about one turn in 45 seconds.
+    static let spinRate: Float = 2 * .pi / 45
+
+    /// Starts or stops the turntable: the camera circles the target about the vertical axis, so the part turns in
+    /// front of it. A move to a view waits for the spin to pass; the user can still orbit, pan and zoom meanwhile.
+    func setSpinning(_ on: Bool) {
+        if !on { spinTask?.cancel(); spinTask = nil; return }
+        guard spinTask == nil else { return }
+        spinTask = Task { @MainActor [weak self] in
+            var last = Date()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(16))
+                guard let self, let renderer = self.renderer else { return }
+                let now = Date()
+                let dt = Float(min(now.timeIntervalSince(last), 0.1))  // a slow frame doesn't jump
+                last = now
+                if self.cameraAnimation != nil { continue }
+                renderer.camera.yaw = remainder(renderer.camera.yaw - Self.spinRate * dt, 2 * .pi)
+                self.needsDisplay = true
+            }
+        }
+    }
+
     func stopCameraAnimation() {
         cameraAnimation?.cancel()
         cameraAnimation = nil
@@ -2247,6 +2271,8 @@ struct ViewportView: NSViewRepresentable {
     var printNozzle = 0.4
     /// The Render view's floor and light; nil: not rendering.
     var renderSettings: RenderSettings?
+    /// The Render view's turntable: the camera circles the part by itself.
+    var spinning = false
     /// Section analysis: the cutting plane (see Renderer.sectionPlane).
     var sectionPlane: SIMD4<Float>?
     /// The exploded view: how far each shown body is shifted; empty: in place.
@@ -2335,6 +2361,7 @@ struct ViewportView: NSViewRepresentable {
         renderer.printLayer = Float(printLayer)
         renderer.printNozzle = Float(printNozzle)
         renderer.renderSettings = renderSettings
+        view.setSpinning(spinning)
         renderer.sceneBounds = model.explodedSceneBounds
         renderer.sectionPlane = sectionPlane
         renderer.sketchSlice = sketchSlice

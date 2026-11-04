@@ -516,6 +516,13 @@ struct RenderPanel: View {
 
     private var exportGroup: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space6) {
+            Button { model.renderSpinning.toggle() } label: {
+                Label(model.renderSpinning ? "Pause turntable" : "Play turntable",
+                      systemImage: model.renderSpinning ? "pause.fill" : "play.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .help("Slowly turn the part around so every side comes into view")
             Button { model.exportImageWithDialog() } label: {
                 Label("Export render", systemImage: "square.and.arrow.up")
                     .frame(maxWidth: .infinity)

@@ -231,6 +231,8 @@ final class DocumentModel {
         didSet { renderSettings.save() }
     }
     var showRenderOptions = false
+    /// Whether the Render view's turntable is playing: the camera circles the part slowly. Not saved; ends with the Render view.
+    var renderSpinning = false
     /// Whether the Export Image dialog is open.
     var showExportImage = false
     /// Where the Render view's depth blur is sharp, in the world; nil = the middle of the part. Not saved.
@@ -301,7 +303,7 @@ final class DocumentModel {
     func setRenderView(_ on: Bool) {
         let wasOn = renderView
         renderView = on
-        if !on { restorePanelsHiddenByRender() }
+        if !on { renderSpinning = false; restorePanelsHiddenByRender() }
         if on {
             if !wasOn {
                 panelsHiddenByRender = (showSidebar, showInspector, showTimeline)
