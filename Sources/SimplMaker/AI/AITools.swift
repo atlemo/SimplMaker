@@ -1105,7 +1105,8 @@ enum AITools {
                 Throws the profiles of a sketch (lettering, a logo outline, a pattern) onto a body the way a projector throws a picture on a \
                 wall, and either raises them (emboss) or cuts them in (deboss). Unlike a plain extrude it follows a curved surface, so use it for \
                 a name on a cylinder or a logo on a rounded lid. The projection runs along the sketch's normal (against it with flipped) and \
-                lands on the faces that face the sketch.
+                lands on the faces that face the sketch. On a cylinder the shapes are wrapped round it like a label on a can, so they keep their \
+                true size (the sketch plane must be parallel to the cylinder's axis); other curved faces stretch the shapes where they turn away.
 
                 Arguments: document_id; sketch_id (required: the sketch with the text or shapes); profiles (required: "solid", or a list of \
                 profile ids from get_feature and {"at": [u, v]} points); target (required: the body to project onto); faces (optional: face ids of \

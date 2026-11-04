@@ -1547,6 +1547,8 @@ struct ProjectInspector: View {
             }
             edit.row("Height", project.signedHeight, "Edit Height") { $0.setHeight($1) }
             Toggle("Flip direction", isOn: Binding(get: { project.flipped }, set: { v in edit.update("Flip") { $0.flipped = v } }))
+            Toggle("True size on round faces", isOn: Binding(get: { project.wrap ?? false }, set: { v in edit.update("Change Wrapping") { $0.wrap = v } }))
+                .help("Wraps the profiles round a cylinder like a label on a can, so letters keep their size. Off throws them on from the side, which stretches them where the surface turns away.")
             LabeledContent("Profiles") {
                 HStack {
                     Text("\(project.profiles.count)")
@@ -1565,7 +1567,7 @@ struct ProjectInspector: View {
                 Button("Project onto Every Face Instead") { edit.update("Change Faces") { $0.faces = [] } }
             }
             BodiesRow(model: model, ids: [project.target])
-            Text("The profiles are thrown onto the body along the sketch's direction, like a projector, and follow its surface, flat or curved. Profiles that reach past the body's edge-on side are cut off there.")
+            Text("The profiles follow the body's surface, flat or curved. With true size on, a cylinder gets them wrapped round it like a label (the sketch must run parallel to its axis); with it off they are thrown on along the sketch's direction like a projector, and are cut off where the surface turns edge-on.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

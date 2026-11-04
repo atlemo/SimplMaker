@@ -90,6 +90,13 @@
 #include <Geom_SurfaceOfLinearExtrusion.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
 #include <BRepTools_WireExplorer.hxx>
+#include <ElSLib.hxx>
+#include <GCE2d_MakeSegment.hxx>
+#include <Geom2dAPI_Interpolate.hxx>
+#include <Geom2d_BSplineCurve.hxx>
+#include <Geom2d_TrimmedCurve.hxx>
+#include <TColgp_HArray1OfPnt2d.hxx>
+#include <gp_Pnt2d.hxx>
 #include <GeomConvert.hxx>
 #include <GeomConvert_CompCurveToBSplineCurve.hxx>
 #include <ShapeFix_Face.hxx>
@@ -3123,10 +3130,148 @@ bool solidHolds(const TopoDS_Shape &solid, const gp_Pnt &p) {
   return c.State() == TopAbs_IN;
 }
 
+
+/// The profiles laid onto a round (cylindrical) face the way a label is wrapped round a can: unrolled, so that a
+/// length in the sketch is the same length along the surface, however far the surface has turned away. The sketch
+/// plane touches the cylinder where the line through `centre` along `dir` meets the side that faces the sketch; there
+/// the sketch and the surface agree, and everything else is measured out from that point across and along the face.
+/// `wrapped` gets one face per profile, lying on the cylinder (not yet cut down to the face). False when the face isn't
+/// a cylinder, the sketch isn't parallel to its axis, or the line misses it.
+bool wrapOntoCylinder(const TopoDS_Face &face, const std::vector<Profile *> &ps, const gp_Pnt &centre, const gp_Dir &dir,
+                      TopoDS_Compound &wrapped) {
+  BRepAdaptor_Surface adaptor(face);
+  if (adaptor.GetType() != GeomAbs_Cylinder) return false;
+  const gp_Cylinder cyl = adaptor.Cylinder();
+  const double radius = cyl.Radius();
+  const gp_Dir axis = cyl.Axis().Direction();
+  if (radius < 1e-6 || std::fabs(axis.Dot(dir)) > 0.02) return false;
+
+  // Where the line through the middle of the profiles meets the cylinder, on the side that faces the sketch.
+  const gp_Vec q(cyl.Location(), centre);
+  const gp_Vec qPerp = q - gp_Vec(axis) * q.Dot(gp_Vec(axis));
+  const gp_Vec dPerp = gp_Vec(dir) - gp_Vec(axis) * gp_Vec(dir).Dot(gp_Vec(axis));
+  const double a = dPerp.SquareMagnitude();
+  if (a < 1e-12) return false;
+  const double b = qPerp.Dot(dPerp) / a, c = (qPerp.SquareMagnitude() - radius * radius) / a;
+  const double disc = b * b - c;
+  if (disc < 0) return false;
+  const double side = face.Orientation() == TopAbs_REVERSED ? -1.0 : 1.0;  // the way the face's outside points
+  double hit = 0;
+  bool found = false;
+  for (double t : {-b - std::sqrt(disc), -b + std::sqrt(disc)}) {
+    const gp_Vec radial = (qPerp + dPerp * t) / radius;
+    if (side * radial.Dot(gp_Vec(dir)) < 0) {
+      hit = t;
+      found = true;
+      break;
+    }
+  }
+  if (!found) return false;
+  const gp_Pnt touch = centre.Translated(gp_Vec(dir) * hit);
+
+  // The same cylinder with its seam on the far side from the touching point, so the wrapped profiles never straddle it.
+  const gp_Vec fromAxis = gp_Vec(cyl.Location(), touch) - gp_Vec(axis) * gp_Vec(cyl.Location(), touch).Dot(gp_Vec(axis));
+  if (fromAxis.Magnitude() < 1e-9) return false;
+  const gp_Cylinder rebased(gp_Ax3(cyl.Location(), axis, gp_Dir(fromAxis.Reversed())), radius);
+  double u0 = 0, v0 = 0;
+  ElSLib::Parameters(rebased, touch, u0, v0);
+  gp_Pnt onSurface;
+  gp_Vec du, dv;
+  ElSLib::D1(u0, v0, rebased, onSurface, du, dv);
+
+  // The sketch's own directions at the touching point: along the axis, and across it.
+  const gp_Vec along = (gp_Vec(axis) - gp_Vec(dir) * axis.Dot(dir)).Normalized();
+  const gp_Vec across = gp_Vec(dir).Crossed(along).Normalized();
+  const double signU = du.Dot(across) >= 0 ? 1.0 : -1.0;
+  const double signV = dv.Dot(along) >= 0 ? 1.0 : -1.0;
+  auto toSurface = [&](const gp_Pnt &p) {
+    const gp_Vec d(centre, p);
+    return gp_Pnt2d(u0 + signU * d.Dot(across) / radius, v0 + signV * d.Dot(along));
+  };
+
+  Handle(Geom_Surface) surface = new Geom_CylindricalSurface(rebased);
+  BRep_Builder builder;
+  builder.MakeCompound(wrapped);
+  for (Profile *p : ps) {
+    BRepBuilderAPI_MakeFace made;
+    bool firstWire = true;
+    const TopoDS_Wire outer = BRepTools::OuterWire(p->face);
+    std::vector<TopoDS_Wire> wires{outer};
+    for (TopExp_Explorer ex(p->face, TopAbs_WIRE); ex.More(); ex.Next()) {
+      const TopoDS_Wire w = TopoDS::Wire(ex.Current());
+      if (!w.IsSame(outer)) wires.push_back(w);
+    }
+    for (const TopoDS_Wire &wire : wires) {
+      // The wire's edges, in order, as lists of points on the unrolled surface; each starts where the last ended.
+      std::vector<std::vector<gp_Pnt2d>> runs;
+      std::vector<bool> straight;
+      for (BRepTools_WireExplorer we(wire); we.More(); we.Next()) {
+        const TopoDS_Edge edge = we.Current();
+        BRepAdaptor_Curve curve(edge);
+        const bool reversed = edge.Orientation() == TopAbs_REVERSED;
+        const double lo = curve.FirstParameter(), hi = curve.LastParameter();
+        const bool line = curve.GetType() == GeomAbs_Line;
+        const double length = GCPnts_AbscissaPoint::Length(curve);
+        const int n = line ? 1 : std::max(8, std::min(240, static_cast<int>(length / 0.25) + 8));
+        std::vector<gp_Pnt2d> run;
+        for (int k = 0; k <= n; ++k) {
+          const double f = static_cast<double>(k) / n;
+          run.push_back(toSurface(curve.Value(reversed ? hi + (lo - hi) * f : lo + (hi - lo) * f)));
+        }
+        runs.push_back(std::move(run));
+        straight.push_back(line);
+      }
+      if (runs.empty()) return false;
+      for (size_t k = 0; k < runs.size(); ++k) {
+        if (k > 0) runs[k].front() = runs[k - 1].back();
+      }
+      runs.back().back() = runs.front().front();
+
+      BRepBuilderAPI_MakeWire mw;
+      for (size_t k = 0; k < runs.size(); ++k) {
+        const std::vector<gp_Pnt2d> &run = runs[k];
+        if (run.front().Distance(run.back()) < 1e-9 && run.size() < 4) continue;
+        Handle(Geom2d_Curve) curve2d;
+        if (straight[k]) {
+          GCE2d_MakeSegment segment(run.front(), run.back());
+          if (!segment.IsDone()) return false;
+          curve2d = segment.Value();
+        } else {
+          Handle(TColgp_HArray1OfPnt2d) pts = new TColgp_HArray1OfPnt2d(1, static_cast<int>(run.size()));
+          for (size_t m = 0; m < run.size(); ++m) pts->SetValue(static_cast<int>(m) + 1, run[m]);
+          Geom2dAPI_Interpolate interpolate(pts, false, 1e-7);
+          interpolate.Perform();
+          if (!interpolate.IsDone()) return false;
+          curve2d = interpolate.Curve();
+        }
+        BRepBuilderAPI_MakeEdge me(curve2d, surface);
+        if (!me.IsDone()) return false;
+        mw.Add(me.Edge());
+        if (!mw.IsDone()) return false;
+      }
+      if (!mw.IsDone()) return false;
+      if (firstWire) {
+        made = BRepBuilderAPI_MakeFace(surface, mw.Wire(), true);
+        firstWire = false;
+      } else {
+        made.Add(mw.Wire());
+      }
+    }
+    if (!made.IsDone()) return false;
+    TopoDS_Face wrappedFace = made.Face();
+    BRepLib::BuildCurves3d(wrappedFace, 1e-6);
+    ShapeFix_Face fix(wrappedFace);
+    fix.Perform();
+    fix.FixOrientation();
+    builder.Add(wrapped, fix.Face());
+  }
+  return true;
+}
+
 }  // namespace
 
 SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int faceCount, const SKHandle *profiles, int count,
-                           double dx, double dy, double dz, double height, const char *featureId, double handle[6]) {
+                           double dx, double dy, double dz, double height, bool wrap, const char *featureId, double handle[6]) {
   SK_TRY
   Body *b;
   auto keep = lookup(body, b);
@@ -3184,12 +3329,39 @@ SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int face
   }
   Bnd_Box prismBox;
   BRepBndLib::Add(prisms, prismBox);
+  // With wrapping, the middle of all the profiles together is where the sketch touches a round face.
+  gp_Pnt wrapCentre;
+  {
+    Bnd_Box all;
+    for (Profile *p : ps) BRepBndLib::Add(p->face, all);
+    const gp_Pnt a = all.CornerMin(), z = all.CornerMax();
+    wrapCentre = gp_Pnt((a.X() + z.X()) / 2, (a.Y() + z.Y()) / 2, (a.Z() + z.Z()) / 2);
+  }
 
   // The parts of the faces inside the prisms that face the sketch: the profile as it lies on the surface.
   TopoDS_Compound patches;
   builder.MakeCompound(patches);
   int patchCount = 0;
   for (const TopoDS_Face &face : targets) {
+    TopoDS_Compound wrapped;
+    if (wrap && wrapOntoCylinder(face, ps, wrapCentre, dir, wrapped)) {
+      BRepAlgoAPI_Common common(face, wrapped);
+      if (!common.IsDone() || common.HasErrors()) {
+        setError("could not wrap onto a face of the body");
+        return 0;
+      }
+      NCollection_Map<TopoDS_Shape, TopTools_ShapeMapHasher> seen;
+      for (TopExp_Explorer ex(common.Shape(), TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Face piece = TopoDS::Face(ex.Current());
+        if (!seen.Add(piece)) continue;
+        GProp_GProps props;
+        BRepGProp::SurfaceProperties(piece, props);
+        if (props.Mass() < 1e-6) continue;
+        builder.Add(patches, piece);
+        ++patchCount;
+      }
+      continue;
+    }
     Bnd_Box faceBox;
     BRepBndLib::Add(face, faceBox);
     if (faceBox.IsOut(prismBox)) continue;

@@ -415,13 +415,14 @@ public final class KBody: @unchecked Sendable {
     /// The relief made by projecting profiles onto this body along `direction` (see sk_project_relief): a solid that
     /// follows the surface, `height` thick, standing out of it when positive and going into it when negative. `faces`
     /// are the faces to project onto (every face when empty). `origin` and `normal` give a point on the surface where
-    /// the first patch is and the way the surface faces there.
-    public func projectRelief(_ profiles: [KProfile], onto faces: [String], direction d: SIMD3<Double>, height: Double,
+    /// the first patch is and the way the surface faces there. With `wrap`, round faces get the profiles unrolled onto
+    /// them at their true size instead of thrown on from the side.
+    public func projectRelief(_ profiles: [KProfile], onto faces: [String], direction d: SIMD3<Double>, height: Double, wrap: Bool = false,
                               featureID: String) throws -> (body: KBody, origin: SIMD3<Double>, normal: SIMD3<Double>) {
         let hs = profiles.map(\.handle)
         var out = [Double](repeating: 0, count: 6)
         func project(_ names: UnsafePointer<UnsafePointer<CChar>?>?) throws -> KBody {
-            try KBody.wrap(sk_project_relief(handle, names, Int32(faces.count), hs, Int32(hs.count), d.x, d.y, d.z, height, featureID, &out),
+            try KBody.wrap(sk_project_relief(handle, names, Int32(faces.count), hs, Int32(hs.count), d.x, d.y, d.z, height, wrap, featureID, &out),
                            "project")
         }
         let made = faces.isEmpty ? try project(nil) : try withCStrings(faces) { try project($0) }

@@ -198,10 +198,14 @@ public struct ProjectFeature: Codable, Hashable, Sendable {
     public var height: String
     /// Project against the sketch's normal, as for an extrude.
     public var flipped: Bool
+    /// Lay the profiles onto round faces like a label on a can, at their true size, instead of throwing them on from
+    /// the side, which stretches them where the surface turns away. Nil in files from before this existed: those
+    /// keep projecting, so that they come out as they always did.
+    public var wrap: Bool?
     public init(sketch: FeatureID, profiles: [ProfileRef], target: FeatureID, faces: [FaceRef] = [], mode: ProjectMode = .emboss,
-                height: String = "1 mm", flipped: Bool = false) {
+                height: String = "1 mm", flipped: Bool = false, wrap: Bool? = nil) {
         self.sketch = sketch; self.profiles = profiles; self.target = target; self.faces = faces
-        self.mode = mode; self.height = height; self.flipped = flipped
+        self.mode = mode; self.height = height; self.flipped = flipped; self.wrap = wrap
     }
 
     /// Sets the height from a size as typed or dragged: a negative one sinks the profiles in (a deboss), a positive one

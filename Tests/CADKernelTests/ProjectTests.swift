@@ -135,6 +135,90 @@ import Testing
         }
     }
 
+    /// Setting `wrap` on the projection in a document.
+    private func wrapped(_ d: CADDocument, _ on: Bool?) -> CADDocument {
+        var d = d
+        for i in d.features.indices {
+            if case .project(var p) = d.features[i].kind { p.wrap = on; d.features[i].kind = .project(p) }
+        }
+        return d
+    }
+
+    @Test func wrappedTextKeepsItsTrueSizeOnARoundPost() throws {
+        // The same wide text on a flat face is the reference: its relief has the letters' true area.
+        var s = Sketch()
+        let p = s.addPoint(-2, 25)
+        s.constrain(.fix(p, x: -2, y: 25))
+        s.texts = [SketchText(id: "T", text: "HH", position: p, height: "10 mm")]
+        var flat = CADDocument()
+        flat.features = [
+            Feature(id: "post", name: "Box", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "60 mm", length: "60 mm", height: "60 mm"))),
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .yz, sketch: s))),
+            Feature(id: "pr", name: "Project1", .project(ProjectFeature(
+                sketch: "sk", profiles: (0..<2).map { ProfileRef(curves: ["T#\($0)"]) }, target: "post", mode: .emboss, height: "1 mm", flipped: true))),
+        ]
+        let flatBefore = try #require(Regenerator.regenerate(flat.withoutProjection).body("post")).volume
+        let flatResult = Regenerator.regenerate(flat)
+        #expect(flatResult.errors.isEmpty, "\(flatResult.errors)")
+        let trueVolume = try #require(flatResult.body("post")).volume - flatBefore
+        #expect(trueVolume > 10)
+
+        let round = doc("HH", at: SIMD2(-2, 25))
+        let before = try #require(Regenerator.regenerate(round.withoutProjection).body("post")).volume
+        func added(_ wrap: Bool) throws -> Double {
+            let r = Regenerator.regenerate(wrapped(round, wrap))
+            #expect(r.errors.isEmpty, "wrap \(wrap): \(r.errors)")
+            let post = try #require(r.body("post"))
+            #expect(post.isValid)
+            return post.volume - before
+        }
+        let thrown = try added(false), laidOn = try added(true)
+        // A relief 1 mm tall on a post of radius 20 has a base 2.5 % smaller than its top, hence the slack.
+        #expect(abs(laidOn - trueVolume) < trueVolume * 0.07, "wrapped \(laidOn), true size \(trueVolume)")
+        #expect(thrown > trueVolume * 1.04, "thrown on from the side it stretches: \(thrown) vs \(trueVolume)")
+    }
+
+    @Test func wrappedTextFollowsTheSurfaceAndDebossesToo() throws {
+        let r = Regenerator.regenerate(wrapped(doc("Hi"), true))
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let post = try #require(r.body("post"))
+        let rs = try radii(post, onFacesNamed: "pr.relief")
+        #expect(rs.allSatisfy { abs($0 - 21) < 0.03 || abs($0 - 20) < 0.03 }, "radii: \(Set(rs.map { ($0 * 100).rounded() / 100 }).sorted())")
+        let cut = Regenerator.regenerate(wrapped(doc("Hi", mode: .deboss), true))
+        #expect(cut.errors.isEmpty, "\(cut.errors)")
+        let before = try #require(Regenerator.regenerate(doc().withoutProjection).body("post")).volume
+        #expect(try #require(cut.body("post")).volume < before - 10)
+    }
+
+    @Test func wrappedTextLandsOnEitherSideDependingOnTheDirection() throws {
+        let before = try #require(Regenerator.regenerate(doc().withoutProjection).body("post")).volume
+        for flipped in [true, false] {
+            let r = Regenerator.regenerate(wrapped(doc("H", flipped: flipped), true))
+            #expect(r.errors.isEmpty, "flipped \(flipped): \(r.errors)")
+            let post = try #require(r.body("post"))
+            #expect(post.volume > before + 10, "flipped \(flipped): \(post.volume) vs \(before)")
+        }
+    }
+
+    @Test func wrappedRectangleWithStraightEdgesLandsOnThePost() throws {
+        var s = Sketch()
+        let rect = s.addRectangle(-5, 12, 5, 18)
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "post", name: "Post", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, height: "60 mm", diameter: "30 mm"))),
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .yz, sketch: s))),
+            Feature(id: "pr", name: "Project1", .project(ProjectFeature(
+                sketch: "sk", profiles: [ProfileRef(curves: rect.lines, hintU: 0, hintV: 15)], target: "post", mode: .emboss, height: "1.5 mm", flipped: true))),
+        ]
+        let before = try #require(Regenerator.regenerate(d.withoutProjection).body("post")).volume
+        for wrap in [false, true] {
+            let r = Regenerator.regenerate(wrapped(d, wrap))
+            #expect(r.errors.isEmpty, "wrap \(wrap): \(r.errors)")
+            let post = try #require(r.body("post"))
+            #expect(post.volume > before + 10, "wrap \(wrap): \(post.volume) vs \(before)")
+        }
+    }
+
     @Test func aSignedHeightSaysWhichWayTheProfilesGo() {
         var pf = ProjectFeature(sketch: "sk", profiles: [], target: "post")
         #expect(pf.mode == .emboss && pf.signedHeight == "1 mm")

@@ -605,7 +605,8 @@ public enum Regenerator {
         let relief: (body: KBody, origin: SIMD3<Double>, normal: SIMD3<Double>)
         do {
             relief = try target.projectRelief(profiles, onto: faces, direction: direction,
-                                              height: f.mode == .emboss ? height : -height, featureID: feature.id)
+                                              height: f.mode == .emboss ? height : -height,
+                                              wrap: f.wrap ?? false, featureID: feature.id)
         } catch let error as KernelError where error.message.contains("nothing to project onto") {
             throw KernelError(message: "Nothing to project onto: no face that faces the sketch is under the profiles. "
                               + "Flip the direction, or move the sketch to the other side of the body.")

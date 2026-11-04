@@ -177,7 +177,7 @@ struct CreateProjectOperation: AIOperation {
         let featureID = try AIValues.newFeatureID(id, in: doc)
         let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("Project")
         doc.addFeature(Feature(id: featureID, name: featureName,
-                               .project(ProjectFeature(sketch: sketchID, profiles: refs, target: target, faces: faceRefs, mode: mode, height: height, flipped: flipped))))
+                               .project(ProjectFeature(sketch: sketchID, profiles: refs, target: target, faces: faceRefs, mode: mode, height: height, flipped: flipped, wrap: true))))
         return OperationOutcome(featureID: featureID,
                                 message: "Created \(featureName): \(refs.count) profile\(refs.count == 1 ? "" : "s") of \(sketchFeature.name) projected onto \(target) and \(mode == .emboss ? "raised" : "cut in") \(AIValues.number(value)) mm"
                                     + (faceRefs.isEmpty ? " (every face that faces the sketch)." : " (\(faceRefs.count) face\(faceRefs.count == 1 ? "" : "s")).")

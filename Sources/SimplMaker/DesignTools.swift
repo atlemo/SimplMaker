@@ -508,7 +508,7 @@ extension DocumentModel {
             let refs = profiles.filter { $0.sketch == first.sketch }.map(\.ref)
             add(Feature(name: document.nextName("Project"), .project(ProjectFeature(
                 sketch: first.sketch, profiles: refs, target: target, faces: faces.filter { $0.body == target },
-                flipped: projectsAgainstNormal(sketch: first.sketch, onto: target)))))
+                flipped: projectsAgainstNormal(sketch: first.sketch, onto: target), wrap: true))))
         case .combine:
             // The first body picked is the target; the rest are the tools. Return combines them.
             let bodies = pickedBodies
