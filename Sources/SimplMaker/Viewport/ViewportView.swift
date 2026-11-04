@@ -1532,7 +1532,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 continue
             }
             field.isHidden = false
-            let maxX = max(bounds.width - size.width, 0)
+            // Never under the floating inspector, where it would look like part of it.
+            let maxX = max(bounds.width - min(panelInsets.right, bounds.width * 0.45) - size.width, 0)
             var x = min(max(p.x + 26, 0), maxX)
             var y = min(max(p.y - size.height / 2, 0), max(bounds.height - size.height, 0))
             // A hole's move dot has to stay easy to grab: a field that would crowd it moves out to the side of it.
@@ -1554,7 +1555,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if let hud = featureHUD, let first = placed.first {  // the options panel sits just below the first field
             let s = hud.fittingSize
             let below = placed.map(\.maxY).max() ?? first.maxY
-            var frame = NSRect(x: min(max(first.minX, 0), max(bounds.width - s.width, 0)),
+            // Kept clear of the floating browser and inspector: it moves left of the inspector rather than onto it.
+            let hudMinX = min(panelInsets.left, bounds.width * 0.45)
+            let hudMaxX = max(bounds.width - min(panelInsets.right, bounds.width * 0.45) - s.width, hudMinX)
+            var frame = NSRect(x: min(max(first.minX, hudMinX), hudMaxX),
                                y: min(below + 6, max(bounds.height - s.height, 0)), width: s.width, height: s.height)
             if let zone = dialZone, zone.intersects(frame) {  // under the dial's arc, or above it when there's no room
                 frame.origin.y = zone.maxY + 6 + s.height <= bounds.height ? zone.maxY + 6 : max(zone.minY - s.height - 6, 0)

@@ -11,6 +11,10 @@ description: Push a profile along a straight line while it turns, for twisted ba
 2. Press [[⇧W]] for **Twist Sweep**. If one profile is already selected it is made straight away; otherwise click the profile, then press [[Return]].
 3. In the inspector, set the **Length** and the **End angle**. The shape twists from the **Start angle** (0 by default, the profile as you drew it) to the end angle.
 
+![The Twist Sweep arrow with its length field, the dot that sets the turn, and the operation buttons.](shot:twist-sweep-handle)
+
+Drag the orange arrow, or type in the field beside it, to set the length. The dot on the ring at the far end sets the **End angle** the same way. The New, Join, Cut and Intersect buttons under the part set the operation; **OK** finishes.
+
 ## Inspector
 
 | Field | What it does |
