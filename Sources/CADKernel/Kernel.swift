@@ -310,11 +310,11 @@ public final class KBody: @unchecked Sendable {
     /// `startAngle + (endAngle - startAngle) * t^power` (radians). Smooth, through `sections + 1` copies of the profile.
     public static func twistSweep(_ profiles: [KProfile], direction d: SIMD3<Double>, distance: Double, pivot: SIMD3<Double>?,
                                   startAngle: Double, endAngle: Double, power: Double = 1, shift: SIMD3<Double> = .zero,
-                                  sections: Int, featureID: String) throws -> KBody {
+                                  sections: Int, ruled: Bool = false, featureID: String) throws -> KBody {
         let hs = profiles.map(\.handle)
         let p = pivot ?? .zero
         return try wrap(sk_twist_sweep(hs, Int32(hs.count), d.x, d.y, d.z, distance, pivot != nil, p.x, p.y, p.z, startAngle, endAngle,
-                                       power, shift.x, shift.y, shift.z, Int32(sections), featureID), "twist sweep")
+                                       power, shift.x, shift.y, shift.z, Int32(sections), ruled, featureID), "twist sweep")
     }
 
     public func rib(along path: KPath, thickness: Double, featureID: String) throws -> KBody {

@@ -2429,8 +2429,12 @@ std::string edgeTagAt(const Profile &p, const TopLoc_Location &at, const TopoDS_
 /// Lofts through the outer boundaries of `faces` (one per section, in order), cutting out the holes they all share. Side faces
 /// are named after the edges of `tagProfile`, which `faces[0]` is a copy of moved by `tagAt`.
 bool loftFaces(const std::vector<TopoDS_Face> &faces, const Profile &tagProfile, const TopLoc_Location &tagAt, bool ruled,
-               const std::string &feat, TopoDS_Shape &outShape, std::vector<Named> &outNames) {
+               const std::string &feat, TopoDS_Shape &outShape, std::vector<Named> &outNames, bool sameWires = false) {
   BRepOffsetAPI_ThruSections loft(true, ruled);
+  // Sections that are exact copies of one wire (a twist sweep) already match edge for edge from the same start. The loft's own
+  // search for how the corners of one section map to the next's guesses wrong once the sections have turned far from each other,
+  // and then fails or twists the solid inside out; with the check off the copies are used as they are.
+  if (sameWires) loft.CheckCompatibility(false);
   std::vector<TopoDS_Wire> wires;
   for (const TopoDS_Face &f : faces) {
     wires.push_back(BRepTools::OuterWire(f));
@@ -2488,6 +2492,7 @@ bool loftFaces(const std::vector<TopoDS_Face> &faces, const Profile &tagProfile,
   std::vector<Named> boreNames;
   for (size_t h = 0; h < chains.size(); ++h) {
     BRepOffsetAPI_ThruSections bore(true, ruled);
+    if (sameWires) bore.CheckCompatibility(false);
     TopoDS_Wire firstWire;
     TopoDS_Edge firstEdge;
     for (size_t k = 0; k < chains[h].size(); ++k) {
@@ -2547,7 +2552,7 @@ SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *fe
 
 SKHandle sk_twist_sweep(const SKHandle *profiles, int count, double dx, double dy, double dz, double distance, bool hasPivot,
                         double px, double py, double pz, double startAngle, double endAngle, double power, double shiftX,
-                        double shiftY, double shiftZ, int sections, const char *featureId) {
+                        double shiftY, double shiftZ, int sections, bool ruled, const char *featureId) {
   SK_TRY
   const std::string feat = featureOrDefault(featureId, "twist");
   if (count < 1) {
@@ -2596,7 +2601,7 @@ SKHandle sk_twist_sweep(const SKHandle *profiles, int count, double dx, double d
     }
     TopoDS_Shape solid;
     std::vector<Named> own;
-    if (!loftFaces(faces, *p, first, false, feat, solid, own)) return 0;
+    if (!loftFaces(faces, *p, first, ruled, feat, solid, own, true)) return 0;
     solids.push_back(solid);
     names.insert(names.end(), own.begin(), own.end());
   }

@@ -95,7 +95,7 @@ SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *fe
 /// copies of the profile. A negative `distance` goes against `dir`. Faces: "<featureId>.start|end|side.<tag>".
 SKHandle sk_twist_sweep(const SKHandle *profiles, int count, double dx, double dy, double dz, double distance, bool hasPivot,
                         double px, double py, double pz, double startAngle, double endAngle, double power, double shiftX,
-                        double shiftY, double shiftZ, int sections, const char *featureId);
+                        double shiftY, double shiftZ, int sections, bool ruled, const char *featureId);
 /// Adds a rib to `body`: the open path (in its sketch plane) is thickened symmetrically across the
 /// plane and extended until it meets the body. New faces: "<featureId>.rib".
 SKHandle sk_rib(SKHandle body, SKHandle path, double thickness, const char *featureId);

@@ -116,4 +116,49 @@ import simd
         let b = try blade.measure(.body).bounds
         #expect(abs(b.max.y - 20) < 0.05 && abs(b.min.y + 20) < 0.05, "the outline's width, \(b)")
     }
+
+    @Test func aCurvedProfileTwistsThroughAnyAngleQuicklyAndExactly() throws {
+        // An 84 × 12 ellipse (four Bézier quarters), as drawn with the Ellipse tool. The loft's own search for how the corners of
+        // one section map to the next used to fail (after seconds, or minutes) or turn the solid inside out once the sections had
+        // turned a long way from each other; the sections are copies of one wire, so they are used as they are.
+        var s = Sketch()
+        _ = s.addEllipse(center: SketchSnap(SIMD2(0, 0)), major: SketchSnap(SIMD2(42, 0)), minor: SketchSnap(SIMD2(0, 6)))
+        var base = CADDocument()
+        base.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .yz, sketch: s)))]
+        let sketch = try #require(Regenerator.regenerate(base).sketches["sk"])
+        let region = try #require(sketch.regions.first)
+        let ref = ProfileRef(curves: region.tags.split(separator: ",").map(String.init), hintU: region.sample.x, hintV: region.sample.y)
+        for (length, angle) in [(28.0, 68.0), (39, 90), (64, 116), (39, -120), (50, 180), (80, 360)] {
+            var d = base
+            d.features.append(Feature(id: "tw", name: "Twist", .twistSweep(TwistSweepFeature(
+                sketch: "sk", profiles: [ref], distance: "\(length) mm", endAngle: "\(angle) deg"))))
+            let began = Date()
+            let r = Regenerator.regenerate(d)
+            #expect(r.errors.isEmpty, "\(length) mm, \(angle)°: \(r.errors)")
+            let body = try #require(r.body("tw"), "\(length) mm, \(angle)°")
+            #expect(body.isValid)
+            #expect(abs(body.volume - region.area * length) / (region.area * length) < 0.002, "\(length) mm, \(angle)°: volume \(body.volume)")
+            #expect(Date().timeIntervalSince(began) < 3, "\(length) mm, \(angle)° took \(Date().timeIntervalSince(began)) s")
+        }
+    }
+
+    @Test func aProfileWithAHoleTwistsAndKeepsItsBore() throws {
+        // A 20 × 20 plate with a 6 mm hole, turned half a revolution: the hole's wires are copies too.
+        var s = Sketch()
+        s.addRectangle(-10, -10, 10, 10)
+        _ = s.addCircle(center: SketchSnap(SIMD2(2, 0)), through: SketchSnap(SIMD2(5, 0)))
+        var d = CADDocument()
+        d.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s)))]
+        let sketch = try #require(Regenerator.regenerate(d).sketches["sk"])
+        let plate = try #require(sketch.regions.max { $0.area < $1.area })
+        d.features.append(Feature(id: "tw", name: "Twist", .twistSweep(TwistSweepFeature(
+            sketch: "sk", profiles: [ProfileRef(curves: plate.tags.split(separator: ",").map(String.init), hintU: plate.sample.x, hintV: plate.sample.y)],
+            distance: "20 mm", endAngle: "180 deg"))))
+        let r = Regenerator.regenerate(d)
+        #expect(r.errors.isEmpty, "\(r.errors)")
+        let body = try #require(r.body("tw"))
+        #expect(body.isValid)
+        let expected = (400 - Double.pi * 9) * 20
+        #expect(abs(body.volume - expected) / expected < 0.01, "volume \(body.volume) against \(expected)")
+    }
 }
