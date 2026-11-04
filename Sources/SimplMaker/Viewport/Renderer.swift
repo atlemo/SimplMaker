@@ -569,6 +569,8 @@ final class Renderer {
     nonisolated(unsafe) private(set) var lastGPUSeconds: Double = 0
     /// The ground grid (the XY plane when not sketching): rebuilt as the view moves, to cover what's in view.
     private var worldGrid: (key: WorldGridKey, minor: MTLBuffer?, minorCount: Int, major: MTLBuffer?, majorCount: Int)?
+    /// The outline of the ground grid: seen edge-on it is the line of the floor.
+    private var worldGridOutline: MTLBuffer?
     private var axes: [(MTLBuffer, SIMD4<Float>)] = []
     private var axesLength: Float = 0
     /// While sketching: the grid in the sketch's plane (replaces the world grid and axes).
@@ -1120,6 +1122,12 @@ final class Renderer {
                 if j % ratio == 0 { major.append(s) } else { minor.append(s) }
             }
             worldGrid = (key, makeBuffer(minor), minor.count, makeBuffer(major), major.count)
+            worldGridOutline = makeBuffer([
+                SegmentInstance(ax: x0, ay: y0, az: 0, bx: x1, by: y0, bz: 0, id: 0),
+                SegmentInstance(ax: x1, ay: y0, az: 0, bx: x1, by: y1, bz: 0, id: 0),
+                SegmentInstance(ax: x1, ay: y1, az: 0, bx: x0, by: y1, bz: 0, id: 0),
+                SegmentInstance(ax: x0, ay: y1, az: 0, bx: x0, by: y0, bz: 0, id: 0),
+            ])
         }
         // The axes run out to the edge of the grid, and the vertical one stands a few major steps high.
         let length = Float(max(200, Double(key.i1) * key.minor, Double(key.j1) * key.minor, 5 * key.major))
@@ -1484,12 +1492,25 @@ final class Renderer {
         run(blurPipeline, from: glow[3], to: glow[2], direction: SIMD2(0, 1.6))
     }
 
-    /// How much of the ground grid to draw, 0...1, from the view direction: full while the view looks down at
-    /// the floor at 25° of elevation or more, gone by 5°. `forward` is the unit direction the camera looks in,
-    /// so its Z is minus the sine of the elevation (the same in perspective and orthographic).
-    static func groundGridOpacity(forward: SIMD3<Float>) -> Float {
+    /// How far the view has flattened toward the floor, 1 (looking down at 25° of elevation or more) to 0 (5° or
+    /// less). `forward` is the unit direction the camera looks in, so its Z is minus the sine of the elevation
+    /// (the same in perspective and orthographic).
+    static func groundGridSteepness(forward: SIMD3<Float>) -> Float {
         let t = min(max((abs(forward.z) - 0.087) / (0.423 - 0.087), 0), 1)
         return t * t * (3 - 2 * t)
+    }
+
+    /// How much of the ground grid to draw: solid from above, fading as the view flattens, but never gone, so the
+    /// floor still reads when the camera is low. A faint grid, since lines seen at a grazing angle pile up into moiré.
+    static func groundGridOpacity(forward: SIMD3<Float>) -> Float {
+        let faintest: Float = 0.15
+        return faintest + (1 - faintest) * groundGridSteepness(forward: forward)
+    }
+
+    /// How much of the floor's outline to draw: none from above, a full line when the view is edge-on (left, right,
+    /// back, front), where the grid itself collapses into that line.
+    static func groundOutlineOpacity(forward: SIMD3<Float>) -> Float {
+        1 - groundGridSteepness(forward: forward)
     }
 
     /// Highlights made from the body's own colour, as Fusion does: a red body lights up in lighter
@@ -1856,10 +1877,16 @@ final class Renderer {
                 enc.setDepthStencilState(depthState)
             }
         } else if showGrid, matte == nil, !camera.isBelowGround, let g = worldGrid {  // seen from under the floor the grid would only be in the way
-            // Seen almost edge-on the lines pile up into moiré, so the grid fades out as the view flattens. Blended
+            // Seen almost edge-on the lines pile up into moiré, so the grid fades to a faint one as the view flattens, and the floor's outline takes over. Blended
             // (fadePipeline) so the opacity shows; at full opacity it is the same as drawing it solid.
             let opacity = Self.groundGridOpacity(forward: camera.forward)
             func faded(_ c: SIMD4<Float>) -> SIMD4<Float> { SIMD4(c.x, c.y, c.z, c.w * opacity) }
+            let outline = Self.groundOutlineOpacity(forward: camera.forward)
+            if outline > 0 {
+                let c = faded(p.grid), line = SIMD4(c.x, c.y, c.z, outline)
+                segments(worldGridOutline, 4, DrawParams(color: line, hoverColor: line, selectColor: line,
+                                                         thickness: 1.5 * scale, depthBias: 0, pickable: 0), pipeline: fadePipeline)
+            }
             if opacity > 0 {
                 segments(g.minor, g.minorCount, DrawParams(color: faded(p.gridMinor), hoverColor: faded(p.gridMinor), selectColor: faded(p.gridMinor),
                                                            thickness: 1 * scale, depthBias: 0, pickable: 0), pipeline: fadePipeline)

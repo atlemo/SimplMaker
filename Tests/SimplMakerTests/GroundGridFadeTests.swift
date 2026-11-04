@@ -19,9 +19,17 @@ import Testing
         #expect(Renderer.groundGridOpacity(forward: forward(elevation: 27)) == 1)
     }
 
-    @Test func theGridIsGoneWhenEdgeOn() {
-        #expect(Renderer.groundGridOpacity(forward: forward(elevation: 0)) == 0)
-        #expect(Renderer.groundGridOpacity(forward: forward(elevation: 4)) == 0)
+    @Test func theGridStaysFaintWhenEdgeOn() {
+        for degrees: Float in [0, 4] {
+            let o = Renderer.groundGridOpacity(forward: forward(elevation: degrees))
+            #expect(o > 0 && o < 0.3, "faint but there at \(degrees)°: \(o)")
+        }
+    }
+
+    @Test func theFloorOutlineShowsEdgeOnAndNotFromAbove() {
+        #expect(Renderer.groundOutlineOpacity(forward: forward(elevation: 0)) == 1)
+        #expect(Renderer.groundOutlineOpacity(forward: forward(elevation: 31.5)) == 0)
+        #expect(Renderer.groundOutlineOpacity(forward: forward(elevation: 90)) == 0)
     }
 
     @Test func theGridFadesSmoothlyInBetween() {
