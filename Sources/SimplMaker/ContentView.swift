@@ -1020,17 +1020,20 @@ struct BrowserList: View {
                 FolderRow(title: "Bodies", ids: model.bodies.map(\.id), model: model, lockable: true)
                     .browserDropDestination { drop($0, into: nil) }
             }
+            .plainGroupRow()
             DisclosureGroup(isExpanded: $sketchesOpen) {
                 ForEach(model.document.ordered(model.sketches.map(\.id)), id: \.self) { row($0) }
             } label: {
                 FolderRow(title: "Sketches", ids: model.sketches.map(\.id), model: model, lockable: true)
             }
+            .plainGroupRow()
             if !model.planeFeatures.isEmpty {
                 DisclosureGroup(isExpanded: $planesOpen) {
                     ForEach(model.document.ordered(model.planeFeatures.map(\.id)), id: \.self) { row($0) }
                 } label: {
                     FolderRow(title: "Planes", ids: model.planeFeatures.map(\.id), model: model)
                 }
+                .plainGroupRow()
             }
             if !model.imageFeatures.isEmpty {
                 DisclosureGroup(isExpanded: $imagesOpen) {
@@ -1038,6 +1041,7 @@ struct BrowserList: View {
                 } label: {
                     FolderRow(title: "Canvases", ids: model.imageFeatures.map(\.id), model: model)
                 }
+                .plainGroupRow()
             }
         }
         .listStyle(.sidebar)
@@ -1602,6 +1606,17 @@ struct SelectedRowBackground: View {
 #endif
                 .padding(.horizontal, DS.Spacing.space2)
         }
+    }
+}
+
+extension View {
+    /// A browser group's header row on iPad: no row background of its own, like the rows below it. (The Mac's sidebar list draws none.)
+    @ViewBuilder func plainGroupRow() -> some View {
+#if os(iOS)
+        listRowBackground(Color.clear)
+#else
+        self
+#endif
     }
 }
 
