@@ -2028,9 +2028,9 @@ struct ToolButton: View {
                         .fixedSize()
                 }
             }
-            .frame(minWidth: showsTitle ? 44 : 28, minHeight: showsTitle ? 0 : 24)
+            .frame(minWidth: showsTitle ? 44 : ToolListMetrics.toolMinWidth, minHeight: showsTitle ? 0 : ToolListMetrics.toolMinHeight)
             .padding(.horizontal, showsTitle ? DS.Spacing.space4 : DS.Spacing.space1)
-            .padding(.vertical, showsTitle ? DS.Spacing.space1 : 0)
+            .padding(.vertical, showsTitle ? ToolListMetrics.titledToolPadding : 0)
             .foregroundStyle(active && !onTint ? accent : ink)
             .background(background, in: shape)
             .contentShape(Rectangle())

@@ -266,8 +266,8 @@ private struct GroupLabel: View {
                 Text(title).font(.system(size: 11)).lineLimit(1).fixedSize()
                 if chevron { Icon("chevron-down", size: 9, weight: .medium) }
             }
-            .padding(.horizontal, DS.Spacing.space2)
-            .frame(minHeight: 14)
+            .padding(.horizontal, ToolListMetrics.labelPadding)
+            .frame(minHeight: ToolListMetrics.labelMinHeight)
             .foregroundStyle(highlighted && !onTint ? accent : ink.opacity(highlighted ? 1 : 0.8))
             .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
             .contentShape(Rectangle())
@@ -299,7 +299,7 @@ private struct PinnedTool: View {
                 button
                 Button { modesOpen = true } label: {
                     Icon("chevron-down", size: 10)
-                        .frame(width: 12, height: 24)
+                        .frame(width: ToolListMetrics.arrowSize.width, height: ToolListMetrics.arrowSize.height)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -393,12 +393,25 @@ enum ToolListMetrics {
     static let rowHeight: CGFloat = 28
     static let smallButton: CGFloat = 22
     static let listWidth: CGFloat = 290
+    static let labelMinHeight: CGFloat = 14
+    static let toolMinWidth: CGFloat = 28
+    static let toolMinHeight: CGFloat = 24
+    static let titledToolPadding: CGFloat = DS.Spacing.space1
+    static let labelPadding: CGFloat = DS.Spacing.space2
+    static let arrowSize = CGSize(width: 12, height: 24)
 #else
     /// On the iPad the edge names where the arrow sits on the popover, so `.top` opens it below the button.
     static let arrowEdge = Edge.top
     static let rowHeight: CGFloat = 52
     static let smallButton: CGFloat = 44
     static let listWidth: CGFloat = 360
+    /// The group names and the arrows beside tools sit in a bar drawn 1.3 times bigger: 34 points here is 44 on the screen.
+    static let labelMinHeight: CGFloat = 34
+    static let toolMinWidth: CGFloat = 38
+    static let toolMinHeight: CGFloat = 36
+    static let titledToolPadding: CGFloat = 8
+    static let labelPadding: CGFloat = 14
+    static let arrowSize = CGSize(width: 24, height: 36)
 #endif
 }
 

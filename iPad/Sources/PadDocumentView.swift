@@ -36,6 +36,8 @@ struct PadDocumentView: View {
         return UIGraphicsImageRenderer(size: size, format: format).pngData { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
     }
     @State private var viewState = PadViewState()
+    /// How much of the top the tool bar takes: it grows when the layout has fewer, bigger buttons.
+    @State private var toolBarHeight = PadToolBar.height
 
     var body: some View {
         let model = model
@@ -48,7 +50,7 @@ struct PadDocumentView: View {
                                                                          Panel.bottomInset(timeline: model.showTimeline)))
                     .ignoresSafeArea()
             }
-            .safeAreaInset(edge: .top, spacing: 0) { PadToolBar(model: model) }
+            .safeAreaInset(edge: .top, spacing: 0) { PadToolBar(model: model, height: $toolBarHeight) }
             .toolbar { PadToolbar(model: model, guide: guide, undoManager: undoManager) }
             .modifier(PadDialogs(model: model))
             .modifier(AccentScope(sketching: model.sketchSession != nil))
@@ -97,7 +99,7 @@ struct PadDocumentView: View {
                     panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                   model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                   Panel.bottomInset(timeline: model.showTimeline)),
-                    toolbarHeight: PadToolBar.height, state: viewState,
+                    toolbarHeight: toolBarHeight, state: viewState,
                     printPreview: model.printPreview, printLayer: model.printLayer, printNozzle: model.printNozzle,
                     renderSettings: model.renderView ? model.renderSettings : nil,
                     spinning: model.renderView && model.renderSpinning && model.sketchSession == nil,
@@ -109,6 +111,8 @@ struct PadDocumentView: View {
 /// scaled up for a finger. The row is centred while it fits and scrolls sideways when it does not.
 struct PadToolBar: View {
     let model: DocumentModel
+    /// Set to the room the bar takes, gaps included.
+    @Binding var height: CGFloat
     /// How much bigger than on the Mac the buttons are drawn.
     static let scale: CGFloat = 1.3
     /// How much of the top the bar takes (its height and the gaps around it), for centring the view in what is left.
@@ -184,6 +188,7 @@ struct PadToolBar: View {
         .padding(.horizontal, 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tools")
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         .task(id: signature) { measure() }
     }
 }
