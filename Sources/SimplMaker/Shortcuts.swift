@@ -58,6 +58,21 @@ struct KeyChord: Hashable, Sendable {
         if flags.contains(.command) { m.insert(.command) }
         self.init(char, m)
     }
+    #else
+    /// The chord of a hardware key press; nil for keys that are not a plain character (arrows, F-keys, Return, Esc...).
+    init?(key: UIKey) {
+        guard let char = key.charactersIgnoringModifiers.first, key.charactersIgnoringModifiers.count == 1,
+              let scalar = char.unicodeScalars.first, scalar.value > 0x20, scalar.value != 0x7F,
+              !(0xF700...0xF8FF).contains(scalar.value)
+        else { return nil }
+        var m: Modifiers = []
+        let flags = key.modifierFlags
+        if flags.contains(.control) { m.insert(.control) }
+        if flags.contains(.alternate) { m.insert(.option) }
+        if flags.contains(.shift) { m.insert(.shift) }
+        if flags.contains(.command) { m.insert(.command) }
+        self.init(char, m)
+    }
     #endif
 
     /// The stored form: "e", "cmd+opt+g", "cmd++" (⌘ and the plus key).

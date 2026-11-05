@@ -41,7 +41,6 @@ targets:
           - ExportDialog.swift
           - ExportImageDialog.swift
           - FileDrop.swift
-          - ShortcutSettings.swift
           - LicenseTexts.swift
     dependencies:
       - package: SimplMaker

@@ -39,7 +39,7 @@ struct SettingsView: View {
 #if os(macOS)
         Pane.allCases.filter { $0 != .ai || AIFeature.isAvailable }
 #else
-        Pane.allCases.filter { $0 != .ai && $0 != .shortcuts }  // no updater, AI server or shortcut recorder on iPad
+        Pane.allCases.filter { $0 != .ai }  // no updater or AI server on iPad
 #endif
     }
 
@@ -78,11 +78,11 @@ struct SettingsView: View {
             case .general: generalPane
             case .navigation: navigationPane
             case .viewport: viewportPane
-#if os(macOS)
             case .shortcuts: ShortcutsPane()
+#if os(macOS)
             case .ai: AISettingsPane()
 #else
-            case .shortcuts, .ai: EmptyView()
+            case .ai: EmptyView()
 #endif
             }
         }
