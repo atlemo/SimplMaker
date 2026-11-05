@@ -114,25 +114,63 @@ struct PadToolBar: View {
     /// How much of the top the bar takes (its height and the gaps around it), for centring the view in what is left.
     static let height: CGFloat = 96
     @State private var natural = CGSize(width: 800, height: 56)
+    /// How wide the row is in each layout, measured on copies that are never shown.
+    @State private var widths: [ToolbarLayout: CGFloat] = [:]
     @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
+    @ObservedObject private var shortcuts = ShortcutStore.shared
 
-    private var row: some View {
+    private func row(_ layout: ToolbarLayout) -> some View {
         Group {
             if let session = model.sketchSession {
-                SketchToolbar(model: model, session: session, layout: .full)
+                SketchToolbar(model: model, session: session, layout: layout)
             } else {
-                DesignToolbar(model: model, layout: .full)
+                DesignToolbar(model: model, layout: layout)
             }
         }
         .environment(\.toolTitles, true)
         .fixedSize()
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { natural = $0 }
+    }
+
+    /// What the measured widths depend on: the mode, and the tools pinned in each group (the user can change them).
+    private var signature: String {
+        let pins = ["design.create", "design.shapes", "design.modify", "design.construct", "design.inspect",
+                    "sketch.draw", "sketch.modify", "sketch.transform", "sketch.constraints"]
+            .map { UserDefaults.standard.string(forKey: Preferences.toolbarPins($0)) ?? "-" }
+        return "\(model.sketchSession != nil) \(model.isPickingSketchPlane) \(pins.joined(separator: "|"))"
+    }
+
+    /// Every layout from the widest (each group's pinned tools) down to one menu of everything.
+    private func measure() {
+        func width(_ layout: ToolbarLayout) -> CGFloat {
+            UIHostingController(rootView: row(layout)).sizeThatFits(in: CGSize(width: 10_000, height: 400)).width
+        }
+        var result: [ToolbarLayout: CGFloat] = [.single: width(.single)]
+        var previous = CGFloat.infinity
+        for trim in 0..<32 {
+            let w = width(.trimmed(trim))
+            if w >= previous - 0.5 { break }
+            result[.trimmed(trim)] = w
+            previous = w
+        }
+        widths = result
+    }
+
+    /// The widest layout that fits the room: a small iPad starts with fewer pinned tools, the rest are in each group's menu.
+    private func layout(fitting room: CGFloat) -> ToolbarLayout {
+        var trim = 0
+        while let w = widths[.trimmed(trim)] {
+            if w * Self.scale <= room { return .trimmed(trim) }
+            trim += 1
+        }
+        return .single
     }
 
     var body: some View {
         GeometryReader { geo in
+            let chosen = layout(fitting: geo.size.width - 28)
             ScrollView(.horizontal, showsIndicators: false) {
-                row
+                row(chosen)
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { natural = $0 }
                     .scaleEffect(Self.scale, anchor: .topLeading)
                     .frame(width: natural.width * Self.scale, height: natural.height * Self.scale, alignment: .topLeading)
                     .padding(.horizontal, 14)
@@ -146,6 +184,7 @@ struct PadToolBar: View {
         .padding(.horizontal, 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tools")
+        .task(id: signature) { measure() }
     }
 }
 
