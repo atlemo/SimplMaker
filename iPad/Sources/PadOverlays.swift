@@ -12,6 +12,8 @@ final class PadViewState {
     var revision = 0
     var size: CGSize = .zero
     @ObservationIgnored weak var renderer: Renderer?
+    /// Takes a picture of the view as PNG data (set by the viewport).
+    @ObservationIgnored var capture: ((@escaping @MainActor @Sendable (Data?) -> Void) -> Void)?
     @ObservationIgnored private var lastPose: CameraPose?
 
     func project(_ world: SIMD3<Float>) -> CGPoint? { renderer?.camera.project(world, viewSize: size) }
@@ -40,6 +42,7 @@ struct PadOverlays: View {
         let _ = state.revision
         let _ = model.overlayRevision
         ZStack(alignment: .topLeading) {
+            PadManipulator(model: model, state: state)
             if let session = model.sketchSession {
                 PadDimensionLabels(model: model, session: session, state: state)
                 if showConstraints || true { PadGlyphs(model: model, session: session, state: state, showConstraints: showConstraints) }
@@ -323,6 +326,74 @@ private struct HandleField: View {
             guard !Task.isCancelled else { return }
             model.activeHandleSlot = handle.slot
             _ = model.previewHandle(typed)
+        }
+    }
+}
+
+// MARK: the Move/Rotate manipulator
+
+/// The Move feature's arrows, squares and rings, drawn over the viewport. It takes no touches of its own: the viewport's finger drag
+/// asks the same layout what it has hold of (see `PadViewport`).
+struct PadManipulator: View {
+    let model: DocumentModel
+    let state: PadViewState
+
+    private static func color(of axis: Axis3) -> Color {
+        switch axis {
+        case .x: return Color(red: 0.92, green: 0.24, blue: 0.24)
+        case .y: return Color(red: 0.22, green: 0.68, blue: 0.30)
+        case .z: return Color(red: 0.24, green: 0.48, blue: 0.95)
+        }
+    }
+
+    var body: some View {
+        let _ = state.revision
+        let _ = model.overlayRevision
+        if let renderer = state.renderer, let place = model.manipulatorPlacement,
+           let layout = ManipulatorLayout(middle: place.middle, turn: place.turn, frame: place.frame, camera: renderer.camera, viewSize: state.size) {
+            let active = model.manipulatorActivePart
+            Canvas { ctx, _ in draw(&ctx, layout, active) }
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func draw(_ ctx: inout GraphicsContext, _ layout: ManipulatorLayout, _ active: ManipulatorPart?) {
+        let body = Color(white: 0.88), lit = Color(red: 0.35, green: 0.72, blue: 1)
+        func fill(_ part: ManipulatorPart) -> Color { part == active ? lit : body }
+        func polygon(_ pts: [CGPoint]) -> Path { var p = Path(); p.addLines(pts); p.closeSubpath(); return p }
+        let line = StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+        for ring in layout.rings {
+            let path = polygon(ring.outline)
+            let strong = ManipulatorPart.ring(ring.axis) == active
+            ctx.stroke(path, with: .color(.white.opacity(0.55)), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+            ctx.stroke(path, with: .color(Self.color(of: ring.axis).opacity(strong ? 1 : 0.85)),
+                       style: StrokeStyle(lineWidth: strong ? 3.2 : 1.8, lineCap: .round, lineJoin: .round))
+        }
+        for square in layout.squares {
+            let path = polygon(square.corners)
+            ctx.fill(path, with: .color(fill(.plane(square.normal))))
+            ctx.stroke(path, with: .color(.black), style: line)
+        }
+        for arrow in layout.arrows {
+            var color = fill(.axis(arrow.axis))
+            if layout.frame.coloredArrows, arrow.axis != .z {
+                let base = Self.color(of: arrow.axis)
+                color = ManipulatorPart.axis(arrow.axis) == active ? base.opacity(0.6) : base
+            }
+            let path = polygon(arrow.polygon)
+            ctx.fill(path, with: .color(color))
+            ctx.stroke(path, with: .color(.black), style: line)
+        }
+        func disc(_ c: CGPoint, _ r: CGFloat, _ color: Color, dot: Color?) {
+            let rect = CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)
+            ctx.fill(Path(ellipseIn: rect), with: .color(color))
+            ctx.stroke(Path(ellipseIn: rect), with: .color(.black), style: line)
+            if let dot { ctx.fill(Path(ellipseIn: CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)), with: .color(dot)) }
+        }
+        disc(layout.center, ManipulatorLayout.dotRadius, fill(.center), dot: nil)
+        for ring in layout.rings {
+            let color = Self.color(of: ring.axis)
+            disc(ring.handle, ManipulatorLayout.handleRadius, ManipulatorPart.ring(ring.axis) == active ? color.opacity(0.5) : body, dot: color)
         }
     }
 }

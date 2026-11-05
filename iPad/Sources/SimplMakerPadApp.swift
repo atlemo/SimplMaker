@@ -10,5 +10,6 @@ struct SimplMakerPadApp: App {
         DocumentGroup(newDocument: { CADFile() }) { configuration in
             PadDocumentView(file: configuration.document, fileURL: configuration.fileURL)
         }
+        .commands { PadCommands() }
     }
 }

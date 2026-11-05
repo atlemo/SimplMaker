@@ -33,6 +33,19 @@ struct PadDocumentView: View {
                 // A narrow screen has room for the viewport or the panels, not both: start with the viewport.
                 if UIScreen.main.bounds.width < 1200 { model.showSidebar = false; model.showInspector = false }
             }
+            .onChange(of: model.showImageExport) {
+                guard model.showImageExport else { return }
+                model.showImageExport = false
+                viewState.capture? { data in
+                    guard let data else { return }
+                    Task { @MainActor in
+                        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("export-\(UUID().uuidString)", isDirectory: true)
+                        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                        let url = folder.appendingPathComponent("\(model.fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled").png")
+                        if (try? data.write(to: url)) != nil { model.exportedFile = url }
+                    }
+                }
+            }
             .onChange(of: undoManager) { model.undoManager = undoManager }
             .onChange(of: fileURL) { model.fileURL = fileURL }
     }
@@ -55,7 +68,11 @@ struct PadDocumentView: View {
                     panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                   model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                   Panel.bottomInset(timeline: model.showTimeline)),
-                    toolbarHeight: PadToolBar.height, state: viewState)
+                    toolbarHeight: PadToolBar.height, state: viewState,
+                    printPreview: model.printPreview, printLayer: model.printLayer, printNozzle: model.printNozzle,
+                    renderSettings: model.renderView ? model.renderSettings : nil,
+                    spinning: model.renderView && model.renderSpinning && model.sketchSession == nil,
+                    sectionPlane: model.sectionClip, sketchSlice: model.sketchSlicePlane)
     }
 }
 
@@ -132,6 +149,7 @@ struct PadToolbar: ToolbarContent {
             Button("Render", systemImage: model.renderView ? "camera.fill" : "camera") { model.setRenderView(!model.renderView) }
                 .disabled(model.sketchSession != nil)
             Button("Inspector", systemImage: "sidebar.right") { model.showInspector.toggle() }
+            Menu("View", systemImage: "eye") { PadViewControls(model: model) }
             Menu("Export", systemImage: "square.and.arrow.up") {
                 Button("STL") { model.export(format: .stl) }
                 Button("3MF") { model.export(format: .threeMF) }

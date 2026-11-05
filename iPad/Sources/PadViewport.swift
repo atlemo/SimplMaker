@@ -45,9 +45,18 @@ struct PadViewport: UIViewRepresentable {
     let panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat)
     let toolbarHeight: CGFloat
     let state: PadViewState
+    var printPreview = false
+    var printLayer = 0.2
+    var printNozzle = 0.4
+    /// The Render view's floor and light; nil: not rendering.
+    var renderSettings: RenderSettings?
+    /// The Render view's turntable: the camera circles the part by itself.
+    var spinning = false
+    var sectionPlane: SIMD4<Float>?
+    var sketchSlice: (origin: SIMD3<Float>, normal: SIMD3<Float>)?
 
     @MainActor
-    final class Coordinator: NSObject, MTKViewDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, MTKViewDelegate, UIGestureRecognizerDelegate, UIEditMenuInteractionDelegate {
         var renderer: Renderer?
         var model: DocumentModel?
         var state: PadViewState?
@@ -62,6 +71,14 @@ struct PadViewport: UIViewRepresentable {
         let navigation = Preferences.navigationConfig
         weak var view: MTKView?
         var touch = SketchTouch()
+        var sketchCamera = SketchCameraMemory()
+        var menuInteraction: UIEditMenuInteraction?
+        /// A long press waits for the pick under it, then opens the menu for what it found.
+        var pendingMenu: CGPoint?
+        var menu: UIMenu?
+        var hoverPickPending = false
+        var animation: Task<Void, Never>?
+        var spin: Task<Void, Never>?
         /// What a one-finger drag outside a sketch is doing: orbiting, or dragging one of the on-screen handles.
         var drag: ViewDrag = .orbit
         var pendingTap: (point: CGPoint, additive: Bool)?
@@ -77,6 +94,66 @@ struct PadViewport: UIViewRepresentable {
                 state?.renderer = renderer
                 state?.cameraMayHaveMoved(size: view.bounds.size)
                 renderer?.draw(in: view)
+            }
+        }
+
+        // MARK: Pictures
+
+        /// The next frame, as PNG data.
+        func capturePNG(_ done: @escaping @MainActor @Sendable (Data?) -> Void) {
+            guard let renderer, let view else { return done(nil) }
+            renderer.captureHandler = done
+            view.setNeedsDisplay()
+        }
+
+        // MARK: Camera motion
+
+        /// Moves the camera smoothly to `goal`; a finger taking hold of the view ends it where it is, and with Reduce Motion on it jumps.
+        func animateCamera(to goal: CameraPose, duration: TimeInterval = 0.5) {
+            guard let renderer, let view else { return }
+            stopCameraAnimation()
+            let start = renderer.camera.pose
+            guard !start.isClose(to: goal) else { return }
+            if UIAccessibility.isReduceMotionEnabled {
+                renderer.camera.pose = goal
+                view.setNeedsDisplay()
+                return
+            }
+            let began = Date()
+            animation = Task { @MainActor [weak self] in
+                var last = start
+                while !Task.isCancelled {
+                    guard let self, let renderer = self.renderer, let view = self.view else { return }
+                    if renderer.camera.pose != last { break }  // moved by something else in between: let it be
+                    let t = Float(min(Date().timeIntervalSince(began) / duration, 1))
+                    last = start.blended(to: goal, CameraPose.eased(t))
+                    renderer.camera.pose = last
+                    view.setNeedsDisplay()
+                    if t >= 1 { break }
+                    try? await Task.sleep(for: .milliseconds(16))
+                }
+                if !Task.isCancelled { self?.animation = nil }
+            }
+        }
+
+        func stopCameraAnimation() { animation?.cancel(); animation = nil }
+
+        /// The Render view's turntable.
+        func setSpinning(_ on: Bool) {
+            if !on { spin?.cancel(); spin = nil; return }
+            guard spin == nil else { return }
+            spin = Task { @MainActor [weak self] in
+                var last = Date()
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(16))
+                    guard let self, let renderer = self.renderer, let view = self.view else { return }
+                    let now = Date()
+                    let dt = Float(min(now.timeIntervalSince(last), 0.1))
+                    last = now
+                    if self.animation != nil { continue }
+                    renderer.camera.yaw = remainder(renderer.camera.yaw - (2 * .pi / 45) * dt, 2 * .pi)
+                    view.setNeedsDisplay()
+                }
             }
         }
 
@@ -397,6 +474,17 @@ struct PadViewport: UIViewRepresentable {
         func picked(_ raw: UInt32) {
             guard let view, let renderer, let model else { return }
             renderer.hovered = raw
+            if let p = pendingMenu { pendingMenu = nil; showMenu(at: p, pick: raw, in: view); return }
+            if hoverPickPending {
+                hoverPickPending = false
+                if model.sketchSession == nil, pendingTap == nil {
+                    let pick = raw == 0 ? nil : PickID(raw: raw)
+                    model.hover(pick)
+                    renderer.selected = model.highlighted
+                    view.setNeedsDisplay()
+                    return
+                }
+            }
             guard let tap = pendingTap else { return }
             pendingTap = nil
             let p = tap.point
@@ -427,6 +515,69 @@ struct PadViewport: UIViewRepresentable {
             renderer.setOverlay(model.sketchOverlay()); view.setNeedsDisplay()
         }
 
+        @objc func hold(_ g: UILongPressGestureRecognizer) {
+            guard g.state == .began, let view, let renderer else { return }
+            let p = g.location(in: view)
+            pendingMenu = p
+            let scale = CGFloat(view.pixelScale)
+            renderer.pickRequest = SIMD2(Int(p.x * scale), Int(p.y * scale))
+            view.setNeedsDisplay()
+        }
+
+        /// A pointer or the Pencil hovering: what is under it lights up, and in a sketch it moves the preview.
+        @objc func hover(_ g: UIHoverGestureRecognizer) {
+            guard let view, let renderer, let model else { return }
+            let p = g.location(in: view)
+            switch g.state {
+            case .began, .changed:
+                if model.sketchSession != nil {
+                    sketchEvent(.moved, at: p, in: view)
+                } else if !hoverPickPending, drag.isOrbit {
+                    hoverPickPending = true
+                    let scale = CGFloat(view.pixelScale)
+                    renderer.pickRequest = SIMD2(Int(p.x * scale), Int(p.y * scale))
+                    view.setNeedsDisplay()
+                }
+            case .ended, .cancelled:
+                if model.sketchSession == nil { renderer.hovered = 0; model.hover(nil); view.setNeedsDisplay() }
+            default: break
+            }
+        }
+
+        /// The long press's pick came back: the menu for what is under the finger.
+        private func showMenu(at p: CGPoint, pick raw: UInt32, in view: MTKView) {
+            guard let renderer, let model else { return }
+            let pick = raw == 0 ? nil : PickID(raw: raw)
+            let r = renderer.camera.ray(at: p, viewSize: view.bounds.size)
+            let ray = (world(r.origin), world(r.direction))
+            let next = renderer.camera.ray(at: CGPoint(x: p.x + 1, y: p.y), viewSize: view.bounds.size)
+            model.clickRayNext = (world(next.origin), world(next.direction))
+            var items = model.contextItems(for: pick, ray: ray)
+            if model.sketchSession == nil, model.pendingTool == nil {
+                items += [.separator, .action(model.sectionActive ? "Turn Off Section Analysis" : "Section Analysis", symbol: DesignTool.sectionAnalysis.symbol) {
+                    model.setSectionAnalysis(!model.sectionActive)
+                }]
+                items += [.separator, .action(model.explodeOn ? "Leave Exploded View" : "Exploded View", symbol: "rectangle.expand.vertical") { model.setExplodedView(!model.explodeOn) }]
+                items += [.separator, .action(model.renderView ? "Leave Render View" : "Render View", symbol: "camera") { model.setRenderView(!model.renderView) }]
+                if model.renderView, !model.showRenderOptions {
+                    items += [.action("Show Render Options", symbol: "slider.horizontal.3") { model.showRenderOptions = true }]
+                }
+                if model.visualStyle.isShaded {
+                    items += [.separator, .action(model.printPreview ? "Leave 3D Print Preview" : "FDM 3D Print Preview", symbol: "square.stack.3d.up") { model.setPrintPreview(!model.printPreview) }]
+                }
+            }
+            menu = ContextMenuBuilder.menu(items) { [weak self] in
+                guard let self, let view = self.view, let renderer = self.renderer, let model = self.model else { return }
+                renderer.setOverlay(model.sketchOverlay()); view.setNeedsDisplay()
+            }
+            menuInteraction?.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: p))
+        }
+
+        nonisolated func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration,
+                                             suggestedActions: [UIMenuElement]) -> UIMenu? {
+            MainActor.assumeIsolated { menu }
+        }
+
         func gestureRecognizer(_ a: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith b: UIGestureRecognizer) -> Bool {
             // Two fingers may pan, pinch and rotate at once, as in every other app that has a canvas.
             !(a is UITapGestureRecognizer) && !(b is UITapGestureRecognizer)
@@ -442,6 +593,7 @@ struct PadViewport: UIViewRepresentable {
         c.view = view
         c.model = model
         c.state = state
+        state.capture = { [weak c] done in c?.capturePNG(done) }
         guard let renderer = Renderer() else { return view }
         c.renderer = renderer
         view.device = renderer.device
@@ -463,7 +615,13 @@ struct PadViewport: UIViewRepresentable {
         let pinch = UIPinchGestureRecognizer(target: c, action: #selector(Coordinator.pinch))
         let rotate = UIRotationGestureRecognizer(target: c, action: #selector(Coordinator.rotate))
         let tap = UITapGestureRecognizer(target: c, action: #selector(Coordinator.tap))
-        for g in [orbit, pan, pinch, rotate, tap] as [UIGestureRecognizer] {
+        let hold = UILongPressGestureRecognizer(target: c, action: #selector(Coordinator.hold))
+        hold.minimumPressDuration = 0.5
+        let hover = UIHoverGestureRecognizer(target: c, action: #selector(Coordinator.hover))
+        let menu = UIEditMenuInteraction(delegate: c)
+        view.addInteraction(menu)
+        c.menuInteraction = menu
+        for g in [orbit, pan, pinch, rotate, tap, hold, hover] as [UIGestureRecognizer] {
             g.delegate = c
             view.addGestureRecognizer(g)
         }
@@ -486,12 +644,42 @@ struct PadViewport: UIViewRepresentable {
             c.sketching = sketching
             c.applyAppearance(view)
         }
+        // Closing a sketch turns the flat view back to the one it was opened from; noted before any camera command below.
+        let before = c.sketchCamera.update(sketching: model.sketchSession != nil, camera: renderer.camera.pose)
         if c.sceneRevision != sceneRevision || c.explodeOffsets != explodeOffsets {
             c.sceneRevision = sceneRevision
             c.explodeOffsets = explodeOffsets
             renderer.setScene(model.visibleMeshes, offsets: explodeOffsets)
             renderer.sceneBounds = model.explodedSceneBounds
+            renderer.hovered = 0
+            renderer.hoverGroup = []
         }
+        // Every update: a colour being picked changes nothing else.
+        renderer.bodyColors = model.visibleMeshes.map { m in
+            model.displayColor(of: m.id).map { c -> SIMD4<Float> in
+                let (r, g, b) = c.components
+                return SIMD4(Float(r), Float(g), Float(b), 1)
+            }
+        }
+        renderer.bodyMaterials = model.visibleMeshes.map { m in
+            switch model.displayMaterial(of: m.id) {
+            case nil: 0
+            case .metal: 1
+            case .glass: 2
+            case .wood: 3
+            case .plastic: 4
+            }
+        }
+        renderer.focusPoint = model.renderFocusPoint.map { SIMD3(Float($0.x), Float($0.y), Float($0.z)) }
+        renderer.bodyRoughness = model.visibleMeshes.map { m in model.displayRoughness(of: m.id).map { Float($0) } ?? -1 }
+        renderer.printPreview = printPreview
+        renderer.printLayer = Float(printLayer)
+        renderer.printNozzle = Float(printNozzle)
+        renderer.renderSettings = renderSettings
+        c.setSpinning(spinning)
+        renderer.sectionPlane = sectionPlane
+        renderer.sketchSlice = sketchSlice
+        if let before, !model.sketchClosedKeepingView { c.animateCamera(to: before) }
         let aspect = Float(max(view.bounds.width, 1) / max(view.bounds.height, 1))
         c.insets = panelInsets
         c.toolbarHeight = toolbarHeight
@@ -503,6 +691,7 @@ struct PadViewport: UIViewRepresentable {
         // The camera moves the model asks for: looking square at a new sketch's plane, a standard view.
         if c.cameraRevision != cameraRevision, let cmd = model.cameraCommand {
             c.cameraRevision = cameraRevision
+            c.stopCameraAnimation()
             switch cmd.command {
             case .look(let target, let normal):
                 renderer.camera.look(along: normal, at: target)
@@ -541,6 +730,7 @@ struct SketchTouch {
 
 /// What a one-finger drag outside a sketch has hold of.
 enum ViewDrag {
+    var isOrbit: Bool { if case .orbit = self { return true } else { return false } }
     case orbit
     case manipulator(ManipulatorDrag)
     case holeMove
