@@ -68,6 +68,9 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
         return g
     }
 
+    /// A picture of the part drawn by the platform's own viewport (the iPad's), to be stored in the file the next time it is saved.
+    func updateThumbnail(_ png: Data?) { thumbnail.withLock { $0 = png } }
+
     /// Draws a new thumbnail once the part has been left alone for a moment (drawing is not free, and every edit changes it).
     @MainActor private func scheduleThumbnail() {
         thumbnailTask?.cancel()

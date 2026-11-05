@@ -14,6 +14,27 @@ struct PadDocumentView: View {
     @AppStorage(Preferences.showAxes) private var showAxes = true
 
     private var model: DocumentModel { file.model }
+    /// The picture stored in the file: the part as the viewport shows it, shrunk.
+    private func storeThumbnail() async {
+        try? await Task.sleep(for: .seconds(1.5))
+        guard !Task.isCancelled, model.sketchSession == nil else { return }
+        await model.rebuilt()
+        guard !Task.isCancelled else { return }
+        let png: Data? = model.visibleMeshes.isEmpty ? nil : await withCheckedContinuation { continuation in
+            guard let capture = viewState.capture else { continuation.resume(returning: nil); return }
+            capture { data in continuation.resume(returning: data.flatMap(Self.shrunk)) }
+        }
+        file.updateThumbnail(png)
+    }
+
+    /// A PNG at most 512 points across.
+    private static func shrunk(_ data: Data) -> Data? {
+        guard let image = UIImage(data: data), image.size.width > 0 else { return nil }
+        let scale = min(512 / max(image.size.width, image.size.height), 1)
+        let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).pngData { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+    }
     @State private var viewState = PadViewState()
 
     var body: some View {
@@ -53,6 +74,7 @@ struct PadDocumentView: View {
                     }
                 }
             }
+            .task(id: model.documentRevision) { await storeThumbnail() }
             .onChange(of: undoManager) { model.undoManager = undoManager }
             .onChange(of: fileURL) { model.fileURL = fileURL }
     }
