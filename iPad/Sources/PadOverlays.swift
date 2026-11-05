@@ -13,6 +13,11 @@ final class PadViewState {
     var size: CGSize = .zero
     @ObservationIgnored weak var renderer: Renderer?
     /// Takes a picture of the view as PNG data (set by the viewport).
+    /// The cube's actions on the camera (set by the viewport), and how much of the top the navigation bar and tool bar cover.
+    @ObservationIgnored var lookAlong: ((SIMD3<Float>) -> Void)?
+    @ObservationIgnored var orbit: ((Float, Float) -> Void)?
+    @ObservationIgnored var turn: ((Int) -> Void)?
+    var topInset: CGFloat = 0
     @ObservationIgnored var capture: ((@escaping @MainActor @Sendable (Data?) -> Void) -> Void)?
     @ObservationIgnored private var lastPose: CameraPose?
 
@@ -51,6 +56,11 @@ struct PadOverlays: View {
             PadHandleFields(model: model, state: state, insets: insets)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .topTrailing) {
+            PadViewCube(model: model, state: state)
+                .padding(.trailing, insets.right + 12)
+                .padding(.top, state.topInset + 8)
+        }
     }
 }
 

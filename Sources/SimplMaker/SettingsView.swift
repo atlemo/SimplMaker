@@ -16,7 +16,9 @@ struct SettingsView: View {
     @AppStorage(Preferences.antialiasing) private var antialiasing = 4
     @AppStorage(Preferences.accentSource) private var accentSource = Preferences.AccentSource.simplMaker
     @AppStorage(Preferences.sendUsageStatistics) private var sendUsageStatistics = true
+#if os(macOS)
     @ObservedObject private var updater = Updater.shared
+#endif
     private enum Pane: String, CaseIterable, Identifiable {
         case general = "General", navigation = "Navigation", viewport = "Viewport", shortcuts = "Shortcuts", ai = "AI"
         var id: String { rawValue }
@@ -34,7 +36,11 @@ struct SettingsView: View {
     @Environment(\.accent) private var accent
 
     private var panes: [Pane] {
+#if os(macOS)
         Pane.allCases.filter { $0 != .ai || AIFeature.isAvailable }
+#else
+        Pane.allCases.filter { $0 != .ai && $0 != .shortcuts }  // no updater, AI server or shortcut recorder on iPad
+#endif
     }
 
     /// The categories, as a row of buttons in the app's accent colour (a TabView draws its selection grey).
@@ -72,24 +78,32 @@ struct SettingsView: View {
             case .general: generalPane
             case .navigation: navigationPane
             case .viewport: viewportPane
+#if os(macOS)
             case .shortcuts: ShortcutsPane()
             case .ai: AISettingsPane()
+#else
+            case .shortcuts, .ai: EmptyView()
+#endif
             }
         }
+#if os(macOS)
         .frame(width: 520)
         .frame(minHeight: 360, idealHeight: 560, maxHeight: .infinity)  // the height can be dragged, the width is fixed
         .background(SettingsHeightMemory())
+#endif
         .navigationTitle(pane.rawValue)
     }
 
     @ViewBuilder private var generalPane: some View {
         Form {
+#if os(macOS)
             VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
                 Toggle("Show the welcome window at launch", isOn: $showWelcome)
                 Text("Off, SimplMaker opens an empty part at launch instead. The window is always available under Window → Welcome to SimplMaker.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+#endif
             VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
                 Picker("Accent color", selection: $accentSource) {
                     ForEach(Preferences.AccentSource.allCases) { Text($0.title).tag($0) }
@@ -98,11 +112,14 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+#if os(macOS)
             if updater.isAvailable {
                 Toggle("Check for updates automatically", isOn: Binding(
                     get: { updater.automaticallyChecksForUpdates },
                     set: { updater.automaticallyChecksForUpdates = $0 }))
             }
+#endif
+#if os(macOS)
             if Telemetry.isOfficialBuild {
                 VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
                     Toggle("Share anonymous usage statistics", isOn: $sendUsageStatistics)
@@ -111,6 +128,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+#endif
         }
         .formStyle(.grouped)
     }
@@ -256,6 +274,7 @@ private extension Binding where Value == NavBindings {
 }
 
 
+#if os(macOS)
 /// Put in the Settings window's content: opens the window at the height the user last dragged it to, and keeps that up
 /// to date. Done on the window itself because a content-sized window opens at the content's natural height, whatever
 /// ideal height the view asks for.
@@ -293,3 +312,4 @@ private struct SettingsHeightMemory: NSViewRepresentable {
         }
     }
 }
+#endif

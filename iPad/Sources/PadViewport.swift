@@ -21,9 +21,38 @@ import SwiftUI
 /// The viewport's view: it only reports where fingers come down (so the pick under the first one is on its way before any gesture starts).
 final class PadMetalView: MTKView {
     var onTouchDown: ((CGPoint) -> Void)?
+    /// A key of a hardware keyboard, while the viewport has the keyboard; true when it was used.
+    var onKey: ((UIKey) -> Bool)?
+    /// Edit ▸ Copy and Paste (⌘C, ⌘V from the keyboard or the system's edit menu): bodies, not text.
+    var onCopy: (() -> Bool)?
+    var onPaste: (() -> Bool)?
+    var canPaste: (() -> Bool)?
+    override var canBecomeFirstResponder: Bool { true }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        switch action {
+        case #selector(copy(_:)): return true
+        case #selector(paste(_:)): return canPaste?() ?? false
+        default: return super.canPerformAction(action, withSender: sender)
+        }
+    }
+    override func copy(_ sender: Any?) { _ = onCopy?() }
+    override func paste(_ sender: Any?) { _ = onPaste?() }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if touches.count == 1, event?.allTouches?.count == 1, let t = touches.first { onTouchDown?(t.location(in: self)) }
+        if touches.count == 1, event?.allTouches?.count == 1, let t = touches.first {
+            if !isFirstResponder { _ = becomeFirstResponder() }  // taking hold of the view ends typing in a field
+            onTouchDown?(t.location(in: self))
+        }
         super.touchesBegan(touches, with: event)
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        var unhandled = presses
+        for press in presses {
+            if let key = press.key, onKey?(key) == true { unhandled.remove(press) }
+        }
+        if !unhandled.isEmpty { super.pressesBegan(unhandled, with: event) }
     }
 }
 
@@ -93,6 +122,7 @@ struct PadViewport: UIViewRepresentable {
                 updateCameraInsets(view, insets, toolbar: toolbarHeight)
                 state?.renderer = renderer
                 state?.cameraMayHaveMoved(size: view.bounds.size)
+                if let state, state.topInset != view.safeAreaInsets.top + toolbarHeight { state.topInset = view.safeAreaInsets.top + toolbarHeight }
                 renderer?.draw(in: view)
             }
         }
@@ -515,6 +545,61 @@ struct PadViewport: UIViewRepresentable {
             renderer.setOverlay(model.sketchOverlay()); view.setNeedsDisplay()
         }
 
+        // MARK: Keyboard
+
+        /// A key from a hardware keyboard, as the Mac's viewport takes it: Esc, Return and ⌫ for what is going on, number keys into a shape's
+        /// size, and the sketch tools' letters.
+        func handleKey(_ key: UIKey) -> Bool {
+            guard let view, let renderer, let model else { return false }
+            let plain = key.modifierFlags.intersection([.command, .control, .alternate]).isEmpty
+            func refresh() { renderer.setOverlay(model.sketchOverlay()); renderer.selected = model.highlighted; view.setNeedsDisplay() }
+            if let session = model.sketchSession, plain {
+                switch key.keyCode {
+                case .keyboardEscape: session.escape(); refresh(); return true
+                case .keyboardDeleteOrBackspace, .keyboardDeleteForward:
+                    if let field = session.inputFields.last(where: { session.typed[$0] != nil }), key.keyCode == .keyboardDeleteOrBackspace {
+                        session.setTyped(field, String((session.typed[field] ?? "").dropLast())); model.overlayRevision += 1  // takes back a typed digit
+                    } else if session.isPatterning { model.commitSketch(session.deletePattern()) }
+                    else if session.isMirroring { model.commitSketch(session.deleteMirror()) }
+                    else if session.isOffsetting { session.cancelOffset() }
+                    else { model.sketchCommand { $0.deleteSelection() } }
+                    refresh(); return true
+                case .keyboardReturnOrEnter, .keypadEnter:
+                    if session.typed.isEmpty, !session.isPatterning, !session.isMirroring, !session.isOffsetting { model.finishSketch() }
+                    else { model.commitSketchTyped(); refresh() }
+                    return true
+                case .keyboardDownArrow where session.tool == .polygon, .keyboardUpArrow where session.tool == .polygon:
+                    session.adjustSides(by: key.keyCode == .keyboardUpArrow ? 1 : -1); refresh(); return true
+                default: break
+                }
+                let fields = session.inputFields
+                if !fields.isEmpty, key.characters.count == 1, "0123456789.-".contains(key.characters) {
+                    let field = fields.first { session.typed[$0] == nil } ?? fields[0]
+                    session.setTyped(field, (session.typed[field] ?? "") + key.characters)
+                    model.overlayRevision += 1
+                    return true
+                }
+                if let c = key.charactersIgnoringModifiers.lowercased().first, let tool = SketchTool.forKey(c, current: session.tool) {
+                    model.setSketchTool(tool); refresh(); return true
+                }
+                return false
+            }
+            if key.keyCode == .keyboardEscape {
+                if model.pickingRenderFocus { model.togglePickingRenderFocus() }
+                else if model.isPickingSketchPlane { model.cancelSketchPlanePick() }
+                else if model.pendingTool != nil { model.cancelTool() }
+                else if model.selection.isEmpty, model.dragHandle != nil || model.featureWithoutHandle != nil { model.finishFeatureEdit() }
+                else { model.clearSelection() }
+                refresh(); return true
+            }
+            if plain, key.keyCode == .keyboardReturnOrEnter || key.keyCode == .keypadEnter,
+               model.pendingTool != nil || model.dragHandle != nil || model.featureWithoutHandle != nil {
+                if model.pendingTool != nil { model.confirmTool() } else { model.finishFeatureEdit() }
+                refresh(); return true
+            }
+            return false
+        }
+
         @objc func hold(_ g: UILongPressGestureRecognizer) {
             guard g.state == .began, let view, let renderer else { return }
             let p = g.location(in: view)
@@ -594,6 +679,24 @@ struct PadViewport: UIViewRepresentable {
         c.model = model
         c.state = state
         state.capture = { [weak c] done in c?.capturePNG(done) }
+        state.lookAlong = { [weak c] n in
+            guard let c, let renderer = c.renderer else { return }
+            var goal = renderer.camera
+            goal.look(along: n, at: goal.target)
+            c.animateCamera(to: goal.pose, duration: 0.3)
+        }
+        state.orbit = { [weak c] dx, dy in
+            guard let c, let renderer = c.renderer, let view = c.view else { return }
+            c.stopCameraAnimation()
+            renderer.camera.orbit(dx: dx, dy: dy)
+            view.setNeedsDisplay()
+        }
+        state.turn = { [weak c] direction in
+            guard let c, let renderer = c.renderer else { return }
+            var goal = renderer.camera.pose
+            goal.roll = renderer.camera.quarterTurnedRoll(direction)
+            c.animateCamera(to: goal, duration: 0.25)
+        }
         guard let renderer = Renderer() else { return view }
         c.renderer = renderer
         view.device = renderer.device
@@ -629,6 +732,10 @@ struct PadViewport: UIViewRepresentable {
         // A pick comes back from the GPU a frame later: hand what it found to the model, which selects it.
         renderer.onPick = { [weak c] raw, _ in c?.picked(raw) }
         view.onTouchDown = { [weak c, weak view] p in if let view { c?.touchDown(p, in: view) } }
+        view.onKey = { [weak c] key in c?.handleKey(key) ?? false }
+        view.onCopy = { [weak model] in model?.copyBodies() ?? false }
+        view.onPaste = { [weak model] in model?.pasteBodies() ?? false }
+        view.canPaste = { DocumentModel.pasteboardHasBodies() }
         return view
     }
 

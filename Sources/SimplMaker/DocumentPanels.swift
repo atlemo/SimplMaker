@@ -195,7 +195,12 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
                 }
             }
             .padding(.top, Panel.inset)
-            .padding(.bottom, Panel.inset)
+#if os(macOS)
+            .padding(.bottom, Panel.inset)  // a tall panel covers the status bar rather than hiding behind it
+#else
+            // On the iPad the status bar stays readable: the panel ends above it (and scrolls if it is taller).
+            .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset) + DS.ControlHeight.large + Panel.inset)
+#endif
             .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.showPrintOptions && model.printPreview)

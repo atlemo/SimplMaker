@@ -38,10 +38,8 @@ targets:
           - RenameDocument.swift
           - ExportDialog.swift
           - ExportImageDialog.swift
-          - BodyClipboard.swift
           - FileDrop.swift
           - ShortcutSettings.swift
-          - SettingsView.swift
           - LicenseTexts.swift
     dependencies:
       - package: SimplMaker

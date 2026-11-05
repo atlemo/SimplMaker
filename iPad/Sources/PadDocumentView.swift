@@ -150,6 +150,7 @@ struct PadToolbar: ToolbarContent {
                 .disabled(model.sketchSession != nil)
             Button("Inspector", systemImage: "sidebar.right") { model.showInspector.toggle() }
             Menu("View", systemImage: "eye") { PadViewControls(model: model) }
+            Button("Settings", systemImage: "gearshape") { model.showSettings = true }
             Menu("Export", systemImage: "square.and.arrow.up") {
                 Button("STL") { model.export(format: .stl) }
                 Button("3MF") { model.export(format: .threeMF) }
@@ -190,6 +191,14 @@ struct PadDialogs: ViewModifier {
                 Button("STL") { model.export(format: .stl) }
                 Button("3MF") { model.export(format: .threeMF) }
                 Button("STEP") { model.export(format: .step) }
+            }
+            .sheet(isPresented: $model.showSettings) {
+                NavigationStack {
+                    SettingsView()
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { model.showSettings = false } } }
+                        .navigationBarTitleDisplayMode(.inline)
+                }
+                .presentationDetents([.large])
             }
             .sheet(isPresented: Binding(get: { model.exportedFile != nil }, set: { if !$0 { model.exportedFile = nil } })) {
                 if let url = model.exportedFile { ShareSheet(url: url).presentationDetents([.medium, .large]) }

@@ -3,14 +3,36 @@
 // history stays behind, as with any imported part).
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import CADCore
 import CADKernel
+
+#if os(macOS)
+typealias BodyPasteboard = NSPasteboard
 
 extension NSPasteboard.PasteboardType {
     /// Bodies copied from SimplMaker: a JSON list of `CopiedBody`.
     static let simplMakerBodies = NSPasteboard.PasteboardType("com.simplmaker.bodies")
 }
+
+extension NSPasteboard {
+    var bodiesData: Data? { data(forType: .simplMakerBodies) }
+    func setBodiesData(_ data: Data) { clearContents(); setData(data, forType: .simplMakerBodies) }
+}
+#else
+typealias BodyPasteboard = UIPasteboard
+
+extension UIPasteboard {
+    /// Bodies copied from SimplMaker: a JSON list of `CopiedBody`.
+    static let simplMakerBodiesType = "com.simplmaker.bodies"
+    var bodiesData: Data? { data(forPasteboardType: Self.simplMakerBodiesType) }
+    func setBodiesData(_ data: Data) { setData(data, forPasteboardType: Self.simplMakerBodiesType) }
+}
+#endif
 
 /// One body on the pasteboard.
 struct CopiedBody: Codable {
@@ -36,13 +58,13 @@ extension DocumentModel {
         return (result?.bodies ?? []).map(\.id).filter(ids.contains)
     }
 
-    static func pasteboardHasBodies(_ pasteboard: NSPasteboard = .general) -> Bool {
-        pasteboard.data(forType: .simplMakerBodies) != nil
+    static func pasteboardHasBodies(_ pasteboard: BodyPasteboard = .general) -> Bool {
+        pasteboard.bodiesData != nil
     }
 
     /// Puts the selected bodies on the pasteboard. False if there are none to take (nothing is changed then).
     @discardableResult
-    func copyBodies(to pasteboard: NSPasteboard = .general) -> Bool {
+    func copyBodies(to pasteboard: BodyPasteboard = .general) -> Bool {
         guard sketchSession == nil else { return false }
         let wanted = copyableBodies.compactMap { id in bodies.first { $0.id == id } }
         guard !wanted.isEmpty else { return false }
@@ -50,8 +72,7 @@ extension DocumentModel {
             let copied = try wanted.map { b in
                 CopiedBody(name: b.name, color: document.bodyColors[b.id], material: document.bodyMaterials[b.id], roughness: document.bodyRoughness[b.id], step: try Self.stepData(of: b.body))
             }
-            pasteboard.clearContents()
-            pasteboard.setData(try JSONEncoder().encode(copied), forType: .simplMakerBodies)
+            pasteboard.setBodiesData(try JSONEncoder().encode(copied))
             return true
         } catch {
             alert = AlertInfo(title: "The bodies couldn't be copied", message: "\(error)")
@@ -62,8 +83,8 @@ extension DocumentModel {
     /// Adds the bodies on the pasteboard to the timeline, where they were (on top of the originals, if
     /// those are still there), and opens the Move tool on them. False if the pasteboard holds none.
     @discardableResult
-    func pasteBodies(from pasteboard: NSPasteboard = .general) -> Bool {
-        guard sketchSession == nil, let data = pasteboard.data(forType: .simplMakerBodies),
+    func pasteBodies(from pasteboard: BodyPasteboard = .general) -> Bool {
+        guard sketchSession == nil, let data = pasteboard.bodiesData,
               let copied = try? JSONDecoder().decode([CopiedBody].self, from: data), !copied.isEmpty else { return false }
         pendingTool = nil
         var pasted: [(id: FeatureID, copy: CopiedBody)] = []
@@ -103,6 +124,7 @@ extension DocumentModel {
     }
 }
 
+#if os(macOS)
 /// Edit ▸ Cut, Copy, Paste and Select All. A text field being typed in gets them first, as it always did;
 /// otherwise Copy and Paste work on the bodies.
 @MainActor
@@ -121,3 +143,4 @@ enum EditCommands {
         NSApp.sendAction(Selector(action), to: nil, from: nil)
     }
 }
+#endif
