@@ -11,10 +11,10 @@ enum Hint {
 #else
         // Parts that only a keyboard can act on go; the tool bar has Cancel and Done.
         let parts = s.components(separatedBy: " · ").filter {
-            !$0.contains("⇧-") && !$0.hasPrefix("Esc to") && !$0.contains("Tab moves")
+            !$0.contains("⇧-") && !$0.hasPrefix("Esc to") && !$0.hasPrefix("Tab ") && !$0.contains("Tab moves")
         }
         var out = parts.isEmpty ? s : parts.joined(separator: " · ")
-        for (from, to) in [("Press E to extrude", "Tap Extrude to extrude"),
+        for (from, to) in [("Press E to extrude", "Tap Extrude to extrude"), ("and press Return", "and tap Done"),
                            ("double-click", "double-tap"), ("Double-click", "Double-tap"),
                            ("click", "tap"), ("Click", "Tap"),
                            ("let go to keep", "lift to keep")] {

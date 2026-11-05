@@ -52,6 +52,7 @@ struct PadOverlays: View {
                 PadDimensionLabels(model: model, session: session, state: state)
                 if showConstraints || true { PadGlyphs(model: model, session: session, state: state, showConstraints: showConstraints) }
                 PadSketchFields(model: model, session: session, state: state, insets: insets)
+                PadTextEntry(model: model, session: session, state: state, insets: insets)
             }
             PadHandleFields(model: model, state: state, insets: insets)
         }
@@ -405,5 +406,75 @@ struct PadManipulator: View {
             let color = Self.color(of: ring.axis)
             disc(ring.handle, ManipulatorLayout.handleRadius, ManipulatorPart.ring(ring.axis) == active ? color.opacity(0.5) : body, dot: color)
         }
+    }
+}
+
+/// The Text tool's fields: the words and the size of the letters, below the point that was tapped, until Return or Cancel.
+/// The letters appear in the sketch as they are typed.
+private struct PadTextEntry: View {
+    let model: DocumentModel
+    let session: SketchSession
+    let state: PadViewState
+    let insets: (left: CGFloat, right: CGFloat, bottom: CGFloat)
+    @State private var words = ""
+    @State private var size = ""
+    @State private var editing: EntityID?
+    @FocusState private var focus: Field?
+    private enum Field { case words, size }
+
+    var body: some View {
+        if let at = session.pendingText?.position {
+            let world = session.frame.point(at.x, at.y)
+            if let p = state.project(world) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        TextField("Type the text", text: $words)
+                            .frame(width: 220)
+                            .focused($focus, equals: .words)
+                            .submitLabel(.done)
+                            .onSubmit { done() }
+                            .onChange(of: words) { session.setTextDraft(words); model.overlayRevision += 1 }
+                        TextField("Size", text: $size)
+                            .frame(width: 84)
+                            .focused($focus, equals: .size)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .foregroundStyle(session.textHeightIsUsable ? Color.primary : Color.red)
+                            .onSubmit { done() }
+                            .onChange(of: size) { session.setTextHeightDraft(size); model.overlayRevision += 1 }
+                            .completesParameters(model, focused: focus == .size)
+                    }
+                    .textFieldStyle(.roundedBorder)
+                    HStack {
+                        Button("Cancel", role: .cancel) { session.cancelText(); model.overlayRevision += 1 }
+                        Spacer()
+                        Button("Done") { done() }.buttonStyle(.borderedProminent)
+                    }
+                }
+                .padding(10)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 1.5))
+                .fixedSize()
+                .position(x: min(max(p.x + 160, insets.left + 180), max(state.size.width - insets.right - 180, insets.left + 180)),
+                          y: min(max(p.y + 70, 80), max(state.size.height - insets.bottom - 70, 80)))
+                .onAppear { load() }
+                .onChange(of: session.editingText) { load() }
+            }
+        }
+    }
+
+    /// Starts with the words and size of the text being edited, or an empty box and the size the last text had.
+    private func load() {
+        words = session.textEntryInitial
+        size = session.textHeightDraft
+        editing = session.editingText
+        DispatchQueue.main.async { focus = .words }
+    }
+
+    private func done() {
+        guard session.textHeightIsUsable else { focus = .size; return }
+        let text = words
+        model.sketchCommand { $0.placeText(text) }
+        model.overlayRevision += 1
     }
 }
