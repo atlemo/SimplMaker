@@ -13,6 +13,11 @@ final class PadScene {
     var meshes: [BodyMesh] = []
     var bounds: (min: SIMD3<Float>, max: SIMD3<Float>)?
     var revision = 0
+    /// The face or edge the last tap picked, if any.
+    var selection: PickID?
+    var selectionRevision = 0
+    private var summary = ""
+    private var selectionText = ""
 
     func load() async {
         let result = await Task.detached(priority: .userInitiated) { () -> (meshes: [BodyMesh], errors: Int, volume: Double, rebuild: Double, mesh: Double) in
@@ -34,9 +39,27 @@ final class PadScene {
         }
         bounds = meshes.isEmpty ? nil : (lo, hi)
         let triangles = meshes.reduce(0) { $0 + $1.mesh.indices.count / 3 }
-        status = String(format: "OCCT %@ · %d body, %d triangles · volume %.1f mm³ · rebuild %.0f ms, mesh %.0f ms · %d errors",
+        summary = String(format: "OCCT %@ · %d body, %d triangles · volume %.1f mm³ · rebuild %.0f ms, mesh %.0f ms · %d errors",
                         occtVersion, meshes.count, triangles, result.volume,
                         result.rebuild * 1000, result.mesh * 1000, result.errors)
+        status = summary
         revision += 1
+    }
+
+    /// A tap's pick came back (0: nothing was there).
+    func picked(_ raw: UInt32) {
+        let pick = PickID(raw: raw)
+        switch pick.kind {
+        case .face, .edge:
+            selection = pick
+            let mesh = meshes[safe: pick.body]?.mesh
+            let names = pick.kind == .face ? mesh?.faceNames : mesh?.edgeNames
+            selectionText = "\(pick.kind == .face ? "face" : "edge") \(names?[safe: pick.element] ?? "#\(pick.element)")"
+        default:
+            selection = nil
+            selectionText = ""
+        }
+        status = selectionText.isEmpty ? summary : summary + "\nSelected: " + selectionText
+        selectionRevision += 1
     }
 }
