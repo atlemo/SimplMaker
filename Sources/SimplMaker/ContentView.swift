@@ -396,6 +396,12 @@ struct StartCard: View {
     let model: DocumentModel
     let guide: TutorialGuide
 
+#if os(macOS)
+    private static let footnote = "Right-click in the view for more · File › Open Example Parts to learn from"
+#else
+    private static let footnote = "Press and hold in the view for more · Help › Load Example Part to learn from"
+#endif
+
     var body: some View {
         VStack(spacing: DS.Spacing.space5) {
             Text("Start your part").font(.title2.weight(.semibold))
@@ -414,7 +420,7 @@ struct StartCard: View {
             Button { guide.start() } label: { Label("New to CAD? Follow the tutorial: a desk organizer", systemImage: "graduationcap") }
                 .buttonStyle(.platformLink)
                 .padding(.top, DS.Spacing.space5)  // a bigger gap below the three buttons
-            Text("Right-click in the view for more · File › Open Example Parts to learn from")
+            Text(Self.footnote)
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -524,12 +530,12 @@ struct StatusBar: View {
 
     @ViewBuilder private var message: some View {
         if let session = model.sketchSession {
-            Text(session.statusText)
+            hintText(session.statusText)
                 .foregroundStyle(session.message != nil || session.solve?.status == .failed ? Color.red : Color.secondary)
         } else if model.isPickingSketchPlane {
-            Text("Select a plane or planar face to sketch on · Esc to cancel")
+            hintText("Select a plane or planar face to sketch on · Esc to cancel")
         } else if let tool = model.pendingTool, let prompt = model.toolPrompt {
-            Text("\(tool.rawValue): \(prompt) · Esc to cancel")
+            hintText("\(tool.rawValue): \(prompt) · Esc to cancel")
         } else if model.holeMoveStart != nil || model.hovered == .moveHandle {
             Text(model.previewInvalid ? "The hole doesn't fit there — let go to keep it where it was"
                                       : "Drag the orange dot to move the hole · it snaps to the face's centre lines")
@@ -555,13 +561,13 @@ struct StatusBar: View {
                                         : "Drag the orange arrow to change the \(h.label.lowercased()), or type it in the field next to it")
                 .foregroundStyle(model.previewInvalid ? Color.red : Color.secondary)
         } else if !model.selectedProfiles.isEmpty, model.hovered == nil {
-            Text("Press E to extrude the selected profile\(model.selectedProfiles.count == 1 ? "" : "s"), or pick another tool")
+            hintText("Press E to extrude the selected profile\(model.selectedProfiles.count == 1 ? "" : "s"), or pick another tool")
                 .foregroundStyle(.secondary)
         } else if let hovered = model.hovered, let name = model.name(of: hovered) {
             Label(name, systemImage: hovered.isEdge ? "line.diagonal" : "square")
                 .truncationMode(.middle)
         } else {
-            Text("Click faces or edges to select · double-click an edge for its loop · ⇧-click to add · drag to orbit").foregroundStyle(.secondary)
+            hintText("Click faces or edges to select · double-click an edge for its loop · ⇧-click to add · drag to orbit").foregroundStyle(.secondary)
         }
     }
 }

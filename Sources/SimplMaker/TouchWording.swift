@@ -1,0 +1,29 @@
+// The status bar's hints are written for a mouse and a keyboard. On the iPad they are reworded for a finger.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
+import SwiftUI
+
+enum Hint {
+    /// The hint as it should read on this device: unchanged on the Mac.
+    static func text(_ s: String) -> String {
+#if os(macOS)
+        return s
+#else
+        // Parts that only a keyboard can act on go; the tool bar has Cancel and Done.
+        let parts = s.components(separatedBy: " · ").filter {
+            !$0.contains("⇧-") && !$0.hasPrefix("Esc to") && !$0.contains("Tab moves")
+        }
+        var out = parts.isEmpty ? s : parts.joined(separator: " · ")
+        for (from, to) in [("Press E to extrude", "Tap Extrude to extrude"),
+                           ("double-click", "double-tap"), ("Double-click", "Double-tap"),
+                           ("click", "tap"), ("Click", "Tap"),
+                           ("let go to keep", "lift to keep")] {
+            out = out.replacingOccurrences(of: from, with: to)
+        }
+        return out
+#endif
+    }
+}
+
+/// A hint line, reworded for the device.
+func hintText(_ s: String) -> Text { Text(verbatim: Hint.text(s)) }

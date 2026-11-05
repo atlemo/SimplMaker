@@ -21,7 +21,7 @@ struct PadDocumentView: View {
         let guide = file.guide
         return DocumentPanels(model: model, guide: guide, viewport: viewport(model), chrome: EmptyView())
             .safeAreaInset(edge: .top, spacing: 0) { PadToolBar(model: model) }
-            .toolbar { PadToolbar(model: model, undoManager: undoManager) }
+            .toolbar { PadToolbar(model: model, guide: guide, undoManager: undoManager) }
             .modifier(PadDialogs(model: model))
             .modifier(AccentScope(sketching: model.sketchSession != nil))
             .environment(\.completionModel, model)
@@ -135,7 +135,15 @@ private struct BarBackground: ViewModifier {
 /// The navigation bar: panels on and off at the leading side; undo, redo, view and export at the trailing side.
 struct PadToolbar: ToolbarContent {
     let model: DocumentModel
+    let guide: TutorialGuide
+    @Environment(\.openURL) private var openURL
     let undoManager: UndoManager?
+
+    /// An example part replaces what is in the part (one Undo brings it back): iPadOS has no way to open a second part from inside the app.
+    private func loadExample(_ title: String, _ document: CADDocument) {
+        model.mutate("Load Example: \(title)") { $0 = document }
+        model.regenerate(fit: true)  // the view fits the new part once it is built
+    }
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
@@ -150,6 +158,21 @@ struct PadToolbar: ToolbarContent {
                 .disabled(model.sketchSession != nil)
             Button("Inspector", systemImage: "sidebar.right") { model.showInspector.toggle() }
             Menu("View", systemImage: "eye") { PadViewControls(model: model) }
+            Menu("Help", systemImage: "questionmark.circle") {
+                Button(guide.canResume ? "Resume Tutorial: Desk Organizer" : "Tutorial: Make a Desk Organizer") {
+                    if guide.isActive { return }
+                    if guide.canResume || (model.document.features.isEmpty && model.document.parameters.isEmpty) { guide.start() }
+                    else { model.alert = AlertInfo(title: "The tutorial starts in an empty part", message: "Close this part, create a new one from the document browser, and choose Help › Tutorial there.") }
+                }
+                Menu("Load Example Part") {
+                    Button("Plate with Holes, Fillets and a Chamfer") { loadExample("Plate with Holes, Fillets and a Chamfer", CADDocument.demo()) }
+                    Button("Bracket Profile (try the sketch solver)") { loadExample("Bracket Profile", CADDocument.bracketProfileDemo()) }
+                    Button("Bracket with Ribs") { loadExample("Bracket with Ribs", CADDocument.ribDemo()) }
+                    Button("Flanged Pipe on a Manifold (advanced)") { loadExample("Flanged Pipe on a Manifold", CADDocument.manifoldDemo()) }
+                }
+                Divider()
+                Button("SimplMaker Docs") { openURL(URL(string: "https://simplmaker.com/docs/")!) }
+            }
             Button("Settings", systemImage: "gearshape") { model.showSettings = true }
             Menu("Export", systemImage: "square.and.arrow.up") {
                 Button("STL") { model.export(format: .stl) }
