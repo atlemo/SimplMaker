@@ -11,5 +11,12 @@ struct SimplMakerPadApp: App {
             PadDocumentView(file: configuration.document, fileURL: configuration.fileURL)
         }
         .commands { PadCommands() }
+
+        // Our own launch screen: its New button makes the part and opens it in one step.
+        DocumentGroupLaunchScene("SimplMaker") {
+            NewDocumentButton("New Part")
+        } background: {
+            Color(.systemGroupedBackground)
+        }
     }
 }
