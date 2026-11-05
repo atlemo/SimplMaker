@@ -28,6 +28,8 @@ final class PadMetalView: MTKView {
     var onPaste: (() -> Bool)?
     var canPaste: (() -> Bool)?
     override var canBecomeFirstResponder: Bool { true }
+    /// Whether the touch in progress is the Apple Pencil's: it is precise, so it snaps and picks over a smaller reach.
+    var usingPencil = false
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         switch action {
@@ -42,6 +44,7 @@ final class PadMetalView: MTKView {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         if touches.count == 1, event?.allTouches?.count == 1, let t = touches.first {
             if !isFirstResponder { _ = becomeFirstResponder() }  // taking hold of the view ends typing in a field
+            usingPencil = t.type == .pencil
             onTouchDown?(t.location(in: self))
         }
         super.touchesBegan(touches, with: event)
@@ -85,12 +88,14 @@ struct PadViewport: UIViewRepresentable {
     var sketchSlice: (origin: SIMD3<Float>, normal: SIMD3<Float>)?
 
     @MainActor
-    final class Coordinator: NSObject, MTKViewDelegate, UIGestureRecognizerDelegate, UIEditMenuInteractionDelegate {
+    final class Coordinator: NSObject, MTKViewDelegate, UIGestureRecognizerDelegate, UIEditMenuInteractionDelegate, UIPencilInteractionDelegate {
         var renderer: Renderer?
         var model: DocumentModel?
         var state: PadViewState?
         var sceneRevision = -1
         var fitRevision = -1
+        /// The tool a sketch was using before the Pencil's tap switched to Select.
+        var lastDrawingTool: SketchTool = .line
         var cameraRevision = 0
         var explodeOffsets: [SIMD3<Float>] = []
         var sketching = false
@@ -261,9 +266,10 @@ struct PadViewport: UIViewRepresentable {
         @discardableResult
         func sketchEvent(_ phase: SketchMouse.Phase, at p: CGPoint, in view: MTKView) -> Bool {
             guard let model, let renderer else { return false }
+            let pencil = (view as? PadMetalView)?.usingPencil == true
             var tolerance: Double?, gridStep: Double?
             if let mm = mmPerPoint(in: view, at: p) {
-                tolerance = 14 * mm
+                tolerance = (pencil ? 6 : 14) * mm
                 if Preferences.snapsToGrid { gridStep = GridSteps.steps(mmPerPixel: mm).snap }
             }
             let handled = model.sketchMouse(SketchMouse(phase: phase, uv: sketchUV(p, in: view), pick: nil, additive: false,
@@ -545,6 +551,26 @@ struct PadViewport: UIViewRepresentable {
             renderer.setOverlay(model.sketchOverlay()); view.setNeedsDisplay()
         }
 
+        // MARK: Apple Pencil
+
+        /// A double tap of the Pencil (or its squeeze): in a sketch it switches between Select and the tool that was in use, outside
+        /// a sketch it undoes. The system's own setting for the gesture (switch tool, undo…) is respected where it asks for something else.
+        func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) { pencilAction() }
+        func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+            if squeeze.phase == .ended { pencilAction() }
+        }
+
+        private func pencilAction() {
+            guard let model, let view else { return }
+            if let session = model.sketchSession {
+                if session.tool == .select { session.setTool(lastDrawingTool) }
+                else { lastDrawingTool = session.tool; session.setTool(.select) }
+                renderer?.setOverlay(model.sketchOverlay()); view.setNeedsDisplay()
+            } else {
+                model.undoManager?.undo()
+            }
+        }
+
         // MARK: Keyboard
 
         /// A key from a hardware keyboard, as the Mac's viewport takes it: Esc, Return and ⌫ for what is going on, number keys into a shape's
@@ -721,6 +747,8 @@ struct PadViewport: UIViewRepresentable {
         let hold = UILongPressGestureRecognizer(target: c, action: #selector(Coordinator.hold))
         hold.minimumPressDuration = 0.5
         let hover = UIHoverGestureRecognizer(target: c, action: #selector(Coordinator.hover))
+        let pencil = UIPencilInteraction(delegate: c)
+        view.addInteraction(pencil)
         let menu = UIEditMenuInteraction(delegate: c)
         view.addInteraction(menu)
         c.menuInteraction = menu
