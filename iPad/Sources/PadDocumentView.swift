@@ -49,28 +49,42 @@ struct PadDocumentView: View {
     }
 }
 
-/// The Mac's two tool rows (design tools, or sketch tools while a sketch is open), in a floating bar that scrolls sideways.
+/// The Mac's two tool rows (design tools, or sketch tools while a sketch is open), in a bar across the whole width, with the buttons
+/// scaled up for a finger. The row is centred while it fits and scrolls sideways when it does not.
 struct PadToolBar: View {
     let model: DocumentModel
+    /// How much bigger than on the Mac the buttons are drawn.
+    static let scale: CGFloat = 1.3
     /// How much of the top the bar takes (its height and the gaps around it), for centring the view in what is left.
-    static let height: CGFloat = 74
+    static let height: CGFloat = 96
+    @State private var natural = CGSize(width: 800, height: 56)
+
+    private var row: some View {
+        Group {
+            if let session = model.sketchSession {
+                SketchToolbar(model: model, session: session, layout: .full)
+            } else {
+                DesignToolbar(model: model, layout: .full)
+            }
+        }
+        .environment(\.toolTitles, true)
+        .fixedSize()
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { natural = $0 }
+    }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            Group {
-                if let session = model.sketchSession {
-                    SketchToolbar(model: model, session: session, layout: .full)
-                } else {
-                    DesignToolbar(model: model, layout: .full)
-                }
+        GeometryReader { geo in
+            ScrollView(.horizontal, showsIndicators: false) {
+                row
+                    .scaleEffect(Self.scale, anchor: .topLeading)
+                    .frame(width: natural.width * Self.scale, height: natural.height * Self.scale, alignment: .topLeading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .frame(minWidth: geo.size.width, alignment: .center)
             }
-            .environment(\.toolTitles, true)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
         }
-        .frame(maxWidth: 900)
-        .fixedSize(horizontal: false, vertical: true)
-        .panelGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .frame(height: natural.height * Self.scale + 12)
+        .panelGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .padding(.top, 6)
         .padding(.horizontal, 8)
         .accessibilityElement(children: .contain)
