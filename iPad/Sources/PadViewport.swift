@@ -44,11 +44,13 @@ struct PadViewport: UIViewRepresentable {
     /// How much of the view the floating panels and the tool bar cover (left, right, bottom; the bar below the navigation bar).
     let panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat)
     let toolbarHeight: CGFloat
+    let state: PadViewState
 
     @MainActor
     final class Coordinator: NSObject, MTKViewDelegate, UIGestureRecognizerDelegate {
         var renderer: Renderer?
         var model: DocumentModel?
+        var state: PadViewState?
         var sceneRevision = -1
         var fitRevision = -1
         var cameraRevision = 0
@@ -72,6 +74,8 @@ struct PadViewport: UIViewRepresentable {
             MainActor.assumeIsolated {
                 updateSketchGrid(view)
                 updateCameraInsets(view, insets, toolbar: toolbarHeight)
+                state?.renderer = renderer
+                state?.cameraMayHaveMoved(size: view.bounds.size)
                 renderer?.draw(in: view)
             }
         }
@@ -437,6 +441,7 @@ struct PadViewport: UIViewRepresentable {
         let c = context.coordinator
         c.view = view
         c.model = model
+        c.state = state
         guard let renderer = Renderer() else { return view }
         c.renderer = renderer
         view.device = renderer.device

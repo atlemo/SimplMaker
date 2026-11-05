@@ -14,6 +14,7 @@ struct PadDocumentView: View {
     @AppStorage(Preferences.showAxes) private var showAxes = true
 
     private var model: DocumentModel { file.model }
+    @State private var viewState = PadViewState()
 
     var body: some View {
         let model = model
@@ -37,6 +38,15 @@ struct PadDocumentView: View {
     }
 
     private func viewport(_ model: DocumentModel) -> some View {
+        ZStack {
+            padViewport(model)
+            PadOverlays(model: model, state: viewState, insets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
+                                                               model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
+                                                               Panel.bottomInset(timeline: model.showTimeline)))
+        }
+    }
+
+    private func padViewport(_ model: DocumentModel) -> some View {
         PadViewport(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
                     fitRevision: model.fitRevision, cameraRevision: model.cameraCommand?.revision ?? 0,
                     highlighted: model.highlighted, orthographic: model.orthographic, visualStyle: model.visualStyle,
@@ -45,7 +55,7 @@ struct PadDocumentView: View {
                     panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                   model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                   Panel.bottomInset(timeline: model.showTimeline)),
-                    toolbarHeight: PadToolBar.height)
+                    toolbarHeight: PadToolBar.height, state: viewState)
     }
 }
 
@@ -58,6 +68,7 @@ struct PadToolBar: View {
     /// How much of the top the bar takes (its height and the gaps around it), for centring the view in what is left.
     static let height: CGFloat = 96
     @State private var natural = CGSize(width: 800, height: 56)
+    @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
 
     private var row: some View {
         Group {
@@ -84,11 +95,23 @@ struct PadToolBar: View {
             }
         }
         .frame(height: natural.height * Self.scale + 12)
-        .panelGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .modifier(BarBackground(tint: model.sketchSession != nil ? sketchPaper.toolbarTint : nil))
         .padding(.top, 6)
         .padding(.horizontal, 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tools")
+    }
+}
+
+/// The bar's background: glass, or in a sketch the sketch paper's deeper tint, which the sketch tools' white symbols are drawn for.
+private struct BarBackground: ViewModifier {
+    let tint: Color?
+    func body(content: Content) -> some View {
+        if let tint {
+            content.background(tint, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        } else {
+            content.panelGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
     }
 }
 
