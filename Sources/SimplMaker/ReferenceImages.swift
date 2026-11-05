@@ -2,7 +2,9 @@
 // viewport needs to draw it.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#endif
 import CADCore
 import CADKernel
 import ImageIO
@@ -10,6 +12,7 @@ import simd
 import UniformTypeIdentifiers
 
 extension DocumentModel {
+    #if os(macOS)
     /// Asks for an image and puts it on a plane or face, centred at (u, v) in the plane's frame.
     /// False if nothing was added (the panel was cancelled, or the file isn't a picture).
     @discardableResult
@@ -17,7 +20,16 @@ extension DocumentModel {
         guard let url = Self.chooseImage("Insert") else { return false }
         return insertImage(from: url, on: plane, at: centre)
     }
+    #else
+    /// The iPad has no file panel yet: a picture is inserted with `insertImage(from:on:at:)` once a picker hands over its URL.
+    @discardableResult
+    func insertImage(on plane: PlaneRef, at centre: SIMD2<Double>) -> Bool {
+        alert = AlertInfo(title: "Pictures aren't available on iPad yet", message: "Reference pictures will come in a later version.")
+        return false
+    }
+    #endif
 
+    #if os(macOS)
     /// Sketch mode's Canvas: asks for an image and puts it on the sketch's own plane, centred on the sketch's
     /// origin, to trace over. The sketch stays open, and the Canvas goes just before it in the timeline. False if nothing was added.
     @discardableResult
@@ -27,6 +39,13 @@ extension DocumentModel {
               let url = Self.chooseImage("Insert") else { return false }
         return insertImage(from: url, on: sf.plane, at: .zero, keepingSketch: true)
     }
+    #else
+    @discardableResult
+    func insertImageInSketch() -> Bool {
+        alert = AlertInfo(title: "Pictures aren't available on iPad yet", message: "Reference pictures will come in a later version.")
+        return false
+    }
+    #endif
 
     @discardableResult
     func insertImage(from url: URL, on plane: PlaneRef, at centre: SIMD2<Double>, keepingSketch: Bool = false) -> Bool {
@@ -56,12 +75,14 @@ extension DocumentModel {
         return true
     }
 
+    #if os(macOS)
     /// Asks for another picture for a Canvas, keeping its place and size across (the height follows
     /// the new picture's proportions).
     func replaceImage(_ id: FeatureID) {
         guard let url = Self.chooseImage("Replace") else { return }
         replaceImage(id, from: url)
     }
+    #endif
 
     @discardableResult
     func replaceImage(_ id: FeatureID, from url: URL) -> Bool {
@@ -123,6 +144,7 @@ extension DocumentModel {
         return nice
     }
 
+    #if os(macOS)
     private static func chooseImage(_ prompt: String) -> URL? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
@@ -130,6 +152,7 @@ extension DocumentModel {
         panel.message = "Choose a reference image (PNG, JPEG, HEIC, TIFF…)."
         return panel.runModal() == .OK ? panel.url : nil
     }
+    #endif
 
     /// The file's contents and the picture's size, or an alert saying why not.
     private func loadImage(_ url: URL) -> (Data, (width: Int, height: Int))? {

@@ -5,15 +5,6 @@ import AppKit
 import CADKernel
 import UniformTypeIdentifiers
 
-/// The file formats a body can be exported to.
-enum ExportFormat: String, CaseIterable {
-    case stl, step
-    case threeMF = "3mf"
-
-    var fileExtension: String { rawValue }
-    var menuTitle: String { self == .threeMF ? "3MF…" : "\(fileExtension.uppercased())…" }
-}
-
 /// What the Export dialog asks for.
 struct ExportChoice: Equatable {
     enum Grouping: String { case onePart, individualParts }

@@ -608,21 +608,6 @@ struct FeatureEdit<T> {
     }
 }
 
-extension DocumentModel {
-    func featureName(_ id: FeatureID) -> String { document.features.first { $0.id == id }?.name ?? "missing" }
-
-    /// "XY plane", "Plane1" (a construction plane) or "Face e.end".
-    func planeName(_ plane: PlaneRef) -> String {
-        switch plane {
-        case .xy: return "XY plane"
-        case .xz: return "XZ plane"
-        case .yz: return "YZ plane"
-        case .face(let f): return "Face \(f.face)"
-        case .plane(let id): return featureName(id)
-        }
-    }
-}
-
 /// Where a path comes from, with a button to replace it with the curves selected in the viewport.
 struct PathSection: View {
     let model: DocumentModel

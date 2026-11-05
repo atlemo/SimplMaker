@@ -33,19 +33,54 @@ targets:
       - path: ../Sources/SimplMaker/Viewport/GridSteps.swift
       - path: ../Sources/SimplMaker/Viewport/PixelScale.swift
       - path: ../Sources/SimplMaker/Preferences.swift
+      - path: ../Sources/SimplMaker/DocumentModel.swift
+      - path: ../Sources/SimplMaker/CADFile.swift
+      - path: ../Sources/SimplMaker/Sketching/SketchSession.swift
+      - path: ../Sources/SimplMaker/DesignTools.swift
+      - path: ../Sources/SimplMaker/TransformManipulator.swift
+      - path: ../Sources/SimplMaker/Viewport/Manipulator.swift
+      - path: ../Sources/SimplMaker/Measure.swift
+      - path: ../Sources/SimplMaker/SectionAnalysis.swift
+      - path: ../Sources/SimplMaker/ExplodedView.swift
+      - path: ../Sources/SimplMaker/DocumentModel+Share.swift
+      - path: ../Sources/SimplMaker/DocumentModel+Names.swift
+      - path: ../Sources/SimplMaker/ContextActions.swift
+      - path: ../Sources/SimplMaker/KernelActivity.swift
+      - path: ../Sources/SimplMaker/SketchSlice.swift
+      - path: ../Sources/SimplMaker/ExportFormat.swift
+      - path: ../Sources/SimplMaker/ReferenceImages.swift
+      - path: ../Sources/SimplMaker/Shortcuts.swift
+      - path: ../Sources/SimplMaker/Sketching/SketchPlanePicker.swift
+      - path: ../Sources/SimplMaker/Sketching/SketchOverlayBuilder.swift
       - path: ../Sources/SimplMaker/RenderSettings.swift
     dependencies:
       - package: SimplMaker
         product: CADCore
       - package: SimplMaker
         product: CADKernel
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: SimplMaker
+        UILaunchScreen: {}
+        UISupportsDocumentBrowser: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UIFileSharingEnabled: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: SimplMaker Document
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSItemContentTypes: [com.simplmaker.document]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.simplmaker.document
+            UTTypeDescription: SimplMaker Document
+            UTTypeConformsTo: [public.json]
+            UTTypeTagSpecification:
+              public.filename-extension: [simplmaker]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.simplmaker.SimplMaker.pad
         TARGETED_DEVICE_FAMILY: "2"
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"
-        INFOPLIST_KEY_CFBundleDisplayName: SimplMaker
         ARCHS: arm64
         ONLY_ACTIVE_ARCH: YES

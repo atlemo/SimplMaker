@@ -1,7 +1,9 @@
 // App state: the document, undo, background regeneration, selection, files.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#endif
 import CADCore
 import CADKernel
 import Observation
@@ -52,10 +54,21 @@ final class DocumentModel {
     private(set) var isImporting = false
     /// What a big import is doing, for a card over the view and the status bar. Nil while a file is only being read.
     private(set) var importProgress: ImportProgress?
+    /// A file the iPad has just written for the user to keep or send (an export): the app's share sheet takes it from here.
+    var exportedFile: URL?
     /// What to do with an STL that has a lot of triangles: asks the user by default. Tests put their own answer here.
+    #if os(macOS)
     @ObservationIgnored var meshReduction: @MainActor (String, Int) -> MeshReduction = DocumentModel.askAboutMeshReduction
+    #else
+    /// No dialog on the iPad: a mesh too big for the importer is reduced to a size that works, any other goes in as it is.
+    @ObservationIgnored var meshReduction: @MainActor (String, Int) -> MeshReduction = { _, count in
+        count > KBody.maxSTLTriangles ? .reduce(to: DocumentModel.reducedMeshSizes[1].triangles) : .importAsIs
+    }
+    #endif
     /// Asks what the Export dialog asks (given the number of bodies). Replaced in tests.
+    #if os(macOS)
     @ObservationIgnored var exportChoice: @MainActor (Int) -> ExportChoice? = DocumentModel.askExportChoice
+    #endif
 
     var selection: [PickID] = []
     private(set) var hovered: PickID?
@@ -256,7 +269,9 @@ final class DocumentModel {
         return best.map { o + d * $0 }
     }
     /// The 3D view, for the one thing the model asks of it: a picture of what it shows (Export Image).
+    #if os(macOS)
     @ObservationIgnored weak var viewportView: ViewportMTKView?
+    #endif
 
     /// The browser, inspector and timeline the Render view hid when it came on (they were open), to bring back when it goes off
     /// (unless they have been opened since).
@@ -2320,7 +2335,7 @@ final class DocumentModel {
         if let ppm = pointsPerMM, ppm > 1e-9 {
             let center = holeFaceCenter(id, hole, on: face)
             let c = center ?? .zero
-            let step = ViewportMTKView.niceStep(6 / ppm)
+            let step = GridSteps.niceStep(6 / ppm)
             uv = c + ((uv - c) / step).rounded(.toNearestOrAwayFromZero) * step
             if let center { uv = Self.snap(uv, to: center, tolerance: 10 / ppm) }
         }
@@ -2451,7 +2466,7 @@ final class DocumentModel {
             // In the feature's own units: mm, or degrees for angles (radians underneath).
             let degrees = h.unit == .angle ? 180 / Double.pi : 1
             let perPoint = degrees / (ppm * h.lengthPerUnit)
-            var step = ViewportMTKView.niceStep(6 * perPoint) / degrees
+            var step = GridSteps.niceStep(6 * perPoint) / degrees
             if h.unit == .length { step = min(step, 1) }  // zoomed out, a step never jumps more than 1 mm
             let value = (length / h.lengthPerUnit / step).rounded() * step
             if value != 0 || h.allowsNegative == false { length = value * h.lengthPerUnit }
@@ -2536,7 +2551,7 @@ final class DocumentModel {
         guard 1 - b * b > 1e-6 else { return }  // looking straight along the side's way
         var value = current + (b * simd_dot(d, w) - simd_dot(a, w)) / (1 - b * b)
         if let ppm = pointsPerMM, ppm > 1e-9 {
-            let step = ViewportMTKView.niceStep(6 / ppm)
+            let step = GridSteps.niceStep(6 / ppm)
             value = (value / step).rounded() * step
         }
         let smallest = 1.0, before = pf.extent
@@ -2797,19 +2812,23 @@ final class DocumentModel {
         return true
     }
 
+    #if os(macOS)
     /// Asks for a STEP file and adds it to the timeline as a body of its own.
     func importSTEP() {
         guard !importInProgress() else { return }
         guard let url = Self.chooseModel("Import", extensions: ["step", "stp"], message: "Choose a STEP file (.step or .stp).") else { return }
         Task { await importSTEP(from: url) }
     }
+    #endif
 
+    #if os(macOS)
     /// Asks for an STL file and adds it to the timeline as a body of its own.
     func importSTL() {
         guard !importInProgress() else { return }
         guard let url = Self.chooseModel("Import", extensions: ["stl"], message: "Choose an STL file. It must be watertight, and is read in millimetres.") else { return }
         Task { await importSTEP(from: url) }
     }
+    #endif
 
     /// Reads a STEP or STL file and adds it as an Import feature, at the timeline marker, with the body
     /// named after the file. False if it can't be read (an alert says why).
@@ -2832,6 +2851,7 @@ final class DocumentModel {
         return true
     }
 
+    #if os(macOS)
     /// Asks for a new version of an imported file. Its faces keep their names as long as the
     /// file lists them in the same order, so features after the import usually hold on.
     func replaceImport(_ id: FeatureID) {
@@ -2840,6 +2860,7 @@ final class DocumentModel {
                                          message: "Choose a STEP (.step, .stp) or STL (.stl) file.") else { return }
         Task { await replaceImport(id, from: url) }
     }
+    #endif
 
     @discardableResult
     func replaceImport(_ id: FeatureID, from url: URL) async -> Bool {
@@ -2854,6 +2875,7 @@ final class DocumentModel {
         return true
     }
 
+    #if os(macOS)
     private static func chooseModel(_ prompt: String, extensions: [String], message: String) -> URL? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = extensions.compactMap { UTType(filenameExtension: $0) }
@@ -2861,6 +2883,7 @@ final class DocumentModel {
         panel.message = message
         return panel.runModal() == .OK ? panel.url : nil
     }
+    #endif
 
     /// STL meshes with more triangles than this are slow to import and to work with: the import offers to reduce them.
     static let comfortableSTLTriangles = 30_000
@@ -2887,6 +2910,7 @@ final class DocumentModel {
         return (sizes, sizes.firstIndex { $0.triangles <= comfortableSTLTriangles } ?? 0)
     }
 
+    #if os(macOS)
     /// Asks whether to reduce a big mesh before importing it. A mesh over the importer's limit can't go in as it is.
     private static func askAboutMeshReduction(fileName: String, count: Int) -> MeshReduction {
         let (sizes, first) = meshReductionChoices(for: count)
@@ -2917,6 +2941,7 @@ final class DocumentModel {
         default: return .cancel
         }
     }
+    #endif
 
     /// Reads a STEP or STL file and checks that the kernel can make a body of it, off the main thread. A big STL
     /// mesh is reduced first, if the user agrees; what comes back is then the reduced file. The body is kept for
@@ -2973,6 +2998,7 @@ final class DocumentModel {
         }
     }
 
+    #if os(macOS)
     /// Asks for an SVG file and puts its shapes in a sketch.
     func importSVG() {
         guard !importInProgress() else { return }
@@ -2983,7 +3009,9 @@ final class DocumentModel {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await importSVG(from: url) }
     }
+    #endif
 
+    #if os(macOS)
     /// Asks for a DXF file and puts its lines, arcs, circles and polylines in a sketch.
     func importDXF() {
         guard !importInProgress() else { return }
@@ -2994,7 +3022,9 @@ final class DocumentModel {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { await importSVG(from: url) }
     }
+    #endif
 
+    #if os(macOS)
     /// Writes the sketch as a DXF file the user picks. Nothing in the part changes.
     func exportDXF(sketch id: FeatureID) {
         guard let solved = result?.sketches[id]?.solved else {
@@ -3013,6 +3043,7 @@ final class DocumentModel {
             alert = AlertInfo(title: "The export failed", message: "\(error.localizedDescription)")
         }
     }
+    #endif
 
     /// Reads an SVG or DXF file into the sketch being edited, or else into a new sketch on the selected flat
     /// face or plane (the XY plane when nothing is selected), with the drawing's middle on the sketch
@@ -3080,6 +3111,7 @@ final class DocumentModel {
         return true
     }
 
+    #if os(macOS)
     /// Exports the bodies, or just the ones with these ids, to an STL, 3MF or STEP file the user picks. `name` is the
     /// file name offered when the ids are a group (a folder) rather than one body.
     func export(bodies ids: [FeatureID]? = nil, name: String? = nil, format: ExportFormat) {
@@ -3099,12 +3131,15 @@ final class DocumentModel {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         write(wanted, format: format, to: url)
     }
+    #endif
 
+    #if os(macOS)
     /// Exports every body in a folder (and in the folders inside it) as one STL or STEP file.
     func export(folder id: String, format: ExportFormat) {
         guard let folder = document.folder(id) else { return }
         export(bodies: bodies(inFolder: id).map(\.id), name: folder.name, format: format)
     }
+    #endif
 
     /// Writes bodies to a file, alerting if that fails. False if it did.
     @discardableResult

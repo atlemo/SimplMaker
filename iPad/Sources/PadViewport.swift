@@ -5,7 +5,7 @@
 //   two finger drag      pan
 //   pinch                zoom, about the point between the fingers
 //   two finger rotate    spin the view (the same rule as the trackpad's rotate on the Mac)
-//   tap                  select the face or edge under the finger; a tap on empty space clears it
+//   tap                  select the face or edge under the finger; a tap on empty space clears it (the model decides what a tap does)
 //
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -13,14 +13,22 @@ import MetalKit
 import SwiftUI
 
 struct PadViewport: UIViewRepresentable {
-    let scene: PadScene
+    let model: DocumentModel
+    /// What the viewport redraws on: SwiftUI calls `updateUIView` when one of these changes.
+    let sceneRevision: Int
+    let fitRevision: Int
+    let highlighted: [UInt32]
+    let orthographic: Bool
+    let visualStyle: VisualStyle
+    let explodeOffsets: [SIMD3<Float>]
 
     @MainActor
     final class Coordinator: NSObject, MTKViewDelegate, UIGestureRecognizerDelegate {
         var renderer: Renderer?
-        var scene: PadScene?
+        var model: DocumentModel?
         var sceneRevision = -1
-        var selectionRevision = -1
+        var fitRevision = -1
+        var explodeOffsets: [SIMD3<Float>] = []
         let navigation = Preferences.navigationConfig
         weak var view: MTKView?
 
@@ -86,7 +94,7 @@ struct PadViewport: UIViewRepresentable {
         let view = MTKView(frame: .zero, device: nil)
         let c = context.coordinator
         c.view = view
-        c.scene = scene
+        c.model = model
         guard let renderer = Renderer() else { return view }
         c.renderer = renderer
         view.device = renderer.device
@@ -113,27 +121,33 @@ struct PadViewport: UIViewRepresentable {
             view.addGestureRecognizer(g)
         }
 
-        // A pick comes back from the GPU a frame later: select what it found.
-        renderer.onPick = { [weak c] raw, _ in c?.scene?.picked(raw) }
+        // A pick comes back from the GPU a frame later: hand what it found to the model, which selects it.
+        renderer.onPick = { [weak c] raw, _ in
+            c?.model?.click(raw == 0 ? nil : PickID(raw: raw), additive: false)
+        }
         return view
     }
 
     func updateUIView(_ view: MTKView, context: Context) {
         let c = context.coordinator
         guard let renderer = c.renderer else { return }
-        c.scene = scene
-        if c.sceneRevision != scene.revision, let b = scene.bounds {
-            c.sceneRevision = scene.revision
-            renderer.setScene(scene.meshes)
-            renderer.sceneBounds = b
-            let size = view.bounds.size
-            renderer.camera.fit(min: b.min, max: b.max, aspect: Float(max(size.width, 1) / max(size.height, 1)))
-            view.setNeedsDisplay()
+        c.model = model
+        renderer.camera.orthographic = orthographic
+        renderer.visualStyle = visualStyle
+        if c.sceneRevision != sceneRevision || c.explodeOffsets != explodeOffsets {
+            c.sceneRevision = sceneRevision
+            c.explodeOffsets = explodeOffsets
+            renderer.setScene(model.visibleMeshes, offsets: explodeOffsets)
+            renderer.sceneBounds = model.explodedSceneBounds
         }
-        if c.selectionRevision != scene.selectionRevision {
-            c.selectionRevision = scene.selectionRevision
-            renderer.selected = scene.selection.map { [$0.raw] } ?? []
-            view.setNeedsDisplay()
+        if c.fitRevision != fitRevision {
+            c.fitRevision = fitRevision
+            if let b = model.explodedSceneBounds {
+                let size = view.bounds.size
+                renderer.camera.fit(min: b.min, max: b.max, aspect: Float(max(size.width, 1) / max(size.height, 1)))
+            }
         }
+        renderer.selected = highlighted
+        view.setNeedsDisplay()
     }
 }

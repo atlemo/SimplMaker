@@ -329,12 +329,12 @@ struct ManipulatorDrag {
     }
 
     private func snap(_ mm: Double) -> Double {
-        let step = ViewportMTKView.niceStep(6 / pointsPerMM)
+        let step = GridSteps.niceStep(6 / pointsPerMM)
         return (mm / step).rounded() * step
     }
 
     private func snap(degrees radians: Double) -> Double {
-        let step = max(ViewportMTKView.niceStep(6 * (180 / Double.pi) / Double(ringRadiusPoints)), 1)
+        let step = max(GridSteps.niceStep(6 * (180 / Double.pi) / Double(ringRadiusPoints)), 1)
         return (radians * 180 / Double.pi / step).rounded() * step * Double.pi / 180
     }
 

@@ -25,7 +25,9 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     private let latest: OSAllocatedUnfairLock<CADDocument>
     /// The window opens with the tutorial's card showing (File ▸ New from the welcome window's tutorial, or Help ▸ Tutorial).
     private let startsTutorial: Bool
+    #if os(macOS)
     @MainActor private var guideStorage: TutorialGuide?
+    #endif
     /// A picture of the part (PNG), stored in the file for Finder's Quick Look: the one read from the file until the part changes,
     /// then the latest drawn. Readable from any thread, like `latest`.
     private let thumbnail = OSAllocatedUnfairLock<Data?>(initialState: nil)
@@ -53,11 +55,14 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
             latest.withLock { $0 = doc }
             Task { @MainActor in self?.scheduleThumbnail() }
         }
+        #if os(macOS)
         if AIFeature.isAvailable { DocumentRegistry.shared.register(m) }  // the AI interface can now name this document
+        #endif
         modelStorage = m
         return m
     }
 
+    #if os(macOS)
     /// The tutorial's guide for this document's window (showing only when asked for).
     @MainActor var guide: TutorialGuide {
         if let g = guideStorage { return g }
@@ -65,6 +70,7 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
         guideStorage = g
         return g
     }
+    #endif
 
     /// Draws a new thumbnail once the part has been left alone for a moment (drawing is not free, and every edit changes it).
     @MainActor private func scheduleThumbnail() {
@@ -74,9 +80,11 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
             guard !Task.isCancelled, let self, let model = modelStorage else { return }
             await model.rebuilt()
             guard !Task.isCancelled else { return }
+            #if os(macOS)
             let image = try? await ViewportSnapshot.render(model, direction: .iso, width: 512, height: 512, axes: false)
             guard !Task.isCancelled else { return }
             thumbnail.withLock { $0 = image?.png }  // nothing to show (an empty part) means no picture
+            #endif
         }
     }
 
@@ -93,6 +101,8 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
 extension FocusedValues {
     /// The model of the frontmost document window, for menu commands.
     @Entry var documentModel: DocumentModel?
+    #if os(macOS)
     /// The tutorial guide of the frontmost document window, for Help ▸ Tutorial.
     @Entry var tutorialGuide: TutorialGuide?
+    #endif
 }

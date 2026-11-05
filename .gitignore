@@ -14,3 +14,4 @@ website/public/
 
 scripts/release.local.env
 iPad/SimplMakerPad.xcodeproj/
+iPad/Sources/Info.plist

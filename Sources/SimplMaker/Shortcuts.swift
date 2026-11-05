@@ -6,7 +6,9 @@
 // changes in a later version reaches everyone who never touched it.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#endif
 import SwiftUI
 
 /// A key and the modifiers held with it. The key is one lowercase character, as the key is labelled with
@@ -40,6 +42,7 @@ struct KeyChord: Hashable, Sendable {
         self.modifiers = modifiers
     }
 
+    #if os(macOS)
     /// The chord of a key press; nil for keys that are not a plain character (arrows, F-keys, Return, Esc...).
     init?(event: NSEvent) {
         guard event.type == .keyDown, event.specialKey == nil,
@@ -55,6 +58,7 @@ struct KeyChord: Hashable, Sendable {
         if flags.contains(.command) { m.insert(.command) }
         self.init(char, m)
     }
+    #endif
 
     /// The stored form: "e", "cmd+opt+g", "cmd++" (⌘ and the plus key).
     var stored: String {
@@ -225,11 +229,13 @@ enum Shortcuts {
     /// For `.keyboardShortcut(_:)` on a menu item.
     static func keyboardShortcut(_ command: ShortcutCommand) -> KeyboardShortcut? { chord(command)?.keyboardShortcut }
 
+    #if os(macOS)
     /// Whether a key press is this command's shortcut.
     static func matches(_ command: ShortcutCommand, _ event: NSEvent, defaults: UserDefaults = .standard) -> Bool {
         guard let chord = chord(command, defaults: defaults), let pressed = KeyChord(event: event) else { return false }
         return pressed == chord
     }
+    #endif
 
     /// Combinations macOS and the standard menus already use (Quit, Save, Copy...).
     static func isReserved(_ chord: KeyChord) -> Bool {
