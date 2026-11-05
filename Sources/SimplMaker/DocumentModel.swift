@@ -56,6 +56,11 @@ final class DocumentModel {
     private(set) var importProgress: ImportProgress?
     /// A file the iPad has just written for the user to keep or send (an export): the app's share sheet takes it from here.
     var exportedFile: URL?
+    /// What the iPad has to ask the person for (a file to import, a picture) in place of the Mac's open panel; see `FileRequest`.
+    var fileRequest: FileRequest?
+    /// The iPad's Export chooser (the formats to pick from) is showing, or the picture export's.
+    var showExportChooser = false
+    var showImageExport = false
     /// What to do with an STL that has a lot of triangles: asks the user by default. Tests put their own answer here.
     #if os(macOS)
     @ObservationIgnored var meshReduction: @MainActor (String, Int) -> MeshReduction = DocumentModel.askAboutMeshReduction
@@ -2805,7 +2810,7 @@ final class DocumentModel {
 
     /// One import at a time: while a file is being read, reduced or built, says so (the others would be working on
     /// the same part and the same progress) and returns true, so the caller leaves the new import alone.
-    private func importInProgress() -> Bool {
+    func importInProgress() -> Bool {
         guard isImporting else { return false }
         alert = AlertInfo(title: "An import is already in progress",
                           message: "Wait for it to finish, then import the next file.")

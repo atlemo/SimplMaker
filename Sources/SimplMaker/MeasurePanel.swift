@@ -44,8 +44,12 @@ struct MeasurePanel: View {
                 .frame(maxHeight: 360)
                 .fixedSize(horizontal: false, vertical: true)
                 Button("Copy") {
+                    #if os(macOS)
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(m.text, forType: .string)
+                    #else
+                    UIPasteboard.general.string = m.text
+                    #endif
                 }
                 .controlSize(.small)
                 .help("Copy these values")

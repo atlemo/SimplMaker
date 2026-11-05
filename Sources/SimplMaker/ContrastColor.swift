@@ -1,9 +1,12 @@
 // Picks a foreground colour that reads on a background, by WCAG contrast instead of by guessing.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#endif
 import SwiftUI
 
+#if os(macOS)
 @MainActor enum ContrastColor {
     /// WCAG's bar for normal-size text and for icons and other graphics: 4.5 and 3.
     static let textRatio: CGFloat = 4.5
@@ -76,3 +79,43 @@ import SwiftUI
         NSAppearance(named: prefersWhite(on: background, in: appearance) ? .darkAqua : .aqua)
     }
 }
+#endif
+
+#if !os(macOS)
+import UIKit
+
+/// The iPad's version: the same rule (white on a deep colour, black on a pale one, by WCAG contrast), on UIColor.
+@MainActor enum ContrastColor {
+    static let textRatio: CGFloat = 4.5
+    static let graphicRatio: CGFloat = 3
+
+    private static func rgb(_ color: UIColor) -> (r: CGFloat, g: CGFloat, b: CGFloat)? {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard color.resolvedColor(with: UITraitCollection.current).getRed(&r, green: &g, blue: &b, alpha: &a) else { return nil }
+        return (r, g, b)
+    }
+
+    private static func luminance(_ c: (r: CGFloat, g: CGFloat, b: CGFloat)) -> CGFloat {
+        func linear(_ v: CGFloat) -> CGFloat { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
+    }
+
+    private static func ratio(_ a: CGFloat, _ b: CGFloat) -> CGFloat { (max(a, b) + 0.05) / (min(a, b) + 0.05) }
+
+    /// True when white is the one to use on `background`.
+    static func prefersWhite(on background: UIColor) -> Bool {
+        guard let c = rgb(background) else { return false }
+        let l = luminance(c)
+        let w = ratio(1, l)
+        return w >= graphicRatio || w > ratio(0, l)
+    }
+
+    static func foreground(on background: UIColor) -> UIColor { prefersWhite(on: background) ? .white : .black }
+
+    static func foreground(on background: UIColor, alpha: CGFloat, minimum: CGFloat = textRatio) -> UIColor {
+        foreground(on: background).withAlphaComponent(alpha)
+    }
+
+    static func ink(on background: UIColor) -> Color { Color(uiColor: foreground(on: background)) }
+}
+#endif

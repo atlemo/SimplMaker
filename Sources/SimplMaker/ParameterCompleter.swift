@@ -8,7 +8,9 @@
 //
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#endif
 import CADCore
 import SwiftUI
 
@@ -32,6 +34,7 @@ extension DocumentModel {
     }
 }
 
+#if os(macOS)
 @MainActor
 final class ParameterCompleter: NSObject {
     static let shared = ParameterCompleter()
@@ -356,6 +359,24 @@ extension View {
         modifier(CompletesParameters(model: model, excluding: name, focused: focused))
     }
 }
+#else
+
+/// The iPad's completer: the fields type in the system keyboard, whose own suggestions and the parameter list in the inspector serve instead of the
+/// Mac's floating list. It never offers anything, so Return and Tab act as they do in any field.
+@MainActor
+final class ParameterCompleter: NSObject {
+    static let shared = ParameterCompleter()
+    var isShowing: Bool { false }
+    var offered: [String] { [] }
+    func setSwiftUISource(owner: UUID, _ words: @escaping () -> [CompletionCandidate]) {}
+    func clearSwiftUISource(owner: UUID) {}
+    func complete(_ text: inout String, unlessClicked: Bool = false) -> Bool { false }
+}
+
+extension View {
+    func completesParameters(_ model: DocumentModel?, excluding name: String? = nil, focused: Bool) -> some View { self }
+}
+#endif
 
 extension EnvironmentValues {
     /// The document whose parameters the expression fields in the inspector complete; nil in a field to leave alone.

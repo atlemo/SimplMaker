@@ -79,7 +79,6 @@ enum Preferences {
         /// The toolbar's colour while sketching: a deeper shade of the paper, or the system accent colour for
         /// blue and None. The controls on it take black or white by contrast (`ContrastColor`), since the
         /// accent colour can be anything from graphite to yellow.
-        #if os(macOS)
         var toolbarNSColor: NSColor {
             switch self {
             case .green: return NSColor(srgbRed: 0.16, green: 0.46, blue: 0.33, alpha: 1)
@@ -88,7 +87,6 @@ enum Preferences {
             }
         }
         var toolbarTint: Color { Color(nsColor: toolbarNSColor) }
-        #endif
     }
     static var sketchPaperSetting: SketchPaper {
         SketchPaper(rawValue: UserDefaults.standard.string(forKey: sketchPaper) ?? "") ?? .blue

@@ -64,7 +64,13 @@ struct SectionPanel: View {
     }
 
     private func commit() {
-        if !model.setSectionOffset(text: offsetText) { NSSound.beep() }
+        if !model.setSectionOffset(text: offsetText) {
+            #if os(macOS)
+            NSSound.beep()
+            #else
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            #endif
+        }
         offsetText = model.sectionOffsetText
     }
 }

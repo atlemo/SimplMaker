@@ -21,10 +21,10 @@ extension DocumentModel {
         return insertImage(from: url, on: plane, at: centre)
     }
     #else
-    /// The iPad has no file panel yet: a picture is inserted with `insertImage(from:on:at:)` once a picker hands over its URL.
+    /// The iPad asks for the picture with its file picker (see `FileRequest`); nothing is added until one is chosen.
     @discardableResult
     func insertImage(on plane: PlaneRef, at centre: SIMD2<Double>) -> Bool {
-        alert = AlertInfo(title: "Pictures aren't available on iPad yet", message: "Reference pictures will come in a later version.")
+        fileRequest = .image(plane: plane, centre: centre)
         return false
     }
     #endif
@@ -42,7 +42,7 @@ extension DocumentModel {
     #else
     @discardableResult
     func insertImageInSketch() -> Bool {
-        alert = AlertInfo(title: "Pictures aren't available on iPad yet", message: "Reference pictures will come in a later version.")
+        fileRequest = .image(plane: nil, centre: .zero)
         return false
     }
     #endif

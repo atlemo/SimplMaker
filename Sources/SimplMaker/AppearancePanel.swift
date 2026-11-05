@@ -1,7 +1,9 @@
 // The Appearance panel: gives bodies colours and materials. Opens with A, or View ▸ Show Appearance.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#endif
 import CADCore
 import SwiftUI
 

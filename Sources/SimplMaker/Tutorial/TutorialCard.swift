@@ -3,7 +3,9 @@
 // dragged aside or folded down to a line.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#endif
 import SwiftUI
 
 struct TutorialCard: View {
@@ -118,9 +120,11 @@ struct TutorialCard: View {
                 Button(step.id == TutorialScript.welcome.id ? "Not now" : "Leave tutorial") { guide.stop() }
                     .buttonStyle(.bordered)
                 Spacer(minLength: 0)
+                #if os(macOS)
                 if step.id == TutorialScript.done.id {
                     Button("Save…") { NSApp.sendAction(#selector(NSDocument.save(_:)), to: nil, from: nil) }
                 }
+                #endif
                 Button(title) { guide.acknowledge(step) }
                     .buttonStyle(.borderedProminent)
             case .task:

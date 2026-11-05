@@ -1,12 +1,15 @@
 // Main window: browser + parameters on the left, viewport in the middle, inspector on the right, timeline along the bottom.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#endif
 import CADCore
 import CADKernel
 import SwiftUI
 import UniformTypeIdentifiers
 
+#if os(macOS)
 /// One document window.
 struct ContentView: View {
     let file: CADFile
@@ -227,199 +230,28 @@ struct DocumentWindow: View {
 
     /// The window's content and its floating panels. The toolbar and the dialogs are added in `body`.
     private var documentContent: some View {
-        // The viewport fills the window, under the toolbar too; the browser and the inspector float
-        // over it as glass panels, like the sidebars of current macOS apps. The toolbar has no
-        // background until the pointer is over it, when one fades in.
-        ZStack {
-            ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
-                         highlighted: model.highlighted, fitRevision: model.fitRevision,
-                         cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
-                         visualStyle: model.visualStyle, printPreview: model.printPreview,
-                         printLayer: model.printLayer, printNozzle: model.printNozzle,
-                         renderSettings: model.renderView ? model.renderSettings : nil,
-                         spinning: model.renderView && model.renderSpinning && model.sketchSession == nil,
-                         sectionPlane: model.sectionClip, explodeOffsets: model.explodeOffsets, sketchSlice: model.sketchSlicePlane,
-                         showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
-                         panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
-                                       model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
-                                       Panel.bottomInset(timeline: model.showTimeline)))
-                .ignoresSafeArea()
-            // The toolbar lights up under the pointer only on macOS 26 and later; macOS 15's toolbar and strip don't need it.
-            // Its material strip is drawn all the time (under the toolbar), so with the UI hidden it goes altogether.
+        DocumentPanels(model: model, guide: guide, viewport:
+                        ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
+                             highlighted: model.highlighted, fitRevision: model.fitRevision,
+                             cameraRevision: model.cameraCommand?.revision ?? 0, orthographic: model.orthographic,
+                             visualStyle: model.visualStyle, printPreview: model.printPreview,
+                             printLayer: model.printLayer, printNozzle: model.printNozzle,
+                             renderSettings: model.renderView ? model.renderSettings : nil,
+                             spinning: model.renderView && model.renderSpinning && model.sketchSession == nil,
+                             sectionPlane: model.sectionClip, explodeOffsets: model.explodeOffsets, sketchSlice: model.sketchSlicePlane,
+                             showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
+                             panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
+                                           model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
+                                           Panel.bottomInset(timeline: model.showTimeline))),
+                       chrome: Group {
             if !model.uiHidden {
                 ToolbarFade(tint: sketchTint ? sketchPaper.toolbarTint : Color(nsColor: .windowBackgroundColor),
                             height: toolbarHeight, visible: sketchTint || (toolbarHovered && toolsInNativeToolbar))
             }
-            VStack(spacing: Panel.inset) {
-            HStack(alignment: .top, spacing: 0) {
-                if model.showSidebar {
-                    Sidebar(model: model)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                }
-                Spacer(minLength: 0)  // empty: clicks go through to the viewport
-                if model.showInspector {
-                    InspectorView(model: model)
-                        .floatingPanel(width: Panel.inspectorWidth)
-                        .tutorialSpot("inspector", cornerRadius: DS.Radius.window, outset: 0, filled: false)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
-            }
-            // With both panels closed the row holds only a Spacer, which has no height: without this the
-            // stack would shrink to the timeline and float in the middle of the window.
-            .frame(maxHeight: .infinity, alignment: .top)
-            if model.showTimeline {
-                TimelineBar(model: model)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-            }
-            .padding(Panel.inset)
-            .animation(.easeOut(duration: DS.Duration.base), value: model.showTimeline)
-            .animation(.easeOut(duration: DS.Duration.base), value: model.showSidebar)
-            .animation(.easeOut(duration: DS.Duration.base), value: model.showInspector)
-            if model.uiHidden {
-                // The one control left: it brings the panels and toolbar back.
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button { model.toggleUIHidden() } label: {
-                            Image(systemName: "rectangle.on.rectangle")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(.primary)
-                                .frame(width: 38, height: 38)
-                                .background(Color(nsColor: .controlBackgroundColor), in: Circle())
-                                .overlay(Circle().strokeBorder(.primary.opacity(0.25), lineWidth: 1))
-                                .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
-                        }
-                        .buttonStyle(.plain)
-                        .help(helpWithShortcut("Show the panels and toolbar again", .hideUI))
-                        .accessibilityLabel("Show UI")
-                    }
-                    Spacer()
-                }
-                .padding(.trailing, 62)  // where the toolbar's button was: left of the Inspector button
-                .padding(.top, 7)
-                .ignoresSafeArea()  // the titlebar's room is still reserved at the top; the button sits in it
-            }
-            if model.showPalette {
-                CommandPaletteView(model: model)
-            }
-        }
-        // An empty part says how to begin, in the middle of the free space.
-        .overlay {
-            if model.document.features.isEmpty, model.sketchSession == nil, model.pendingTool == nil,
-               !model.isPickingSketchPlane, !guide.isActive, !model.isImporting {
-                StartCard(model: model, guide: guide)
-                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
-                    .transition(.opacity)
-            }
-        }
-        // A part that takes a while to open says what it is building, until the first model is on screen.
-        .overlay {
-            if model.result == nil, let progress = model.regenProgress {
-                LoadingCard(progress: progress)
-                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
-                    .transition(.opacity)
-            }
-        }
-        // A big mesh being reduced and turned into a solid says so the same way.
-        .overlay {
-            if let progress = model.importProgress {
-                LoadingCard(title: progress.title, fraction: progress.fraction, detail: progress.detail)
-                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.regenProgress != nil)
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.importProgress != nil)
-        // The tutorial's card floats at the bottom of the free space, above the status bar and the OK bar, where it
-        // stays clear of what is built at the middle of the view and of the size fields that appear beside it.
-        .overlay(alignment: .bottom) {
-            TutorialCard(model: model, guide: guide)
-                .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
-                .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
-                .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
-                    + 2 * (DS.ControlHeight.large + Panel.inset) + Panel.inset)
-        }
-        // The Appearance panel floats at the top, beside the inspector.
-        .overlay(alignment: .topTrailing) {
-            if model.showAppearance, model.sketchSession == nil {
-                AppearancePanel(model: model)
-                    .padding(.top, Panel.inset)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.showAppearance)
-        // The Measure tool's readout floats in the same corner.
-        .overlay(alignment: .topTrailing) {
-            if model.pendingTool == .measure, model.sketchSession == nil {
-                MeasurePanel(model: model)
-                    .padding(.top, Panel.inset)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.pendingTool == .measure)
-        // The status bar floats at the bottom, between the panels.
-        .overlay(alignment: .bottom) {
-            StatusBar(model: model)
-                .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
-                .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
-                .padding(.bottom, model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
-        }
-        // A feature with no drag handle gets its OK and Cancel here, above the status bar.
-        .overlay(alignment: .bottom) {
-            FeatureDoneBar(model: model)
-                .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
-                .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
-                .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset) + DS.ControlHeight.large + Panel.inset)
-        }
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.featureWithoutHandle)
-        // The sketch Mirror tool's choices (the axes, Delete, Cancel and OK) float in the same place.
-        .overlay(alignment: .bottom) {
-            SketchMirrorBar(model: model)
-                .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
-                .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
-                .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset) + DS.ControlHeight.large + Panel.inset)
-        }
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.sketchSession?.isMirroring == true)
-        // The print preview's, Render and other options float at the top left of the view, above the status bar (a tall
-        // panel covers it rather than hiding behind it, and scrolls when the window is shorter still).
-        .overlay(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: Panel.inset) {
-                if model.printPreview, model.showPrintOptions, model.visualStyle.isShaded, model.sketchSession == nil {
-                    PrintPreviewPanel(model: model)
-                        .transition(.opacity)
-                }
-                if model.renderView, model.showRenderOptions, model.sketchSession == nil {
-                    RenderPanel(model: model)
-                        .transition(.opacity)
-                }
-                if model.explodeOn, model.showExplodeOptions {
-                    ExplodePanel(model: model)
-                        .transition(.opacity)
-                }
-                // The Section Analysis tool's options go under it.
-                if model.section != nil, model.sketchSession == nil {
-                    SectionPanel(model: model)
-                        .transition(.opacity)
-                }
-            }
-            .padding(.top, Panel.inset)
-            .padding(.bottom, Panel.inset)
-            .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
-        }
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.showPrintOptions && model.printPreview)
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.showRenderOptions && model.renderView)
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.section != nil)
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.explodeOn && model.showExplodeOptions)
-        // The cursor's prompt goes above everything, panels included.
-        .overlay { CursorPrompt(model: model) }
+        })
     }
 }
+#endif
 
 /// The instruction next to the cursor while the app waits for a pick ("Select a plane or planar face"),
 /// just below and right of the pointer and kept inside the window.
@@ -468,6 +300,7 @@ struct ToolbarFade: View {
     }
 }
 
+#if os(macOS)
 /// Tells whether the pointer is over the window's toolbar strip. Events over the toolbar never reach
 /// the content's own tracking areas, so a local event monitor watches the pointer instead.
 /// Runs `action` when the Show/Hide UI shortcut is pressed in this window. Read from the key event itself rather
@@ -557,6 +390,8 @@ struct ToolbarHoverMonitor: NSViewRepresentable {
 }
 
 /// Shown on an empty part: the two ways to begin.
+#endif
+
 struct StartCard: View {
     let model: DocumentModel
     let guide: TutorialGuide
@@ -577,7 +412,7 @@ struct StartCard: View {
             }
             .controlSize(.large)
             Button { guide.start() } label: { Label("New to CAD? Follow the tutorial: a desk organizer", systemImage: "graduationcap") }
-                .buttonStyle(.link)
+                .buttonStyle(.platformLink)
                 .padding(.top, DS.Spacing.space5)  // a bigger gap below the three buttons
             Text("Right-click in the view for more · File › Open Example Parts to learn from")
                 .font(.caption)
@@ -807,7 +642,7 @@ struct Sidebar: View {
         return Color.clear
             .frame(height: Panel.inset)
             .contentShape(Rectangle())
-            .pointerStyle(resizable ? .rowResize : nil)
+            .platformRowResizePointer(resizable)
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { drag in
                     guard resizable else { return }
@@ -909,7 +744,9 @@ struct ParametersList: View {
         .browserDropDestination { drop($0, nil) }
         .background(OutsideClickMonitor {
             // A click anywhere else (the 3D view, a body in the browser) lets go of the row and its field.
+            #if os(macOS)
             if focused != nil { NSApp.keyWindow?.makeFirstResponder(nil) }
+            #endif
             focused = nil
             selection = nil
         })
@@ -1040,6 +877,7 @@ struct ParameterFolderNode: View {
     }
 }
 
+#if os(macOS)
 /// Calls `onOutsideClick` when the mouse goes down in the window outside this view's frame.
 struct OutsideClickMonitor: NSViewRepresentable {
     let onOutsideClick: () -> Void
@@ -1073,6 +911,13 @@ struct OutsideClickMonitor: NSViewRepresentable {
         }
     }
 }
+#else
+/// No outside-click listening on the iPad: the field gives up focus through its own keyboard handling.
+struct OutsideClickMonitor: View {
+    let onOutsideClick: () -> Void
+    var body: some View { Color.clear.allowsHitTesting(false) }
+}
+#endif
 
 /// What is dragged between rows of the browser: ids of bodies, or one folder.
 struct BrowserDrag: Codable, Transferable {
@@ -1626,6 +1471,7 @@ struct RowFieldStyle: ViewModifier {
     }
 }
 
+#if os(macOS)
 /// The caret and the selection of the field being edited. The text view that edits the field draws them in
 /// colours of its own, which inside a selected list row come out white on the white field (the caret and the
 /// highlight vanish), so while the field is active they are set explicitly, and put back when it isn't.
@@ -1672,6 +1518,13 @@ private struct FieldEditorColors: NSViewRepresentable {
         editor.selectedTextAttributes = [.backgroundColor: NSColor.selectedTextBackgroundColor, .foregroundColor: NSColor.selectedTextColor]
     }
 }
+#else
+private struct FieldEditorColors: View {
+    let active: Bool
+    let accent: NSColor
+    var body: some View { Color.clear.frame(width: 0, height: 0) }
+}
+#endif
 
 extension View {
     func rowFieldStyle(focused: Bool) -> some View { modifier(RowFieldStyle(focused: focused)) }
@@ -1704,7 +1557,7 @@ struct InlineNameField: View {
                 DispatchQueue.main.async { focused = true }
             }
             .onSubmit { finish(keep: true) }
-            .onExitCommand { finish(keep: false) }
+            .platformExit { finish(keep: false) }
             .onChange(of: focused) { if focused { hadFocus = true } else if hadFocus { finish(keep: true) } }
     }
 
@@ -1885,7 +1738,7 @@ struct ParameterRow: View {
                             moved: { dx, flags in moveScrub(by: dx, flags) },
                             ended: endScrub,
                             doubleClicked: { renameError = nil; renaming = true }))
-                        .pointerStyle(.columnResize)
+                        .platformColumnResizePointer()
                         .help("Drag left or right to change the value (Shift: coarse, Option: fine); double-click to rename, and every expression that uses it follows")
                 }
                 if renaming { Spacer() }
@@ -1938,6 +1791,7 @@ struct ParameterRow: View {
     }
 }
 
+#if os(macOS)
 /// Sits over a title that can be dragged to change a value. It takes the mouse itself, because a
 /// list row's own tracking swallows drags that start in SwiftUI content.
 private struct ScrubHandle: NSViewRepresentable {
@@ -1990,6 +1844,30 @@ private struct ScrubHandle: NSViewRepresentable {
         }
     }
 }
+#else
+/// Sits over a title that can be dragged to change a value: a horizontal finger drag, and a double tap to rename.
+private struct ScrubHandle: View {
+    let began: () -> Void
+    let moved: (CGFloat, NSEvent.ModifierFlags) -> Void
+    let ended: () -> Void
+    let doubleClicked: () -> Void
+    @State private var dragging = false
+    @State private var lastX: CGFloat = 0
+
+    var body: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 6)
+                .onChanged { g in
+                    if !dragging { dragging = true; lastX = g.startLocation.x; began() }
+                    moved(g.location.x - lastX, [])
+                    lastX = g.location.x
+                }
+                .onEnded { _ in dragging = false; ended() })
+            .onTapGesture(count: 2, perform: doubleClicked)
+    }
+}
+#endif
 
 extension View {
     /// ↑ ↓ move a plain number in the field by one (Shift: ten, Option: a tenth). The text only changes; Return commits it.
@@ -2068,7 +1946,7 @@ struct ExpressionField: View {
                 return .handled
             }
             // Shift-Tab reaches the text editor as a command of its own, not as a key press.
-            .onCommand(#selector(NSResponder.insertBacktab(_:))) {
+            .platformBacktab {
                 guard let tabbed else { return }
                 if draft != text { edited = false; commit(draft) }
                 tabbed(true)
@@ -2138,7 +2016,7 @@ struct ToolButton: View {
             .contentShape(Rectangle())
             // The keyboard focus ring follows the same rounded shape as the hover and active fill,
             // drawn in the app's accent (the system's own ring would use the system colour).
-            .contentShape(.focusEffect, shape)
+            .platformFocusShape(shape)
             .modifier(AccentFocusRing(shape: shape))
             .opacity(isEnabled ? 1 : DS.opacityDisabled)
         }
@@ -2445,7 +2323,7 @@ struct DimensionEditor: View {
                     .arrowNudges($draft)
                     .onSubmit { submit() }
                     .onChange(of: draft) { session.message = nil }  // an old complaint isn't about this text
-                    .onExitCommand(perform: onDone)
+                    .platformExit(onDone)
                 Button("Set") { submit(unlessClicked: true) }
                     .keyboardShortcut(.defaultAction)
                 Button { remove() } label: { Image(systemName: "trash") }
@@ -2553,6 +2431,7 @@ struct TransformPopover: View {
 }
 
 
+#if os(macOS)
 /// The unlink prompt and the alert of a document window. Kept apart from the window's body, whose modifier
 /// chain is too long for the compiler to type-check in one piece.
 private struct DocumentDialogs: ViewModifier {
@@ -2588,5 +2467,46 @@ private struct DocumentDialogs: ViewModifier {
             } message: { info in
                 Text(info.message)
             }
+    }
+}
+#endif
+
+extension View {
+    /// Shift-Tab in a text field reaches the Mac's text editor as a command of its own, not as a key press; the iPad delivers it as a key press.
+    @ViewBuilder func platformBacktab(_ action: @escaping () -> Void) -> some View {
+        #if os(macOS)
+        onCommand(#selector(NSResponder.insertBacktab(_:)), perform: action)
+        #else
+        self
+        #endif
+    }
+}
+
+extension View {
+    /// Escape (or Exit) in a field: the Mac's exit command; the iPad's Escape key.
+    @ViewBuilder func platformExit(_ action: @escaping () -> Void) -> some View {
+        #if os(macOS)
+        onExitCommand(perform: action)
+        #else
+        onKeyPress(.escape) { action(); return .handled }
+        #endif
+    }
+
+    /// The Mac's up-down resize pointer over a panel's edge while it can be resized.
+    @ViewBuilder func platformRowResizePointer(_ resizable: Bool) -> some View {
+        #if os(macOS)
+        pointerStyle(resizable ? .rowResize : nil)
+        #else
+        self
+        #endif
+    }
+
+    /// The Mac's left-right resize pointer over a scrub handle; the iPad has none.
+    @ViewBuilder func platformColumnResizePointer() -> some View {
+        #if os(macOS)
+        pointerStyle(.columnResize)
+        #else
+        self
+        #endif
     }
 }

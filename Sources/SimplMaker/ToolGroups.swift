@@ -269,7 +269,7 @@ private struct GroupLabel: View {
             .foregroundStyle(highlighted && !onTint ? accent : ink.opacity(highlighted ? 1 : 0.8))
             .background(background, in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
             .contentShape(Rectangle())
-            .contentShape(.focusEffect, RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+            .platformFocusShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -352,7 +352,7 @@ private struct ToolGroupList: View {
                     .lineLimit(1)
                 Spacer(minLength: DS.Spacing.space4)
                 Button("Restore Defaults", action: restore)
-                    .buttonStyle(.link)
+                    .buttonStyle(.platformLink)
                     .font(.caption)
                     .disabled(isDefault)
             }
@@ -405,7 +405,7 @@ private struct ToolGroupRow: View {
                                     in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                         .foregroundStyle(mode.active ? accent : .primary)
                         .contentShape(Rectangle())
-                        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+                        .platformFocusShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .help(mode.help)
@@ -442,5 +442,32 @@ private extension View {
         } else {
             self
         }
+    }
+}
+
+extension View {
+    /// The shape of the keyboard focus ring: the Mac draws one for a plain button; on the iPad it is left to the system.
+    @ViewBuilder func platformFocusShape<S: Shape>(_ shape: S) -> some View {
+        #if os(macOS)
+        contentShape(.focusEffect, shape)
+        #else
+        self
+        #endif
+    }
+}
+
+extension PrimitiveButtonStyle where Self == PlainButtonStyle {
+    /// A link-looking button: the Mac's `.link`, and a plain one on the iPad.
+    static var platformLink: PlainButtonStyle { PlainButtonStyle() }
+}
+
+extension View {
+    /// A tick box on the Mac; the iPad's own switch.
+    @ViewBuilder func platformCheckbox() -> some View {
+        #if os(macOS)
+        toggleStyle(.checkbox)
+        #else
+        self
+        #endif
     }
 }

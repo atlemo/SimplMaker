@@ -30,6 +30,11 @@ struct PadViewport: UIViewRepresentable {
     let visualStyle: VisualStyle
     let explodeOffsets: [SIMD3<Float>]
     let sketching: Bool
+    let showGrid: Bool
+    let showAxes: Bool
+    /// How much of the view the floating panels and the tool bar cover (left, right, bottom; the bar below the navigation bar).
+    let panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat)
+    let toolbarHeight: CGFloat
 
     @MainActor
     final class Coordinator: NSObject, MTKViewDelegate, UIGestureRecognizerDelegate {
@@ -40,6 +45,8 @@ struct PadViewport: UIViewRepresentable {
         var cameraRevision = 0
         var explodeOffsets: [SIMD3<Float>] = []
         var sketching = false
+        var insets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
+        var toolbarHeight: CGFloat = 0
         var dark: Bool?
         let navigation = Preferences.navigationConfig
         weak var view: MTKView?
@@ -51,11 +58,22 @@ struct PadViewport: UIViewRepresentable {
         nonisolated func draw(in view: MTKView) {
             MainActor.assumeIsolated {
                 updateSketchGrid(view)
+                updateCameraInsets(view, insets, toolbar: toolbarHeight)
                 renderer?.draw(in: view)
             }
         }
 
         // MARK: Look
+
+        /// Centres the picture in what the panels leave free, and sizes a fit to it (the Mac does the same with its panels).
+        func updateCameraInsets(_ view: MTKView, _ panels: (left: CGFloat, right: CGFloat, bottom: CGFloat), toolbar: CGFloat) {
+            guard let renderer, view.bounds.width > 1, view.bounds.height > 1 else { return }
+            let w = view.bounds.width, h = view.bounds.height
+            let top = min(view.safeAreaInsets.top + toolbar, h * 0.3)
+            let left = min(panels.left, w * 0.45), right = min(panels.right, w * 0.45), bottom = min(panels.bottom, h * 0.3)
+            renderer.camera.centerShift = SIMD2(Float((left - right) / w), Float((bottom - top) / h))
+            renderer.camera.visibleFraction = SIMD2(Float((w - left - right) / w), Float((h - top - bottom) / h))
+        }
 
         /// The palette follows light and dark mode, and a sketch gets its paper colour.
         func applyAppearance(_ view: MTKView) {
@@ -283,7 +301,8 @@ struct PadViewport: UIViewRepresentable {
         c.model = model
         renderer.camera.orthographic = orthographic
         renderer.visualStyle = visualStyle
-        renderer.showAxes = !sketching
+        renderer.showAxes = showAxes
+        renderer.showGrid = showGrid
         if c.sketching != sketching || c.dark != (view.traitCollection.userInterfaceStyle == .dark) {
             c.sketching = sketching
             c.applyAppearance(view)
@@ -295,6 +314,9 @@ struct PadViewport: UIViewRepresentable {
             renderer.sceneBounds = model.explodedSceneBounds
         }
         let aspect = Float(max(view.bounds.width, 1) / max(view.bounds.height, 1))
+        c.insets = panelInsets
+        c.toolbarHeight = toolbarHeight
+        c.updateCameraInsets(view, panelInsets, toolbar: toolbarHeight)
         if c.fitRevision != fitRevision {
             c.fitRevision = fitRevision
             if let b = model.explodedSceneBounds { renderer.camera.fit(min: b.min, max: b.max, aspect: aspect) }

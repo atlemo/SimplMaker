@@ -2,7 +2,9 @@
 // same spacing, radius and timing scale as the rest of the design system rather than ad hoc numbers.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#endif
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -131,7 +133,7 @@ extension View {
     /// which is the nearest look the older SDK offers.
     @ViewBuilder
     func panelGlass<S: Shape>(in shape: S) -> some View {
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, iOS 26.0, *) {
             self.glassEffect(.regular, in: shape)
         } else {
             self
@@ -146,7 +148,7 @@ extension View {
     /// through `onDrop`, loading each item from its provider first.
     @ViewBuilder
     func browserDropDestination(_ action: @escaping ([BrowserDrag]) -> Bool) -> some View {
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, iOS 26.0, *) {
             self.dropDestination(for: BrowserDrag.self) { drops, _ in _ = action(drops) }
         } else {
             self.onDrop(of: [.simplMakerBrowserItem], isTargeted: nil) { providers in
@@ -180,7 +182,7 @@ extension ToolbarContent {
     /// Drops the glass pill macOS 26 draws behind a toolbar item; older systems draw none.
     @ToolbarContentBuilder
     func withoutSharedBackground() -> some ToolbarContent {
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, iOS 26.0, *) {
             self.sharedBackgroundVisibility(.hidden)
         } else {
             self
@@ -190,7 +192,7 @@ extension ToolbarContent {
     /// Hides the glass pill behind a toolbar item while `hidden` is set; older systems draw none anyway.
     @ToolbarContentBuilder
     func sharedBackgroundHidden(_ hidden: Bool) -> some ToolbarContent {
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, iOS 26.0, *) {
             self.sharedBackgroundVisibility(hidden ? .hidden : .automatic)
         } else {
             self
@@ -203,13 +205,18 @@ extension DS {
     /// deployment target is older gets the pre-26 values for the system's own colours even on 26
     /// (light mode: window 236 instead of 255, under-page 159 instead of 246), so the welcome window
     /// asks for the 26 values by hand there. Dark mode and older systems keep the system's colours.
+    #if os(macOS)
     static let windowBackground = lightOverride(white: 1.0, system: .windowBackgroundColor)
     static let underPageBackground = lightOverride(white: 246 / 255, system: .underPageBackgroundColor)
 
     private static func lightOverride(white: CGFloat, system: NSColor) -> Color {
-        guard #available(macOS 26.0, *) else { return Color(nsColor: system) }
+        guard #available(macOS 26.0, iOS 26.0, *) else { return Color(nsColor: system) }
         return Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua ? NSColor(white: white, alpha: 1) : system
         })
     }
+    #else
+    static let windowBackground = Color(uiColor: .systemBackground)
+    static let underPageBackground = Color(uiColor: .secondarySystemBackground)
+    #endif
 }

@@ -294,7 +294,7 @@ struct AffectedBodiesList: View {
                         if on { next.insert(b.id) } else { next.remove(b.id) }
                         setTargets(candidates.map(\.id).filter { next.contains($0) })
                     }))
-                    .toggleStyle(.checkbox)
+                    .platformCheckbox()
                 }
             }
             if targets != nil {

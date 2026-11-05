@@ -1,79 +1,153 @@
-// One open document: the viewport with its toolbar.
+// One open document on the iPad: the same panels as the Mac window (browser, inspector, timeline, status bar, tool panels),
+// the Mac's tool rows in a bar along the top, and the system's dialogs and pickers in place of the Mac's panels.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PadDocumentView: View {
     let file: CADFile
     let fileURL: URL?
     @Environment(\.undoManager) private var undoManager
-    @State private var showParameters = false
+    @AppStorage(Preferences.showGrid) private var showGrid = true
+    @AppStorage(Preferences.showAxes) private var showAxes = true
 
     private var model: DocumentModel { file.model }
 
     var body: some View {
         let model = model
-        return content(model)
-            .toolbar { toolbar(model) }
-            .sheet(isPresented: $showParameters) { PadParametersView(model: model) }
-            .sheet(isPresented: Binding(get: { model.exportedFile != nil }, set: { if !$0 { model.exportedFile = nil } })) {
-                if let url = model.exportedFile { ShareSheet(url: url).presentationDetents([.medium, .large]) }
+        let guide = file.guide
+        return DocumentPanels(model: model, guide: guide, viewport: viewport(model), chrome: EmptyView())
+            .safeAreaInset(edge: .top, spacing: 0) { PadToolBar(model: model) }
+            .toolbar { PadToolbar(model: model, undoManager: undoManager) }
+            .modifier(PadDialogs(model: model))
+            .modifier(AccentScope(sketching: model.sketchSession != nil))
+            .environment(\.completionModel, model)
+            .environment(\.tutorialSpotlight, guide.spotlight)
+            .focusedSceneValue(\.documentModel, model)
+            .onAppear {
+                model.undoManager = undoManager
+                model.fileURL = fileURL
+                // A narrow screen has room for the viewport or the panels, not both: start with the viewport.
+                if UIScreen.main.bounds.width < 1200 { model.showSidebar = false; model.showInspector = false }
             }
-            .alert(model.alert?.title ?? "", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } })) {
-                Button("OK") { model.alert = nil }
-            } message: { Text(model.alert?.message ?? "") }
-            .onAppear { model.undoManager = undoManager; model.fileURL = fileURL }
             .onChange(of: undoManager) { model.undoManager = undoManager }
             .onChange(of: fileURL) { model.fileURL = fileURL }
-    }
-
-    private func content(_ model: DocumentModel) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            viewport(model).ignoresSafeArea()
-            VStack {
-                PadFeaturePanel(model: model)
-                Spacer()
-                PadToolStrip(model: model)
-            }
-            .frame(maxWidth: .infinity)
-            status(model)
-        }
     }
 
     private func viewport(_ model: DocumentModel) -> some View {
         PadViewport(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
                     fitRevision: model.fitRevision, cameraRevision: model.cameraCommand?.revision ?? 0,
                     highlighted: model.highlighted, orthographic: model.orthographic, visualStyle: model.visualStyle,
-                    explodeOffsets: model.explodeOffsets, sketching: model.sketchSession != nil)
+                    explodeOffsets: model.explodeOffsets, sketching: model.sketchSession != nil,
+                    showGrid: showGrid, showAxes: showAxes && model.sketchSession == nil,
+                    panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
+                                  model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
+                                  Panel.bottomInset(timeline: model.showTimeline)),
+                    toolbarHeight: PadToolBar.height)
     }
+}
 
-    @ToolbarContentBuilder private func toolbar(_ model: DocumentModel) -> some ToolbarContent {
+/// The Mac's two tool rows (design tools, or sketch tools while a sketch is open), in a floating bar that scrolls sideways.
+struct PadToolBar: View {
+    let model: DocumentModel
+    /// How much of the top the bar takes (its height and the gaps around it), for centring the view in what is left.
+    static let height: CGFloat = 74
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Group {
+                if let session = model.sketchSession {
+                    SketchToolbar(model: model, session: session, layout: .full)
+                } else {
+                    DesignToolbar(model: model, layout: .full)
+                }
+            }
+            .environment(\.toolTitles, true)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+        }
+        .frame(maxWidth: 900)
+        .fixedSize(horizontal: false, vertical: true)
+        .panelGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.top, 6)
+        .padding(.horizontal, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Tools")
+    }
+}
+
+/// The navigation bar: panels on and off at the leading side; undo, redo, view and export at the trailing side.
+struct PadToolbar: ToolbarContent {
+    let model: DocumentModel
+    let undoManager: UndoManager?
+
+    var body: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarLeading) {
+            Button("Browser", systemImage: "sidebar.left") { model.showSidebar.toggle() }
+        }
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button("Undo", systemImage: "arrow.uturn.backward") { undoManager?.undo() }
                 .disabled(undoManager?.canUndo != true)
             Button("Redo", systemImage: "arrow.uturn.forward") { undoManager?.redo() }
                 .disabled(undoManager?.canRedo != true)
-            Button("Parameters", systemImage: "slider.horizontal.3") { showParameters = true }
+            Button("Render", systemImage: model.renderView ? "camera.fill" : "camera") { model.setRenderView(!model.renderView) }
+                .disabled(model.sketchSession != nil)
+            Button("Inspector", systemImage: "sidebar.right") { model.showInspector.toggle() }
             Menu("Export", systemImage: "square.and.arrow.up") {
                 Button("STL") { model.export(format: .stl) }
                 Button("3MF") { model.export(format: .threeMF) }
                 Button("STEP") { model.export(format: .step) }
+                Divider()
+                Button("Import STEP…") { model.importSTEP() }
+                Button("Import STL…") { model.importSTL() }
+                Button("Import SVG as sketch…") { model.importSVG() }
+                Button("Import DXF as sketch…") { model.importDXF() }
             }
         }
     }
+}
 
-    private func status(_ model: DocumentModel) -> some View {
-        let triangles = model.visibleMeshes.reduce(0) { $0 + $1.mesh.indices.count / 3 }
-        let text = "\(model.visibleMeshes.count) bodies · \(triangles) triangles"
-            + (model.selection.isEmpty ? "" : " · \(model.selection.count) selected")
-            + (model.isRegenerating ? " · rebuilding…" : "")
-        return Text(text)
-            .font(.footnote.monospacedDigit())
-            .padding(8)
-            .background(.ultraThinMaterial, in: Capsule())
-            .padding()
-            .accessibilityIdentifier("status")
+/// Alerts, the unlink question, the file picker the model asks for, the export chooser and the share sheet.
+struct PadDialogs: ViewModifier {
+    @Bindable var model: DocumentModel
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog(unlinkTitle, isPresented: unlinkShown, presenting: model.unlinkPrompt) { p in
+                Button("Use \(p.valueText)") { model.resolveUnlink(useValue: true) }
+                Button("Keep \(p.expression)", role: .cancel) { model.resolveUnlink(useValue: false) }
+            } message: { p in
+                Text("This size comes from the expression “\(p.expression)”. Using the dragged value replaces it with a fixed number, so it will no longer follow your parameters.")
+            }
+            .alert(model.alert?.title ?? "", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } }),
+                   presenting: model.alert) { _ in
+                Button("OK") { model.alert = nil }
+            } message: { info in Text(info.message) }
+            .fileImporter(isPresented: Binding(get: { model.fileRequest != nil }, set: { if !$0 { model.fileRequest = nil } }),
+                          allowedContentTypes: model.fileRequest?.contentTypes ?? [.data]) { result in
+                guard let request = model.fileRequest else { return }
+                model.fileRequest = nil
+                if case .success(let url) = result { model.fileChosen(url, for: request) }
+            }
+            .confirmationDialog("Export", isPresented: $model.showExportChooser) {
+                Button("STL") { model.export(format: .stl) }
+                Button("3MF") { model.export(format: .threeMF) }
+                Button("STEP") { model.export(format: .step) }
+            }
+            .sheet(isPresented: Binding(get: { model.exportedFile != nil }, set: { if !$0 { model.exportedFile = nil } })) {
+                if let url = model.exportedFile { ShareSheet(url: url).presentationDetents([.medium, .large]) }
+            }
+    }
+
+    private var unlinkTitle: String {
+        guard let p = model.unlinkPrompt else { return "" }
+        return "Replace \(p.expression) with \(p.valueText)?"
+    }
+
+    private var unlinkShown: Binding<Bool> {
+        Binding(get: { model.unlinkPrompt != nil }, set: { if !$0 { model.resolveUnlink(useValue: false) } })
     }
 }
 

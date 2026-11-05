@@ -8,6 +8,36 @@ import CADKernel
 import Foundation
 
 extension DocumentModel {
+    // MARK: what the Mac asks with a panel
+
+    func importSTEP() { guard !importInProgress() else { return }; fileRequest = .step }
+    func importSTL() { guard !importInProgress() else { return }; fileRequest = .stl }
+    func importSVG() { guard !importInProgress() else { return }; fileRequest = .svg }
+    func importDXF() { guard !importInProgress() else { return }; fileRequest = .dxf }
+    func replaceImport(_ id: FeatureID) { guard !importInProgress() else { return }; fileRequest = .replaceImport(id) }
+    func replaceImage(_ id: FeatureID) { fileRequest = .replaceImage(id) }
+    func exportWithDialog() { showExportChooser = true }
+    func exportImageWithDialog() { showImageExport = true }
+
+    /// What a picked file is for: hands it to the import that asked for it.
+    func fileChosen(_ url: URL, for request: FileRequest) {
+        let access = url.startAccessingSecurityScopedResource()
+        switch request {
+        case .step, .stl: Task { await importSTEP(from: url); if access { url.stopAccessingSecurityScopedResource() } }
+        case .svg, .dxf: Task { await importSVG(from: url); if access { url.stopAccessingSecurityScopedResource() } }
+        case .replaceImport(let id): Task { await replaceImport(id, from: url); if access { url.stopAccessingSecurityScopedResource() } }
+        case .image(let plane, let centre):
+            if let plane { insertImage(from: url, on: plane, at: centre) }
+            else if let session = sketchSession, case .sketch(let sf)? = document.features.first(where: { $0.id == session.featureID })?.kind {
+                insertImage(from: url, on: sf.plane, at: .zero, keepingSketch: true)
+            }
+            if access { url.stopAccessingSecurityScopedResource() }
+        case .replaceImage(let id):
+            replaceImage(id, from: url)
+            if access { url.stopAccessingSecurityScopedResource() }
+        }
+    }
+
     /// A fresh place in the temporary folder for a file called `name`.
     private func shareURL(_ name: String) -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("export-\(UUID().uuidString)", isDirectory: true)

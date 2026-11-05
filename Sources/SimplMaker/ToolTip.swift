@@ -1,9 +1,12 @@
 // A tooltip that AppKit shows for one view, in place of SwiftUI's `.help` where that misbehaves.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
 import AppKit
+#endif
 import SwiftUI
 
+#if os(macOS)
 extension View {
     /// Shows `text` when the pointer rests on this view. Unlike `.help`, each view gets its own
     /// AppKit tooltip area: in the toolbar, `.help`'s areas all belong to the one view hosting the
@@ -32,3 +35,9 @@ private struct ToolTipArea: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
+#else
+extension View {
+    /// Shows `text` when a pointer rests on this view (iPadOS shows `.help` for a trackpad or mouse), and tells VoiceOver.
+    func toolTip(_ text: String) -> some View { help(text).accessibilityHint(text) }
+}
+#endif

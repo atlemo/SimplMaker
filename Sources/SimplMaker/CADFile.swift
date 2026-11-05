@@ -25,9 +25,7 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     private let latest: OSAllocatedUnfairLock<CADDocument>
     /// The window opens with the tutorial's card showing (File ▸ New from the welcome window's tutorial, or Help ▸ Tutorial).
     private let startsTutorial: Bool
-    #if os(macOS)
     @MainActor private var guideStorage: TutorialGuide?
-    #endif
     /// A picture of the part (PNG), stored in the file for Finder's Quick Look: the one read from the file until the part changes,
     /// then the latest drawn. Readable from any thread, like `latest`.
     private let thumbnail = OSAllocatedUnfairLock<Data?>(initialState: nil)
@@ -62,7 +60,6 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
         return m
     }
 
-    #if os(macOS)
     /// The tutorial's guide for this document's window (showing only when asked for).
     @MainActor var guide: TutorialGuide {
         if let g = guideStorage { return g }
@@ -70,7 +67,6 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
         guideStorage = g
         return g
     }
-    #endif
 
     /// Draws a new thumbnail once the part has been left alone for a moment (drawing is not free, and every edit changes it).
     @MainActor private func scheduleThumbnail() {
@@ -101,8 +97,6 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
 extension FocusedValues {
     /// The model of the frontmost document window, for menu commands.
     @Entry var documentModel: DocumentModel?
-    #if os(macOS)
     /// The tutorial guide of the frontmost document window, for Help ▸ Tutorial.
     @Entry var tutorialGuide: TutorialGuide?
-    #endif
 }

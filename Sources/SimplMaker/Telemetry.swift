@@ -5,8 +5,11 @@
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
+#if os(macOS)
 import TelemetryDeck
+#endif
 
+#if os(macOS)
 @MainActor
 enum Telemetry {
     private static let appID = "8B60A0C4-139C-49FE-83AD-F72B32D9500D"
@@ -35,3 +38,12 @@ enum Telemetry {
         TelemetryDeck.signal(name, parameters: parameters)
     }
 }
+#else
+/// The iPad app sends no usage statistics.
+@MainActor
+enum Telemetry {
+    static var isEnabled: Bool { false }
+    static func start() {}
+    static func signal(_ name: String, _ parameters: [String: String] = [:]) {}
+}
+#endif

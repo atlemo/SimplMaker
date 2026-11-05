@@ -5,7 +5,7 @@ name: SimplMakerPad
 options:
   bundleIdPrefix: com.simplmaker
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
   createIntermediateGroups: true
 settings:
   base:
@@ -19,40 +19,30 @@ targets:
   SimplMakerPad:
     type: application
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: Sources
-      - path: ../Sources/SimplMaker/Viewport/Renderer.swift
-      - path: ../Sources/SimplMaker/Viewport/Shaders.swift
-      - path: ../Sources/SimplMaker/Viewport/Camera.swift
-      - path: ../Sources/SimplMaker/Viewport/BodyMesh.swift
-      - path: ../Sources/SimplMaker/Viewport/NavigationConfig.swift
-      - path: ../Sources/SimplMaker/Viewport/ReferenceImage.swift
-      - path: ../Sources/SimplMaker/Viewport/ArraySafe.swift
-      - path: ../Sources/SimplMaker/Viewport/PictureEncoder.swift
-      - path: ../Sources/SimplMaker/Viewport/GridSteps.swift
-      - path: ../Sources/SimplMaker/Viewport/PixelScale.swift
-      - path: ../Sources/SimplMaker/Preferences.swift
-      - path: ../Sources/SimplMaker/DocumentModel.swift
-      - path: ../Sources/SimplMaker/CADFile.swift
-      - path: ../Sources/SimplMaker/Sketching/SketchSession.swift
-      - path: ../Sources/SimplMaker/DesignTools.swift
-      - path: ../Sources/SimplMaker/TransformManipulator.swift
-      - path: ../Sources/SimplMaker/Viewport/Manipulator.swift
-      - path: ../Sources/SimplMaker/Measure.swift
-      - path: ../Sources/SimplMaker/SectionAnalysis.swift
-      - path: ../Sources/SimplMaker/ExplodedView.swift
-      - path: ../Sources/SimplMaker/DocumentModel+Share.swift
-      - path: ../Sources/SimplMaker/DocumentModel+Names.swift
-      - path: ../Sources/SimplMaker/ContextActions.swift
-      - path: ../Sources/SimplMaker/KernelActivity.swift
-      - path: ../Sources/SimplMaker/SketchSlice.swift
-      - path: ../Sources/SimplMaker/ExportFormat.swift
-      - path: ../Sources/SimplMaker/ReferenceImages.swift
-      - path: ../Sources/SimplMaker/Shortcuts.swift
-      - path: ../Sources/SimplMaker/Sketching/SketchPlanePicker.swift
-      - path: ../Sources/SimplMaker/Sketching/SketchOverlayBuilder.swift
-      - path: ../Sources/SimplMaker/RenderSettings.swift
+      # Everything the Mac app is made of, except what only makes sense on a Mac. A file in this list that turns out to be portable
+      # moves out of it; a Mac-only part of a shared file is fenced with #if os(macOS) instead.
+      - path: ../Sources/SimplMaker
+        excludes:
+          - SimplMakerApp.swift
+          - WindowSizeMemory.swift
+          - AboutPanel.swift
+          - Updater.swift
+          - AI/**
+          - Viewport/ViewportView.swift
+          - Viewport/ViewCube.swift
+          - Viewport/ManipulatorView.swift
+          - WelcomeView.swift
+          - RenameDocument.swift
+          - ExportDialog.swift
+          - ExportImageDialog.swift
+          - BodyClipboard.swift
+          - FileDrop.swift
+          - ShortcutSettings.swift
+          - SettingsView.swift
+          - LicenseTexts.swift
     dependencies:
       - package: SimplMaker
         product: CADCore

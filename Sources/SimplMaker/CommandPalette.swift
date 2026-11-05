@@ -121,7 +121,9 @@ extension DocumentModel {
         add("Import SVG as Sketch…", "File", keywords: "open drawing vector") { self.importSVG() }
         add("Import DXF as Sketch…", "File", keywords: "open drawing cad laser") { self.importDXF() }
         add("Rebuild", "Model", keywords: "regenerate refresh", shortcut: .rebuild) { self.regenerate() }
+        #if os(macOS)
         if fileURL != nil { add("Rename…", "File", keywords: "name") { RenameDocument.shared.rename() } }
+        #endif
         if let id = selectedFeature, let feature = document.features.first(where: { $0.id == id }), case .sketch = feature.kind {
             add("Export \(feature.name) as DXF…", "File", keywords: "laser cnc drawing") { self.exportDXF(sketch: id) }
         }
