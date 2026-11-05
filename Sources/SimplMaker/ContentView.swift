@@ -1000,6 +1000,7 @@ struct BrowserList: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
         List(selection: listSelection) {
             DisclosureGroup(isExpanded: $bodiesOpen) {
                 ForEach(model.document.subfolders(of: nil)) { folder in
@@ -1048,6 +1049,15 @@ struct BrowserList: View {
             } else {
                 model.editFeature(featureID(id))
             }
+        }
+#if os(iOS)
+        // A body or sketch picked in the viewport may be listed below the fold: bring its row into view.
+        .onChange(of: model.browserHighlights) {
+            if let id = model.document.features.map(\.id).first(where: model.browserHighlights.contains) {
+                withAnimation { proxy.scrollTo(id) }
+            }
+        }
+#endif
         }
     }
 
@@ -1579,7 +1589,11 @@ struct SelectedRowBackground: View {
     var body: some View {
         if on || highlighted {
             RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous)
+#if os(iOS)
+                .fill(on ? accent : accent.opacity(0.3))  // a finger's tap leaves no hover to confirm it: show it plainly
+#else
                 .fill(on ? accent : accent.opacity(0.18))
+#endif
                 .padding(.horizontal, DS.Spacing.space2)
         }
     }
