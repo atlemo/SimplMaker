@@ -11,9 +11,15 @@ import PackageDescription
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 let occt = ProcessInfo.processInfo.environment["OCCT_ROOT"] ?? "\(packageRoot)/ThirdParty/occt"
 
+// iPadOS: scripts/build-occt-ios.sh builds OCCT for the device and the simulator, and the two archives are put together
+// as ThirdParty/occt-ios/SimplOCCT.xcframework (see the note there). It is always linked statically. Without the framework
+// the package still builds for the Mac; only the iOS pieces are left out.
+let occtIOS = ProcessInfo.processInfo.environment["OCCT_IOS_ROOT"] ?? "\(packageRoot)/ThirdParty/occt-ios"
+let hasIOSKernel = FileManager.default.fileExists(atPath: "\(occtIOS)/SimplOCCT.xcframework")
+
 let package = Package(
     name: "SimplMaker",
-    platforms: [.macOS("15.0")],
+    platforms: [.macOS("15.0"), .iOS("18.0")],
     products: [
         .executable(name: "SimplMaker", targets: ["SimplMaker"]),
         // The stdio relay for MCP clients that start servers as programs (Claude Desktop); bundle-app.sh puts it in the app.
@@ -32,16 +38,24 @@ let package = Package(
         // Anonymous usage statistics (TelemetryDeck); can be turned off in Settings.
         .package(url: "https://github.com/TelemetryDeck/SwiftSDK", from: "2.14.0"),
     ],
-    targets: [
+    targets: (hasIOSKernel ? [
+        // OpenCASCADE for iOS: a static library for the device and one for the simulator.
+        Target.binaryTarget(name: "SimplOCCTiOS", path: "ThirdParty/occt-ios/SimplOCCT.xcframework"),
+    ] : []) + [
         // C API over OpenCASCADE (C++ inside, plain C header outside).
         .target(
             name: "CKernel",
+            dependencies: hasIOSKernel ? [.target(name: "SimplOCCTiOS", condition: .when(platforms: [.iOS]))] : [],
             path: "Sources/CKernel",
-            cxxSettings: [.unsafeFlags(["-I\(occt)/include/opencascade", "-Wno-deprecated-declarations"])],
+            cxxSettings: [
+                .unsafeFlags(["-I\(occt)/include/opencascade", "-Wno-deprecated-declarations"], .when(platforms: [.macOS])),
+                // The headers are the same for the device and the simulator.
+                .unsafeFlags(["-I\(occtIOS)/iphoneos/include/opencascade", "-Wno-deprecated-declarations"], .when(platforms: [.iOS])),
+            ],
             linkerSettings: [
-                .unsafeFlags(["-L\(occt)/lib", "-Xlinker", "-rpath", "-Xlinker", "\(occt)/lib"]),
-                .linkedLibrary("SimplOCCT"),
-                .linkedFramework("Foundation", .when(platforms: [.macOS])),
+                .unsafeFlags(["-L\(occt)/lib", "-Xlinker", "-rpath", "-Xlinker", "\(occt)/lib"], .when(platforms: [.macOS])),
+                .linkedLibrary("SimplOCCT", .when(platforms: [.macOS])),
+                .linkedFramework("Foundation"),
                 .linkedFramework("AppKit", .when(platforms: [.macOS])),
                 .linkedFramework("IOKit", .when(platforms: [.macOS])),
             ]

@@ -677,7 +677,11 @@ final class Renderer {
         self.emptyShadowMap = empty
         let emptyOcclusionDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Unorm, width: 1, height: 1, mipmapped: false)
         emptyOcclusionDescriptor.usage = .shaderRead
+        #if os(macOS)
         emptyOcclusionDescriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
+        #else
+        emptyOcclusionDescriptor.storageMode = .shared  // every iPad has unified memory
+        #endif
         guard let emptyOcclusion = device.makeTexture(descriptor: emptyOcclusionDescriptor) else { return nil }
         var open: UInt8 = 255
         emptyOcclusion.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &open, bytesPerRow: 1)
@@ -706,7 +710,7 @@ final class Renderer {
                     d.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
                 }
                 if !writesColor { d.colorAttachments[0].writeMask = [] }
-                d.colorAttachments[1].pixelFormat = .r32Uint
+                d.colorAttachments[1].pixelFormat = .rgba8Uint
                 if !writesID { d.colorAttachments[1].writeMask = [] }
                 d.depthAttachmentPixelFormat = Renderer.depthFormat
                 d.stencilAttachmentPixelFormat = Renderer.depthFormat
@@ -766,7 +770,7 @@ final class Renderer {
                 d.colorAttachments[0].rgbBlendOperation = operation
                 d.colorAttachments[0].sourceRGBBlendFactor = .one
                 d.colorAttachments[0].destinationRGBBlendFactor = .one
-                d.colorAttachments[1].pixelFormat = .r32Uint
+                d.colorAttachments[1].pixelFormat = .rgba8Uint
                 d.colorAttachments[1].writeMask = []
                 d.depthAttachmentPixelFormat = Renderer.depthFormat
                 d.stencilAttachmentPixelFormat = Renderer.depthFormat
@@ -801,7 +805,7 @@ final class Renderer {
             composite.vertexFunction = library.makeFunction(name: "noiseVertex")
             composite.fragmentFunction = library.makeFunction(name: "compositeFragment")
             composite.colorAttachments[0].pixelFormat = Renderer.colorFormat
-            composite.colorAttachments[1].pixelFormat = .r32Uint
+            composite.colorAttachments[1].pixelFormat = .rgba8Uint
             composite.colorAttachments[1].writeMask = []
             composite.depthAttachmentPixelFormat = Renderer.depthFormat
             composite.stencilAttachmentPixelFormat = Renderer.depthFormat
@@ -1072,7 +1076,7 @@ final class Renderer {
     /// beyond it, and no more than 60 major steps from the middle (a plane seen edge-on runs to the horizon).
     func worldGridKey(viewSize: CGSize) -> WorldGridKey {
         let mmPerPoint = Double(2 * camera.halfHeight) / Double(max(viewSize.height, 1))
-        let steps = ViewportMTKView.gridSteps(mmPerPixel: mmPerPoint)
+        let steps = GridSteps.steps(mmPerPixel: mmPerPoint)
         let reach = 60 * steps.major
         func onGround(_ p: CGPoint) -> SIMD2<Double>? {
             let r = camera.ray(at: p, viewSize: viewSize)
@@ -1541,7 +1545,7 @@ final class Renderer {
               let cmd = queue.makeCommandBuffer() else { return }
 
         if idTexture == nil || idTexture!.width != Int(size.width) || idTexture!.height != Int(size.height) {
-            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Uint, width: Int(size.width),
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Uint, width: Int(size.width),
                                                              height: Int(size.height), mipmapped: false)
             if sampleCount > 1 {
                 d.textureType = .type2DMultisample
@@ -1651,7 +1655,7 @@ final class Renderer {
         sel += group  // after the selected ids, which are the first `selectedCount`
         uniforms.hoverGroupCount = UInt32(group.count)
         if sel.isEmpty { sel = [0] }
-        let scale = Float(view.window?.backingScaleFactor ?? 2) * palette.lineScale
+        let scale = view.pixelScale * palette.lineScale
 
         if shadowing { drawShadowMap(cmd, &uniforms, materials: materials) }
         if cameraDepth { drawCameraDepth(cmd, uniforms, size: size, materials: materials, glass: refractingGlass, blurred: (look?.depthOfField ?? 0) > 0.005) }
@@ -1785,7 +1789,7 @@ final class Renderer {
             let middle = focusPoint ?? sceneBounds.map { ($0.min + $0.max) * 0.5 } ?? .zero
             var post = PostParams(effects: SIMD4(Float(look.bloom), Float(look.vignette), cameraDepth ? Float(look.depthOfField) : 0,
                                                  max(simd_dot(middle - camera.eye, camera.forward), 1)),
-                                  scene: SIMD4(part, Float(view.window?.backingScaleFactor ?? 2), threshold, 0), step: .zero)
+                                  scene: SIMD4(part, view.pixelScale, threshold, 0), step: .zero)
             enc.setRenderPipelineState(compositePipeline)
             enc.setDepthStencilState(overEverythingDepthState)
             enc.setFragmentBytes(&post, length: MemoryLayout<PostParams>.stride, index: 3)
@@ -1861,7 +1865,7 @@ final class Renderer {
             if look.noise > 0 {
                 enc.setDepthStencilState(overEverythingDepthState)
                 for (pipeline, sign) in [(noiseAddPipeline, Float(1)), (noiseTakePipeline, Float(-1))] {
-                    var grain = SIMD4<Float>(Float(look.noise) * 0.1, Float(view.window?.backingScaleFactor ?? 2), sign, 0)
+                    var grain = SIMD4<Float>(Float(look.noise) * 0.1, view.pixelScale, sign, 0)
                     enc.setRenderPipelineState(pipeline)
                     enc.setFragmentBytes(&grain, length: MemoryLayout<SIMD4<Float>>.stride, index: 3)
                     enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
@@ -2167,7 +2171,7 @@ final class Renderer {
                 cmd.addCompletedHandler { _ in
                     let bytes = [UInt8](UnsafeBufferPointer(start: pixels.contents().assumingMemoryBound(to: UInt8.self), count: w * h * 4))
                     if let handler {
-                        let png = ViewportSnapshot.png(bgra: bytes, width: w, height: h)
+                        let png = PictureEncoder.png(bgra: bytes, width: w, height: h)
                         Task { @MainActor in handler(png) }
                     }
                     if let raw { Task { @MainActor in raw((bytes, w, h)) } }

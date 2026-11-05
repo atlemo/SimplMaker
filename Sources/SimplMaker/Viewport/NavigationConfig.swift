@@ -1,8 +1,10 @@
 // How the mouse, trackpad and wheel move the camera: which input does what, which way, and how fast.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
-import AppKit
 import Foundation
+#if os(macOS)
+import AppKit
+#endif
 
 /// What a navigation input does to the camera.
 enum NavAction: String, Codable, CaseIterable, Identifiable {
@@ -35,12 +37,14 @@ enum NavModifier: String, CaseIterable, Identifiable {
         }
     }
 
+    #if os(macOS)
     init(_ flags: NSEvent.ModifierFlags) {
         if flags.contains(.shift) { self = .shift }
         else if flags.contains(.control) { self = .control }
         else if flags.contains(.option) { self = .option }
         else { self = .plain }
     }
+    #endif
 }
 
 /// What one input (a mouse button, the trackpad's scroll, the wheel) does with each modifier key.

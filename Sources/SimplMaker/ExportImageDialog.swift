@@ -6,16 +6,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The picture file formats the view can be exported to.
-enum PictureFormat: String, CaseIterable, Identifiable {
-    case png, jpeg
-    var id: String { rawValue }
-    var title: String { self == .png ? "PNG" : "JPEG" }
-    var type: UTType { self == .png ? .png : .jpeg }
-    var fileExtension: String { self == .png ? "png" : "jpg" }
-    /// Whether the format can leave pixels see-through.
-    var hasAlpha: Bool { self == .png }
-}
-
 extension DocumentModel {
     /// File ▸ Export Image… (and the Render options' Export render): opens the dialog for the picture of the view as it is now.
     func exportImageWithDialog() {

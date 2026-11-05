@@ -1,0 +1,51 @@
+# The iPad app. Generated into SimplMakerPad.xcodeproj by `xcodegen` (run in this folder); the project file is not checked in.
+# It shares the engine (CADCore, CADKernel) with the Mac app through the package at the repository root, and takes the
+# platform-neutral viewport files straight from Sources/SimplMaker, so a fix there is a fix for both apps.
+name: SimplMakerPad
+options:
+  bundleIdPrefix: com.simplmaker
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    SWIFT_STRICT_CONCURRENCY: minimal
+    CLANG_CXX_LANGUAGE_STANDARD: c++17
+packages:
+  SimplMaker:
+    path: ..
+targets:
+  SimplMakerPad:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Sources
+      - path: ../Sources/SimplMaker/Viewport/Renderer.swift
+      - path: ../Sources/SimplMaker/Viewport/Shaders.swift
+      - path: ../Sources/SimplMaker/Viewport/Camera.swift
+      - path: ../Sources/SimplMaker/Viewport/BodyMesh.swift
+      - path: ../Sources/SimplMaker/Viewport/NavigationConfig.swift
+      - path: ../Sources/SimplMaker/Viewport/ReferenceImage.swift
+      - path: ../Sources/SimplMaker/Viewport/ArraySafe.swift
+      - path: ../Sources/SimplMaker/Viewport/PictureEncoder.swift
+      - path: ../Sources/SimplMaker/Viewport/GridSteps.swift
+      - path: ../Sources/SimplMaker/Viewport/PixelScale.swift
+      - path: ../Sources/SimplMaker/Preferences.swift
+      - path: ../Sources/SimplMaker/RenderSettings.swift
+    dependencies:
+      - package: SimplMaker
+        product: CADCore
+      - package: SimplMaker
+        product: CADKernel
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.simplmaker.SimplMaker.pad
+        TARGETED_DEVICE_FAMILY: "2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"
+        INFOPLIST_KEY_CFBundleDisplayName: SimplMaker
+        ARCHS: arm64
+        ONLY_ACTIVE_ARCH: YES

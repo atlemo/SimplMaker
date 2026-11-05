@@ -92,10 +92,13 @@ enum Shaders {
         uint id [[flat]];
         float fade;            // opacity of a fading line (style 512), 1 otherwise; 0 to 1 along a line fading in (style 1024)
     };
+    // The pick ID is kept as four 8-bit channels (RGBA8Uint, little-endian, so the four bytes are the UInt32): iPads cannot
+    // multisample a 32-bit integer format, and the ID buffer is multisampled like the picture.
     struct FragOut {
         float4 color [[color(0)]];
-        uint id [[color(1)]];
+        uint4 id [[color(1)]];
     };
+    static uint4 packID(uint v) { return uint4(v & 255u, (v >> 8) & 255u, (v >> 16) & 255u, (v >> 24) & 255u); }
 
     static bool isSelected(uint id, constant uint* sel, uint n) {
         for (uint i = 0; i < n; i++) { if (sel[i] == id) return true; }
@@ -571,7 +574,7 @@ enum Shaders {
         }
         // The reflection in the floor: opaque only where the body meets the floor, and fading out with the height.
         if (u.renderParams.z > 0.5) o.color.a = opacity * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), world.z));
-        o.id = id;
+        o.id = packID(id);
         return o;
     }
 
@@ -607,7 +610,7 @@ enum Shaders {
         float t = smoothstep(f.lit.w, f.backdrop.w, length(in.xy - f.centerHalf.xy));
         FragOut o;
         o.color = float4(mix(mix(f.shadowed.rgb, f.lit.rgb, lit) * occlusion, f.backdrop.rgb, t), 1.0);
-        o.id = 0;
+        o.id = packID(0);
         return o;
     }
 
@@ -643,7 +646,7 @@ enum Shaders {
         sum /= 9.0;
         FragOut o;
         o.color = float4(sum.rgb / max(sum.a, 1e-4), sum.a);
-        o.id = 0;
+        o.id = packID(0);
         return o;
     }
 
@@ -675,7 +678,7 @@ enum Shaders {
         float v = (float(h) / 4294967295.0 - 0.5) * 2.0 * n.sign;   // -1 to 1, mirrored for the taking-away pass
         FragOut o;
         o.color = float4(float3(max(v, 0.0) * n.amount), 1.0);
-        o.id = 0;
+        o.id = packID(0);
         return o;
     }
 
@@ -697,7 +700,7 @@ enum Shaders {
     fragment FragOut idFragment(FaceOut in [[stage_in]]) {
         FragOut o;
         o.color = float4(0.0);
-        o.id = in.id;
+        o.id = packID(in.id);
         return o;
     }
 
@@ -851,7 +854,7 @@ enum Shaders {
         }
         FragOut o;
         o.color = float4(color, 1.0);
-        o.id = 0;
+        o.id = packID(0);
         return o;
     }
 
@@ -985,7 +988,7 @@ enum Shaders {
         bool capsOnly = (p.style & 256u) != 0;
         FragOut o;
         o.color = float4(0.0);
-        o.id = 0;
+        o.id = packID(0);
         if (height > 1e-4 || cut != capsOnly) {
             discard_fragment();
             return o;
@@ -1040,7 +1043,7 @@ enum Shaders {
         if (isSelected(in.id, sel, u.selectedCount)) alpha *= 3.0;
         FragOut o;
         o.color = float4(u.regionColor.rgb, min(alpha, 0.7));
-        o.id = in.id;
+        o.id = packID(in.id);
         return o;
     }
 
@@ -1050,7 +1053,7 @@ enum Shaders {
                                    constant DrawParams& p [[buffer(3)]]) {
         FragOut o;
         o.color = in.id == u.hovered ? p.hoverColor : p.color;
-        o.id = in.id;
+        o.id = packID(in.id);
         return o;
     }
 
@@ -1071,7 +1074,8 @@ enum Shaders {
     kernel void pickSample(texture2d_ms<uint, access::read> ids [[texture(0)]],
                            constant uint2& pixel [[buffer(0)]],
                            device uint* result [[buffer(1)]]) {
-        result[0] = ids.read(pixel, 0).x;
+        uint4 v = ids.read(pixel, 0);
+        result[0] = v.x | (v.y << 8) | (v.z << 16) | (v.w << 24);
     }
 
     vertex ImageOut imageVertex(uint vid [[vertex_id]],
@@ -1093,7 +1097,7 @@ enum Shaders {
         constexpr sampler smooth(filter::linear, mip_filter::linear, address::clamp_to_edge);
         FragOut o;
         o.color = image.sample(smooth, in.uv) * p.opacity;  // the texture holds premultiplied colour
-        o.id = 0;
+        o.id = packID(0);
         return o;
     }
 
@@ -1278,7 +1282,7 @@ enum Shaders {
         FragOut o;
         float fade = (p.style & 1024u) != 0 ? smoothstep(0.0, 0.8, in.fade) : in.fade;
         o.color = float4(c.rgb, c.a * coverage * fade);
-        o.id = p.pickable != 0 ? in.id : 0;
+        o.id = packID(p.pickable != 0 ? in.id : 0);
         return o;
     }
     """

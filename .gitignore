@@ -6,9 +6,11 @@ DerivedData/
 .build/
 .build-occt/
 ThirdParty/occt/
+ThirdParty/occt-ios/
 .swiftpm/
 dist/
 Packaging/licensing.sandbox.conf
 website/public/
 
 scripts/release.local.env
+iPad/SimplMakerPad.xcodeproj/
