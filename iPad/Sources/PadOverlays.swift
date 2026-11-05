@@ -54,7 +54,6 @@ struct PadOverlays: View {
                 PadSketchFields(model: model, session: session, state: state, insets: insets)
                 PadTextEntry(model: model, session: session, state: state, insets: insets)
             }
-            PadHandleFields(model: model, state: state, insets: insets)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlay(alignment: .topTrailing) {
@@ -255,7 +254,7 @@ private struct SketchField: View {
 
 // MARK: fields beside a feature's arrows
 
-private struct PadHandleFields: View {
+struct PadHandleFields: View {
     let model: DocumentModel
     let state: PadViewState
     let insets: (left: CGFloat, right: CGFloat, bottom: CGFloat)
@@ -263,6 +262,8 @@ private struct PadHandleFields: View {
     @State private var hudSize = CGSize(width: 300, height: 40)
 
     var body: some View {
+        let _ = state.revision
+        let _ = model.overlayRevision
         let handles = model.dragHandles.filter { model.showsField($0) }
         if !handles.isEmpty {
             ZStack(alignment: .topLeading) {

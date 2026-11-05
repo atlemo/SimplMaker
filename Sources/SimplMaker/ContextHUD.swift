@@ -42,7 +42,7 @@ struct FeatureHUD: View {
                 }
                 controls(id)
             }
-            .controlSize(.small)
+            .touchControls()
             .padding(DS.Spacing.space3)
             .panelGlass(in: .rect(cornerRadius: DS.Radius.xl2))
             .fixedSize()
@@ -141,7 +141,7 @@ struct SketchPatternHUD: View {
                         .help("Keep the offset (Return)")
                 }
             }
-            .controlSize(.small)
+            .touchControls()
             .padding(DS.Spacing.space3)
             .panelGlass(in: .rect(cornerRadius: DS.Radius.xl2))
             .fixedSize()
@@ -176,7 +176,7 @@ struct SketchPatternHUD: View {
                         .help("Keep the pattern (Return)")
                 }
             }
-            .controlSize(.small)
+            .touchControls()
             .padding(DS.Spacing.space3)
             .panelGlass(in: .rect(cornerRadius: DS.Radius.xl2))
             .fixedSize()
@@ -215,7 +215,7 @@ struct SketchMirrorBar: View {
                     .disabled(setup.line == "")
                     .help("Keep the mirror (Return)")
             }
-            .controlSize(.small)
+            .touchControls()
             .padding(.horizontal, DS.Spacing.space4)
             .padding(.vertical, DS.Spacing.space2)
             .panelGlass(in: Capsule())
@@ -261,7 +261,7 @@ struct FeatureDoneBar: View {
                 Button("OK") { model.finishFeatureEdit() }
                     .help("Done (Return)")
             }
-            .controlSize(.small)
+            .touchControls()
             .padding(.horizontal, DS.Spacing.space4)
             .padding(.vertical, DS.Spacing.space2)
             .panelGlass(in: .capsule)

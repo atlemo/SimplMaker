@@ -27,3 +27,14 @@ enum Hint {
 
 /// A hint line, reworded for the device.
 func hintText(_ s: String) -> Text { Text(verbatim: Hint.text(s)) }
+
+extension View {
+    /// The small controls of a floating bar on the Mac; on the iPad big bordered buttons, so a finger hits them.
+    @ViewBuilder func touchControls() -> some View {
+#if os(macOS)
+        controlSize(.small)
+#else
+        controlSize(.large).buttonStyle(.bordered).frame(minHeight: 48)
+#endif
+    }
+}

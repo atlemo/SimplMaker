@@ -20,6 +20,13 @@ struct PadDocumentView: View {
         let model = model
         let guide = file.guide
         return DocumentPanels(model: model, guide: guide, viewport: viewport(model), chrome: EmptyView())
+            // The size fields and the OK / Cancel bar of a feature float above the panels, never under them.
+            .overlay {
+                PadHandleFields(model: model, state: viewState, insets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
+                                                                         model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
+                                                                         Panel.bottomInset(timeline: model.showTimeline)))
+                    .ignoresSafeArea()
+            }
             .safeAreaInset(edge: .top, spacing: 0) { PadToolBar(model: model) }
             .toolbar { PadToolbar(model: model, guide: guide, undoManager: undoManager) }
             .modifier(PadDialogs(model: model))
