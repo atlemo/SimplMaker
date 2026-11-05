@@ -49,6 +49,7 @@ struct PadOverlays: View {
         ZStack(alignment: .topLeading) {
             PadManipulator(model: model, state: state)
             if let session = model.sketchSession {
+                PadSketchRulers(state: state)
                 PadDimensionLabels(model: model, session: session, state: state)
                 if showConstraints || true { PadGlyphs(model: model, session: session, state: state, showConstraints: showConstraints) }
                 PadSketchFields(model: model, session: session, state: state, insets: insets)
@@ -477,5 +478,80 @@ private struct PadTextEntry: View {
         let text = words
         model.sketchCommand { $0.placeText(text) }
         model.overlayRevision += 1
+    }
+}
+
+/// Numbers at the major grid lines along the sketch's axes, and the origin marker where the axes cross (as on the Mac).
+private struct PadSketchRulers: View {
+    let state: PadViewState
+
+    var body: some View {
+        let _ = state.revision
+        if let grid = state.renderer?.sketchGrid { rulers(grid) }
+    }
+
+    private func rulers(_ grid: SketchGrid) -> some View {
+        do {
+            let size = state.size
+            let visible = CGRect(origin: .zero, size: size).insetBy(dx: -40, dy: -40)
+            func at(_ u: Double, _ v: Double) -> CGPoint? { state.project(grid.frame.point(u, v)) }
+            // Which way the numbers sit off their axis on screen: below the horizontal one, right of the vertical one.
+            func across(alongU: Bool) -> CGVector {
+                guard let a = at(0, 0), let b = alongU ? at(1, 0) : at(0, 1) else { return alongU ? CGVector(dx: 0, dy: 1) : CGVector(dx: 1, dy: 0) }
+                let len = max(hypot(b.x - a.x, b.y - a.y), 1e-9)
+                var n = CGVector(dx: -(b.y - a.y) / len, dy: (b.x - a.x) / len)
+                if alongU ? (n.dy < -1e-6 || (abs(n.dy) <= 1e-6 && n.dx < 0)) : (n.dx < -1e-6 || (abs(n.dx) <= 1e-6 && n.dy < 0)) {
+                    n = CGVector(dx: -n.dx, dy: -n.dy)
+                }
+                return n
+            }
+            let labels = rulerLabels(grid: grid, at: at, visible: visible, across: across)
+            return ZStack(alignment: .topLeading) {
+                ForEach(labels, id: \.id) { l in
+                    Text(l.text)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .position(l.point)
+                }
+                if let o = at(0, 0), visible.contains(o) {
+                    ZStack {
+                        Circle().fill(Color.secondary.opacity(0.55))
+                        Circle().strokeBorder(Color.secondary, lineWidth: 1.2)
+                        Path { p in
+                            p.move(to: CGPoint(x: 10, y: 10)); p.addArc(center: CGPoint(x: 10, y: 10), radius: 8,
+                                                                       startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+                            p.closeSubpath()
+                        }.fill(Color(uiColor: .systemBackground).opacity(0.9))
+                    }
+                    .frame(width: 20, height: 20)
+                    .position(o)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .allowsHitTesting(false)
+        }
+    }
+
+    private struct RulerLabel { let id: String; let text: String; let point: CGPoint }
+
+    private func rulerLabels(grid: SketchGrid, at: (Double, Double) -> CGPoint?, visible: CGRect,
+                             across: (Bool) -> CGVector) -> [RulerLabel] {
+        var out: [RulerLabel] = []
+        for (alongU, range) in [(true, grid.u), (false, grid.v)] {
+            let n = across(alongU)
+            var k = (range.lowerBound / grid.major).rounded()
+            while k * grid.major <= range.upperBound + 1e-9, out.count < 80 {
+                let value = k * grid.major
+                k += 1
+                guard abs(value) > 1e-9, let p = alongU ? at(value, 0) : at(0, value), visible.contains(p) else { continue }
+                let text = Preferences.rulerText(value, us: Preferences.unitSystemSetting.isUS)
+                let w = CGFloat(text.count) * 6.5, h: CGFloat = 13
+                let reach = 8 + abs(n.dx) * w / 2 + abs(n.dy) * h / 2
+                out.append(RulerLabel(id: (alongU ? "u:" : "v:") + text, text: text,
+                                      point: CGPoint(x: p.x + n.dx * reach, y: p.y + n.dy * reach)))
+            }
+        }
+        return out
     }
 }
