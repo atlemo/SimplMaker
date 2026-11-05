@@ -179,6 +179,7 @@ struct PadToolbar: ToolbarContent {
                 }
                 Divider()
                 Button("SimplMaker Docs") { openURL(URL(string: "https://simplmaker.com/docs/")!) }
+                Button("About SimplMaker and Licences") { model.showAbout = true }
             }
             Button("Settings", systemImage: "gearshape") { model.showSettings = true }
             Menu("Export", systemImage: "square.and.arrow.up") {
@@ -221,6 +222,12 @@ struct PadDialogs: ViewModifier {
                 Button("STL") { model.export(format: .stl) }
                 Button("3MF") { model.export(format: .threeMF) }
                 Button("STEP") { model.export(format: .step) }
+            }
+            .sheet(isPresented: $model.showAbout) {
+                NavigationStack {
+                    PadAbout().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { model.showAbout = false } } }
+                }
+                .presentationDetents([.large])
             }
             .sheet(isPresented: $model.showSettings) {
                 NavigationStack {

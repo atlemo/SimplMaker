@@ -41,7 +41,6 @@ targets:
           - ExportDialog.swift
           - ExportImageDialog.swift
           - FileDrop.swift
-          - LicenseTexts.swift
     dependencies:
       - package: SimplMaker
         product: CADCore

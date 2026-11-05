@@ -63,6 +63,8 @@ final class DocumentModel {
     var showImageExport = false
     /// The Settings sheet (iPad; the Mac has a Settings window).
     var showSettings = false
+    /// The About and licences sheet (iPad).
+    var showAbout = false
     /// What to do with an STL that has a lot of triangles: asks the user by default. Tests put their own answer here.
     #if os(macOS)
     @ObservationIgnored var meshReduction: @MainActor (String, Int) -> MeshReduction = DocumentModel.askAboutMeshReduction
