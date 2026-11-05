@@ -14,37 +14,53 @@ struct PadDocumentView: View {
 
     var body: some View {
         let model = model
+        return content(model)
+            .toolbar { toolbar(model) }
+            .sheet(isPresented: $showParameters) { PadParametersView(model: model) }
+            .sheet(isPresented: Binding(get: { model.exportedFile != nil }, set: { if !$0 { model.exportedFile = nil } })) {
+                if let url = model.exportedFile { ShareSheet(url: url).presentationDetents([.medium, .large]) }
+            }
+            .alert(model.alert?.title ?? "", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } })) {
+                Button("OK") { model.alert = nil }
+            } message: { Text(model.alert?.message ?? "") }
+            .onAppear { model.undoManager = undoManager; model.fileURL = fileURL }
+            .onChange(of: undoManager) { model.undoManager = undoManager }
+            .onChange(of: fileURL) { model.fileURL = fileURL }
+    }
+
+    private func content(_ model: DocumentModel) -> some View {
         ZStack(alignment: .bottomLeading) {
-            PadViewport(model: model, sceneRevision: model.sceneRevision, fitRevision: model.fitRevision,
-                        highlighted: model.highlighted, orthographic: model.orthographic, visualStyle: model.visualStyle,
-                        explodeOffsets: model.explodeOffsets)
-                .ignoresSafeArea()
+            viewport(model).ignoresSafeArea()
+            VStack {
+                PadFeaturePanel(model: model)
+                Spacer()
+                PadToolStrip(model: model)
+            }
+            .frame(maxWidth: .infinity)
             status(model)
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("Undo", systemImage: "arrow.uturn.backward") { undoManager?.undo() }
-                    .disabled(undoManager?.canUndo != true)
-                Button("Redo", systemImage: "arrow.uturn.forward") { undoManager?.redo() }
-                    .disabled(undoManager?.canRedo != true)
-                Button("Parameters", systemImage: "slider.horizontal.3") { showParameters = true }
-                Menu("Export", systemImage: "square.and.arrow.up") {
-                    Button("STL") { model.export(format: .stl) }
-                    Button("3MF") { model.export(format: .threeMF) }
-                    Button("STEP") { model.export(format: .step) }
-                }
+    }
+
+    private func viewport(_ model: DocumentModel) -> some View {
+        PadViewport(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
+                    fitRevision: model.fitRevision, cameraRevision: model.cameraCommand?.revision ?? 0,
+                    highlighted: model.highlighted, orthographic: model.orthographic, visualStyle: model.visualStyle,
+                    explodeOffsets: model.explodeOffsets, sketching: model.sketchSession != nil)
+    }
+
+    @ToolbarContentBuilder private func toolbar(_ model: DocumentModel) -> some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Button("Undo", systemImage: "arrow.uturn.backward") { undoManager?.undo() }
+                .disabled(undoManager?.canUndo != true)
+            Button("Redo", systemImage: "arrow.uturn.forward") { undoManager?.redo() }
+                .disabled(undoManager?.canRedo != true)
+            Button("Parameters", systemImage: "slider.horizontal.3") { showParameters = true }
+            Menu("Export", systemImage: "square.and.arrow.up") {
+                Button("STL") { model.export(format: .stl) }
+                Button("3MF") { model.export(format: .threeMF) }
+                Button("STEP") { model.export(format: .step) }
             }
         }
-        .sheet(isPresented: $showParameters) { PadParametersView(model: model) }
-        .sheet(isPresented: Binding(get: { model.exportedFile != nil }, set: { if !$0 { model.exportedFile = nil } })) {
-            if let url = model.exportedFile { ShareSheet(url: url).presentationDetents([.medium, .large]) }
-        }
-        .alert(model.alert?.title ?? "", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } })) {
-            Button("OK") { model.alert = nil }
-        } message: { Text(model.alert?.message ?? "") }
-        .onAppear { model.undoManager = undoManager; model.fileURL = fileURL }
-        .onChange(of: undoManager) { model.undoManager = undoManager }
-        .onChange(of: fileURL) { model.fileURL = fileURL }
     }
 
     private func status(_ model: DocumentModel) -> some View {
