@@ -169,27 +169,93 @@ struct PadToolBar: View {
         return .single
     }
 
+    /// The user's own choice (nil: follow the tool). A tool that is being set up folds the bar away so the part is in view;
+    /// when the tool ends, the bar comes back. Tapping the chevron or the pill overrides that until the next change.
+    @State private var manualCollapse: Bool?
+    private var busy: Bool { model.sketchSession == nil && (model.newFeature != nil || model.pendingTool != nil) }
+    private var collapsed: Bool { manualCollapse ?? busy }
+
+    /// What the folded bar says: the tool that is running, or just "Tools".
+    private var foldedTitle: String {
+        if let tool = model.pendingTool { return tool.rawValue }
+        if let id = model.newFeature, let f = model.document.features.first(where: { $0.id == id }) { return f.name }
+        return model.sketchSession != nil ? "Sketch tools" : "Tools"
+    }
+
+    private func setCollapsed(_ value: Bool) {
+        withAnimation(.snappy(duration: 0.25)) { manualCollapse = value }
+    }
+
     var body: some View {
-        GeometryReader { geo in
-            let chosen = layout(fitting: geo.size.width - 28)
-            ScrollView(.horizontal, showsIndicators: false) {
-                row(chosen)
-                    .onGeometryChange(for: CGSize.self) { $0.size } action: { natural = $0 }
-                    .scaleEffect(Self.scale, anchor: .topLeading)
-                    .frame(width: natural.width * Self.scale, height: natural.height * Self.scale, alignment: .topLeading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .frame(minWidth: geo.size.width, alignment: .center)
-            }
+        Group {
+            if collapsed { foldedBar } else { fullBar }
         }
-        .frame(height: natural.height * Self.scale + 12)
-        .modifier(BarBackground(tint: model.sketchSession != nil ? sketchPaper.toolbarTint : nil))
+        .animation(.snappy(duration: 0.25), value: collapsed)
         .padding(.top, 6)
         .padding(.horizontal, 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tools")
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         .task(id: signature) { measure() }
+        .onChange(of: busy) { manualCollapse = nil }
+        .onChange(of: model.sketchSession == nil) { manualCollapse = nil }
+    }
+
+    /// A small pill in the middle of the top edge: the tool's name and a chevron that brings the bar back.
+    private var foldedBar: some View {
+        HStack(spacing: 8) {
+            Button { setCollapsed(false) } label: {
+                HStack(spacing: 8) {
+                    Text(foldedTitle).font(.headline).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.body.weight(.semibold))
+                }
+                .padding(.horizontal, 20)
+                .frame(minHeight: 44)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .panelGlass(in: Capsule())
+            .accessibilityHint("Shows the tool bar")
+            // A tool that still waits for a pick has no other Cancel on screen.
+            if model.pendingTool != nil {
+                Button { model.pendingTool = nil } label: {
+                    Image(systemName: "xmark").font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .panelGlass(in: Circle())
+                .accessibilityLabel("Cancel \(foldedTitle)")
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var fullBar: some View {
+        HStack(spacing: 0) {
+            GeometryReader { geo in
+                let chosen = layout(fitting: geo.size.width - 28)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    row(chosen)
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { natural = $0 }
+                        .scaleEffect(Self.scale, anchor: .topLeading)
+                        .frame(width: natural.width * Self.scale, height: natural.height * Self.scale, alignment: .topLeading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .frame(minWidth: geo.size.width, alignment: .center)
+                }
+            }
+            Button { setCollapsed(true) } label: {
+                Image(systemName: "chevron.up").font(.body.weight(.semibold))
+                    .foregroundStyle(model.sketchSession != nil ? Color.white : Color.primary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Hide tool bar")
+        }
+        .frame(height: natural.height * Self.scale + 12)
+        .modifier(BarBackground(tint: model.sketchSession != nil ? sketchPaper.toolbarTint : nil))
     }
 }
 
