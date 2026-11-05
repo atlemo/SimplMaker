@@ -103,11 +103,13 @@ struct ToolGroup: View {
             .toolTip("All \(title) tools. Pin the ones you use to the toolbar.")
             .tutorialSpot(anyOf: hidden.map(\.title), cornerRadius: DS.Radius.sm, outset: 1)  // a tool the tutorial wants, not pinned: its group
             .accessibilityLabel("\(title) tools")
-            .popover(isPresented: $listOpen, arrowEdge: .bottom) {
-                ToolGroupList(title: title, tools: tools, pins: pins, isDefault: stored == nil,
-                              run: run, toggle: toggle, restore: { stored = nil })
-                    .environment(\.toolsOnTint, false)
-                    .environment(\.toolTitles, true)
+            .popover(isPresented: $listOpen, arrowEdge: ToolListMetrics.arrowEdge) {
+                ScrollingList {
+                    ToolGroupList(title: title, tools: tools, pins: pins, isDefault: stored == nil,
+                                  run: run, toggle: toggle, restore: { stored = nil })
+                }
+                .environment(\.toolsOnTint, false)
+                .environment(\.toolTitles, true)
             }
             .background {
                 ForEach(hidden.filter { $0.popover != nil }) { tool in
@@ -304,7 +306,7 @@ private struct PinnedTool: View {
                 .foregroundStyle(onTint ? toolsInk : Color.primary)
                 .toolTip("Choose how to draw the \(tool.title.lowercased())")
                 .accessibilityLabel("\(tool.title) options")
-                .popover(isPresented: $modesOpen, arrowEdge: .bottom) {
+                .popover(isPresented: $modesOpen, arrowEdge: ToolListMetrics.arrowEdge) {
                     HStack(spacing: DS.Spacing.space1) {
                         ForEach(tool.modes) { mode in
                             ToolButton(title: mode.title, icon: mode.icon, active: mode.active, help: mode.help) {
@@ -359,11 +361,45 @@ private struct ToolGroupList: View {
             .padding(.horizontal, DS.Spacing.space3)
         }
         .padding(DS.Spacing.space3)
-        .frame(width: 290)
+        .frame(width: ToolListMetrics.listWidth)
         .focusEffectDisabled()  // no focus ring on the first row as the list opens
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(title) tools")
     }
+}
+
+/// A popover's content that scrolls when it is taller than the room (the iPad's long Modify list); on the Mac it is just the content.
+private struct ScrollingList<Content: View>: View {
+    @ViewBuilder let content: Content
+    @State private var height: CGFloat = 400
+
+    var body: some View {
+#if os(macOS)
+        content
+#else
+        ScrollView {
+            content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        }
+        .frame(height: min(height, 560))
+#endif
+    }
+}
+
+/// Sizes of the lists the toolbar opens: roomy on the iPad, where a finger taps them.
+enum ToolListMetrics {
+#if os(macOS)
+    /// The edge of the popover that carries its arrow: on the Mac `.bottom` opens it below the toolbar.
+    static let arrowEdge = Edge.bottom
+    static let rowHeight: CGFloat = 28
+    static let smallButton: CGFloat = 22
+    static let listWidth: CGFloat = 290
+#else
+    /// On the iPad the edge names where the arrow sits on the popover, so `.top` opens it below the button.
+    static let arrowEdge = Edge.top
+    static let rowHeight: CGFloat = 52
+    static let smallButton: CGFloat = 44
+    static let listWidth: CGFloat = 360
+#endif
 }
 
 private struct ToolGroupRow: View {
@@ -400,7 +436,7 @@ private struct ToolGroupRow: View {
             ForEach(tool.modes) { mode in
                 Button { run(mode) } label: {
                     Icon(mode.icon, size: 14, renderedStroke: Icon.toolStroke)
-                        .frame(width: 22, height: 22)
+                        .frame(width: ToolListMetrics.smallButton, height: ToolListMetrics.smallButton)
                         .background(mode.active ? accent.opacity(0.16) : Color.primary.opacity(0.06),
                                     in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                         .foregroundStyle(mode.active ? accent : .primary)
@@ -418,7 +454,7 @@ private struct ToolGroupRow: View {
             Button(action: toggle) {
                 Image(systemName: pinned ? "pin.fill" : "pin")
                     .font(.system(size: 11))
-                    .frame(width: 22, height: 22)
+                    .frame(width: ToolListMetrics.smallButton, height: ToolListMetrics.smallButton)
                     .foregroundStyle(pinned ? accent : .secondary)
                     .contentShape(Rectangle())
             }
@@ -427,7 +463,7 @@ private struct ToolGroupRow: View {
             .accessibilityLabel(pinned ? "Unpin \(tool.title)" : "Pin \(tool.title)")
         }
         .padding(.horizontal, DS.Spacing.space3)
-        .frame(height: 28)
+        .frame(height: ToolListMetrics.rowHeight)
         .background(hovering ? Color.primary.opacity(0.07) : .clear,
                     in: RoundedRectangle(cornerRadius: DS.Radius.menuItem, style: .continuous))
         .onHover { hovering = $0 }
@@ -438,7 +474,7 @@ private extension View {
     /// Shows a tool's popover on this view, if it has one.
     @ViewBuilder func toolPopover(_ popover: ToolPopover?) -> some View {
         if let popover {
-            self.popover(isPresented: popover.isPresented, arrowEdge: .bottom) { popover.content }
+            self.popover(isPresented: popover.isPresented, arrowEdge: ToolListMetrics.arrowEdge) { popover.content }
         } else {
             self
         }
