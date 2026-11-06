@@ -149,13 +149,18 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
             }
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.pendingTool == .measure)
-        // The status bar floats at the bottom, between the panels.
+        // The status bar floats at the bottom, between the panels. The Render view is for looking at the part, so it goes there, unless
+        // a tool or a sketch is waiting for something and the bar is where it says what.
         .overlay(alignment: .bottom) {
-            StatusBar(model: model)
-                .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
-                .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
-                .padding(.bottom, model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
+            if !model.renderView || model.pendingTool != nil || model.sketchSession != nil {
+                StatusBar(model: model)
+                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
+                    .padding(.bottom, model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.renderView)
         // A feature with no drag handle gets its OK and Cancel here, above the status bar.
         .overlay(alignment: .bottom) {
             FeatureDoneBar(model: model)
