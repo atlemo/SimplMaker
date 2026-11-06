@@ -736,6 +736,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     nonisolated static func niceStep(_ minimum: Double) -> Double { GridSteps.niceStep(minimum) }
 
     override func flagsChanged(with event: NSEvent) {
+        if let renderer {  // ⇧ / ⌘ make the sketch's fills clickable again, to add or take away profiles
+            let adding = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
+            if renderer.regionsPickableNow != adding {
+                renderer.regionsPickableNow = adding
+                if let lastPoint { requestPick(at: lastPoint) }
+                needsDisplay = true
+            }
+        }
         // ⌥ turns snapping off and on while drawing: update the preview right away.
         if model?.sketchSession != nil { sketchEvent(.moved, at: nil, additive: false) }
         updateHoverGroup()

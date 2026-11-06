@@ -466,6 +466,8 @@ final class Renderer {
     private let regionPipeline: MTLRenderPipelineState
     /// The same fills, but a click or hover goes through them to the body under them.
     private let regionLookThroughPipeline: MTLRenderPipelineState
+    /// ⇧ or ⌘ is held: the fills can be clicked to add or take away profiles, whatever they are otherwise.
+    var regionsPickableNow = false
     private let planePipeline: MTLRenderPipelineState
     private let imagePipeline: MTLRenderPipelineState
     /// The Render view's floor: colour only, so it never hides what is picked.
@@ -1911,7 +1913,7 @@ final class Renderer {
         if let regions = overlay.regions, let indices = overlay.regionIndices {
             var regionParams = DrawParams(color: .zero, hoverColor: .zero, selectColor: .zero,
                                           thickness: 0, depthBias: fillBias, pickable: 1)
-            enc.setRenderPipelineState(overlay.regionsPickable ? regionPipeline : regionLookThroughPipeline)
+            enc.setRenderPipelineState(overlay.regionsPickable || regionsPickableNow ? regionPipeline : regionLookThroughPipeline)
             // Tested against the bodies but not written to the depth buffer: fills of layered sketches lie in the
             // same plane, and with depth writes the first one drawn would knock out stripes of the next (z-fighting)
             // instead of every fill blending over the one below.
