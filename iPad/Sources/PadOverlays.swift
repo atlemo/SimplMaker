@@ -217,6 +217,11 @@ private struct PadSketchFields: View {
     let state: PadViewState
     let insets: (left: CGFloat, right: CGFloat, bottom: CGFloat)
 
+    /// Room under the fields for the Done / Cancel / OK bar that floats above the timeline while a tool is in the middle of something.
+    private var barReserve: CGFloat {
+        session.isOffsetting || session.isPatterning ? 96 : (session.toolInProgress || session.isManipulating ? 72 : 0)
+    }
+
     var body: some View {
         let inputs = session.inputFields
         if !inputs.isEmpty, let t = session.manipulatorMiddle ?? session.target()?.position {
@@ -233,7 +238,7 @@ private struct PadSketchFields: View {
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 1.5))
                 .fixedSize()
                 .position(x: min(max(p.x + 20 + 120, insets.left + 130), max(state.size.width - insets.right - 130, insets.left + 130)),
-                          y: min(max(p.y + 44, 40), max(state.size.height - max(insets.bottom, KeyboardWatcher.shared.overlap) - 40, 40)))
+                          y: min(max(p.y + 44, 40), max(state.size.height - max(insets.bottom + barReserve, KeyboardWatcher.shared.overlap) - 40, 40)))
                     .animation(.easeOut(duration: 0.25), value: KeyboardWatcher.shared.overlap)
             }
         }
@@ -629,5 +634,50 @@ struct PadToolActions: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(tool.rawValue) actions")
         }
+    }
+}
+
+// MARK: what a sketch tool needs besides the keyboard
+
+/// The keys a sketch is drawn with have no touch twin: Esc to end a chain of lines, or to give up a first click; Return and Esc for the
+/// Offset and Pattern options; ⌫ for deleting what is selected. They float where the other bars do, only when they are of use.
+struct PadSketchBar: View {
+    let model: DocumentModel
+
+    var body: some View {
+        let _ = model.overlayRevision
+        if let session = model.sketchSession {
+            if session.isOffsetting || session.isPatterning {
+                SketchPatternHUD(model: model)  // the Mirror tool's own bar is part of the shared panels
+            } else if session.isManipulating {
+                bar { Button("Done", systemImage: "checkmark") { finish(session) { $0.stopManipulating() } }.buttonStyle(.borderedProminent) }
+            } else if session.toolInProgress {
+                bar {
+                    if session.drawsChains {
+                        Button("Done", systemImage: "checkmark") { finish(session) { $0.escape() } }.buttonStyle(.borderedProminent)
+                    } else {
+                        Button("Cancel", systemImage: "xmark") { finish(session) { $0.escape() } }
+                    }
+                }
+            } else if !session.selection.isEmpty, !session.isMirroring {
+                bar {
+                    Button("Delete", systemImage: "trash", role: .destructive) { model.sketchCommand { $0.deleteSelection() }; model.overlayRevision += 1 }
+                        .tint(.red)
+                }
+            }
+        }
+    }
+
+    private func finish(_ session: SketchSession, _ action: (SketchSession) -> Void) {
+        action(session)
+        model.overlayRevision += 1
+    }
+
+    private func bar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 12) { content() }
+            .touchControls()
+            .padding(8)
+            .panelGlass(in: Capsule())
+            .fixedSize()
     }
 }

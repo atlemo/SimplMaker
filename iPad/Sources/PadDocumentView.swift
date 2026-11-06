@@ -57,6 +57,7 @@ struct PadDocumentView: View {
                 ZStack {
                     PadSketchActions(model: model)
                     PadToolActions(model: model)
+                    PadSketchBar(model: model)
                 }
                     .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
                     .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)

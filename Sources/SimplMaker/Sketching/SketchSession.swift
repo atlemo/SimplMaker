@@ -1960,6 +1960,13 @@ final class SketchSession {
     private(set) var offsetProblem: String?
 
     var isOffsetting: Bool { offsetSetup != nil }
+
+    /// A tool has begun something that Esc would take back: a first click, a chain of lines, the points of a spline, a half-picked dimension.
+    var toolInProgress: Bool { !clicks.isEmpty || curveChain != nil || !dimensionPicks.isEmpty || anglePicks != nil }
+    /// Lines and splines go on from point to point until they are ended (Esc, or Done on the iPad).
+    var drawsChains: Bool { tool == .line || tool == .bezier }
+    /// The Move / Rotate / Scale manipulator of the selection is up.
+    var isManipulating: Bool { manipulating != nil }
     var canOffset: Bool { offsetSetup != nil || selection.contains { sketch.curve($0) != nil } }
 
     /// The distance now, in mm (nil if the expression doesn't come to a length).
