@@ -579,3 +579,29 @@ private struct PadSketchRulers: View {
         return out
     }
 }
+
+// MARK: a tapped sketch
+
+/// What a picked sketch offers on the iPad, where there is no Delete key and no right click: edit it, or delete it (Undo brings it back).
+struct PadSketchActions: View {
+    let model: DocumentModel
+
+    var body: some View {
+        let _ = model.overlayRevision
+        if let id = model.pickedSketch {
+            HStack(spacing: 12) {
+                Text(model.featureName(id)).font(.headline).padding(.leading, 8)
+                Button("Edit", systemImage: "pencil") { model.editSketch(id) }
+                Button("Delete", systemImage: "trash", role: .destructive) { model.deleteFeature(id) }
+                    .disabled(model.isLocked(id))
+                    .tint(.red)
+            }
+            .touchControls()
+            .padding(8)
+            .panelGlass(in: Capsule())
+            .fixedSize()
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("\(model.featureName(id)) actions")
+        }
+    }
+}

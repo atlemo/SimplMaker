@@ -52,6 +52,14 @@ struct PadDocumentView: View {
                                                                          Panel.bottomInset(timeline: model.showTimeline)))
                     .ignoresSafeArea()
             }
+            // A tapped sketch offers Edit and Delete, above the timeline and between the side panels.
+            .overlay(alignment: .bottom) {
+                PadSketchActions(model: model)
+                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
+                    .padding(.bottom, Panel.bottomInset(timeline: model.showTimeline) + 8)
+                    .ignoresSafeArea()
+            }
             .safeAreaInset(edge: .top, spacing: 0) { PadToolBar(model: model, height: $toolBarHeight) }
             .toolbar { PadToolbar(model: model, guide: guide, undoManager: undoManager) }
             .modifier(PadDialogs(model: model))

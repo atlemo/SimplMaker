@@ -128,7 +128,22 @@ extension DocumentModel {
          .action("Move or Rotate \(featureName(sketch))", symbol: "arrow.up.and.down.and.arrow.left.and.right") { self.move(sketches: [sketch]) },
          .action("Scale \(featureName(sketch))", symbol: "arrow.up.left.and.arrow.down.right") { self.scale(sketches: [sketch]) },
          .action("Hide \(featureName(sketch))", symbol: "eye.slash") { self.setHidden([sketch], true) },
-         .action("Export \(featureName(sketch)) as DXF…", symbol: "square.and.arrow.up") { self.exportDXF(sketch: sketch) }]
+         .action("Export \(featureName(sketch)) as DXF…", symbol: "square.and.arrow.up") { self.exportDXF(sketch: sketch) },
+         .action("Delete \(featureName(sketch))", symbol: "trash", enabled: !isLocked(sketch)) { self.deleteFeature(sketch) }]
+    }
+
+    /// The sketch that is picked while no sketch is being edited and no tool is running: chosen in the browser or the timeline, or by
+    /// tapping its curves or its filled areas in the view. The iPad offers to edit or delete it.
+    var pickedSketch: FeatureID? {
+        guard sketchSession == nil, pendingTool == nil, newFeature == nil else { return nil }
+        func isSketch(_ id: FeatureID) -> Bool {
+            if case .sketch? = document.features.first(where: { $0.id == id })?.kind { return true }
+            return false
+        }
+        if let id = selectedFeature { return isSketch(id) ? id : nil }
+        let owners = selection.map { profile(of: $0)?.sketch ?? curve(of: $0)?.sketch }
+        guard let first = owners.first, let id = first, owners.allSatisfy({ $0 == id }) else { return nil }
+        return isSketch(id) ? id : nil
     }
 
     /// "Edit Extrude1" for the feature that made a face, and "Hide Body1".
