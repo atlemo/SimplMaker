@@ -79,6 +79,14 @@ import Testing
         #expect(p.target == "post" && !p.profiles.isEmpty)
     }
 
+    @Test func aFaceSelectedBeforeProjectSketchIsWhereItLands() async throws {
+        let model = try await postModel()
+        model.selection = [try face(model, "post.side")]
+        model.projectSketch("sk")
+        let p = try #require(project(model))
+        #expect(p.faces == [FaceRef(body: "post", face: "post.side")], "the face picked first is kept")
+    }
+
     @Test func returnProjectsOntoTheOnlyBody() async throws {
         let model = try await postModel()
         model.run(.project)

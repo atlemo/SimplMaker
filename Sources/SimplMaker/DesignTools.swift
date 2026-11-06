@@ -217,7 +217,7 @@ extension DocumentModel {
         // Curves picked in the sketch (by dragging over them, say) are the profiles the tool starts with.
         let sketched = sketchSession != nil && tool.accepts(.region) ? profilePicksForSketchSelection() : []
         if sketchSession != nil { finishSketch(keepingView: true) }
-        if !sketched.isEmpty { selection = sketched }
+        if !sketched.isEmpty { selection = sketched + selection.filter(\.isFace) }
         cancelSketchPlanePick()
         if pendingTool == tool {  // pressing the waiting tool again finishes it, or cancels it
             let stage = splitBodies  // Split moves on to its tool instead of finishing
@@ -272,7 +272,7 @@ extension DocumentModel {
         if sketchSession != nil { finishSketch(keepingView: true) }
         let picks = allProfilePicks(of: id)
         guard !picks.isEmpty else { toolMissed = true; return }
-        selection = picks
+        selection = picks + selection.filter(\.isFace)  // a face picked beforehand is where they land
         run(.project)
     }
 
