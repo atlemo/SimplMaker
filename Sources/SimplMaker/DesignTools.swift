@@ -214,7 +214,10 @@ extension DocumentModel {
             insertImageInSketch()
             return
         }
+        // Curves picked in the sketch (by dragging over them, say) are the profiles the tool starts with.
+        let sketched = sketchSession != nil && tool.accepts(.region) ? profilePicksForSketchSelection() : []
         if sketchSession != nil { finishSketch(keepingView: true) }
+        if !sketched.isEmpty { selection = sketched }
         cancelSketchPlanePick()
         if pendingTool == tool {  // pressing the waiting tool again finishes it, or cancels it
             let stage = splitBodies  // Split moves on to its tool instead of finishing
@@ -230,6 +233,25 @@ extension DocumentModel {
         selection = selection.filter { tool.accepts($0.kind) && accepts($0) && (!$0.isWholeBody || tool.acceptsWholeBody) }
         if tool == .measure { selection = Array(selection.prefix(2)) }
         overlayRevision += 1
+    }
+
+    /// The profiles (closed shapes) made of the curves, and the texts, selected in the sketch being edited. A text counts
+    /// by its letters, not the insides of its O's and B's, as when a letter is clicked.
+    func profilePicksForSketchSelection() -> [PickID] {
+        guard let session = sketchSession, !session.selection.isEmpty, let built = result?.sketches[session.featureID],
+              let slot = sketchSlots.firstIndex(of: session.featureID) else { return [] }
+        let chosen = Set(session.selection)
+        let texts = session.sketch.texts.filter { chosen.contains($0.position) || chosen.contains($0.id) }
+        var picks: [PickID] = []
+        for (i, region) in built.regions.enumerated() {
+            if let text = built.text(ofRegion: i) {
+                guard texts.contains(where: { $0.id == text.id }), built.letterRegions(of: text, parameters: parameterValues).contains(i) else { continue }
+                picks.append(PickID(region: i, slot: slot + 1))
+            } else if region.tags.split(separator: ",").allSatisfy({ chosen.contains(String($0)) }) {
+                picks.append(PickID(region: i, slot: slot + 1))
+            }
+        }
+        return picks
     }
 
     func cancelTool() {

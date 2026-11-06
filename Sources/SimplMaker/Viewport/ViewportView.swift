@@ -27,6 +27,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// Where the button went down: a press that wanders less than a few points is still a click.
     private var downPoint: NSPoint?
     private var sketchDrag = false
+    /// Drag-select in a sketch: where the drag began (nil when none is going) and the rectangle drawn for it.
+    private var marqueeStart: NSPoint?
+    private var marqueeAdditive = false
+    private var marqueeView: MarqueeView?
     private var handleDrag = false
     /// A hole's move dot is being dragged.
     private var holeMoveDrag = false
@@ -812,6 +816,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if model?.sketchSession != nil {
             let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
             sketchDrag = sketchEvent(.down, at: p, additive: additive)
+            if !sketchDrag, model?.sketchSession?.tool == .select {  // empty space: a drag selects what it covers
+                marqueeStart = p
+                marqueeAdditive = additive
+            }
         } else if let renderer, renderer.hovered == PickID.moveHandle.raw {
             holeMoveDrag = true
             model?.beginHoleMove()
@@ -907,7 +915,44 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             refreshOverlay()
             return
         }
+        if model?.sketchSession != nil {  // in a sketch a drag never turns the view: it selects (the view cube turns it)
+            if let a = marqueeStart {
+                let b = location(event)
+                let rect = NSRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+                if rect.width > 3 || rect.height > 3 {
+                    if marqueeView == nil {
+                        let v = MarqueeView(frame: bounds)
+                        addSubview(v)
+                        marqueeView = v
+                    }
+                    marqueeView?.rect = rect
+                    marqueeView?.crossing = b.x < a.x
+                }
+            }
+            return
+        }
         navigateByDragging(event, bindings: navigation.left)
+    }
+
+    /// The drag-select rectangle is let go: select what it covers (a plain click on empty space only cleared).
+    private func endMarquee(at end: NSPoint) {
+        defer { marqueeStart = nil; marqueeView?.removeFromSuperview(); marqueeView = nil }
+        guard let a = marqueeStart, marqueeView != nil, let session = model?.sketchSession else { return }
+        let corners = [NSPoint(x: min(a.x, end.x), y: min(a.y, end.y)), NSPoint(x: max(a.x, end.x), y: min(a.y, end.y)),
+                       NSPoint(x: max(a.x, end.x), y: max(a.y, end.y)), NSPoint(x: min(a.x, end.x), y: max(a.y, end.y))]
+        let quad = corners.compactMap { sketchUV($0) }
+        guard quad.count == 4 else { return }
+        session.marqueeSelect(quad, crossing: end.x < a.x, additive: marqueeAdditive)
+        model?.overlayRevision += 1
+        refreshOverlay()
+    }
+
+    /// Edit ▸ Select All: everything in the sketch being edited.
+    @objc override func selectAll(_ sender: Any?) {
+        guard let session = model?.sketchSession else { return }
+        session.selectEverything()
+        model?.overlayRevision += 1
+        refreshOverlay()
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -936,6 +981,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if handleDrag {
             model?.endHandleDrag()
             refreshOverlay()
+            return
+        }
+        if marqueeStart != nil {
+            endMarquee(at: location(event))
             return
         }
         if sketchDrag {
@@ -2140,6 +2189,25 @@ final class DimensionLabelView: NSTextField {
     /// A little more than the label itself answers a click: a value is small, and often next to a curve.
     override func hitTest(_ point: NSPoint) -> NSView? {
         isHidden || passesClicks ? nil : frame.insetBy(dx: -6, dy: -6).contains(point) ? self : nil
+    }
+}
+
+/// The rectangle drawn while dragging to select in a sketch: solid when it takes what lies wholly inside, dashed when
+/// it also takes what it touches.
+final class MarqueeView: NSView {
+    var rect: NSRect = .zero { didSet { needsDisplay = true } }
+    var crossing = false { didSet { needsDisplay = true } }
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        guard rect.width > 0 || rect.height > 0 else { return }
+        let path = NSBezierPath(rect: rect)
+        NSColor.controlAccentColor.withAlphaComponent(crossing ? 0.12 : 0.18).setFill()
+        path.fill()
+        NSColor.controlAccentColor.setStroke()
+        path.lineWidth = 1
+        if crossing { path.setLineDash([5, 3], count: 2, phase: 0) }
+        path.stroke()
     }
 }
 

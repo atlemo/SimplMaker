@@ -198,7 +198,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
 
     var hint: String {
         switch self {
-        case .select: return "Click to select, double-click for all joined curves, drag to move, ⌫ deletes"
+        case .select: return "Click to select, drag across empty space to select what the box covers (right to left also takes what it touches), double-click for all joined curves, drag a curve to move it, ⌫ deletes"
         case .line: return "Click points to draw connected lines · Esc ends the chain"
         case .rectangle: return "Click two opposite corners · \(again) for a center rectangle"
         case .centerRectangle: return "Click the center, then a corner · \(again) for rounded corners"
@@ -652,6 +652,62 @@ final class SketchSession {
         guard tool == .select, let h = hover, sketch.curve(h) != nil else { return }
         let chain = sketch.connectedCurves(h)
         selection = additive ? selection + chain.filter { !selection.contains($0) } : chain
+        dragEntity = nil
+    }
+
+    // MARK: drag-select
+
+    /// Drag-select: what a screen rectangle (as the four corners on the sketch plane, in either order) takes. Dragging
+    /// left to right takes only what lies wholly inside; right to left (`crossing`) also what the rectangle touches.
+    /// Curves are taken as they are drawn (a circle by its outline); a point that belongs to no curve, such as where a
+    /// text is anchored, is taken when it is inside.
+    func marqueeSelect(_ quad: [SIMD2<Double>], crossing: Bool, additive: Bool) {
+        guard quad.count == 4 else { return }
+        func cross(_ a: SIMD2<Double>, _ b: SIMD2<Double>, _ c: SIMD2<Double>) -> Double {
+            (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+        }
+        func inside(_ p: SIMD2<Double>) -> Bool {
+            var sign = 0.0
+            for i in 0..<4 {
+                let c = cross(quad[i], quad[(i + 1) % 4], p)
+                if c == 0 { continue }
+                if sign == 0 { sign = c } else if (c > 0) != (sign > 0) { return false }
+            }
+            return true
+        }
+        func segmentsCross(_ a: SIMD2<Double>, _ b: SIMD2<Double>, _ c: SIMD2<Double>, _ d: SIMD2<Double>) -> Bool {
+            let d1 = cross(a, b, c), d2 = cross(a, b, d), d3 = cross(c, d, a), d4 = cross(c, d, b)
+            return (d1 > 0) != (d2 > 0) && (d3 > 0) != (d4 > 0)
+        }
+        func touches(_ line: [SIMD2<Double>]) -> Bool {
+            if line.contains(where: inside) { return true }
+            for i in 0..<max(line.count - 1, 0) {
+                for j in 0..<4 where segmentsCross(line[i], line[i + 1], quad[j], quad[(j + 1) % 4]) { return true }
+            }
+            return false
+        }
+        let positions = sketch.positionTable()
+        var taken: [EntityID] = []
+        var inCurve = Set<EntityID>()
+        for c in sketch.curves {
+            inCurve.formUnion(sketch.pointIDs(of: c))
+            guard !Sketch.isGenerated(c.id) else { continue }
+            let line = SketchOverlayBuilder.polyline(c, in: sketch, positions: positions)
+            guard !line.isEmpty else { continue }
+            if crossing ? touches(line) : line.allSatisfy(inside) { taken.append(c.id) }
+        }
+        for p in sketch.points where !inCurve.contains(p.id) && !Sketch.isGenerated(p.id) && inside(p.position) {
+            taken.append(p.id)
+        }
+        selection = additive ? selection + taken.filter { !selection.contains($0) } : taken
+        axisSelection = additive ? axisSelection : []
+        dragEntity = nil
+    }
+
+    /// Every curve and loose point of the sketch (Select All).
+    func selectEverything() {
+        selection = sketch.curves.filter { !Sketch.isGenerated($0.id) }.map(\.id)
+            + sketch.points.filter { p in !Sketch.isGenerated(p.id) && !sketch.curves.contains { sketch.pointIDs(of: $0).contains(p.id) } }.map(\.id)
         dragEntity = nil
     }
 
