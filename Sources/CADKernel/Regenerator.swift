@@ -603,13 +603,22 @@ public enum Regenerator {
             throw KernelError(message: "A face it projects onto is gone. Pick the faces again.")
         }
         let relief: (body: KBody, origin: SIMD3<Double>, normal: SIMD3<Double>)
+        func attempt(_ direction: SIMD3<Double>) throws -> (body: KBody, origin: SIMD3<Double>, normal: SIMD3<Double>) {
+            try target.projectRelief(profiles, onto: faces, direction: direction,
+                                     height: f.mode == .emboss ? height : -height,
+                                     wrap: f.wrap ?? false, featureID: feature.id)
+        }
         do {
-            relief = try target.projectRelief(profiles, onto: faces, direction: direction,
-                                              height: f.mode == .emboss ? height : -height,
-                                              wrap: f.wrap ?? false, featureID: feature.id)
+            do {
+                relief = try attempt(direction)
+            } catch let error as KernelError where error.message.contains("nothing to project onto") {
+                // Nothing lay that way: it may lie the other way (the sketch is on the far side), so that is tried
+                // before the user is told to flip it.
+                relief = try attempt(-direction)
+            }
         } catch let error as KernelError where error.message.contains("nothing to project onto") {
             throw KernelError(message: "Nothing to project onto: no face that faces the sketch is under the profiles. "
-                              + "Flip the direction, or move the sketch to the other side of the body.")
+                              + "Move the sketch so it sits in front of the body, over the face it should land on.")
         }
         r.projectionHandles[feature.id] = (relief.origin, relief.normal)
         try combine(relief.body, f.mode == .emboss ? .join : .cut, target: f.target, feature, &r)

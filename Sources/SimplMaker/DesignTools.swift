@@ -552,7 +552,7 @@ extension DocumentModel {
             let refs = profiles.filter { $0.sketch == first.sketch }.map(\.ref)
             add(Feature(name: document.nextName("Project"), .project(ProjectFeature(
                 sketch: first.sketch, profiles: refs, target: target, faces: faces.filter { $0.body == target },
-                flipped: projectsAgainstNormal(sketch: first.sketch, onto: target), wrap: true))))
+                flipped: projectsAgainstNormal(sketch: first.sketch, onto: target, faces: faces.filter { $0.body == target }), wrap: true))))
         case .combine:
             // The first body picked is the target; the rest are the tools. Return combines them.
             let bodies = pickedBodies
@@ -655,8 +655,15 @@ extension DocumentModel {
     /// Whether a projection of this sketch should run against its normal to reach the body: when the body is on the
     /// side the normal points away from, or the sketch passes through its middle (within half a millimetre; the normal
     /// points at the viewer who looks at the sketch, so against it is into the screen).
-    func projectsAgainstNormal(sketch: FeatureID, onto target: FeatureID) -> Bool {
+    func projectsAgainstNormal(sketch: FeatureID, onto target: FeatureID, faces: [FaceRef] = []) -> Bool {
         guard let frame = result?.sketches[sketch]?.frame, let box = result?.body(target)?.bounds else { return true }
+        // A flat face that is picked says it: the profiles must go into it, against the way it faces. (The middle of
+        // the body is a poor guide for a slanted wall.)
+        if let body = result?.body(target),
+           let wall = faces.lazy.compactMap({ try? body.faceFrame($0.face) }).first {
+            let facing = simd_dot(frame.normal, wall.normal)
+            if abs(facing) > 0.05 { return facing > 0 }
+        }
         return simd_dot((box.min + box.max) / 2 - frame.origin, frame.normal) <= 0.5
     }
 
