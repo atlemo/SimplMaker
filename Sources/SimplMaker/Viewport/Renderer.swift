@@ -110,6 +110,8 @@ struct ImageParams {
 struct SketchOverlay {
     var regionVertices: [FaceVertex] = []
     var regionIndices: [UInt32] = []
+    /// False while the fills must not catch the cursor (Project waiting for a face, under profiles already picked).
+    var regionsPickable = true
     /// Origin planes offered while choosing where to sketch: 4 vertices and 6 indices per plane.
     var planeVertices: [FaceVertex] = []
     var planeIndices: [UInt32] = []
@@ -462,6 +464,8 @@ final class Renderer {
     private let pickBandPipeline: MTLRenderPipelineState
     private let hiddenPlanePipeline: MTLRenderPipelineState
     private let regionPipeline: MTLRenderPipelineState
+    /// The same fills, but a click or hover goes through them to the body under them.
+    private let regionLookThroughPipeline: MTLRenderPipelineState
     private let planePipeline: MTLRenderPipelineState
     private let imagePipeline: MTLRenderPipelineState
     /// The Render view's floor: colour only, so it never hides what is picked.
@@ -580,6 +584,7 @@ final class Renderer {
         var regions: MTLBuffer?
         var regionIndices: MTLBuffer?
         var regionIndexCount = 0
+        var regionsPickable = true
         var planes: MTLBuffer?
         var planeIndices: MTLBuffer?
         /// One centre per plane (6 indices each), to draw them back to front.
@@ -734,6 +739,7 @@ final class Renderer {
             }
             pickBandPipeline = try pipeline("segmentVertex", "segmentFragment", writesColor: false)
             regionPipeline = try pipeline("regionVertex", "regionFragment", blend: true)
+            regionLookThroughPipeline = try pipeline("regionVertex", "regionFragment", blend: true, writesID: false)
             planePipeline = try pipeline("regionVertex", "planeFragment", blend: true)
             hiddenPlanePipeline = try pipeline("regionVertex", "planeFragment", blend: true, writesID: false)
             imagePipeline = try pipeline("imageVertex", "imageFragment", blend: true, premultiplied: true, writesID: false)
@@ -896,6 +902,7 @@ final class Renderer {
     func setOverlay(_ o: SketchOverlay) {
         var g = GPUOverlay()
         g.regions = makeBuffer(o.regionVertices)
+        g.regionsPickable = o.regionsPickable
         g.regionIndices = makeBuffer(o.regionIndices)
         g.regionIndexCount = o.regionIndices.count
         g.planes = makeBuffer(o.planeVertices)
@@ -1904,7 +1911,7 @@ final class Renderer {
         if let regions = overlay.regions, let indices = overlay.regionIndices {
             var regionParams = DrawParams(color: .zero, hoverColor: .zero, selectColor: .zero,
                                           thickness: 0, depthBias: fillBias, pickable: 1)
-            enc.setRenderPipelineState(regionPipeline)
+            enc.setRenderPipelineState(overlay.regionsPickable ? regionPipeline : regionLookThroughPipeline)
             // Tested against the bodies but not written to the depth buffer: fills of layered sketches lie in the
             // same plane, and with depth writes the first one drawn would knock out stripes of the next (z-fighting)
             // instead of every fill blending over the one below.

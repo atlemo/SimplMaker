@@ -68,6 +68,17 @@ import Testing
         #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
     }
 
+    @Test func projectSketchFromTheBrowserPicksEverythingThenWaitsForAFace() async throws {
+        let model = try await postModel()
+        model.projectSketch("sk")
+        #expect(model.pendingTool == .project)
+        #expect(!model.selectedProfiles.isEmpty)
+        #expect(project(model) == nil, "waits for the face")
+        model.toolClick(.project, try face(model, "post.side"))
+        let p = try #require(project(model))
+        #expect(p.target == "post" && !p.profiles.isEmpty)
+    }
+
     @Test func returnProjectsOntoTheOnlyBody() async throws {
         let model = try await postModel()
         model.run(.project)

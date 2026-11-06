@@ -1769,6 +1769,8 @@ final class DocumentModel {
             SketchOverlayBuilder.finished(r, slot: i + 1, parameters: parameterValues, into: &o)
             SketchOverlayBuilder.regions(r, slot: i + 1, into: &o)
         }
+        // Project waits for a face with profiles picked: the fills would cover the face a click is meant for.
+        if pendingTool == .project, !selectedProfiles.isEmpty { o.regionsPickable = false }
         return o
     }
 
