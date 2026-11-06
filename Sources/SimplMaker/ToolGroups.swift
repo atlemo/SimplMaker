@@ -380,7 +380,10 @@ private struct ScrollingList<Content: View>: View {
         ScrollView {
             content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
-        .frame(height: min(height, 560))
+        // Never taller than the room the popover has below the toolbar: a taller one is cropped at the top and the bottom alike, and the
+        // first tool cannot be reached. The rest scrolls.
+        .frame(height: min(height, max(min(560, UIScreen.main.bounds.height - 270), 240)))
+        .scrollBounceBehavior(.basedOnSize)
 #endif
     }
 }
