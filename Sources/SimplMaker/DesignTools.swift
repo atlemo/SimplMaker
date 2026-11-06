@@ -243,10 +243,12 @@ extension DocumentModel {
         let chosen = Set(session.selection)
         let texts = session.sketch.texts.filter { chosen.contains($0.position) || chosen.contains($0.id) }
         var picks: [PickID] = []
+        var letters: [String: Set<Int>] = [:]  // per text, worked out once: it asks the kernel about every region
         for (i, region) in built.regions.enumerated() {
             if let text = built.text(ofRegion: i) {
-                guard texts.contains(where: { $0.id == text.id }), built.letterRegions(of: text, parameters: parameterValues).contains(i) else { continue }
-                picks.append(PickID(region: i, slot: slot + 1))
+                guard texts.contains(where: { $0.id == text.id }) else { continue }
+                if letters[text.id] == nil { letters[text.id] = Set(built.letterRegions(of: text, parameters: parameterValues)) }
+                if letters[text.id]?.contains(i) == true { picks.append(PickID(region: i, slot: slot + 1)) }
             } else if region.tags.split(separator: ",").allSatisfy({ chosen.contains(String($0)) }) {
                 picks.append(PickID(region: i, slot: slot + 1))
             }

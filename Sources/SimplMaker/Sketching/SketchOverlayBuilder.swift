@@ -135,6 +135,9 @@ enum SketchOverlayBuilder {
     /// Whether a measured size (the light label of a line or circle without a dimension) is shown: it needs more
     /// room than a dimension, as there is one for every curve.
     static func shows(measured m: (curve: EntityID, kind: SketchDimension.Kind, value: Double), _ session: SketchSession) -> Bool {
+        // A few picked curves show their size; a big pick (a dragged box over a whole drawing) would bury it in labels, and
+        // asking each curve whether it is picked would be slow.
+        if session.selection.count > 3 { return false }
         if session.selection.contains(m.curve) { return true }
         return legible(span: abs(m.value), mmPerPixel: session.mmPerPixel,
                        needing: max(90, 1.6 * labelWidth(prefix(m.kind) + measured(m.value))))

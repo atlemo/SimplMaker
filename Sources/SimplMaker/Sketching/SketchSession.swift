@@ -699,15 +699,18 @@ final class SketchSession {
         for p in sketch.points where !inCurve.contains(p.id) && !Sketch.isGenerated(p.id) && inside(p.position) {
             taken.append(p.id)
         }
-        selection = additive ? selection + taken.filter { !selection.contains($0) } : taken
+        let had = Set(selection)
+        selection = additive ? selection + taken.filter { !had.contains($0) } : taken
         axisSelection = additive ? axisSelection : []
         dragEntity = nil
     }
 
     /// Every curve and loose point of the sketch (Select All).
     func selectEverything() {
+        var inCurve = Set<EntityID>()
+        for c in sketch.curves { inCurve.formUnion(sketch.pointIDs(of: c)) }
         selection = sketch.curves.filter { !Sketch.isGenerated($0.id) }.map(\.id)
-            + sketch.points.filter { p in !Sketch.isGenerated(p.id) && !sketch.curves.contains { sketch.pointIDs(of: $0).contains(p.id) } }.map(\.id)
+            + sketch.points.filter { !Sketch.isGenerated($0.id) && !inCurve.contains($0.id) }.map(\.id)
         dragEntity = nil
     }
 
