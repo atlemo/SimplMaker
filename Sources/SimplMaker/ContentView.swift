@@ -535,7 +535,7 @@ struct StatusBar: View {
         } else if model.isPickingSketchPlane {
             hintText("Select a plane or planar face to sketch on · Esc to cancel")
         } else if let tool = model.pendingTool, let prompt = model.toolPrompt {
-            hintText("\(tool.rawValue): \(prompt) · Esc to cancel")
+            Text(verbatim: Hint.toolText("\(tool.rawValue): \(prompt) · Esc to cancel"))
         } else if model.holeMoveStart != nil || model.hovered == .moveHandle {
             Text(model.previewInvalid ? "The hole doesn't fit there — let go to keep it where it was"
                                       : "Drag the orange dot to move the hole · it snaps to the face's centre lines")

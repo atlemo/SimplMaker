@@ -25,6 +25,18 @@ enum Hint {
     }
 }
 
+extension Hint {
+    /// A waiting tool's prompt: what the Mac asks of the Return key, the iPad asks of the Done button.
+    static func toolText(_ s: String) -> String {
+#if os(macOS)
+        return s
+#else
+        text(s).replacingOccurrences(of: "press Return", with: "tap Done")
+            .replacingOccurrences(of: "\\bReturn\\b", with: "Done", options: .regularExpression)
+#endif
+    }
+}
+
 /// A hint line, reworded for the device.
 func hintText(_ s: String) -> Text { Text(verbatim: Hint.text(s)) }
 

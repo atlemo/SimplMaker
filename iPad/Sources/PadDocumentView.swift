@@ -54,7 +54,10 @@ struct PadDocumentView: View {
             }
             // A tapped sketch offers Edit and Delete, above the timeline and between the side panels.
             .overlay(alignment: .bottom) {
-                PadSketchActions(model: model)
+                ZStack {
+                    PadSketchActions(model: model)
+                    PadToolActions(model: model)
+                }
                     .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
                     .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
                     .padding(.bottom, Panel.bottomInset(timeline: model.showTimeline) + 8)

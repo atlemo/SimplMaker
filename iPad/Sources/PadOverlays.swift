@@ -605,3 +605,29 @@ struct PadSketchActions: View {
         }
     }
 }
+
+// MARK: a waiting tool
+
+/// A tool that waits for picks and finishes on Return (Shell, Draft, Combine, Thread, Loft...) has no key to press on the iPad: as soon
+/// as its prompt asks for Return, a Cancel and a Done button float where the sketch's bar does.
+struct PadToolActions: View {
+    let model: DocumentModel
+
+    var body: some View {
+        let _ = model.overlayRevision
+        if let tool = model.pendingTool, model.toolPrompt?.contains("Return") == true {
+            HStack(spacing: 12) {
+                Text(tool.rawValue).font(.headline).padding(.leading, 8)
+                Button("Cancel", systemImage: "xmark") { model.cancelTool() }
+                Button("Done", systemImage: "checkmark") { model.confirmTool() }
+                    .buttonStyle(.borderedProminent)
+            }
+            .touchControls()
+            .padding(8)
+            .panelGlass(in: Capsule())
+            .fixedSize()
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("\(tool.rawValue) actions")
+        }
+    }
+}
