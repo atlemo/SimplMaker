@@ -256,6 +256,26 @@ extension DocumentModel {
         return picks
     }
 
+    /// Every profile of a sketch: its closed shapes, and the letters (not the insides of the O's and B's) of its texts.
+    func allProfilePicks(of sketch: FeatureID) -> [PickID] {
+        guard let built = result?.sketches[sketch], let slot = sketchSlots.firstIndex(of: sketch) else { return [] }
+        var letters: [String: Set<Int>] = [:]
+        return built.regions.indices.filter { i in
+            guard let text = built.text(ofRegion: i) else { return true }
+            if letters[text.id] == nil { letters[text.id] = Set(built.letterRegions(of: text, parameters: parameterValues)) }
+            return letters[text.id]?.contains(i) == true
+        }.map { PickID(region: $0, slot: slot + 1) }
+    }
+
+    /// The browser's "Project Sketch": the whole sketch is picked, and the Project tool waits for the face it lands on.
+    func projectSketch(_ id: FeatureID) {
+        if sketchSession != nil { finishSketch(keepingView: true) }
+        let picks = allProfilePicks(of: id)
+        guard !picks.isEmpty else { toolMissed = true; return }
+        selection = picks
+        run(.project)
+    }
+
     func cancelTool() {
         guard pendingTool != nil else { return }
         pendingTool = nil

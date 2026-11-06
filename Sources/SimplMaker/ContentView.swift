@@ -1243,6 +1243,7 @@ struct BrowserList: View {
                     if model.sketchSession?.featureID == id { model.finishSketch() } else { model.editSketch(id) }
                 }
                 Button(model.isHidden(id) ? "Show Sketch" : "Hide Sketch") { model.setHidden([id], !model.isHidden(id)) }
+                Button("Project Sketch…") { model.projectSketch(id) }
                 Button("Export as DXF…") { model.exportDXF(sketch: id) }
                 Button(model.isLocked(id) ? "Unlock Sketch" : "Lock Sketch") { model.setLocked([id], !model.isLocked(id)) }
                 Button("Move or Rotate Sketch") { model.move(sketches: [id]) }.disabled(model.isLocked(id))
