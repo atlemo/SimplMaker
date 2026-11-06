@@ -38,3 +38,15 @@ extension View {
 #endif
     }
 }
+
+extension View {
+    /// A field for a size: the iPad shows numbers and symbols (digits, a point, a minus and the operators of an expression) first, not letters
+    /// (the keyboard's own "ABC" key still reaches a parameter's name). The Mac types as it always did.
+    @ViewBuilder func numericEntry() -> some View {
+#if os(macOS)
+        self
+#else
+        keyboardType(.numbersAndPunctuation).textInputAutocapitalization(.never).autocorrectionDisabled()
+#endif
+    }
+}

@@ -43,6 +43,8 @@ struct PadDocumentView: View {
         let model = model
         let guide = file.guide
         return DocumentPanels(model: model, guide: guide, viewport: viewport(model), chrome: EmptyView())
+            // The keyboard covers the bottom of the screen instead of squeezing the view above it: the fields that are typed in move up by themselves.
+            .ignoresSafeArea(.keyboard)
             // The size fields and the OK / Cancel bar of a feature float above the panels, never under them.
             .overlay {
                 PadHandleFields(model: model, state: viewState, insets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
@@ -58,6 +60,7 @@ struct PadDocumentView: View {
             .environment(\.tutorialSpotlight, guide.spotlight)
             .focusedSceneValue(\.documentModel, model)
             .onAppear {
+                _ = KeyboardWatcher.shared  // watching from the start, so a keyboard raised later is seen
                 model.undoManager = undoManager
                 model.fileURL = fileURL
                 // A narrow screen has room for the viewport or the panels, not both: start with the viewport.

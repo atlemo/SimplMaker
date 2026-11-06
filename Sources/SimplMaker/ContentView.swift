@@ -2354,6 +2354,7 @@ struct DimensionEditor: View {
                     .font(.body.monospaced())
                     .frame(width: 180)
                     .focused($focused)
+                    .numericEntry()
                     .completesParameters(model, focused: focused)
                     .arrowNudges($draft)
                     .onSubmit { submit() }

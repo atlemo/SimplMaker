@@ -65,6 +65,26 @@ struct PadOverlays: View {
     }
 }
 
+/// How far the on-screen keyboard reaches up from the bottom of the screen: 0 with none (a hardware keyboard shows only a thin bar). The fields
+/// that are typed in keep above it. Started when the first part opens, so a keyboard raised later is seen.
+@MainActor @Observable
+final class KeyboardWatcher {
+    static let shared = KeyboardWatcher()
+    private(set) var overlap: CGFloat = 0
+    private init() {
+        NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main) { [weak self] note in
+            guard let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
+            let value = max(0, UIScreen.main.bounds.height - frame.minY)
+            MainActor.assumeIsolated { self?.overlap = value }
+        }
+        // A size field starts with its text selected (as on the Mac), so what is typed replaces it.
+        NotificationCenter.default.addObserver(forName: UITextField.textDidBeginEditingNotification, object: nil, queue: .main) { note in
+            guard let field = note.object as? UITextField, field.keyboardType == .numbersAndPunctuation else { return }
+            DispatchQueue.main.async { field.selectAll(nil) }
+        }
+    }
+}
+
 // MARK: dimension labels
 
 private struct PadDimensionLabels: View {
@@ -213,7 +233,8 @@ private struct PadSketchFields: View {
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 1.5))
                 .fixedSize()
                 .position(x: min(max(p.x + 20 + 120, insets.left + 130), max(state.size.width - insets.right - 130, insets.left + 130)),
-                          y: min(max(p.y + 44, 40), state.size.height - insets.bottom - 40))
+                          y: min(max(p.y + 44, 40), max(state.size.height - max(insets.bottom, KeyboardWatcher.shared.overlap) - 40, 40)))
+                    .animation(.easeOut(duration: 0.25), value: KeyboardWatcher.shared.overlap)
             }
         }
     }
@@ -233,8 +254,7 @@ private struct SketchField: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 96)
                 .focused($focused)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .numericEntry()
                 .foregroundStyle(session.typedIsInvalid(input) ? Color.red : (session.typed[input] != nil ? Color.primary : Color.secondary))
                 .onChange(of: text) {
                     guard focused else { return }
@@ -267,12 +287,17 @@ struct PadHandleFields: View {
         let _ = model.overlayRevision
         let handles = model.dragHandles.filter { model.showsField($0) }
         if !handles.isEmpty {
+            // The feature bar and the fields stay above the on-screen keyboard.
+            let bottom = max(insets.bottom, KeyboardWatcher.shared.overlap)
+            let hudTop = state.size.height - hudSize.height - bottom
             ZStack(alignment: .topLeading) {
                 ForEach(Array(handles.enumerated()), id: \.element.slot) { index, h in
                     if let p = anchor(h) {
+                        // Centre of this field: not lower than the room above the bar leaves for it and the fields after it.
+                        let lowest = hudTop - 8 - 20 - CGFloat(handles.count - 1 - index) * 40
                         HandleField(model: model, handle: h, focused: $focusedSlot)
                             .position(x: min(max(p.x + 26 + 55, insets.left + 60), max(state.size.width - insets.right - 70, insets.left + 60)),
-                                      y: min(max(p.y + CGFloat(index) * 40, 24), max(state.size.height - 24, 24)))
+                                      y: min(max(p.y + CGFloat(index) * 40, 24), max(min(state.size.height - 24, lowest), 24)))
                     }
                 }
                 if let first = handles.first, let p = anchor(first) {
@@ -283,9 +308,10 @@ struct PadHandleFields: View {
                         .fixedSize()
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { hudSize = $0 }
                         .position(x: min(max(p.x + 26, minX), maxX) + hudSize.width / 2,
-                                  y: min(p.y + 44 + CGFloat(handles.count) * 40, state.size.height - hudSize.height - insets.bottom) + hudSize.height / 2)
+                                  y: min(p.y + 44 + CGFloat(handles.count) * 40, hudTop) + hudSize.height / 2)
                 }
             }
+            .animation(.easeOut(duration: 0.25), value: KeyboardWatcher.shared.overlap)
             .onChange(of: model.handleFocusRequest) {
                 focusedSlot = model.handleFocusSlot ?? handles.first?.slot
                 model.handleFocusSlot = nil
@@ -309,8 +335,7 @@ private struct HandleField: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 112)
                 .focused($focused, equals: handle.slot)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .numericEntry()
                 .foregroundStyle(model.previewInvalid && handle.slot == model.activeHandleSlot ? Color.red : Color.primary)
                 .onChange(of: text) { schedulePreview() }
                 .onSubmit {
@@ -439,8 +464,7 @@ private struct PadTextEntry: View {
                         TextField("Size", text: $size)
                             .frame(width: 84)
                             .focused($focus, equals: .size)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                            .numericEntry()
                             .foregroundStyle(session.textHeightIsUsable ? Color.primary : Color.red)
                             .onSubmit { done() }
                             .onChange(of: size) { session.setTextHeightDraft(size); model.overlayRevision += 1 }
@@ -458,7 +482,7 @@ private struct PadTextEntry: View {
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 1.5))
                 .fixedSize()
                 .position(x: min(max(p.x + 160, insets.left + 180), max(state.size.width - insets.right - 180, insets.left + 180)),
-                          y: min(max(p.y + 70, 80), max(state.size.height - insets.bottom - 70, 80)))
+                          y: min(max(p.y + 70, 80), max(state.size.height - max(insets.bottom, KeyboardWatcher.shared.overlap) - 70, 80)))
                 .onAppear { load() }
                 .onChange(of: session.editingText) { load() }
             }
