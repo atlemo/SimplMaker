@@ -665,7 +665,7 @@ struct Sidebar: View {
 
 /// A floating glass panel with a header that folds its content away.
 struct SidebarPanel<Accessory: View, Content: View>: View {
-    static var headerHeight: CGFloat { 40 }
+    static var headerHeight: CGFloat { PanelTouch.headerHeight }
     let title: String
     @Binding var open: Bool
     @ViewBuilder let accessory: () -> Accessory
@@ -1392,9 +1392,9 @@ struct HeaderIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: PanelTouch.headerIcon, weight: .semibold))
                 .rotationEffect(.degrees(rotation))
-                .frame(width: 20, height: 20)
+                .frame(width: PanelTouch.headerButton, height: PanelTouch.headerButton)
                 .foregroundStyle(hovering ? Color.primary : Color.secondary)
                 .background(hovering ? Color.primary.opacity(0.1) : .clear,
                             in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
@@ -1650,7 +1650,8 @@ struct EyeButton: View {
     var body: some View {
         Button(action: toggle) {
             Image(systemName: hidden ? "eye.slash" : "eye")
-                .frame(width: 18)
+                .frame(width: PanelTouch.rowButtonWidth, height: PanelTouch.rowButtonHeight)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
@@ -1667,7 +1668,8 @@ struct LockButton: View {
     var body: some View {
         Button(action: toggle) {
             Image(systemName: locked ? "lock.fill" : "lock.open")
-                .frame(width: 18)
+                .frame(width: PanelTouch.rowButtonWidth, height: PanelTouch.rowButtonHeight)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)

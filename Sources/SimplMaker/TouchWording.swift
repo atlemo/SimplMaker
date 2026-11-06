@@ -50,3 +50,20 @@ extension View {
 #endif
     }
 }
+
+/// How big the small buttons of the side panels are: the Mac's pointer is precise, a finger needs about 44 pt.
+enum PanelTouch {
+#if os(macOS)
+    static let headerButton: CGFloat = 20
+    static let headerIcon: CGFloat = 11
+    static let headerHeight: CGFloat = 40
+    static let rowButtonWidth: CGFloat = 18
+    static let rowButtonHeight: CGFloat? = nil
+#else
+    static let headerButton: CGFloat = 44
+    static let headerIcon: CGFloat = 18
+    static let headerHeight: CGFloat = 52
+    static let rowButtonWidth: CGFloat = 44
+    static let rowButtonHeight: CGFloat? = 44
+#endif
+}

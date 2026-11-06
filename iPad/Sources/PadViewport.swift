@@ -395,7 +395,33 @@ struct PadViewport: UIViewRepresentable {
                 return .section
             }
             if pick.kind == .handle { model.beginHandleDrag(slot: pick.handleSlot); return .handle }
+            // A finger is wider than the arrow it aims at: the tip (or the dial's dot), or the shaft, close enough to the touch counts.
+            if let slot = handleNear(p, in: view) { model.beginHandleDrag(slot: slot); return .handle }
             return .orbit
+        }
+
+        /// The feature handle (arrow or dial dot) within a finger's reach of `p`, nearest first; the tip reaches further than the shaft.
+        private func handleNear(_ p: CGPoint, in view: MTKView) -> Int? {
+            guard let renderer, let model else { return nil }
+            let size = view.bounds.size
+            func screen(_ w: SIMD3<Double>) -> CGPoint? {
+                renderer.camera.project(SIMD3(Float(w.x), Float(w.y), Float(w.z)), viewSize: size)
+            }
+            var best: (slot: Int, distance: CGFloat)?
+            for h in model.dragHandles {
+                guard let tip = screen(h.anchor) else { continue }
+                var d = hypot(tip.x - p.x, tip.y - p.y) / 36  // 36 pt round the tip or dot
+                if h.dial == nil, let base = screen(h.base) {
+                    // Distance to the shaft, from base to tip, within 22 pt.
+                    let vx = tip.x - base.x, vy = tip.y - base.y, len2 = vx * vx + vy * vy
+                    if len2 > 1 {
+                        let t = min(max(((p.x - base.x) * vx + (p.y - base.y) * vy) / len2, 0), 1)
+                        d = min(d, hypot(base.x + t * vx - p.x, base.y + t * vy - p.y) / 22)
+                    }
+                }
+                if d <= 1, best == nil || d < best!.distance { best = (h.slot, d) }
+            }
+            return best?.slot
         }
 
         private func continueViewDrag(at p: CGPoint, in view: MTKView) {
