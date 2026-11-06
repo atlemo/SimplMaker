@@ -132,6 +132,7 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Iterator.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shell.hxx>
@@ -3315,13 +3316,39 @@ SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int face
   TopoDS_Compound prisms;
   BRep_Builder builder;
   builder.MakeCompound(prisms);
-  for (Profile *p : ps) {
+  // Profiles that touch (the pieces a drawing is cut into by its own lines) are joined into one outline first: prisms
+  // standing side by side on shared walls, or overlapping, make the boolean below fail.
+  std::vector<TopoDS_Face> shapes;
+  for (Profile *p : ps) shapes.push_back(TopoDS::Face(p->face));
+  if (ps.size() > 1) {
+    try {
+      TopTools_ListOfShape objects, tools;
+      for (size_t k = 0; k < ps.size(); ++k) (k == 0 ? objects : tools).Append(ps[k]->face);
+      BRepAlgoAPI_Fuse fuse;
+      fuse.SetArguments(objects);
+      fuse.SetTools(tools);
+      fuse.Build();
+      if (fuse.IsDone() && !fuse.HasErrors()) {
+        ShapeUpgrade_UnifySameDomain unify(fuse.Shape(), true, true, true);
+        unify.Build();
+        std::vector<TopoDS_Face> merged;
+        for (TopExp_Explorer ex(unify.Shape(), TopAbs_FACE); ex.More(); ex.Next()) {
+          GProp_GProps props;
+          BRepGProp::SurfaceProperties(ex.Current(), props);
+          if (props.Mass() > 1e-9) merged.push_back(TopoDS::Face(ex.Current()));
+        }
+        if (!merged.empty()) shapes = merged;
+      }
+    } catch (...) {
+    }
+  }
+  for (const TopoDS_Face &shapeFace : shapes) {
     GProp_GProps props;
-    BRepGProp::SurfaceProperties(p->face, props);
+    BRepGProp::SurfaceProperties(shapeFace, props);
     const double reach = 2 * (diagonal + props.CentreOfMass().Distance(gp_Pnt((lo.X() + hi.X()) / 2, (lo.Y() + hi.Y()) / 2, (lo.Z() + hi.Z()) / 2))) + 1;
     gp_Trsf back;
     back.SetTranslation(gp_Vec(dir) * -reach);
-    BRepPrimAPI_MakePrism prism(TopoDS::Face(p->face.Moved(TopLoc_Location(back))), gp_Vec(dir) * (2 * reach));
+    BRepPrimAPI_MakePrism prism(TopoDS::Face(shapeFace.Moved(TopLoc_Location(back))), gp_Vec(dir) * (2 * reach));
     prism.Build();
     if (!prism.IsDone()) {
       setError("could not draw the profile through the body");
@@ -3339,6 +3366,32 @@ SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int face
     const gp_Pnt a = all.CornerMin(), z = all.CornerMax();
     wrapCentre = gp_Pnt((a.X() + z.X()) / 2, (a.Y() + z.Y()) / 2, (a.Z() + z.Z()) / 2);
   }
+
+  // The profiles' footprint seen along the direction, as a range on two axes square to it (a little wider than they are).
+  const gp_Ax2 viewAxes(gp_Pnt(0, 0, 0), dir);
+  auto spanOf = [&](const Bnd_Box &bb, double r[4]) {
+    r[0] = r[2] = 1e300;
+    r[1] = r[3] = -1e300;
+    const gp_Pnt a = bb.CornerMin(), z = bb.CornerMax();
+    for (int k = 0; k < 8; ++k) {
+      const gp_Vec p((k & 1) ? z.X() : a.X(), (k & 2) ? z.Y() : a.Y(), (k & 4) ? z.Z() : a.Z());
+      const double x = p.Dot(gp_Vec(viewAxes.XDirection())), y = p.Dot(gp_Vec(viewAxes.YDirection()));
+      r[0] = std::min(r[0], x); r[1] = std::max(r[1], x);
+      r[2] = std::min(r[2], y); r[3] = std::max(r[3], y);
+    }
+  };
+  double footprint[4];
+  {
+    Bnd_Box all;
+    for (const TopoDS_Face &f : shapes) BRepBndLib::Add(f, all);
+    spanOf(all, footprint);
+  }
+  auto overlapsFootprint = [&](const Bnd_Box &bb) {
+    double r[4];
+    spanOf(bb, r);
+    const double pad = 1e-4;
+    return r[0] <= footprint[1] + pad && r[1] >= footprint[0] - pad && r[2] <= footprint[3] + pad && r[3] >= footprint[2] - pad;
+  };
 
   // The parts of the faces inside the prisms that face the sketch: the profile as it lies on the surface.
   TopoDS_Compound patches;
@@ -3367,7 +3420,19 @@ SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int face
     Bnd_Box faceBox;
     BRepBndLib::Add(face, faceBox);
     if (faceBox.IsOut(prismBox)) continue;
-    BRepAlgoAPI_Common common(face, prisms);
+    // Seen along the direction, a face that does not overlap the profiles' footprint has nothing under them.
+    if (!overlapsFootprint(faceBox)) continue;
+    // The profiles' prisms go in as separate tools: letters and the pieces of a drawing touch and overlap, and one
+    // compound of overlapping solids is refused by the boolean.
+    BRepAlgoAPI_Common common;
+    {
+      TopTools_ListOfShape objects, tools;
+      objects.Append(face);
+      for (TopoDS_Iterator it(prisms); it.More(); it.Next()) tools.Append(it.Value());
+      common.SetArguments(objects);
+      common.SetTools(tools);
+      common.Build();
+    }
     if (!common.IsDone() || common.HasErrors()) {
       setError("could not project onto a face of the body");
       return 0;
