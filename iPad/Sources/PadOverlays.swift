@@ -219,7 +219,7 @@ private struct PadSketchFields: View {
 
     /// Room under the fields for the Done / Cancel / OK bar that floats above the timeline while a tool is in the middle of something.
     private var barReserve: CGFloat {
-        session.isOffsetting || session.isPatterning ? 96 : (session.toolInProgress || session.isManipulating ? 72 : 0)
+        session.isOffsetting || session.isPatterning ? 116 : (session.toolInProgress || session.isManipulating ? 92 : 0)
     }
 
     var body: some View {
