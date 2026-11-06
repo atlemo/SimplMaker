@@ -203,12 +203,15 @@ struct ManipulatorLayout {
     }
 
     /// What a click at `p` grabs, the small things first.
-    func hit(_ p: CGPoint) -> ManipulatorPart? {
-        if frame.dotGrabs, hypot(p.x - center.x, p.y - center.y) <= Self.dotRadius + 3 { return .center }
-        for a in arrows where Self.distance(p, toSegment: a.tail, a.tip) <= 9 { return .axis(a.axis) }
-        for r in rings where hypot(p.x - r.handle.x, p.y - r.handle.y) <= Self.handleRadius + 3 { return .ring(r.axis) }
-        for s in squares where Self.contains(s.corners, p) { return .plane(s.normal) }
-        for r in rings where Self.distance(p, toPolyline: r.outline, closed: true) <= 5 { return .ring(r.axis) }
+    /// `slop` widens every part by that many points, for a finger (a pointer needs none).
+    func hit(_ p: CGPoint, slop: CGFloat = 0) -> ManipulatorPart? {
+        if frame.dotGrabs, hypot(p.x - center.x, p.y - center.y) <= Self.dotRadius + 3 + slop { return .center }
+        for a in arrows where Self.distance(p, toSegment: a.tail, a.tip) <= 9 + slop { return .axis(a.axis) }
+        for r in rings where hypot(p.x - r.handle.x, p.y - r.handle.y) <= Self.handleRadius + 3 + slop { return .ring(r.axis) }
+        for s in squares where Self.contains(s.corners, p) || (slop > 0 && Self.distance(p, toPolyline: s.corners, closed: true) <= slop / 2) {
+            return .plane(s.normal)
+        }
+        for r in rings where Self.distance(p, toPolyline: r.outline, closed: true) <= 5 + slop / 2 { return .ring(r.axis) }
         return nil
     }
 

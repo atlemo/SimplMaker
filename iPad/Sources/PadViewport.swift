@@ -283,9 +283,27 @@ struct PadViewport: UIViewRepresentable {
         func sketchPan(_ g: UIPanGestureRecognizer, in view: MTKView) {
             guard let model, let session = model.sketchSession, let renderer else { return }
             let location = g.location(in: view)
+            // A drag that began on the manipulator (Transform, Offset or Pattern: an arrow, the square, the ring) turns the sketch's values, as on the Mac.
+            if case .manipulator = drag {
+                switch g.state {
+                case .changed: continueViewDrag(at: location, in: view)
+                case .ended, .cancelled: continueViewDrag(at: location, in: view); endViewDrag(in: view)
+                default: break
+                }
+                return
+            }
             switch g.state {
             case .began:
                 let start = CGPoint(x: location.x - g.translation(in: view).x, y: location.y - g.translation(in: view).y)
+                if let layout = manipulatorLayout(view), let part = layout.hit(start, slop: Self.fingerReach), let from = model.manipulatorDragStart,
+                   let d = ManipulatorDrag(part: part, at: start, layout: layout, start: from) {
+                    model.beginManipulatorDrag(part)
+                    renderer.setOverlay(model.sketchOverlay())
+                    drag = .manipulator(d)
+                    g.setTranslation(.zero, in: view)
+                    continueViewDrag(at: location, in: view)
+                    return
+                }
                 touch = SketchTouch(start: start, hadClicks: !session.clicks.isEmpty, mode: .draw)
                 sketchEvent(.moved, at: start, in: view)
                 if session.tool == .select {
@@ -360,6 +378,9 @@ struct PadViewport: UIViewRepresentable {
 
         // MARK: Dragging handles
 
+        /// How far from a manipulator part a finger still has hold of it, in points.
+        static let fingerReach: CGFloat = 16
+
         private func world(_ v: SIMD3<Float>) -> SIMD3<Double> { SIMD3(Double(v.x), Double(v.y), Double(v.z)) }
 
         private func ray(at p: CGPoint, in view: MTKView) -> (origin: SIMD3<Double>, direction: SIMD3<Double>)? {
@@ -381,7 +402,7 @@ struct PadViewport: UIViewRepresentable {
         /// section's handle, or nothing (it turns the view). The pick under it was asked for when it touched down.
         private func beginViewDrag(at p: CGPoint, in view: MTKView) -> ViewDrag {
             guard let renderer, let model else { return .orbit }
-            if let layout = manipulatorLayout(view), let part = layout.hit(p), let start = model.manipulatorDragStart,
+            if let layout = manipulatorLayout(view), let part = layout.hit(p, slop: Self.fingerReach), let start = model.manipulatorDragStart,
                let d = ManipulatorDrag(part: part, at: p, layout: layout, start: start) {
                 model.beginManipulatorDrag(part)
                 renderer.setOverlay(model.sketchOverlay())

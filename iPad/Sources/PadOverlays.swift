@@ -230,6 +230,9 @@ private struct PadSketchFields: View {
                 ? session.clicks.first?.position ?? t : t)
             let world = session.frame.point(anchor.x, anchor.y)
             if let p = state.project(world) {
+                // With the manipulator up (Transform, Offset, Pattern) the fields stay at the bottom, off the arrows and rings a finger takes hold of.
+                let docked = session.manipulatorMiddle != nil
+                let lowest = max(state.size.height - max(insets.bottom + barReserve, KeyboardWatcher.shared.overlap) - 40, 40)
                 HStack(spacing: 8) {
                     ForEach(inputs) { input in SketchField(model: model, session: session, input: input) }
                 }
@@ -237,8 +240,9 @@ private struct PadSketchFields: View {
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 1.5))
                 .fixedSize()
-                .position(x: min(max(p.x + 20 + 120, insets.left + 130), max(state.size.width - insets.right - 130, insets.left + 130)),
-                          y: min(max(p.y + 44, 40), max(state.size.height - max(insets.bottom + barReserve, KeyboardWatcher.shared.overlap) - 40, 40)))
+                .position(x: docked ? insets.left + (state.size.width - insets.left - insets.right) / 2
+                                    : min(max(p.x + 20 + 120, insets.left + 130), max(state.size.width - insets.right - 130, insets.left + 130)),
+                          y: docked ? lowest : min(max(p.y + 44, 40), lowest))
                     .animation(.easeOut(duration: 0.25), value: KeyboardWatcher.shared.overlap)
             }
         }
