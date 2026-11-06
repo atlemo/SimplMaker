@@ -82,6 +82,9 @@ final class DocumentModel {
     var selection: [PickID] = []
     private(set) var hovered: PickID?
     private var selectedFeatureStorage: FeatureID?
+    /// A sketch whose Edit / Delete bar (the iPad's) was put away: by finishing it, or by tapping empty space while it was picked. Picking
+    /// the sketch again in the browser or the timeline clears this.
+    var dismissedSketchBar: FeatureID?
     /// The arrow being dragged or typed for, when the selected feature has more than one (see `DragHandle.slot`).
     var activeHandleSlot = 0
     var selectedFeature: FeatureID? {
@@ -1308,7 +1311,10 @@ final class DocumentModel {
             return
         }
         guard let pick, accepts(pick) else {
-            if !additive { selection = [] }
+            if !additive {
+                if let sketch = pickedSketch { dismissedSketchBar = sketch }  // a tap on nothing puts the sketch's bar away
+                selection = []
+            }
             return
         }
         let picks = single ? [pick] : profileGroup(of: pick)
@@ -1547,6 +1553,7 @@ final class DocumentModel {
             if session.mirrorSetup?.line == "" { session.cancelMirror() } else { commitSketch(session.commitMirror()) }
         }
         sketchClosedKeepingView = keepingView
+        dismissedSketchBar = sketchSession?.featureID
         sketchSession = nil
         overlayRevision += 1
         regenerate()

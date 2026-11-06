@@ -140,9 +140,13 @@ extension DocumentModel {
             if case .sketch? = document.features.first(where: { $0.id == id })?.kind { return true }
             return false
         }
-        if let id = selectedFeature { return isSketch(id) ? id : nil }
-        let owners = selection.map { profile(of: $0)?.sketch ?? curve(of: $0)?.sketch }
-        guard let first = owners.first, let id = first, owners.allSatisfy({ $0 == id }) else { return nil }
+        // Taps in the view decide first: a profile or curve of one sketch. Then the feature chosen in the browser or the timeline.
+        if !selection.isEmpty {
+            let owners = selection.map { profile(of: $0)?.sketch ?? curve(of: $0)?.sketch }
+            guard let first = owners.first, let id = first, owners.allSatisfy({ $0 == id }) else { return nil }
+            return isSketch(id) ? id : nil
+        }
+        guard let id = selectedFeature, id != dismissedSketchBar else { return nil }
         return isSketch(id) ? id : nil
     }
 

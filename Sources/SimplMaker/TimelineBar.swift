@@ -197,7 +197,7 @@ struct TimelineBar: View {
             .shadow(color: .black.opacity(dx == 0 ? 0 : 0.25), radius: 4, y: 2)
             .help(error.map { "\(f.name): \($0)" } ?? "\(f.name)\(f.suppressed ? " (suppressed)" : "") · double-click to edit · drag to reorder")
             .onTapGesture(count: 2) { model.editFeature(f.id) }
-            .onTapGesture { model.selection = []; model.bringIntoModel(f.id); model.selectedFeature = f.id }
+            .onTapGesture { model.selection = []; model.dismissedSketchBar = nil; model.bringIntoModel(f.id); model.selectedFeature = f.id }
             // Drag sideways to move it earlier or later in the timeline.
             .gesture(DragGesture(minimumDistance: 6)
                 .onChanged { g in moving = (f.id, g.translation.width) }

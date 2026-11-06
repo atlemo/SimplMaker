@@ -972,6 +972,7 @@ struct BrowserList: View {
                         } else {
                             selectedFolder = nil
                             if model.selectedBodies.isEmpty == false { model.clearSelection() }
+                            model.dismissedSketchBar = nil
                             model.selectedFeature = tag
                         }
                         return
