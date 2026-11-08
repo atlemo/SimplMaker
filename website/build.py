@@ -10,7 +10,7 @@ src/static/ is copied as it is. What ends up in public/ is exactly what gets upl
 (scripts/publish-site.sh), apart from /updates/ and the disk image in /download/, which belong to the release scripts.
 
 Placeholders available in pages and partials:
-    {{min_os}} {{version}} {{ipad_url}} {{github_url}} {{support_email}} {{year}}
+    {{min_os}} {{version}} {{github_url}} {{support_email}} {{year}}
     {{asset:css/style.css}}                  the file's URL with a content hash, so browsers re-fetch changes
     {{clip:name|16/10|Label shown until the video exists}}   a looping video figure
     {{changelog}}                            the release notes from ../release-notes/*.html
@@ -32,8 +32,6 @@ REDIRECTS = {"/pricing/": "/download/", "/refunds/": "/download/", "/terms/": "/
 VARS = {
     "min_os": "macOS 15",
     "version": (REPO / "VERSION").read_text().strip(),
-    # TODO: replace with the App Store link once the iPad app is listed.
-    "ipad_url": "/download/",
     "github_url": "https://github.com/atlemo/SimplMaker",
     "support_email": "support@simplmaker.com",
     "year": "2026",
