@@ -2321,7 +2321,17 @@ final class DocumentModel {
     /// The plane of a hole's face; the hole's (u, v) are in it.
     func holeFace(_ id: FeatureID, _ hole: HoleFeature) -> Frame? {
         guard let result, let body = result.featureInputs[id]?[hole.face.body] ?? result.body(hole.face.body) else { return nil }
-        return try? body.faceFrame(hole.face.face)
+        return try? body.faceTangentFrame(hole.face.face)
+    }
+
+    /// Where a mouse ray meets a hole's face, in the face's (u, v): on a curved face the point the ray hits, measured in
+    /// the tangent plane; off the face, where it meets that plane.
+    func holeHitUV(_ id: FeatureID, _ hole: HoleFeature, face: Frame, ray: (origin: SIMD3<Double>, direction: SIMD3<Double>)) -> SIMD2<Double>? {
+        if let body = result?.featureInputs[id]?[hole.face.body] ?? result?.body(hole.face.body),
+           let p = body.faceHit(hole.face.face, origin: ray.origin, direction: ray.direction) {
+            return Self.uv(of: p, on: face)
+        }
+        return Self.intersect(ray: ray, with: face)
     }
 
     /// The middle of a hole's face outline (as it was before the hole), in the face's (u, v).
@@ -2333,7 +2343,11 @@ final class DocumentModel {
     /// Where the selected hole's move dot is: the hole's centre, or where it's being dragged.
     var holeMoveDot: SIMD3<Double>? {
         guard let (id, hole) = selectedHole, let face = holeFace(id, hole) else { return nil }
-        if let uv = holeMovePreview { return face.point(uv.x, uv.y) }
+        if let uv = holeMovePreview {
+            if let body = result?.featureInputs[id]?[hole.face.body] ?? result?.body(hole.face.body),
+               let on = try? body.holeFrame(hole.face.face, u: uv.x, v: uv.y, reach: 0) { return on.frame.origin }
+            return face.point(uv.x, uv.y)
+        }
         guard let result, let frame = try? Regenerator.holeFrame(hole, result, before: id) else { return nil }
         return frame.origin
     }
@@ -2348,7 +2362,7 @@ final class DocumentModel {
     /// 10 points of them. Previews the result.
     func moveHole(rayOrigin o: SIMD3<Double>, direction d: SIMD3<Double>, pointsPerMM: Double?) {
         guard let start = holeMoveStart, let (id, hole) = selectedHole, let face = holeFace(id, hole),
-              let hit = Self.intersect(ray: (o, d), with: face) else { return }
+              let hit = holeHitUV(id, hole, face: face, ray: (o, d)) else { return }
         var uv = hit
         if let ppm = pointsPerMM, ppm > 1e-9 {
             let center = holeFaceCenter(id, hole, on: face)

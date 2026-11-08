@@ -1074,12 +1074,17 @@ public enum Regenerator {
     /// On a finished build pass the hole's feature id: its face is then taken as it was before the cut, because the
     /// cut can merge it with a coplanar neighbour and leave the finished body without a face of that name.
     public static func holeFrame(_ f: HoleFeature, _ r: RegenResult, before id: FeatureID? = nil) throws -> Frame {
+        try holeFrameAndLift(f, r, before: id, reach: 0).frame
+    }
+
+    /// The hole's frame on its face (on a curved face, on the surface with the normal there) and how far a curved surface
+    /// rises above the frame's plane within `reach`.
+    static func holeFrameAndLift(_ f: HoleFeature, _ r: RegenResult, before id: FeatureID? = nil, reach: Double) throws -> (frame: Frame, lift: Double) {
         guard let body = id.flatMap({ r.featureInputs[$0]?[f.face.body] }) ?? r.body(f.face.body) else {
             throw KernelError(message: "the body with the hole's face is missing")
         }
-        let face = try body.faceFrame(f.face.face)
         let u = try r.parameters.value(of: f.u, kind: .length), v = try r.parameters.value(of: f.v, kind: .length)
-        return Frame(origin: face.point(u, v), normal: face.normal, xAxis: face.xAxis)
+        return try body.holeFrame(f.face.face, u: u, v: v, reach: reach)
     }
 
     static func hole(_ f: HoleFeature, _ feature: Feature, _ r: inout RegenResult) throws {
@@ -1087,13 +1092,18 @@ public enum Regenerator {
             throw KernelError(message: "the body with the hole's face is missing")
         }
         let p = r.parameters
-        let frame = try holeFrame(f, r)
+        var reach = try p.value(of: f.diameter, kind: .length) / 2
+        if f.kind != .simple { reach = max(reach, try p.value(of: f.headDiameter, kind: .length) / 2) }
+        // On a curved face the tool starts `lift` above the surface point, so a concave surface leaves no skin over it.
+        let (frame0, lift) = try holeFrameAndLift(f, r, reach: reach)
+        var frame = frame0
+        frame.origin += lift * frame.normal
         let depth: Double
         if let d = f.depth {
-            depth = try p.value(of: d, kind: .length)
+            depth = try p.value(of: d, kind: .length) + lift
         } else if let b = r.bodies[i].body.bounds {  // through all: longer than the body is wide
             let d = b.max - b.min
-            depth = (d * d).sum().squareRoot() * 2 + 1
+            depth = (d * d).sum().squareRoot() * 2 + 1 + lift
         } else {
             throw KernelError(message: "the body is empty")
         }
@@ -1101,9 +1111,10 @@ public enum Regenerator {
         switch f.kind {
         case .simple: kind = .simple
         case .counterbore: kind = .counterbore(diameter: try p.value(of: f.headDiameter, kind: .length),
-                                               depth: try p.value(of: f.headDepth, kind: .length))
-        case .countersink: kind = .countersink(diameter: try p.value(of: f.headDiameter, kind: .length),
-                                               angle: try p.value(of: f.headAngle, kind: .angle))
+                                               depth: try p.value(of: f.headDepth, kind: .length) + lift)
+        case .countersink:
+            let angle = try p.value(of: f.headAngle, kind: .angle)
+            kind = .countersink(diameter: try p.value(of: f.headDiameter, kind: .length) + 2 * lift * tan(angle / 2), angle: angle)
         }
         let tip = f.depth == nil ? 0 : try p.value(of: f.tipAngle, kind: .angle)
         let tool = try KBody.hole(at: frame, kind, diameter: try p.value(of: f.diameter, kind: .length), depth: depth,

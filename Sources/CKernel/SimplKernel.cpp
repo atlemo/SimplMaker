@@ -106,6 +106,7 @@
 #include <Bnd_Box.hxx>
 #include <Geom2d_Curve.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
+#include <IntCurvesFace_ShapeIntersector.hxx>
 #include <GCPnts_TangentialDeflection.hxx>
 #include <GProp_GProps.hxx>
 #include <GeomAbs_SurfaceType.hxx>
@@ -4209,6 +4210,151 @@ bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out) {
   return true;
   SK_CATCH(false)
 }
+namespace {
+/// Where a line meets a face: the hit nearest `origin` (either way along the line). False if it misses.
+bool lineHitsFace(const TopoDS_Face &f, const gp_Pnt &origin, const gp_Dir &dir, gp_Pnt &hit) {
+  IntCurvesFace_ShapeIntersector inter;
+  inter.Load(f, 1e-6);
+  inter.Perform(gp_Lin(origin, dir), -1e6, 1e6);
+  if (!inter.IsDone() || inter.NbPnt() < 1) return false;
+  int best = 1;
+  for (int i = 2; i <= inter.NbPnt(); ++i)
+    if (std::fabs(inter.WParameter(i)) < std::fabs(inter.WParameter(best))) best = i;
+  hit = inter.Pnt(best);
+  return true;
+}
+
+/// The tangent plane of a curved face at the point of its surface nearest the middle of its outline: the
+/// frame hole positions on a curved face are measured in. x is level when it can be (as for sketch planes).
+bool curvedAnchor(const TopoDS_Face &f, gp_Pnt &on, gp_Dir &n, gp_Dir &x) {
+  // The middle of the face's parameter range: a face that goes all the way round (a cylinder, a sphere) has its
+  // centre of mass on the axis or the centre, which is no point of the surface to start from.
+  double u0, u1, v0, v1;
+  BRepTools::UVBounds(f, u0, u1, v0, v1);
+  BRepLProp_SLProps props(BRepAdaptor_Surface(f), 0.5 * (u0 + u1), 0.5 * (v0 + v1), 1, 1e-6);
+  if (!props.IsNormalDefined()) return false;
+  n = props.Normal();
+  if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
+  on = props.Value();
+  gp_Vec xv = gp_Vec(0, 0, 1).Crossed(gp_Vec(n));
+  if (xv.SquareMagnitude() < 1e-12) xv = gp_Vec(1, 0, 0) - gp_Vec(n) * n.X();
+  x = gp_Dir(xv);
+  return true;
+}
+}  // namespace
+
+bool sk_body_face_tangent_frame(SKHandle body, const char *faceName, SKFrame *out) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->faceIndex.find(faceName);
+  if (it == b->faceIndex.end()) {
+    setError(std::string("face not found: ") + faceName);
+    return false;
+  }
+  const TopoDS_Face &f = TopoDS::Face(b->faces(it->second + 1));
+  if (BRepAdaptor_Surface(f).GetType() == GeomAbs_Plane) return sk_body_face_frame(body, faceName, out);
+  gp_Pnt o; gp_Dir n, x;
+  if (!curvedAnchor(f, o, n, x)) {
+    setError(std::string("no surface normal on face: ") + faceName);
+    return false;
+  }
+  *out = SKFrame{o.X(), o.Y(), o.Z(), n.X(), n.Y(), n.Z(), x.X(), x.Y(), x.Z()};
+  return true;
+  SK_CATCH(false)
+}
+
+bool sk_body_face_hit(SKHandle body, const char *faceName, const double origin[3], const double dir[3], double out[3]) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->faceIndex.find(faceName);
+  if (it == b->faceIndex.end()) {
+    setError(std::string("face not found: ") + faceName);
+    return false;
+  }
+  const TopoDS_Face &f = TopoDS::Face(b->faces(it->second + 1));
+  gp_Pnt hit;
+  // The nearest hit in front of the ray, not behind it.
+  IntCurvesFace_ShapeIntersector inter;
+  inter.Load(f, 1e-6);
+  inter.Perform(gp_Lin(gp_Pnt(origin[0], origin[1], origin[2]), gp_Dir(dir[0], dir[1], dir[2])), 0, 1e7);
+  if (!inter.IsDone() || inter.NbPnt() < 1) {
+    setError("the ray misses the face");
+    return false;
+  }
+  int best = 1;
+  for (int i = 2; i <= inter.NbPnt(); ++i)
+    if (inter.WParameter(i) < inter.WParameter(best)) best = i;
+  hit = inter.Pnt(best);
+  out[0] = hit.X(); out[1] = hit.Y(); out[2] = hit.Z();
+  return true;
+  SK_CATCH(false)
+}
+
+bool sk_body_hole_frame(SKHandle body, const char *faceName, double u, double v, double reach, SKFrame *out, double *lift) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return false;
+  auto it = b->faceIndex.find(faceName);
+  if (it == b->faceIndex.end()) {
+    setError(std::string("face not found: ") + faceName);
+    return false;
+  }
+  const TopoDS_Face &f = TopoDS::Face(b->faces(it->second + 1));
+  *lift = 0;
+  if (BRepAdaptor_Surface(f).GetType() == GeomAbs_Plane) {
+    SKFrame fr;
+    if (!sk_body_face_frame(body, faceName, &fr)) return false;
+    const gp_Vec xa(fr.xx, fr.xy, fr.xz), na(fr.nx, fr.ny, fr.nz), ya = na.Crossed(xa);
+    *out = fr;
+    out->ox += u * xa.X() + v * ya.X(); out->oy += u * xa.Y() + v * ya.Y(); out->oz += u * xa.Z() + v * ya.Z();
+    return true;
+  }
+  gp_Pnt a; gp_Dir n, x;
+  if (!curvedAnchor(f, a, n, x)) {
+    setError(std::string("no surface normal on face: ") + faceName);
+    return false;
+  }
+  const gp_Vec xv(x), nv(n), yv = nv.Crossed(xv);
+  const gp_Pnt flat = a.Translated(xv * u + yv * v);
+  // Straight "down" onto the surface from the tangent plane (what you see when looking at the face); where that
+  // finds nothing (round the side of a cylinder) the nearest point of the surface.
+  gp_Pnt on;
+  if (!lineHitsFace(f, flat, n, on)) {
+    gp_Dir nn;
+    if (!faceNormalNear(f, flat, on, nn)) {
+      setError("the hole is off the face");
+      return false;
+    }
+  }
+  gp_Pnt on2; gp_Dir n2;
+  if (!faceNormalNear(f, on, on2, n2)) {
+    setError("no surface normal where the hole goes");
+    return false;
+  }
+  gp_Vec x2 = xv - gp_Vec(n2) * xv.Dot(gp_Vec(n2));
+  if (x2.SquareMagnitude() < 1e-12) x2 = yv - gp_Vec(n2) * yv.Dot(gp_Vec(n2));
+  const gp_Dir xd(x2);
+  *out = SKFrame{on2.X(), on2.Y(), on2.Z(), n2.X(), n2.Y(), n2.Z(), xd.X(), xd.Y(), xd.Z()};
+  // How far the surface climbs above the flat top of the tool, within the hole's reach (a concave surface rises
+  // away from the middle, and the tool would leave a skin there).
+  const gp_Vec yd = gp_Vec(n2).Crossed(gp_Vec(xd));
+  double rise = 0;
+  for (int k = 0; k < 16 && reach > 1e-9; ++k) {
+    const double ang = 2 * M_PI * k / 16;
+    const gp_Pnt around = on2.Translated(gp_Vec(xd) * (reach * std::cos(ang)) + yd * (reach * std::sin(ang)));
+    gp_Pnt h;
+    if (lineHitsFace(f, around, n2, h)) rise = std::max(rise, gp_Vec(on2, h).Dot(gp_Vec(n2)));
+  }
+  *lift = rise;
+  return true;
+  SK_CATCH(false)
+}
+
 
 bool sk_body_edge_handle(SKHandle body, const char *edgeName, double out[6]) {
   SK_TRY

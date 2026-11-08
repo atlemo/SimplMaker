@@ -754,6 +754,10 @@ extension DocumentModel {
             plane = .plane(id); frame = f; target = nil
         } else if let ref = faceRef(pick), let body = result?.body(ref.body), let f = try? body.faceFrame(ref.face) {
             plane = .face(ref); frame = f; target = ref.body
+        } else if tool == .hole, let ref = faceRef(pick), let body = result?.body(ref.body),
+                  let f = try? body.faceTangentFrame(ref.face) {
+            // A curved face: positions are in its tangent plane, and the hole lands on the surface under them.
+            plane = .face(ref); frame = f; target = ref.body
         } else {
             if pick.isFace { alert = AlertInfo(title: "That face isn't flat", message: "Pick a flat face or one of the origin planes.") }
             return false
@@ -775,9 +779,15 @@ extension DocumentModel {
             (try? result?.body(ref.body)?.faceOutlineCenter(ref.face)).map { Self.uv(of: $0, on: frame) }
         } ?? (pick.isFace ? faceCenter(pick, on: frame) : nil) ?? .zero
         var uv = center
-        if let ray = clickRay, let hit = Self.intersect(ray: ray, with: frame) {
+        // On a curved face the click's point on the surface, measured in the tangent plane.
+        func hitUV(_ ray: (origin: SIMD3<Double>, direction: SIMD3<Double>)) -> SIMD2<Double>? {
+            if tool == .hole, let ref = faceRef(pick), let body = result?.body(ref.body),
+               let p = body.faceHit(ref.face, origin: ray.origin, direction: ray.direction) { return Self.uv(of: p, on: frame) }
+            return Self.intersect(ray: ray, with: frame)
+        }
+        if let ray = clickRay, let hit = hitUV(ray) {
             uv = hit
-            if let next = clickRayNext, let beside = Self.intersect(ray: next, with: frame) {
+            if let next = clickRayNext, let beside = hitUV(next) {
                 uv = Self.snap(hit, to: center, tolerance: 10 * simd_length(beside - hit))
             }
         }

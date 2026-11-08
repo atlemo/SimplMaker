@@ -556,6 +556,29 @@ public final class KBody: @unchecked Sendable {
         return Frame(f)
     }
 
+    /// The plane a hole's (u, v) are measured in: a flat face's own frame, or for a curved face the tangent plane at the
+    /// point of its surface nearest the middle of its outline.
+    public func faceTangentFrame(_ name: String) throws -> Frame {
+        var f = SKFrame()
+        guard sk_body_face_tangent_frame(handle, name, &f) else { throw KernelError.last("face frame") }
+        return Frame(f)
+    }
+
+    /// Where a ray first meets a face.
+    public func faceHit(_ name: String, origin: SIMD3<Double>, direction: SIMD3<Double>) -> SIMD3<Double>? {
+        var o = [origin.x, origin.y, origin.z], d = [direction.x, direction.y, direction.z], out = [Double](repeating: 0, count: 3)
+        guard sk_body_face_hit(handle, name, &o, &d, &out) else { return nil }
+        return SIMD3(out[0], out[1], out[2])
+    }
+
+    /// A hole's frame at (u, v) of the face's tangent frame, lying on the surface (on a curved face, with the surface's own
+    /// normal there), and how far the surface rises above the frame's plane within `reach` of the centre.
+    public func holeFrame(_ name: String, u: Double, v: Double, reach: Double) throws -> (frame: Frame, lift: Double) {
+        var f = SKFrame(), lift = 0.0
+        guard sk_body_hole_frame(handle, name, u, v, reach, &f, &lift) else { throw KernelError.last("hole position") }
+        return (Frame(f), lift)
+    }
+
     /// A round face: its axis from the end a thread starts at, radius, length, and whether it's a hole.
     public func faceCylinder(_ name: String, flipped: Bool = false) throws -> KCylinder {
         // Remembered: it asks the body what lies beyond each end of the face, which takes long on a threaded one.

@@ -226,6 +226,14 @@ bool sk_body_face_center(SKHandle body, const char *faceName, double out[3]);
 bool sk_body_face_outline_center(SKHandle body, const char *faceName, double out[3]);
 /// Frame of a planar face (normal points out of the material). False if missing / not planar.
 bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out);
+/// The plane hole positions are measured in: a planar face's own frame, or for a curved face the tangent plane at
+/// the point of its surface nearest the middle of its outline.
+bool sk_body_face_tangent_frame(SKHandle body, const char *faceName, SKFrame *out);
+/// Where a ray (from `origin`, going `dir`) first meets a face. False if it misses.
+bool sk_body_face_hit(SKHandle body, const char *faceName, const double origin[3], const double dir[3], double out[3]);
+/// The frame of a hole at (u, v) in the face's tangent frame: origin on the surface, normal pointing out of the
+/// material there. `lift` = how far the surface rises above the frame's tangent plane within `reach` of it.
+bool sk_body_hole_frame(SKHandle body, const char *faceName, double u, double v, double reach, SKFrame *out, double *lift);
 /// Drag handle for a fillet/chamfer on an edge: out[0..2] = edge midpoint, out[3..5] = unit
 /// direction the rounding grows in (into the material for outside corners, into the air for
 /// inside corners). False if the edge doesn't join two faces at an angle.
