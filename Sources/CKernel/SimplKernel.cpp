@@ -95,7 +95,7 @@
 #include <Geom2dAPI_Interpolate.hxx>
 #include <Geom2d_BSplineCurve.hxx>
 #include <Geom2d_TrimmedCurve.hxx>
-#include <TColgp_HArray1OfPnt2d.hxx>
+#include <NCollection_HArray1.hxx>
 #include <gp_Pnt2d.hxx>
 #include <GeomConvert.hxx>
 #include <GeomConvert_CompCurveToBSplineCurve.hxx>
@@ -133,7 +133,6 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Iterator.hxx>
-#include <TopTools_ListOfShape.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shell.hxx>
@@ -3241,7 +3240,7 @@ bool wrapOntoCylinder(const TopoDS_Face &face, const std::vector<Profile *> &ps,
           if (!segment.IsDone()) return false;
           curve2d = segment.Value();
         } else {
-          Handle(TColgp_HArray1OfPnt2d) pts = new TColgp_HArray1OfPnt2d(1, static_cast<int>(run.size()));
+          Handle(NCollection_HArray1<gp_Pnt2d>) pts = new NCollection_HArray1<gp_Pnt2d>(1, static_cast<int>(run.size()));
           for (size_t m = 0; m < run.size(); ++m) pts->SetValue(static_cast<int>(m) + 1, run[m]);
           Geom2dAPI_Interpolate interpolate(pts, false, 1e-7);
           interpolate.Perform();
@@ -3323,7 +3322,7 @@ SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int face
   for (Profile *p : ps) shapes.push_back(TopoDS::Face(p->face));
   if (ps.size() > 1) {
     try {
-      TopTools_ListOfShape objects, tools;
+      ShapeList objects, tools;
       for (size_t k = 0; k < ps.size(); ++k) (k == 0 ? objects : tools).Append(ps[k]->face);
       BRepAlgoAPI_Fuse fuse;
       fuse.SetArguments(objects);
@@ -3427,7 +3426,7 @@ SKHandle sk_project_relief(SKHandle body, const char *const *faceNames, int face
     // compound of overlapping solids is refused by the boolean.
     BRepAlgoAPI_Common common;
     {
-      TopTools_ListOfShape objects, tools;
+      ShapeList objects, tools;
       objects.Append(face);
       for (TopoDS_Iterator it(prisms); it.More(); it.Next()) tools.Append(it.Value());
       common.SetArguments(objects);
@@ -4210,6 +4209,7 @@ bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out) {
   return true;
   SK_CATCH(false)
 }
+
 namespace {
 /// Where a line meets a face: the hit nearest `origin` (either way along the line). False if it misses.
 bool lineHitsFace(const TopoDS_Face &f, const gp_Pnt &origin, const gp_Dir &dir, gp_Pnt &hit) {
@@ -4354,7 +4354,6 @@ bool sk_body_hole_frame(SKHandle body, const char *faceName, double u, double v,
   return true;
   SK_CATCH(false)
 }
-
 
 bool sk_body_edge_handle(SKHandle body, const char *edgeName, double out[6]) {
   SK_TRY

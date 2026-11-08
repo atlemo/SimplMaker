@@ -449,7 +449,7 @@
 		74EB033B215369272AFBF0AB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(ARCHS_STANDARD)";
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
@@ -476,7 +476,7 @@
 		CF5B4C9731847D0D25D7A885 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(ARCHS_STANDARD)";
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macosx*]" = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
@@ -503,7 +503,7 @@
 		6757A3C48DC52F20825DE01C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(ARCHS_STANDARD)";
+				ARCHS = arm64;
 				CODE_SIGN_ENTITLEMENTS = Packaging/QuickLook/QuickLook.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
@@ -526,7 +526,7 @@
 		C6DAF74FD503AF85C0AE0EBC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(ARCHS_STANDARD)";
+				ARCHS = arm64;
 				CODE_SIGN_ENTITLEMENTS = Packaging/QuickLook/QuickLook.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
@@ -549,7 +549,7 @@
 		C7F991D076E4E7C36856E711 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(ARCHS_STANDARD)";
+				ARCHS = arm64;
 				CODE_SIGN_ENTITLEMENTS = Packaging/QuickLook/QuickLook.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
@@ -572,7 +572,7 @@
 		0854322709C5BF322C10A053 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(ARCHS_STANDARD)";
+				ARCHS = arm64;
 				CODE_SIGN_ENTITLEMENTS = Packaging/QuickLook/QuickLook.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
