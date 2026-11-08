@@ -278,8 +278,8 @@ def write_llms(pages, docs):
              "/privacy/": "Privacy policy", "/license/": "License and source code"}
     for p in pages:
         p["title"] = short.get(p["route"], p["title"])
-    product = [p for p in pages if p["route"] in short and p["route"] not in ("/privacy/", "/license/")]
-    legal = [p for p in pages if p["route"] in ("/privacy/", "/license/")]
+    product = [p for p in pages if p["route"] in short and p["route"] not in ("/privacy/", "/license/", "/open-source/")]
+    legal = [p for p in pages if p["route"] in ("/privacy/", "/license/", "/open-source/")]
     lines = [
         "# SimplMaker", "",
         "> SimplMaker is native parametric CAD for Mac, made for makers who 3D print. Sketch a profile, extrude it, "

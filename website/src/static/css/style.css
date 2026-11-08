@@ -473,6 +473,9 @@ main { padding-top: 64px; }
 .text-page li + li { margin-top: 0.4em; }
 .text-page ul + p { margin-top: 1em; }
 .text-page a { text-decoration: underline; text-underline-offset: 0.2em; }
+.text-page ol { list-style: decimal; padding-left: 1.4em; margin-top: 0.8em; }
+.text-page pre { background: var(--dark); color: var(--on-dark); padding: 16px 20px; border-radius: 6px; overflow-x: auto; margin: 1em 0; }
+.text-page pre code { background: none; color: inherit; padding: 0; font-size: 0.88rem; }
 .notice { border: 1.5px solid var(--ink); padding: 16px 20px; margin-bottom: 2em; font-size: 0.95rem; }
 .release { border-top: 1px solid var(--line); padding-block: 36px; display: grid; grid-template-columns: 1fr 2fr; gap: 24px; }
 .release h2 { margin: 0; font-size: clamp(1.4rem, 3vw, 2.2rem); grid-column: 1; }

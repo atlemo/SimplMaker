@@ -1,0 +1,88 @@
+---
+title: Open source and Open CASCADE
+description: Which open-source libraries SimplMaker is built on, where the source of Open CASCADE (the geometry kernel, LGPL 2.1) is, how it is built, and how to rebuild SimplMaker for Mac or iPad with your own copy.
+---
+<section class="page-head wrap">
+  <p class="mono">Legal</p>
+  <h1 class="display display-page">Open source and Open CASCADE</h1>
+  <p class="lead">Last updated 8 November 2026.</p>
+</section>
+<section class="wrap text-page" style="padding-bottom:var(--section)">
+  <h2>The short version</h2>
+  <p>SimplMaker is free software under the <a href="/license/">GNU GPL, version 3 or later</a>, and its whole source is public on <a href="{{github_url}}">GitHub</a>. Its geometry kernel, the part that makes extrusions, fillets, booleans and STEP files, is <a href="https://dev.opencascade.org">Open CASCADE Technology</a> (OCCT), which has its own license: the <strong>GNU LGPL 2.1 with the Open CASCADE exception</strong>. This page is where we keep what that license asks us to provide, for the Mac app and for the iPad app, including the one from the App Store:</p>
+  <ul>
+    <li>which version of OCCT is inside, and that it is <strong>unmodified</strong>;</li>
+    <li>where its source is, and our offer to send it to you;</li>
+    <li>the exact scripts and settings we build it with;</li>
+    <li>how to rebuild SimplMaker with your own build of OCCT.</li>
+  </ul>
+
+  <h2>What is inside</h2>
+  <table class="doc-table">
+    <thead><tr><th></th><th>Mac app</th><th>iPad app</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">SimplMaker itself</th><td>GPL-3.0-or-later</td><td>GPL-3.0-or-later</td></tr>
+      <tr><th scope="row">Open CASCADE</th><td>Version 8.0.1 (tag <code>V8_0_1</code>), unmodified, LGPL 2.1 with exception</td><td>The same version and tag, unmodified</td></tr>
+      <tr><th scope="row">How OCCT is linked</th><td>As a separate library, <code>libSimplOCCT.dylib</code>, in <code>SimplMaker.app/Contents/Frameworks</code>. You can replace it.</td><td>Statically, from <code>SimplOCCT.xcframework</code>. An iPad app cannot carry a library you swap, so you rebuild the app instead (see below).</td></tr>
+      <tr><th scope="row">Licence texts</th><td colspan="2">In the app, under <strong>About SimplMaker</strong> (on iPad: the Help menu → <strong>About SimplMaker and Licences</strong>), and linked below.</td></tr>
+    </tbody>
+  </table>
+  <p>We have <strong>not changed</strong> Open CASCADE. Our build scripts download the upstream tag and configure it, and nothing else. If we ever patch it, the patches will be published here before that version ships.</p>
+
+  <h2>The license texts</h2>
+  <ul>
+    <li><a href="https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_1/LICENSE_LGPL_21.txt">GNU LGPL 2.1</a></li>
+    <li><a href="https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_1/OCCT_LGPL_EXCEPTION.txt">The Open CASCADE exception</a></li>
+    <li><a href="{{github_url}}/blob/main/LICENSE">SimplMaker's GPL-3.0-or-later license</a></li>
+  </ul>
+
+  <h2>Get the Open CASCADE source</h2>
+  <p>The complete source of the version in SimplMaker is the <code>V8_0_1</code> tag of the upstream repository:</p>
+  <p><a href="https://github.com/Open-Cascade-SAS/OCCT/tree/V8_0_1">github.com/Open-Cascade-SAS/OCCT, tag V8_0_1</a></p>
+  <pre><code>git clone --depth 1 --branch V8_0_1 https://github.com/Open-Cascade-SAS/OCCT.git</code></pre>
+  <p><strong>Our own copy.</strong> So that you do not depend on that tag staying where it is, we keep a copy of the same source, unchanged, next to SimplMaker's own releases:</p>
+  <ul>
+    <li><a href="{{github_url}}/releases/download/occt-V8_0_1-source/OCCT-V8_0_1-source.tar.gz">OCCT-V8_0_1-source.tar.gz</a> (44 MB), made with <code>git archive</code> from upstream commit <code>b8f597c677811d1f9f4d8a97f5ae2825c0353a42</code>, which is what the <code>V8_0_1</code> tag points to</li>
+    <li>SHA-256: <code>2f633b5cd2cd37533b6d41cdfd73bfc00e8a9fbadc35a139d8eea8bdcb9a9099</code>, also on the <a href="{{github_url}}/releases/tag/occt-V8_0_1-source">release page</a></li>
+  </ul>
+  <p><strong>Written offer.</strong> If neither of those is available, write to <a href="mailto:{{support_email}}">{{support_email}}</a> and we will send you a copy of the source of the Open CASCADE version in your copy of SimplMaker, free of charge apart from what it costs to send it. The offer stands for at least three years after you received SimplMaker.</p>
+  <p>The SimplMaker source, with everything needed to build the apps, is at <a href="{{github_url}}">{{github_url}}</a>.</p>
+
+  <h2>How we build Open CASCADE</h2>
+  <p>Two scripts in the SimplMaker repository do it, and they are the build we ship:</p>
+  <ul>
+    <li><a href="{{github_url}}/blob/main/scripts/build-occt.sh"><code>scripts/build-occt.sh</code></a> for the Mac (Apple silicon). It builds OCCT as static archives, merges them into one, and links that into <code>libSimplOCCT.dylib</code>.</li>
+    <li><a href="{{github_url}}/blob/main/scripts/build-occt-ios.sh"><code>scripts/build-occt-ios.sh</code></a> for the iPad, once for devices and once for the simulator. It leaves one merged <code>libSimplOCCT.a</code> for each.</li>
+  </ul>
+  <p>Both use the same settings, so the Mac and iPad builds differ only in the target platform: a minimal build with the foundation, modeling and data-exchange modules, and with the optional extras (FreeType, OpenGL, Tcl/Tk, TBB, VTK, FreeImage, FFmpeg and others) switched off. <code>OCCT_TAG</code> sets the version, so you can point the same scripts at a different tag or at your own checkout.</p>
+
+  <h2>Replace the library in the Mac app</h2>
+  <ol>
+    <li>Quit SimplMaker.</li>
+    <li>Build your own <code>libSimplOCCT.dylib</code> with <code>scripts/build-occt.sh</code>, or by hand as described in the <a href="/docs/reference/open-cascade/">Open CASCADE page in the docs</a>.</li>
+    <li>Copy it over the one in <code>SimplMaker.app/Contents/Frameworks/</code>.</li>
+    <li>Sign the app again. An ad-hoc signature is enough: <code>codesign --force --deep --sign - /Applications/SimplMaker.app</code>.</li>
+  </ol>
+  <p>Your build has to be compatible: the same version of Open CASCADE, or one with the same interface, and the same options. Re-signing replaces our signature, and a SimplMaker update puts the standard library back.</p>
+
+  <h2>Rebuild the iPad app with your own Open CASCADE</h2>
+  <p>On the iPad the kernel is part of the app and cannot be swapped on the device. The app's whole source is public, though, so you can build it again with your own copy of OCCT and put it on your own iPad. You need a Mac with Xcode 26, CMake, Ninja and <a href="https://github.com/yonaskolb/XcodeGen">XcodeGen</a>, and a free or paid Apple developer team to sign with.</p>
+  <ol>
+    <li>Get the source: <code>git clone {{github_url}}.git</code>.</li>
+    <li>Build Open CASCADE for the device and the simulator, with the standard source or your own: <code>scripts/build-occt-ios.sh</code> (set <code>OCCT_TAG</code> for another version). This leaves <code>ThirdParty/occt-ios/iphoneos/lib/libSimplOCCT.a</code> and the same under <code>iphonesimulator</code>.</li>
+    <li>Put the two together as the framework the app links:
+<pre><code>xcodebuild -create-xcframework \
+  -library ThirdParty/occt-ios/iphoneos/lib/libSimplOCCT.a \
+  -library ThirdParty/occt-ios/iphonesimulator/lib/libSimplOCCT.a \
+  -output ThirdParty/occt-ios/SimplOCCT.xcframework</code></pre></li>
+    <li>Generate the project and open it: <code>cd iPad &amp;&amp; xcodegen generate &amp;&amp; open SimplMakerPad.xcodeproj</code>.</li>
+    <li>In <code>iPad/project.yml</code>, replace the development team with your own and give the app your own bundle identifier, generate again, then choose your iPad and run.</li>
+  </ol>
+  <p>The App Store version is built from this same source with the same scripts. Apps you build yourself carry your signature, not ours.</p>
+
+  <h2>Other open-source components</h2>
+  <p>SimplMaker also includes DelaBella (shipped with Open CASCADE), Sparkle, Lucide icons and the TelemetryDeck SDK. Their licenses are in the app under <strong>About SimplMaker</strong> and are listed on the <a href="/license/">license page</a>.</p>
+
+  <h2>Questions</h2>
+  <p>If something here is unclear, or you want the Open CASCADE source sent to you, write to <a href="mailto:{{support_email}}">{{support_email}}</a>.</p>
+</section>
