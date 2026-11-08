@@ -186,12 +186,16 @@ struct DocumentWindow: View {
             }
             // On the tinted sketch toolbar the system's glass behind these would pick its own brightness, whatever
             // colour the symbol is given, so they are drawn like the tools: the contrast ink on the tint, no glass.
+            // The toggles' glass is drawn here, with the panels' own glass, rather than by the toolbar: the system's
+            // toolbar glass sits a level above the floating panels.
             ToolbarItem(placement: .navigation) {
                 PanelToggle(title: "Browser", systemImage: "sidebar.left", ink: panelToggleInk,
                             help: helpWithShortcut("Show or hide the browser", .browser)) { model.showSidebar.toggle() }
+                    .toolbarGlass(plain: sketchTint)
             }
-            .sharedBackgroundHidden(sketchTint)
-            ToolbarItemGroup(placement: .primaryAction) {
+            .sharedBackgroundHidden(true)
+            ToolbarItem(placement: .primaryAction) {
+              HStack(spacing: 0) {
                 PanelToggle(title: "Render", systemImage: model.renderView ? "camera.fill" : "camera", ink: panelToggleInk,
                             help: "Show the part on a floor with a light you set, for presentation") { model.setRenderView(!model.renderView) }
                     .disabled(model.sketchSession != nil)
@@ -199,8 +203,10 @@ struct DocumentWindow: View {
                             help: helpWithShortcut("Hide the panels and toolbar, leaving only the view", .hideUI)) { model.toggleUIHidden() }
                 PanelToggle(title: "Inspector", systemImage: "sidebar.right", ink: panelToggleInk,
                             help: helpWithShortcut("Show or hide the inspector", .inspector)) { model.showInspector.toggle() }
+              }
+              .toolbarGlass(plain: sketchTint)
             }
-            .sharedBackgroundHidden(sketchTint)
+            .sharedBackgroundHidden(true)
         }
         .modifier(AccentScope(sketching: model.sketchSession != nil))
         .focusedSceneValue(\.documentModel, model)
@@ -1354,6 +1360,15 @@ struct BrowserFolderNode: View {
 
 /// A toolbar button that shows or hides a panel. With an `ink` (on the tinted sketch toolbar) it draws its own symbol in that
 /// colour over a soft round fill of it; without, it is the system's glass button.
+extension View {
+    /// A toolbar button group on the same glass as the floating panels (none on the tinted sketch toolbar).
+    @ViewBuilder func toolbarGlass(plain: Bool) -> some View {
+        if plain { self } else {
+            self.padding(.horizontal, 4).frame(minHeight: 34).panelGlass(in: Capsule())
+        }
+    }
+}
+
 struct PanelToggle: View {
     let title: String
     let systemImage: String
