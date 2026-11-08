@@ -14,6 +14,7 @@ struct PadDocumentView: View {
     @AppStorage(Preferences.showAxes) private var showAxes = true
 
     private var model: DocumentModel { file.model }
+    @MainActor private static var narrow: Bool { currentScreenBounds.width < 1200 }
     /// The picture stored in the file: the part as the viewport shows it, shrunk.
     private func storeThumbnail() async {
         try? await Task.sleep(for: .seconds(1.5))
@@ -42,7 +43,12 @@ struct PadDocumentView: View {
     var body: some View {
         let model = model
         let guide = file.guide
-        return DocumentPanels(model: model, guide: guide, viewport: viewport(model), chrome: EmptyView())
+        return DocumentPanels(model: model, guide: guide, viewport: viewport(model), chrome:
+            // The bar is drawn here, under the side panels, so its shadow never falls on them (all the glass is at one level);
+            // the empty inset below keeps the room it needs. Offset up by that room: this layer sits under the inset.
+            PadToolBar(model: model, height: $toolBarHeight)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .offset(y: -toolBarHeight))
             // The keyboard covers the bottom of the screen instead of squeezing the view above it: the fields that are typed in move up by themselves.
             .ignoresSafeArea(.keyboard)
             // The size fields and the OK / Cancel bar of a feature float above the panels, never under them.
@@ -64,8 +70,40 @@ struct PadDocumentView: View {
                     .padding(.bottom, Panel.bottomInset(timeline: model.showTimeline) + 8)
                     .ignoresSafeArea()
             }
-            .safeAreaInset(edge: .top, spacing: 0) { PadToolBar(model: model, height: $toolBarHeight) }
-            .toolbar { PadToolbar(model: model, guide: guide, undoManager: undoManager) }
+            // The number pad that stands in for the keyboard when a size is typed, beside the Inspector, which opens so that every
+            // size the feature needs is in view.
+            .overlay(alignment: .bottom) {
+                PadNumpadPanel(model: model)
+                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
+                    .padding(.bottom, Panel.bottomInset(timeline: model.showTimeline) + 8)
+                    .ignoresSafeArea()
+            }
+            .onChange(of: PadNumpad.shared.isActive) {
+                if PadNumpad.shared.isActive, model.selectedFeature != nil || model.newFeature != nil { model.showInspector = true }
+            }
+            // Each side panel's show/hide button sits in the panel's top corner and stays there when the panel is closed
+            // (then it floats on its own), as in Apple Notes.
+            // The Render view has no browser or inspector: its two buttons give way to the ones that belong to it.
+            .overlay(alignment: .topLeading) {
+                if !model.renderView {
+                    PadPanelToggle(open: model.showSidebar, systemImage: "sidebar.left", label: "Browser") { model.showSidebar.toggle() }
+                        .padding(.leading, Panel.inset + 2).padding(.top, Panel.inset + 4)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if model.renderView {
+                    PadRenderButtons(model: model)
+                        .padding(.trailing, Panel.inset + 2).padding(.top, Panel.inset + 4)
+                } else {
+                    PadPanelToggle(open: model.showInspector, systemImage: "sidebar.right", label: "Inspector") { model.showInspector.toggle() }
+                        .padding(.trailing, Panel.inset + 2).padding(.top, Panel.inset + 4)
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: toolBarHeight).allowsHitTesting(false) }
+            // Undo, Render, View, Help, Settings and Export live in the navigation bar as a view of our own, not as items of the
+            // system bar: those kept disappearing (after another app, or a dialog) and took the way out of the Render view with them.
+            .background(PadNavBarButtons(model: model, guide: guide, undoManager: undoManager))
             .modifier(PadDialogs(model: model))
             .modifier(AccentScope(sketching: model.sketchSession != nil))
             .environment(\.completionModel, model)
@@ -76,7 +114,7 @@ struct PadDocumentView: View {
                 model.undoManager = undoManager
                 model.fileURL = fileURL
                 // A narrow screen has room for the viewport or the panels, not both: start with the viewport.
-                if UIScreen.main.bounds.width < 1200 { model.showSidebar = false; model.showInspector = false }
+                if currentScreenBounds.width < 1200 { model.showSidebar = false; model.showInspector = false }
             }
             .onChange(of: model.showImageExport) {
                 guard model.showImageExport else { return }
@@ -92,6 +130,11 @@ struct PadDocumentView: View {
                 }
             }
             .task(id: model.documentRevision) { await storeThumbnail() }
+            // A narrow screen has room for one side panel beside the part: opening one closes the other.
+            .onChange(of: model.showSidebar) { if model.showSidebar, Self.narrow { model.showInspector = false } }
+            .onChange(of: model.showInspector) { if model.showInspector, Self.narrow { model.showSidebar = false } }
+            // Opening the tool bar, or starting a tool, gives the part its room back.
+            .onChange(of: model.pendingTool != nil) { if model.pendingTool != nil, Self.narrow { model.showSidebar = false } }
             .onChange(of: undoManager) { model.undoManager = undoManager }
             .onChange(of: fileURL) { model.fileURL = fileURL }
     }
@@ -122,6 +165,51 @@ struct PadDocumentView: View {
     }
 }
 
+/// A panel's show/hide button: plain inside the open panel, on its own glass disc once the panel is closed.
+/// In the Render view, always in reach: the way out, and the render options when they have been closed.
+private struct PadRenderButtons: View {
+    let model: DocumentModel
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if !model.showRenderOptions {
+                Button { model.showRenderOptions = true } label: {
+                    Image(systemName: "slider.horizontal.3").font(.system(size: 18, weight: .medium)).frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .accessibilityLabel("Show render options")
+            }
+            Button { model.setRenderView(false) } label: {
+                Label("Done", systemImage: "camera.fill").font(.system(size: 16, weight: .semibold)).frame(height: 44).padding(.horizontal, 12).contentShape(Rectangle())
+            }
+            .accessibilityLabel("Leave the render view")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.primary)
+        .background { Color.clear.panelGlass(in: Capsule()) }
+    }
+}
+
+private struct PadPanelToggle: View {
+    let open: Bool
+    let systemImage: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .medium))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(open ? Color.secondary : Color.primary)
+        .background { if !open { Color.clear.panelGlass(in: Circle()) } }
+        .accessibilityLabel(open ? "Hide \(label.lowercased())" : "Show \(label.lowercased())")
+        .animation(.easeOut(duration: 0.15), value: open)
+    }
+}
+
 /// The Mac's two tool rows (design tools, or sketch tools while a sketch is open), in a bar across the whole width, with the buttons
 /// scaled up for a finger. The row is centred while it fits and scrolls sideways when it does not.
 struct PadToolBar: View {
@@ -133,6 +221,8 @@ struct PadToolBar: View {
     /// How much of the top the bar takes (its height and the gaps around it), for centring the view in what is left.
     static let height: CGFloat = 96
     @State private var natural = CGSize(width: 800, height: 56)
+    /// The scale the bar's row is drawn at right now (see `layout(fitting:)`).
+    @State private var barScale = PadToolBar.scale
     /// How wide the row is in each layout, measured on copies that are never shown.
     @State private var widths: [ToolbarLayout: CGFloat] = [:]
     @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
@@ -175,13 +265,17 @@ struct PadToolBar: View {
     }
 
     /// The widest layout that fits the room: a small iPad starts with fewer pinned tools, the rest are in each group's menu.
-    private func layout(fitting room: CGFloat) -> ToolbarLayout {
-        var trim = 0
-        while let w = widths[.trimmed(trim)] {
-            if w * Self.scale <= room { return .trimmed(trim) }
-            trim += 1
+    /// Buttons are drawn at full size when they fit; otherwise they shrink (down to the Mac's size) before tools are moved into menus,
+    /// so a narrow iPad still shows its tool row instead of only a "Tools" menu.
+    private func layout(fitting room: CGFloat) -> (layout: ToolbarLayout, scale: CGFloat) {
+        for scale in [Self.scale, 1.15, 1.0] {
+            var trim = 0
+            while let w = widths[.trimmed(trim)] {
+                if w * scale <= room { return (.trimmed(trim), scale) }
+                trim += 1
+            }
         }
-        return .single
+        return (.single, Self.scale)
     }
 
     /// The user's own choice (nil: follow the tool). A tool that is being set up folds the bar away so the part is in view;
@@ -219,6 +313,8 @@ struct PadToolBar: View {
     /// A small pill in the middle of the top edge: the tool's name and a chevron that brings the bar back.
     private var foldedBar: some View {
         HStack(spacing: 8) {
+            // On the right, where the chevron that folded the bar is.
+            Spacer(minLength: 0)
             Button { setCollapsed(false) } label: {
                 HStack(spacing: 8) {
                     Text(foldedTitle).font(.headline).lineLimit(1)
@@ -231,6 +327,28 @@ struct PadToolBar: View {
             .buttonStyle(.plain)
             .panelGlass(in: Capsule())
             .accessibilityHint("Shows the tool bar")
+            // A new feature being sized (a hole, an extrude…) is finished or given up here too, whatever else is on screen:
+            // its own OK sits by its arrow, which may be out of reach, and until it is done the bar stays folded.
+            if model.pendingTool == nil, let id = model.newFeature {
+                Button { model.cancelNewFeature() } label: {
+                    Image(systemName: "xmark").font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .panelGlass(in: Circle())
+                .accessibilityLabel("Cancel \(foldedTitle)")
+                Button { model.finishFeatureEdit() } label: {
+                    Label("Done", systemImage: "checkmark").font(.headline)
+                        .padding(.horizontal, 20)
+                        .frame(minHeight: 44)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .panelGlass(in: Capsule())
+                .accessibilityLabel("Finish \(foldedTitle)")
+                .id(id)
+            }
             // A tool that still waits for a pick has no other Cancel on screen.
             if model.pendingTool != nil {
                 Button { model.pendingTool = nil } label: {
@@ -249,16 +367,17 @@ struct PadToolBar: View {
     private var fullBar: some View {
         HStack(spacing: 0) {
             GeometryReader { geo in
-                let chosen = layout(fitting: geo.size.width - 28)
+                let (chosen, scale) = layout(fitting: geo.size.width - 28)
                 ScrollView(.horizontal, showsIndicators: false) {
                     row(chosen)
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { natural = $0 }
-                        .scaleEffect(Self.scale, anchor: .topLeading)
-                        .frame(width: natural.width * Self.scale, height: natural.height * Self.scale, alignment: .topLeading)
+                        .scaleEffect(scale, anchor: .topLeading)
+                        .frame(width: natural.width * scale, height: natural.height * scale, alignment: .topLeading)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
                         .frame(minWidth: geo.size.width, alignment: .center)
                 }
+                .onChange(of: scale, initial: true) { barScale = scale }
             }
             Button { setCollapsed(true) } label: {
                 Image(systemName: "chevron.up").font(.body.weight(.semibold))
@@ -269,7 +388,7 @@ struct PadToolBar: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Hide tool bar")
         }
-        .frame(height: natural.height * Self.scale + 12)
+        .frame(height: natural.height * barScale + 12)
         .modifier(BarBackground(tint: model.sketchSession != nil ? sketchPaper.toolbarTint : nil))
     }
 }
@@ -286,12 +405,13 @@ private struct BarBackground: ViewModifier {
     }
 }
 
-/// The navigation bar: panels on and off at the leading side; undo, redo, view and export at the trailing side.
-struct PadToolbar: ToolbarContent {
+/// Undo, redo, render, view, help, settings and export, in a glass capsule at the top right.
+struct PadTopButtons: View {
     let model: DocumentModel
     let guide: TutorialGuide
     @Environment(\.openURL) private var openURL
     let undoManager: UndoManager?
+    @Environment(\.accent) private var accent
 
     /// An example part replaces what is in the part (one Undo brings it back): iPadOS has no way to open a second part from inside the app.
     private func loadExample(_ title: String, _ document: CADDocument) {
@@ -299,18 +419,14 @@ struct PadToolbar: ToolbarContent {
         model.regenerate(fit: true)  // the view fits the new part once it is built
     }
 
-    var body: some ToolbarContent {
-        ToolbarItemGroup(placement: .topBarLeading) {
-            Button("Browser", systemImage: "sidebar.left") { model.showSidebar.toggle() }
-        }
-        ToolbarItemGroup(placement: .topBarTrailing) {
+    var body: some View {
+        HStack(spacing: 0) {
             Button("Undo", systemImage: "arrow.uturn.backward") { undoManager?.undo() }
                 .disabled(undoManager?.canUndo != true)
             Button("Redo", systemImage: "arrow.uturn.forward") { undoManager?.redo() }
                 .disabled(undoManager?.canRedo != true)
             Button("Render", systemImage: model.renderView ? "camera.fill" : "camera") { model.setRenderView(!model.renderView) }
                 .disabled(model.sketchSession != nil)
-            Button("Inspector", systemImage: "sidebar.right") { model.showInspector.toggle() }
             Menu("View", systemImage: "eye") { PadViewControls(model: model) }
             Menu("Help", systemImage: "questionmark.circle") {
                 Button(guide.canResume ? "Resume Tutorial: Desk Organizer" : "Tutorial: Make a Desk Organizer") {
@@ -340,6 +456,24 @@ struct PadToolbar: ToolbarContent {
                 Button("Import DXF as sketch…") { model.importDXF() }
             }
         }
+        .labelStyle(.iconOnly)
+        .font(.title3)
+        .foregroundStyle(accent)
+        // Every control is a finger-sized square of its own.
+        .buttonStyle(PadTopButtonStyle())
+        .padding(.horizontal, 6)
+        .panelGlass(in: Capsule())
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Part actions")
+    }
+}
+
+private struct PadTopButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.5 : 1)
     }
 }
 

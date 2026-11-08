@@ -137,7 +137,12 @@ struct PadViewport: UIViewRepresentable {
         /// The next frame, as PNG data.
         func capturePNG(_ done: @escaping @MainActor @Sendable (Data?) -> Void) {
             guard let renderer, let view else { return done(nil) }
-            renderer.captureHandler = done
+            // The drawable is read back, which a view that only displays it does not allow (Metal validation aborts).
+            view.framebufferOnly = false
+            renderer.captureHandler = { [weak view] data in
+                view?.framebufferOnly = true
+                done(data)
+            }
             view.setNeedsDisplay()
         }
 

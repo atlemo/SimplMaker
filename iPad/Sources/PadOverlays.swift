@@ -59,8 +59,9 @@ struct PadOverlays: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlay(alignment: .topTrailing) {
             PadViewCube(model: model, state: state)
-                .padding(.trailing, insets.right + 12)
-                .padding(.top, state.topInset + 8)
+                // Left of the corner where the right panel's show/hide button sits (and clear of it when that panel is closed).
+                .padding(.trailing, insets.right + 12 + 24)
+                .padding(.top, state.topInset + 8 + 26)
         }
     }
 }
@@ -70,17 +71,21 @@ struct PadOverlays: View {
 @MainActor @Observable
 final class KeyboardWatcher {
     static let shared = KeyboardWatcher()
-    private(set) var overlap: CGFloat = 0
+    private var keyboard: CGFloat = 0
+    /// What reaches up from the bottom of the screen: the keyboard, or the number pad that stands in for it.
+    var overlap: CGFloat { max(keyboard, PadNumpad.shared.reserve) }
     private init() {
         NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main) { [weak self] note in
             guard let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
-            let value = max(0, UIScreen.main.bounds.height - frame.minY)
-            MainActor.assumeIsolated { self?.overlap = value }
+            MainActor.assumeIsolated { self?.keyboard = max(0, currentScreenBounds.height - frame.minY) }
         }
         // A size field starts with its text selected (as on the Mac), so what is typed replaces it.
         NotificationCenter.default.addObserver(forName: UITextField.textDidBeginEditingNotification, object: nil, queue: .main) { note in
-            guard let field = note.object as? UITextField, field.keyboardType == .numbersAndPunctuation else { return }
-            DispatchQueue.main.async { field.selectAll(nil) }
+            nonisolated(unsafe) let note = note
+            MainActor.assumeIsolated {
+                guard let field = note.object as? UITextField, field.keyboardType == .numbersAndPunctuation else { return }
+                DispatchQueue.main.async { field.selectAll(nil) }
+            }
         }
     }
 }
@@ -302,11 +307,12 @@ struct PadHandleFields: View {
             ZStack(alignment: .topLeading) {
                 ForEach(Array(handles.enumerated()), id: \.element.slot) { index, h in
                     if let p = anchor(h) {
+                        let center = fieldCenter(h, tip: p, index: index)
                         // Centre of this field: not lower than the room above the bar leaves for it and the fields after it.
                         let lowest = hudTop - 8 - 20 - CGFloat(handles.count - 1 - index) * 40
                         HandleField(model: model, handle: h, focused: $focusedSlot)
-                            .position(x: min(max(p.x + 26 + 55, insets.left + 60), max(state.size.width - insets.right - 70, insets.left + 60)),
-                                      y: min(max(p.y + CGFloat(index) * 40, 24), max(min(state.size.height - 24, lowest), 24)))
+                            .position(x: min(max(center.x, insets.left + 60), max(state.size.width - insets.right - 70, insets.left + 60)),
+                                      y: min(max(center.y, 24), max(min(state.size.height - 24, lowest), 24)))
                     }
                 }
                 if let first = handles.first, let p = anchor(first) {
@@ -329,6 +335,24 @@ struct PadHandleFields: View {
     }
 
     private func anchor(_ h: DocumentModel.DragHandle) -> CGPoint? { state.project(h.anchor) }
+
+    /// Where a field goes: just beyond the arrow's tip, on the side away from the arrow's base, so it never lies on the
+    /// arrow it belongs to (the arrow can point any way on the screen). A dial's field, and one whose arrow has no length
+    /// on the screen, goes to the right of its dot.
+    private func fieldCenter(_ h: DocumentModel.DragHandle, tip p: CGPoint, index: Int) -> CGPoint {
+        let halfWidth: CGFloat = 62, halfHeight: CGFloat = 22, clearance: CGFloat = 26
+        var d = CGVector(dx: 1, dy: 0)
+        if h.dial == nil, let b = state.project(h.base) {
+            let v = CGVector(dx: p.x - b.x, dy: p.y - b.y)
+            let length = hypot(v.dx, v.dy)
+            if length > 6 { d = CGVector(dx: v.dx / length, dy: v.dy / length) }
+            else { d = CGVector(dx: 1, dy: 0) }
+        }
+        // How far along d the field's box reaches from its centre, so its edge (not its middle) is `clearance` from the tip.
+        let reach = min(abs(d.dx) < 1e-3 ? .infinity : halfWidth / abs(d.dx), abs(d.dy) < 1e-3 ? .infinity : halfHeight / abs(d.dy))
+        let t = clearance + reach
+        return CGPoint(x: p.x + d.dx * t, y: p.y + d.dy * t + (h.dial != nil ? CGFloat(index) * 40 : 0))
+    }
 }
 
 private struct HandleField: View {
@@ -358,8 +382,10 @@ private struct HandleField: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .onAppear { text = model.handleFieldText(for: handle.slot) ?? "" }
         .onChange(of: model.overlayRevision) { if focused != handle.slot { text = model.handleFieldText(for: handle.slot) ?? text } }
-        .onChange(of: focused) {
-            if focused == handle.slot { model.activeHandleSlot = handle.slot }
+        .onChange(of: focused) { old, new in
+            if new == handle.slot { model.activeHandleSlot = handle.slot }
+            // Going on to another size (the pad's next key) keeps what was typed here; Return is what finishes the feature.
+            if old == handle.slot, let new, new != handle.slot { _ = model.commitHandle(text, for: handle.featureID, slot: handle.slot) }
         }
     }
 

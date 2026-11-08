@@ -12,6 +12,7 @@ settings:
     SWIFT_VERSION: 6.0
     SWIFT_STRICT_CONCURRENCY: minimal
     CLANG_CXX_LANGUAGE_STANDARD: c++17
+    DEVELOPMENT_TEAM: J4JCLB8BMS
 packages:
   SimplMaker:
     path: ..
@@ -53,6 +54,8 @@ targets:
       properties:
         CFBundleDisplayName: SimplMaker
         UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         ITSAppUsesNonExemptEncryption: false
         UISupportsDocumentBrowser: true
         LSSupportsOpeningDocumentsInPlace: true
@@ -70,6 +73,9 @@ targets:
             UTTypeIconFiles: [DocIcon.png]
             UTTypeTagSpecification:
               public.filename-extension: [simplmaker]
+          - UTTypeIdentifier: com.simplmaker.browser-item
+            UTTypeDescription: SimplMaker Browser Item
+            UTTypeConformsTo: [public.data]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.simplmaker.SimplMaker.pad
@@ -78,7 +84,6 @@ targets:
         MARKETING_VERSION: 1.0.0
         CURRENT_PROJECT_VERSION: 1
         CODE_SIGN_STYLE: Automatic
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"
         ARCHS: arm64
         ONLY_ACTIVE_ARCH: YES
   # The file browser's picture of a part: a Quick Look thumbnail extension that reads the PNG stored in the file.

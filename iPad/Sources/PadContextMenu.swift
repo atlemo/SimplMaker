@@ -4,7 +4,7 @@
 import UIKit
 
 enum ContextMenuBuilder {
-    static func menu(_ items: [ContextItem], after: @escaping () -> Void) -> UIMenu {
+    @MainActor static func menu(_ items: [ContextItem], after: @escaping () -> Void) -> UIMenu {
         // Items between separators form a group, drawn with a divider between groups.
         var groups: [[UIMenuElement]] = [[]]
         for item in items {
@@ -12,7 +12,7 @@ enum ContextMenuBuilder {
             case .separator:
                 if !(groups.last?.isEmpty ?? true) { groups.append([]) }
             case .action(let title, let symbol, let enabled, let action):
-                nonisolated(unsafe) let run = action
+                let run = action
                 nonisolated(unsafe) let finished = after
                 let element = UIAction(title: title, image: symbol.flatMap { UIImage(systemName: $0) },
                                        attributes: enabled ? [] : .disabled) { _ in
@@ -29,5 +29,5 @@ enum ContextMenuBuilder {
 }
 
 private extension UIMenu {
-    func withTitle(_ title: String) -> UIMenu { UIMenu(title: title, children: children) }
+    @MainActor func withTitle(_ title: String) -> UIMenu { UIMenu(title: title, children: children) }
 }
