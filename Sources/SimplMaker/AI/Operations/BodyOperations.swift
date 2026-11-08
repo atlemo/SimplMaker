@@ -251,6 +251,8 @@ struct CreateMirrorOperation: AIOperation {
 struct CreatePatternOperation: AIOperation {
     let circular: Bool
     let bodies: [String]
+    /// Features to repeat instead of bodies (a projection, cut, join or hole).
+    var features: [String] = []
     /// "x", "y", "z" or an edge id.
     let axis: String
     let count: String
@@ -265,7 +267,22 @@ struct CreatePatternOperation: AIOperation {
 
     func apply(to doc: inout CADDocument, context: OperationContext) throws -> OperationOutcome {
         try CADService.refuseRolledBack(doc)
-        try AIChecks.bodies(bodies, field: "bodies", context)
+        if features.isEmpty {
+            try AIChecks.bodies(bodies, field: "bodies", context)
+        } else {
+            guard bodies.isEmpty else {
+                throw AIError(.invalidArguments, "Give bodies or features, not both.", reason: "bodies repeats whole bodies; features repeats a projection, cut, join or hole.")
+            }
+            for id in features {
+                guard doc.features.contains(where: { $0.id == id }) else {
+                    throw AIError(.featureNotFound, "features: \"\(id)\" is not a feature of the part.", reason: "get_document lists the features.")
+                }
+                guard context.built.toolRecords[id] != nil else {
+                    throw AIError(.invalidArguments, "features: \(id) cannot be repeated.",
+                                  reason: "Only features that join, cut or intersect a solid into a body can be repeated (create_project, a cut or join extrude, create_hole). It must also have built without error; to repeat a body, pass bodies.")
+                }
+            }
+        }
         let n = try AIValues.evaluate(count, kind: .none, field: "count", positive: true, values: context.values)
         guard n.rounded() == n, n >= 2, n <= 500 else {
             throw AIError(.invalidValue, "count must be a whole number from 2 to 500 (it includes the original); \"\(count)\" comes to \(AIValues.number(n)).")
@@ -276,14 +293,22 @@ struct CreatePatternOperation: AIOperation {
         case "y": patternAxis = .y
         case "z": patternAxis = .z
         default:
-            guard case .edge(let ref)? = AIEntityRef(axis) else {
-                throw AIError(.invalidArguments, "axis \"\(axis)\" is not \"x\", \"y\", \"z\" or an edge id.", reason: "An edge id looks like \"edge:<body>/<name>\" and must be a straight edge.")
+            switch AIEntityRef(axis) {
+            case .face(let ref)?:
+                let body = try AIChecks.body(ref.body, field: "axis", context)
+                guard body.hasFace(ref.face), (try? body.measure(.face(ref.face)))?.geometry == .cylinder else {
+                    throw AIError(.invalidArguments, "\"\(axis)\" is not a round (cylindrical) face of \(ref.body).", reason: "Take a cylinder's side face from get_body, or use \"x\", \"y\" or \"z\".")
+                }
+                patternAxis = .cylinder(ref)
+            case .edge(let ref)?:
+                let body = try AIChecks.body(ref.body, field: "axis", context)
+                guard body.hasEdge(ref.edge), (try? body.edgeLine(ref.edge)) != nil || (try? body.edgeCircle(ref.edge)) != nil else {
+                    throw AIError(.invalidArguments, "\"\(axis)\" is not a straight or circular edge of \(ref.body).", reason: "Take a line-shaped or circular edge from get_body, or use \"x\", \"y\" or \"z\".")
+                }
+                patternAxis = .edge(ref)
+            default:
+                throw AIError(.invalidArguments, "axis \"\(axis)\" is not \"x\", \"y\", \"z\", an edge id or a round face id.", reason: "An edge id looks like \"edge:<body>/<name>\" (straight, or circular to go round it); a round face id looks like \"face:<body>/<name>\".")
             }
-            let body = try AIChecks.body(ref.body, field: "axis", context)
-            guard body.hasEdge(ref.edge), (try? body.edgeLine(ref.edge)) != nil else {
-                throw AIError(.invalidArguments, "\"\(axis)\" is not a straight edge of \(ref.body).", reason: "Take a line-shaped edge from get_body, or use \"x\", \"y\" or \"z\".")
-            }
-            patternAxis = .edge(ref)
         }
         let spacingText: String
         if circular {
@@ -300,8 +325,13 @@ struct CreatePatternOperation: AIOperation {
         let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("Pattern")
         doc.addFeature(Feature(id: featureID, name: featureName,
                                .pattern(PatternFeature(kind: circular ? .circular : .linear, bodies: bodies, axis: patternAxis, count: count,
-                                                       spacing: spacingText, operation: operation))))
+                                                       spacing: spacingText, operation: operation,
+                                                       features: features.isEmpty ? nil : features))))
         let shape = circular ? "around the \(axis) axis through the origin over \(spacingText)" : "along \(axis), \(spacingText) apart"
+        if !features.isEmpty {
+            return OperationOutcome(featureID: featureID,
+                                    message: "Created \(featureName): \(Int(n)) copies of \(features.joined(separator: ", ")) (the original included) \(shape); each copy goes in the same way as the original (same cut or join, same bodies).")
+        }
         return OperationOutcome(featureID: featureID,
                                 message: "Created \(featureName): \(Int(n)) copies of \(bodies.joined(separator: ", ")) (the original included) \(shape); \(operation == .newBody ? "the copies are a new body with the id \(featureID)" : "joined to their body").")
     }

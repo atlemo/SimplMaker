@@ -1346,7 +1346,7 @@ struct MirrorInspector: View {
             case .x?: return "X"
             case .y?: return "Y"
             case .z?: return "Z"
-            case .edge?: return "Edge"
+            case .edge?, .cylinder?: return "Edge"
             }
         }, set: { v in
             edit.update("Change Mirror") { m in
@@ -1403,6 +1403,7 @@ struct PatternInspector: View {
             case .y: return "Y"
             case .z: return "Z"
             case .edge: return "Edge"
+            case .cylinder: return "Cylinder"
             }
         }, set: { v in
             edit.update("Change Direction") { p in
@@ -1436,18 +1437,30 @@ struct PatternInspector: View {
                 Text("Y axis").tag("Y")
                 Text("Z axis").tag("Z")
                 if case .edge(let e) = pattern.axis { Text("Edge \(e.edge)").tag("Edge") }
+                if case .cylinder = pattern.axis { Text("Round face").tag("Cylinder") }
+            }
+            if model.selection.count == 1, let pick = model.selection.first, let ref = model.cylinderFaceRef(pick) {
+                Button("Use the Selected Round Face as the Axis") {
+                    edit.update("Change Direction") { $0.axis = .cylinder(ref) }
+                    model.clearSelection()
+                }
             }
             if model.selectedEdgeCount == 1, let pick = model.selection.first(where: \.isEdge),
                let m = model.meshes[safe: pick.body], let name = model.name(of: pick) {
-                Button("Use the Selected Edge") {
+                Button(pattern.kind == .circular ? "Use the Selected Edge (Straight, or Round to Go Round It)" : "Use the Selected Edge") {
                     edit.update("Change Direction") { $0.axis = .edge(EdgeRef(body: m.id, edge: name)) }
                     model.clearSelection()
                 }
             }
             Text(pattern.kind == .linear ? "Count includes the original." : "Count includes the original; 360° spreads them all the way round.")
                 .font(.caption).foregroundStyle(.secondary)
-            CopyOperationPicker(value: pattern.operation) { op in edit.update("Change Operation") { $0.operation = op } }
-            BodiesRow(model: model, ids: pattern.bodies)
+            if let features = pattern.features {
+                // Every copy goes in the way the original did, so there is no operation to choose.
+                BodiesRow(model: model, ids: features, title: features.count == 1 ? "Repeats" : "Repeat")
+            } else {
+                CopyOperationPicker(value: pattern.operation) { op in edit.update("Change Operation") { $0.operation = op } }
+                BodiesRow(model: model, ids: pattern.bodies)
+            }
         }
     }
 }

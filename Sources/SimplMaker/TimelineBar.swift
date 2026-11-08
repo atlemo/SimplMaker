@@ -64,6 +64,10 @@ private struct TimelineItemMenu: View {
             model.updateFeature(f.id, f.suppressed ? "Unsuppress" : "Suppress") { $0.suppressed.toggle() }
         }
         Button("Roll Back to Here") { model.setMarker(index) }
+        if model.canRepeat(f.id) {
+            Button("Repeat in a Circle…") { model.repeatFeature(f.id, .circular) }
+            Button("Repeat in a Row…") { model.repeatFeature(f.id, .linear) }
+        }
         Divider()
         Button("Move Earlier") { model.moveFeature(f.id, to: index - 1) }
             .disabled(index == 0 || model.reorderProblem(f.id, to: index - 1) != nil)

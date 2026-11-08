@@ -587,12 +587,17 @@ enum AITools {
                 handler: { args in try await changeTool("create_mirror", service: service, args) }),
 
             MCPTool(
-                name: "create_pattern", title: "Repeat bodies in a row or a circle",
+                name: "create_pattern", title: "Repeat bodies or features in a row or a circle",
                 description: """
                 Makes copies of bodies, like the Pattern tools: a LINEAR pattern puts them in a row, a CIRCULAR one spreads them around an \
                 axis. Use it for rows of pegs, ribs and teeth, and bolt circles (a hole plus a circular pattern of the tool body).
 
-                Arguments: document_id; kind ("linear" (default) or "circular"); bodies (required: body ids); axis (required: "x", "y", "z" or \
+                It can also repeat FEATURES: pass features (ids of create_project, cut or join extrudes, holes…) instead of bodies and every \
+                copy of the projection, cut or hole is made again, moved or turned like a body would be, in the same way (same cut or join, \
+                same bodies). Use it for a text or logo debossed several times round a cylinder, or a slot cut in a ring of positions. A \
+                feature that makes a body of its own (operation new_body) is not repeated this way: pattern its body.
+
+                Arguments: document_id; kind ("linear" (default) or "circular"); bodies (body ids) OR features (feature ids), one of the two; axis (required: "x", "y", "z" or \
                 a straight edge id; linear: the direction of the row; circular: the axis of rotation, which passes through the ORIGIN for x, \
                 y and z, so a body to be repeated around its own centre must be centred on the origin, or use an edge as the axis); count \
                 (required: the number of bodies in all, the original included, 2 to 500); spacing (linear: the distance between copies, \
@@ -607,6 +612,7 @@ enum AITools {
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
                     "kind": ["type": "string", "enum": ["linear", "circular"], "description": "Default linear."],
                     "bodies": ["type": "array", "items": ["type": "string"], "description": "The bodies to repeat, from get_document."],
+                    "features": ["type": "array", "items": ["type": "string"], "description": "Instead of bodies: features to repeat (a projection, cut, join or hole), from get_document."],
                     "axis": ["type": "string", "description": "x, y, z or a straight edge id."],
                     "count": ["type": ["integer", "string"], "description": "Number of bodies in all, the original included."],
                     "spacing": ["type": ["number", "string"], "description": "Linear: distance between copies in mm. Circular: total angle in degrees (default 360)."],
@@ -614,7 +620,7 @@ enum AITools {
                     "name": ["type": "string", "description": "A name for the feature (default Pattern1…)."],
                     "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
                     "expected_revision": expectedRevision,
-                ], ["document_id", "bodies", "axis", "count"]),
+                ], ["document_id", "axis", "count"]),
                 readOnly: false, destructive: false, idempotent: false,
                 handler: { args in try await changeTool("create_pattern", service: service, args) }),
 

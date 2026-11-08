@@ -524,10 +524,12 @@ public struct MirrorFeature: Codable, Hashable, Sendable {
     }
 }
 
-/// A direction or axis for patterns: an origin axis, or a straight edge of a body.
+/// A direction or axis for patterns: an origin axis, a straight edge of a body (or, to go round, a circular edge:
+/// the axis through its centre), or a round face (the axis of the cylinder).
 public enum PatternAxis: Codable, Hashable, Sendable {
     case x, y, z
     case edge(EdgeRef)
+    case cylinder(FaceRef)
 }
 
 public enum PatternKind: String, Codable, Hashable, Sendable, CaseIterable {
@@ -536,6 +538,10 @@ public enum PatternKind: String, Codable, Hashable, Sendable, CaseIterable {
 
 /// Copies bodies in a row (linear: `spacing` apart along `axis`) or around an axis (circular:
 /// spread over `spacing` degrees, 360 = all the way round). `count` includes the original.
+///
+/// With `features` set it repeats those features instead of bodies: each copy of a projection, cut, join or hole is
+/// laid again, moved or turned the same way, with the same operation on the same bodies. `bodies` and `operation`
+/// are not used then.
 public struct PatternFeature: Codable, Hashable, Sendable {
     public var kind: PatternKind
     public var bodies: [FeatureID]
@@ -543,10 +549,13 @@ public struct PatternFeature: Codable, Hashable, Sendable {
     public var count: String
     public var spacing: String
     public var operation: BodyOperation
+    /// The features to repeat (nil = repeat `bodies`). Files from before feature patterns existed have none.
+    public var features: [FeatureID]?
     public init(kind: PatternKind, bodies: [FeatureID], axis: PatternAxis = .x, count: String = "3",
-                spacing: String? = nil, operation: BodyOperation = .join) {
+                spacing: String? = nil, operation: BodyOperation = .join, features: [FeatureID]? = nil) {
         self.kind = kind; self.bodies = bodies; self.axis = axis; self.count = count
         self.spacing = spacing ?? (kind == .linear ? "20 mm" : "360 deg"); self.operation = operation
+        self.features = features
     }
 }
 

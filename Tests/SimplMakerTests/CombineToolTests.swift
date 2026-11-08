@@ -248,6 +248,54 @@ import simd
         try await settle(model)
     }
 
+    /// A 40 mm cylinder with a 4 mm notch cut in its rim.
+    private func notchedCylinder() async throws -> DocumentModel {
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "c", name: "Cylinder1", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, u: "0 mm", v: "0 mm",
+                                                                          width: "10", length: "10", height: "20", diameter: "40"))),
+            Feature(id: "notch", name: "Notch", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "18 mm", v: "0 mm",
+                                                                          width: "4", length: "4", height: "20",
+                                                                          operation: .cut, target: "c"))),
+        ]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        return model
+    }
+
+    @Test func thePatternToolRepeatsAFeatureAroundAPickedRoundFace() async throws {
+        let model = try await notchedCylinder()
+        let body = try #require(model.result?.body("c"))
+        let one = body.volume
+        let names = try #require(model.meshes.first).mesh.faceNames
+        func pick(_ name: String) throws -> PickID { PickID(body: 0, face: try #require(names.firstIndex(of: name))) }
+        let notchFace = try #require(names.first { $0.hasPrefix("notch.") })
+        let sideFace = try #require(names.first { n in (try? body.measure(.face(n)))?.geometry == .cylinder && !n.hasPrefix("notch.") })
+
+        model.run(.pattern)
+        model.setPatternSource(.features)
+        #expect(model.toolPrompt?.contains("projection, cut or hole") == true)
+        model.toolClick(.pattern, try pick(sideFace))  // the cylinder's own wall was not made by a cut or join
+        #expect(model.toolMissed && model.patternFeatures.isEmpty)
+        model.toolClick(.pattern, try pick(notchFace))
+        #expect(model.patternFeatures == ["notch"] && model.timelineMarks.contains("notch"))
+        model.setPatternChoosingAxis(true)
+        model.toolClick(.pattern, try pick(sideFace))
+        #expect(model.pendingTool == nil, "the axis was the last thing missing, so no Return is needed")
+        guard case .pattern(let p)? = model.document.features.last?.kind else { Issue.record("expected a pattern"); return }
+        #expect(p.kind == .circular && p.features == ["notch"] && p.bodies.isEmpty)
+        guard case .cylinder(let ref) = p.axis else { Issue.record("expected the round face as the axis"); return }
+        #expect(ref.body == "c")
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        // The notch is a 4 mm square cut at the rim: the pattern makes four of them, a quarter turn apart.
+        let whole = Double.pi * 20 * 20 * 20
+        let expected = whole - 4 * (whole - one)
+        let got = model.result?.body("c")?.volume ?? 0
+        #expect(abs(got - expected) < 0.01 * (whole - one), "\(got) vs \(expected)")
+        #expect(model.pendingTool == nil)
+    }
+
     @Test func mirrorPatternAndShell() async throws {
         let model = try await boxModel()
         let one = try #require(model.result?.body("b")).volume

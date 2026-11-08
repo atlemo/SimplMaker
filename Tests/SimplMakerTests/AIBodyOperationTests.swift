@@ -176,6 +176,22 @@ import Testing
         #expect(noSpacing?.code == .invalidArguments)
     }
 
+    @Test func aPatternCanRepeatACutInsteadOfBodies() async throws {
+        let t = await open()
+        try await box(t, id: "base", "100", "20", "5")
+        _ = try await t.service.change(documentID: t.id, expectedRevision: nil, try op("create_box", ["width": 6, "length": 6, "height": 5, "plane": "xy", "u": -40, "id": "notch", "operation": "cut", "target": "base"]))
+        let r = try await t.service.change(documentID: t.id, expectedRevision: nil, try op("create_pattern", ["features": ["notch"], "axis": "x", "count": 3, "spacing": 30]))
+        let base = try #require(r.bodies.first { $0.id == "base" })
+        #expect(r.bodies.count == 1 && abs(base.volume - (10000 - 3 * 180)) < 1, "\(base.volume)")
+        #expect(r.message.contains("notch"))
+        let both = await refusal { _ = try await t.service.change(documentID: t.id, expectedRevision: nil, try op("create_pattern", ["bodies": ["base"], "features": ["notch"], "axis": "x", "count": 3, "spacing": 30])) }
+        #expect(both?.code == .invalidArguments)
+        let missing = await refusal { _ = try await t.service.change(documentID: t.id, expectedRevision: nil, try op("create_pattern", ["features": ["nope"], "axis": "x", "count": 3, "spacing": 30])) }
+        #expect(missing?.code == .featureNotFound)
+        let makesBody = await refusal { _ = try await t.service.change(documentID: t.id, expectedRevision: nil, try op("create_pattern", ["features": ["base"], "axis": "x", "count": 3, "spacing": 30])) }
+        #expect(makesBody?.code == .invalidArguments)
+    }
+
     @Test func aCircularPatternMakesCopiesAroundTheAxis() async throws {
         let t = await open()
         try await box(t, id: "peg", "6", "6", "10", u: "20")

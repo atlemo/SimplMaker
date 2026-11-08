@@ -188,7 +188,9 @@ extension Feature {
             if case .edge(let e)? = f.line { add(e.body) } else if f.line == nil { add(f.plane.feature) }
         case .pattern(let f):
             f.bodies.forEach { add($0) }
+            f.features?.forEach { add($0) }
             if case .edge(let e) = f.axis { add(e.body) }
+            if case .cylinder(let face) = f.axis { add(face.body) }
         case .shell(let f): add(f.body); f.faces.forEach { add($0.body) }
         case .draft(let f): add(f.body); f.faces.forEach { add($0.body) }; add(f.fixed?.body)
         case .project(let f): add(f.sketch); add(f.target); f.faces.forEach { add($0.body) }

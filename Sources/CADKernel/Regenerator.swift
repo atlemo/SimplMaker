@@ -90,6 +90,14 @@ public struct ImagePlacement: Sendable, Equatable {
     }
 }
 
+/// A tool solid a feature combined into the model, as it went in.
+public struct ToolRecord: Sendable {
+    public var tool: KBody
+    public var operation: BodyOperation
+    /// The bodies it was asked to work on; nil = automatic (a cut goes through every body it reaches).
+    public var targets: [FeatureID]?
+}
+
 public struct RegenResult: Sendable {
     public var parameters: ParameterValues = ParameterValues()
     public var sketches: [FeatureID: SketchResult] = [:]
@@ -120,6 +128,9 @@ public struct RegenResult: Sendable {
     /// For projections: a point on the surface where the first profile landed and the way the surface faces
     /// there, for the height handle.
     public var projectionHandles: [FeatureID: (origin: SIMD3<Double>, normal: SIMD3<Double>)] = [:]
+    /// For features that join, cut or intersect a tool solid into bodies (projections, cuts, joins, holes…): the solid and
+    /// how it went in, so a feature pattern can lay copies of it again.
+    public var toolRecords: [FeatureID: ToolRecord] = [:]
     public var duration: TimeInterval = 0
     /// How many threads a progressive rebuild left out (see `Regenerator.regenerate(progressiveThreads:)`); 0 for a full one.
     public var threadsLeftOut = 0
@@ -357,8 +368,17 @@ public enum Regenerator {
         case .z: return (.zero, SIMD3(0, 0, 1))
         case .edge(let e):
             guard let body = r.body(e.body) else { throw KernelError(message: "the body with the axis edge is missing") }
-            let l = try body.edgeLine(e.edge)
-            return (l.origin, simd_normalize(l.direction))
+            if let l = try? body.edgeLine(e.edge) { return (l.origin, simd_normalize(l.direction)) }
+            // A circular edge: the axis goes through its centre, square to it.
+            guard let c = try? body.edgeCircle(e.edge) else { throw KernelError(message: "the axis edge is neither straight nor circular") }
+            return (c.center, simd_normalize(c.axis))
+        case .cylinder(let f):
+            guard let body = r.body(f.body), body.hasFace(f.face) else { throw KernelError(message: "the round face that gives the axis is missing") }
+            let m = try body.measure(.face(f.face))
+            guard m.geometry == .cylinder, let center = m.center, let direction = m.direction else {
+                throw KernelError(message: "the face that gives the axis is no longer round")
+            }
+            return (center, simd_normalize(direction))
         }
     }
 
@@ -400,6 +420,8 @@ public enum Regenerator {
             }
             let floor = abs(direction.z) < 0.999 ? SIMD3<Double>(0, 0, 1) : SIMD3<Double>(0, 1, 0)
             return plane(through: l.origin, direction: direction, lyingIn: reference ?? floor)
+        case .cylinder:
+            throw KernelError(message: "a mirror goes along a straight edge or an axis, not a round face")
         }
     }
 
@@ -417,6 +439,7 @@ public enum Regenerator {
         let n = Int(try p.value(of: f.count, kind: .none).rounded())
         guard n >= 1, n <= 500 else { throw KernelError(message: "the number of copies must be between 1 and 500") }
         let axis = try line(f.axis, r)
+        if let sources = f.features { try patternFeatures(f, sources, n: n, axis: axis, feature, &r); return }
         let indices = try transformInputs(f.bodies, feature, &r)
         var copies: [(Int, KBody)] = []
         if f.kind == .linear {
@@ -438,6 +461,40 @@ public enum Regenerator {
             }
         }
         try place(copies.map { (index: $0.0, copy: $0.1) }, f.operation, feature, &r)
+    }
+
+    /// Repeats features: for every copy, the tool solid each source feature combined into the model is moved or turned
+    /// like a body would be, and goes in the same way (cut, join or intersect, into the same bodies).
+    static func patternFeatures(_ f: PatternFeature, _ sources: [FeatureID], n: Int, axis: (origin: SIMD3<Double>, direction: SIMD3<Double>),
+                                _ feature: Feature, _ r: inout RegenResult) throws {
+        let p = r.parameters
+        guard !sources.isEmpty else { throw KernelError(message: "no feature to repeat") }
+        var records: [(id: FeatureID, record: ToolRecord)] = []
+        for id in sources {
+            guard let record = r.toolRecords[id] else {
+                throw KernelError(message: "A feature it repeats has failed, is suppressed, or makes a body of its own. "
+                                  + "Repeat projections, cuts, joins and holes; to repeat a body, pick the body.")
+            }
+            records.append((id, record))
+        }
+        var offsets: [Double] = []  // a distance (linear) or an angle (circular) for each copy
+        if f.kind == .linear {
+            let spacing = try p.value(of: f.spacing, kind: .length)
+            offsets = (1..<max(n, 1)).map { spacing * Double($0) }
+        } else {
+            let total = try p.value(of: f.spacing, kind: .angle)
+            let step = abs(abs(total) - 2 * .pi) < 1e-9 ? total / Double(n) : total / Double(max(n - 1, 1))
+            offsets = (1..<max(n, 1)).map { step * Double($0) }
+        }
+        for (k, offset) in zip(1..., offsets) {
+            for (id, record) in records {
+                let prefix = "\(feature.id).\(id).\(k)."
+                let copy = f.kind == .linear
+                    ? try record.tool.translatedCopy(axis.direction * offset, prefix: prefix)
+                    : try record.tool.rotatedCopy(about: axis.origin, axis: axis.direction, angle: offset, prefix: prefix)
+                try combine(copy, record.operation, targets: record.targets, feature, &r)
+            }
+        }
     }
 
     static func shell(_ f: ShellFeature, _ feature: Feature, _ r: inout RegenResult) throws {
@@ -840,6 +897,7 @@ public enum Regenerator {
             r.bodies.append(BodyResult(id: feature.id, name: r.bodyNames[feature.id] ?? "Body\(r.bodies.count + 1)", body: tool))
             return
         }
+        r.toolRecords[feature.id] = ToolRecord(tool: tool, operation: operation, targets: targets)
         let verb = operation.rawValue.lowercased()
         var chosen: [Int]
         if let targets {

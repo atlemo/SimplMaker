@@ -207,6 +207,11 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// What the Pattern tool repeats.
+enum PatternSource: String, CaseIterable {
+    case bodies = "Bodies", features = "Features"
+}
+
 extension DocumentModel {
     /// A toolbar button or menu item: run the tool now if the selection allows, or wait for picks.
     func run(_ tool: DesignTool) {
@@ -296,6 +301,13 @@ extension DocumentModel {
             return
         }
         guard let pick, tool.accepts(pick.kind), !pick.isWholeBody || tool.picksBodies else { return }
+        if tool == .pattern {
+            patternClick(pick)
+            // Something to repeat and an axis: nothing is missing, so the pattern is made without waiting for Return.
+            if patternAxisPick != nil, perform(.pattern, confirmed: true) { pendingTool = nil }
+            overlayRevision += 1
+            return
+        }
         if tool == .sectionAnalysis {  // one click is enough: the cut starts at once
             beginSection(from: pick)
             return
@@ -369,8 +381,21 @@ extension DocumentModel {
             return pickedBodies.isEmpty ? "Click the bodies to mirror"
                 : "Click more bodies, then the plane to mirror across, or a straight edge to mirror along (\(pickedBodies.count) picked)"
         case .pattern:
+            if toolMissed {
+                return patternChoosingAxis ? "That isn't an axis · click a round face (a cylinder), a circular edge or a straight edge"
+                                           : "That wasn't made by a projection, cut, join or hole · pick one of those, or switch to Bodies"
+            }
+            let axis = patternAxisPick == nil ? "" : " · axis picked"
+            if patternChoosingAxis {
+                return "Click the axis: a round face, a circular edge (goes round it) or a straight edge (goes along it) · the pattern is made as soon as you pick it"
+            }
+            if patternSource == .features {
+                let n = patternFeatures.count
+                return n == 0 ? "Click the projection, cut or hole to repeat, on the model or in the timeline"
+                    : "Click more features, then pick the axis, which makes the pattern · Return makes a row along X (\(n) picked)"
+            }
             let n = faceBodies.count
-            return n == 0 ? "Click the bodies to copy" : "Click more bodies, or a straight edge for the direction · Return makes the pattern (\(n) picked)"
+            return n == 0 ? "Click the bodies to copy" : "Click more bodies, then pick the axis (a round face or an edge), which makes the pattern · Return makes a row along X (\(n) picked)\(axis)"
         case .measure: return measurePrompt()
         case .sectionAnalysis: return sectionPrompt
         case .project:
@@ -508,14 +533,22 @@ extension DocumentModel {
             else { return false }
             add(Feature(name: document.nextName("Mirror"), .mirror(MirrorFeature(bodies: bodies, plane: plane))))
         case .pattern:
-            let bodies = faceBodies
-            guard !bodies.isEmpty, !waiting else { return false }
-            let edge = selection.first(where: \.isEdge).flatMap { pick -> EdgeRef? in
-                guard let m = meshes[safe: pick.body], let name = self.name(of: pick) else { return nil }
-                return EdgeRef(body: m.id, edge: name)
+            guard !waiting else { return false }
+            let picked = (patternAxisPick ?? selection.first(where: \.isEdge)).flatMap { patternAxisAndKind(for: $0) }
+            let kind = picked?.kind ?? .linear
+            let axis = picked?.axis ?? .x
+            switch patternSource {
+            case .bodies:
+                let bodies = faceBodies
+                guard !bodies.isEmpty else { return false }
+                add(Feature(name: document.nextName("Pattern"), .pattern(PatternFeature(
+                    kind: kind, bodies: bodies, axis: axis, count: kind == .circular ? "4" : "3"))))
+            case .features:
+                let features = patternFeatures.filter(canRepeat)
+                guard !features.isEmpty else { return false }
+                add(Feature(name: document.nextName("Pattern"), .pattern(PatternFeature(
+                    kind: kind, bodies: [], axis: axis, count: kind == .circular ? "4" : "3", features: features))))
             }
-            add(Feature(name: document.nextName("Pattern"), .pattern(PatternFeature(kind: .linear, bodies: bodies,
-                                                                                    axis: edge.map { .edge($0) } ?? .x))))
         case .shell:
             let faces = selection.compactMap { faceRef($0) }
             guard let body = faces.first?.body, !waiting else { return false }
@@ -921,6 +954,76 @@ extension DocumentModel {
     }
 
     // MARK: helpers
+
+    // MARK: Pattern picks
+
+    /// A round (cylindrical) face as a reference: a pattern can go round its axis.
+    func cylinderFaceRef(_ pick: PickID) -> FaceRef? {
+        guard pick.isFace, !pick.isWholeBody, let ref = faceRef(pick), let body = result?.body(ref.body),
+              (try? body.measure(.face(ref.face)))?.geometry == .cylinder else { return nil }
+        return ref
+    }
+
+    /// What a pick gives a pattern as its axis, and the kind that suits it: a straight edge is a direction for a row;
+    /// a circular edge or a round face is an axis to go round.
+    func patternAxisAndKind(for pick: PickID) -> (axis: PatternAxis, kind: PatternKind)? {
+        if let edge = straightEdgeRef(pick) { return (.edge(edge), .linear) }
+        if pick.isEdge, let m = meshes[safe: pick.body], let name = self.name(of: pick), let body = result?.body(m.id),
+           (try? body.edgeCircle(name)) != nil {
+            return (.edge(EdgeRef(body: m.id, edge: name)), .circular)
+        }
+        if let face = cylinderFaceRef(pick) { return (.cylinder(face), .circular) }
+        return nil
+    }
+
+    func resetPatternPicks() {
+        patternSource = .bodies
+        patternChoosingAxis = false
+        patternFeatures = []
+        patternAxisPick = nil
+    }
+
+    func setPatternSource(_ source: PatternSource) {
+        guard source != patternSource else { return }
+        patternSource = source
+        patternFeatures = []
+        selection.removeAll()  // the picks of the other kind mean nothing here
+        toolMissed = false
+        overlayRevision += 1
+    }
+
+    func setPatternChoosingAxis(_ on: Bool) {
+        patternChoosingAxis = on
+        toolMissed = false
+        overlayRevision += 1
+    }
+
+    func togglePatternFeature(_ id: FeatureID) {
+        toolMissed = false
+        if let i = patternFeatures.firstIndex(of: id) { patternFeatures.remove(at: i) } else { patternFeatures.append(id) }
+        overlayRevision += 1
+    }
+
+    /// A click while the Pattern tool waits: an edge is always an axis; a face is an axis while the axis is being chosen,
+    /// else a body (Bodies) or the feature that made it (Features).
+    func patternClick(_ pick: PickID) {
+        toolMissed = false
+        if pick.isEdge || patternChoosingAxis {
+            guard !pick.isWholeBody, patternAxisAndKind(for: pick) != nil else { toolMissed = true; return }
+            patternAxisPick = patternAxisPick == pick ? nil : pick
+            return
+        }
+        guard pick.isFace else { return }
+        switch patternSource {
+        case .bodies:
+            toggle([pick])
+        case .features:
+            guard !pick.isWholeBody, let id = creatingFeature(of: pick), canRepeat(id) else { toolMissed = true; return }
+            togglePatternFeature(id)
+            // The face stays lit while its feature is picked.
+            if patternFeatures.contains(id) { selection.append(pick) } else { selection.removeAll { creatingFeature(of: $0) == id } }
+        }
+    }
 
     /// Bodies with a picked face, in the order they were picked (edges are left for other uses).
     var faceBodies: [FeatureID] {

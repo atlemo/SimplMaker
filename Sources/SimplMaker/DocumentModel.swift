@@ -97,6 +97,11 @@ final class DocumentModel {
             if newValue != newFeature { newFeature = nil }  // moved on: Cancel no longer removes it
             // The Section Analysis tool waits for a plane: a sketch, plane or canvas picked in the browser is one.
             if pendingTool == .sectionAnalysis, let id = newValue { beginSection(feature: id) }
+            // The Pattern tool in Features mode: a feature clicked in the timeline or browser is one to repeat.
+            if pendingTool == .pattern, patternSource == .features, let id = newValue {
+                selectedFeatureStorage = nil
+                if canRepeat(id) { togglePatternFeature(id) } else { toolMissed = true }
+            }
             overlayRevision += 1
         }
     }
@@ -113,11 +118,20 @@ final class DocumentModel {
     var pendingTool: DesignTool? {
         didSet {
             if pendingTool == nil { reselecting = nil; splitBodies = nil }  // cancelling the tool ends a re-pick too
+            if pendingTool != .pattern { resetPatternPicks() }
             if pendingTool != oldValue { toolMissed = false }
         }
     }
     /// The Split tool has its bodies and waits for the face, plane or profile to split them with.
     var splitBodies: [FeatureID]?
+    /// What the Pattern tool repeats: whole bodies, or features (a projection, cut, join or hole).
+    var patternSource: PatternSource = .bodies
+    /// The Pattern tool is waiting for its axis: a click on a round face then means "around this", not "this body".
+    var patternChoosingAxis = false
+    /// The features picked to repeat (see `patternSource`).
+    var patternFeatures: [FeatureID] = []
+    /// The edge or round face picked as the axis or direction.
+    var patternAxisPick: PickID?
     /// The Measure tool's last readout, for the picks and the scene it was made for.
     @ObservationIgnored var measureCache: (key: MeasureCacheKey, value: MeasureReadout?)?
     /// The waiting tool's last click was on something it can't use: its prompt says why.
@@ -541,6 +555,7 @@ final class DocumentModel {
     /// and edges picked in the viewport (a chamfered edge lights its chamfer).
     var timelineMarks: [FeatureID] {
         var ids = Set(selection.compactMap { creatingFeature(of: $0) })
+        if pendingTool == .pattern { ids.formUnion(patternFeatures) }
         if let id = selectedFeature ?? selectedBody { ids.insert(id) }
         return document.features.map(\.id).filter(ids.contains)
     }
@@ -998,6 +1013,21 @@ final class DocumentModel {
 
     /// Adds a new feature as one undo step, hides the sketches it uses, and selects it so its
     /// drag handle and size field appear.
+    /// Whether a pattern can repeat this feature: it joined, cut or intersected a solid into a body (a projection, cut,
+    /// join or hole) and built without error.
+    func canRepeat(_ id: FeatureID) -> Bool { result?.toolRecords[id] != nil }
+
+    /// Repeats a projection, cut, join or hole in a row or around an axis (the Z axis to start with; the Inspector changes it).
+    func repeatFeature(_ id: FeatureID, _ kind: PatternKind) {
+        guard canRepeat(id) else {
+            alert = AlertInfo(title: "This can't be repeated", message: "Only features that join, cut or project a shape into a body can be repeated, and it has to have built without an error. To repeat a whole body, use the Pattern tool.")
+            return
+        }
+        add(Feature(name: document.nextName("Pattern"),
+                    .pattern(PatternFeature(kind: kind, bodies: [], axis: kind == .linear ? .x : .z, count: kind == .linear ? "3" : "4",
+                                            spacing: kind == .circular ? "360 deg" : nil, features: [id]))))
+    }
+
     func add(_ feature: Feature) {
         documentBeforeNewFeature = document
         newFeatureShrink = nil
@@ -1788,7 +1818,7 @@ final class DocumentModel {
         if let session = sketchSession {
             return (session.selection + session.dimensionPicks).compactMap { session.pickID(for: $0)?.raw }
         }
-        guard picksWholeBodies else { return selection.map(\.raw) + threadHighlight }
+        guard picksWholeBodies else { return selection.map(\.raw) + threadHighlight + (patternAxisPick.map { [$0.raw] } ?? []) }
         // A face or edge picked for a body tool stands for its whole body.
         var out: [UInt32] = []
         for pick in selection {
@@ -1796,12 +1826,17 @@ final class DocumentModel {
             let raw = whole ? PickID(wholeBody: pick.body).raw : pick.raw
             if !out.contains(raw) { out.append(raw) }
         }
+        if let axis = patternAxisPick, !out.contains(axis.raw) { out.append(axis.raw) }
         return out
     }
 
     /// The waiting tool works on whole bodies (a click on any face picks its body), so hover and
     /// selection light up whole bodies. Pattern's edges pick a direction, so only its faces do.
-    var picksWholeBodies: Bool { pendingTool?.picksBodies == true }
+    var picksWholeBodies: Bool {
+        guard pendingTool?.picksBodies == true else { return false }
+        // Pattern in Features mode lights up the face a feature made; choosing its axis, the round face.
+        return !(pendingTool == .pattern && (patternSource == .features || patternChoosingAxis))
+    }
 
     // MARK: drag handles
 

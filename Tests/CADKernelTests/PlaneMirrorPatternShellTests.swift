@@ -98,6 +98,40 @@ import simd
         #expect(try JSONDecoder().decode(MirrorFeature.self, from: Data(text.utf8)) == plain, "and an older file has no line")
     }
 
+    /// A 2 × 2 slot cut right through the block, then repeated by a feature pattern.
+    private func slotted(_ pattern: PatternFeature?) throws -> CADDocument {
+        var s = Sketch()
+        s.addRectangle(12, 2, 14, 4)
+        var d = try block()
+        d.features.append(Feature(id: "sk2", name: "Sketch2", .sketch(SketchFeature(plane: .xy, sketch: s))))
+        d.features.append(Feature(id: "slot", name: "Slot", .extrude(ExtrudeFeature(sketch: "sk2",
+            profiles: [ProfileRef(curves: [], hintU: 13, hintV: 3)], extent: .distance("5 mm"), operation: .cut, target: "e"))))
+        if let pattern { d.features.append(Feature(id: "fp", name: "Pattern1", .pattern(pattern))) }
+        return d
+    }
+
+    @Test func featurePatternRepeatsACut() throws {
+        let one = try #require(try run(try slotted(nil)).body("e"))
+        #expect(abs(one.volume - 980) < 1e-6, "\(one.volume)")
+
+        let row = try run(try slotted(PatternFeature(kind: .linear, bodies: [], axis: .x, count: "3", spacing: "6 mm", features: ["slot"])))
+        #expect(abs(try #require(row.body("e")).volume - 940) < 1e-6, "three slots, not three blocks")
+        #expect(row.bodies.count == 1)
+
+        // Round the origin: the copies leave the block, so the cut is only where the turned slot meets it.
+        let turned = try run(try slotted(PatternFeature(kind: .circular, bodies: [], axis: .z, count: "2", spacing: "180 deg", features: ["slot"])))
+        #expect(abs(try #require(turned.body("e")).volume - 980) < 1e-6, "the half-turned slot lies outside the block, so it removes nothing")
+    }
+
+    @Test func featurePatternRefusesWhatMakesABody() throws {
+        let r = Regenerator.regenerate(try block(extra: [Feature(id: "fp", name: "Pattern1", .pattern(PatternFeature(
+            kind: .linear, bodies: [], axis: .x, count: "3", spacing: "6 mm", features: ["e"])))]))
+        #expect(r.errors["fp"] != nil)
+        let old = PatternFeature(kind: .linear, bodies: ["e"], axis: .y, count: "3", spacing: "15 mm")
+        let text = String(decoding: try JSONEncoder().encode(old), as: UTF8.self)
+        #expect(!text.contains("features"), "a body pattern is saved as before")
+    }
+
     @Test func linearCircularAndEdgePatterns() throws {
         let linear = try block(extra: [Feature(id: "p", name: "Pattern1", .pattern(PatternFeature(
             kind: .linear, bodies: ["e"], axis: .y, count: "3", spacing: "15 mm")))])

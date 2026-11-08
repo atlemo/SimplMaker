@@ -168,10 +168,14 @@ enum AIOperationParser {
                                          operation: try bodyOperation(a, allowed: [.join, .newBody], default: .join), name: try a.string("name"), id: try a.string("id"))
 
         case "create_pattern":
-            try a.rejectUnknown(["document_id", "kind", "bodies", "axis", "count", "spacing", "operation", "name", "id", "expected_revision"], in: tool)
+            try a.rejectUnknown(["document_id", "kind", "bodies", "features", "axis", "count", "spacing", "operation", "name", "id", "expected_revision"], in: tool)
             let kindText = try a.string("kind") ?? "linear"
             guard kindText == "linear" || kindText == "circular" else { throw AIError(.invalidArguments, "kind \"\(kindText)\" is not linear or circular.") }
-            return CreatePatternOperation(circular: kindText == "circular", bodies: try ids(a, "bodies"),
+            let patternFeatures = try ids(a, "features")
+            if patternFeatures.isEmpty, try ids(a, "bodies").isEmpty {
+                throw AIError(.invalidArguments, "Give bodies (to repeat bodies) or features (to repeat a projection, cut, join or hole).")
+            }
+            return CreatePatternOperation(circular: kindText == "circular", bodies: try ids(a, "bodies"), features: patternFeatures,
                                           axis: try a.requiredString("axis", hint: "\"x\", \"y\", \"z\" or a straight edge id."),
                                           count: try a.requiredQuantity("count", kind: .none, hint: "How many bodies in all, the original included, for example 4."),
                                           spacing: try a.quantity("spacing", kind: kindText == "circular" ? .angle : .length),

@@ -159,14 +159,17 @@ struct FeatureDescriber {
             case .y?: out["line"] = .text("y")
             case .z?: out["line"] = .text("z")
             case .edge(let e)?: out["line"] = .text(AIEntityRef.edge(e).string)
+            case .cylinder(let face)?: out["line"] = .text(AIEntityRef.face(face).string)
             }
         case .pattern(let f):
             out["kind"] = .text(f.kind.rawValue.lowercased()); out["bodies"] = .list(f.bodies)
+            if let features = f.features { out["features"] = .list(features) }
             switch f.axis {
             case .x: out["axis"] = .text("x")
             case .y: out["axis"] = .text("y")
             case .z: out["axis"] = .text("z")
             case .edge(let e): out["axis"] = .text(AIEntityRef.edge(e).string)
+            case .cylinder(let face): out["axis"] = .text(AIEntityRef.face(face).string)
             }
             out["count"] = number(f.count)
             out["spacing"] = f.kind == .linear ? length(f.spacing) : angle(f.spacing)

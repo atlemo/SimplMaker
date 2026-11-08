@@ -509,6 +509,7 @@ struct StatusBar: View {
 
     var body: some View {
         HStack(spacing: DS.Spacing.space5) {
+            if model.pendingTool == .pattern { patternPicker }
             message
                 .lineLimit(1)
                 .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
@@ -532,6 +533,16 @@ struct StatusBar: View {
         .padding(.horizontal, DS.Spacing.space5)
         .frame(height: DS.ControlHeight.large)
         .background((colorScheme == .dark ? Color.black : Color.white).opacity(0.2), in: .capsule)
+    }
+
+    /// The Pattern tool's choices: what to repeat, and whether the next click picks that or the axis.
+    private var patternPicker: some View {
+        HStack(spacing: DS.Spacing.space3) {
+            SegmentedPicker(selection: Binding(get: { model.patternSource }, set: { model.setPatternSource($0) }), compact: true) { $0.rawValue }
+            SegmentedPicker(selection: Binding(get: { model.patternChoosingAxis }, set: { model.setPatternChoosingAxis($0) }),
+                            options: [false, true], compact: true) { $0 ? "Axis" : "Objects" }
+        }
+        .fixedSize()
     }
 
     @ViewBuilder private var message: some View {
@@ -1291,6 +1302,10 @@ struct BrowserList: View {
                 Button("Rename Canvas") { renaming = id }
             } else if model.bodies.contains(where: { $0.id == id }) {
                 bodyButtons(id)
+            }
+            if model.canRepeat(id) {
+                Button("Repeat in a Circle…") { model.repeatFeature(id, .circular) }
+                Button("Repeat in a Row…") { model.repeatFeature(id, .linear) }
             }
             Divider()
             Button(f.suppressed ? "Unsuppress" : "Suppress") {
