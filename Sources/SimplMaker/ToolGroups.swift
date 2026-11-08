@@ -240,7 +240,7 @@ struct SoloTool: View {
     var body: some View {
         VStack(spacing: 0) {
             PinnedTool(tool: tool).environment(\.toolTitles, false)
-            GroupLabel(title: tool.title, chevron: false, highlighted: tool.active, action: tool.action)
+            GroupLabel(title: tool.title, chevron: false, highlighted: tool.active, fillsWhenHighlighted: false, action: tool.action)
                 .toolTip(tool.help)
                 .accessibilityHidden(true)  // the button above says the same
         }
@@ -253,6 +253,8 @@ private struct GroupLabel: View {
     let title: String
     let chevron: Bool
     let highlighted: Bool
+    /// Whether a highlighted label gets the soft fill: not the title of a tool whose icon already has one.
+    var fillsWhenHighlighted = true
     let action: () -> Void
     @Environment(\.toolsOnTint) private var onTint
     @Environment(\.toolsInk) private var toolsInk
@@ -278,7 +280,7 @@ private struct GroupLabel: View {
     }
 
     private var background: Color {
-        if highlighted { return onTint ? toolsInk.opacity(0.24) : accent.opacity(0.16) }
+        if highlighted && fillsWhenHighlighted { return onTint ? toolsInk.opacity(0.24) : accent.opacity(0.16) }
         return hovering ? ink.opacity(onTint ? 0.14 : 0.07) : .clear
     }
 }
@@ -382,7 +384,7 @@ private struct ScrollingList<Content: View>: View {
         }
         // Never taller than the room the popover has below the toolbar: a taller one is cropped at the top and the bottom alike, and the
         // first tool cannot be reached. The rest scrolls.
-        .frame(height: min(height, max(min(560, UIScreen.main.bounds.height - 270), 240)))
+        .frame(height: min(height, max(min(560, currentScreenBounds.height - 270), 240)))
         .scrollBounceBehavior(.basedOnSize)
 #endif
     }

@@ -28,6 +28,12 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
     let viewport: Viewport
     let chrome: Chrome
 
+    /// The room the iPad's show/hide button for the inspector (or the Render view's own buttons) takes at the top right
+    /// when the inspector is closed: what floats there goes left of it. None on the Mac.
+    private var toggleRoom: CGFloat {
+        PanelTouch.panelToggleRoom == 0 ? 0 : (model.renderView ? 176 : PanelTouch.panelToggleRoom + 10)
+    }
+
     var body: some View {
         // The viewport fills the window, under the toolbar too; the browser and the inspector float
         // over it as glass panels, like the sidebars of current macOS apps. The toolbar has no
@@ -45,6 +51,7 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
                 Spacer(minLength: 0)  // empty: clicks go through to the viewport
                 if model.showInspector {
                     InspectorView(model: model)
+                        .padding(.top, PanelTouch.panelToggleRoom)
                         .floatingPanel(width: Panel.inspectorWidth)
                         .tutorialSpot("inspector", cornerRadius: DS.Radius.window, outset: 0, filled: false)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -129,26 +136,6 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
                 .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
                     + 2 * (DS.ControlHeight.large + Panel.inset) + Panel.inset)
         }
-        // The Appearance panel floats at the top, beside the inspector.
-        .overlay(alignment: .topTrailing) {
-            if model.showAppearance, model.sketchSession == nil {
-                AppearancePanel(model: model)
-                    .padding(.top, Panel.inset)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.showAppearance)
-        // The Measure tool's readout floats in the same corner.
-        .overlay(alignment: .topTrailing) {
-            if model.pendingTool == .measure, model.sketchSession == nil {
-                MeasurePanel(model: model)
-                    .padding(.top, Panel.inset)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.pendingTool == .measure)
         // The status bar floats at the bottom, between the panels. The Render view is for looking at the part, so it goes there, unless
         // a tool or a sketch is waiting for something and the bar is where it says what.
         .overlay(alignment: .bottom) {
@@ -161,6 +148,27 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
             }
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.renderView)
+        // The Appearance panel floats at the top, beside the inspector (and above the status bar, so its list can be reached; on the iPad
+        // it keeps clear of the inspector's show/hide button, which floats at the corner while the inspector is closed).
+        .overlay(alignment: .topTrailing) {
+            if model.showAppearance, model.sketchSession == nil {
+                AppearancePanel(model: model)
+                    .padding(.top, Panel.inset)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset + toggleRoom)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.showAppearance)
+        // The Measure tool's readout floats in the same corner.
+        .overlay(alignment: .topTrailing) {
+            if model.pendingTool == .measure, model.sketchSession == nil {
+                MeasurePanel(model: model)
+                    .padding(.top, Panel.inset)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset + toggleRoom)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.pendingTool == .measure)
         // A feature with no drag handle gets its OK and Cancel here, above the status bar.
         .overlay(alignment: .bottom) {
             FeatureDoneBar(model: model)
@@ -199,12 +207,16 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
                         .transition(.opacity)
                 }
             }
-            .padding(.top, Panel.inset)
 #if os(macOS)
+            .padding(.top, Panel.inset)
             .padding(.bottom, Panel.inset)  // a tall panel covers the status bar rather than hiding behind it
 #else
-            // On the iPad the status bar stays readable: the panel ends above it (and scrolls if it is taller).
-            .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset) + DS.ControlHeight.large + Panel.inset)
+            // The browser's show/hide button floats in this corner while the browser is closed: the panels start under it.
+            .padding(.top, model.showSidebar || model.renderView ? Panel.inset : Panel.inset + 44 + 8)
+            // On the iPad the status bar stays readable: the panel ends above it (and scrolls if it is taller). Where the bar is not
+            // shown (the Render view) the panel goes down to the bottom.
+            .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
+                              + (!model.renderView || model.pendingTool != nil || model.sketchSession != nil ? DS.ControlHeight.large + Panel.inset : 0))
 #endif
             .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
         }
@@ -214,5 +226,9 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
         .animation(.easeOut(duration: DS.Duration.fast), value: model.explodeOn && model.showExplodeOptions)
         // The cursor's prompt goes above everything, panels included.
         .overlay { CursorPrompt(model: model) }
+#if os(iOS)
+        // The timeline and status bar sit as low as the Mac's: the panels' gap to the screen's bottom edge, not the safe area under it.
+        .ignoresSafeArea(.container, edges: .bottom)
+#endif
     }
 }

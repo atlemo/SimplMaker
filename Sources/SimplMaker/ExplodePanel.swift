@@ -26,10 +26,7 @@ struct ExplodePanel: View {
                         .monospacedDigit()
                         .frame(width: 44, alignment: .trailing)
                 }
-                Picker("Direction", selection: $model.explodeDirection) {
-                    ForEach(ExplodeDirection.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
+                SegmentedPicker(selection: $model.explodeDirection) { $0.title }
                 .help("All: along X, Y and Z. X, Y or Z: along that axis only")
                 Text(model.sketchSession != nil || model.pendingTool != nil
                      ? "The bodies sit back in place while you sketch or use a tool."

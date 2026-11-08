@@ -60,7 +60,7 @@ struct KeyChord: Hashable, Sendable {
     }
     #else
     /// The chord of a hardware key press; nil for keys that are not a plain character (arrows, F-keys, Return, Esc...).
-    init?(key: UIKey) {
+    @MainActor init?(key: UIKey) {
         guard let char = key.charactersIgnoringModifiers.first, key.charactersIgnoringModifiers.count == 1,
               let scalar = char.unicodeScalars.first, scalar.value > 0x20, scalar.value != 0x7F,
               !(0xF700...0xF8FF).contains(scalar.value)

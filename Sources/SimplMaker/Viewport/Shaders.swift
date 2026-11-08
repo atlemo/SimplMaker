@@ -456,8 +456,8 @@ enum Shaders {
         float3 leaving = normalize(mix(d, -v, 0.5));
         float3 exitPoint = world + d * thickness;
         float3 color;
-        if (leaving.z < -0.01 && exitPoint.z > 0.0) {
-            float3 hit = exitPoint + leaving * (exitPoint.z / -leaving.z);
+        if (leaving.z < -0.01 && exitPoint.z > u.floorCenter.z) {
+            float3 hit = exitPoint + leaving * ((exitPoint.z - u.floorCenter.z) / -leaving.z);
             float lit = shadowVisibility(hit, float3(0.0, 0.0, 1.0), u, shadowMap);
             float fade = smoothstep(u.floorLit.w, u.floorShadow.w, length(hit.xy - u.floorCenter.xy));
             color = mix(mix(u.floorShadow.rgb, u.floorLit.rgb, lit), u.floorBack.rgb, fade);
@@ -573,7 +573,7 @@ enum Shaders {
             }
         }
         // The reflection in the floor: opaque only where the body meets the floor, and fading out with the height.
-        if (u.renderParams.z > 0.5) o.color.a = opacity * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), world.z));
+        if (u.renderParams.z > 0.5) o.color.a = opacity * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), world.z - u.floorCenter.z));
         o.id = packID(id);
         return o;
     }
@@ -625,7 +625,7 @@ enum Shaders {
         if (u.clipOn != 0 && dot(in.world, u.clipPlane.xyz) - u.clipPlane.w > 1e-4) discard_fragment();
         float lit = shadowVisibility(in.world, facing(in.normal, in.world, u), u, shadowMap);
         float3 color = shadeFace(in.normal, in.world, in.id, false, 1e9, u, sel, p, lit).color.rgb;
-        float a = (p.material == 2u ? 0.35 : 1.0) * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), in.world.z));
+        float a = (p.material == 2u ? 0.35 : 1.0) * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), in.world.z - u.floorCenter.z));
         return float4(color * a, a);
     }
 
@@ -803,7 +803,7 @@ enum Shaders {
             float3 a = unproject(uv, 0.0, u), b = unproject(uv, 1.0, u);
             float3 dir = b - a;
             if (abs(dir.z) < 1e-6) return 1e6;
-            float t = -a.z / dir.z;
+            float t = -(a.z - u.floorCenter.z) / dir.z;
             if (t < 0.0) return 1e6;
             p = a + dir * t;
         }

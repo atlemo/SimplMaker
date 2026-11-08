@@ -29,11 +29,7 @@ struct PrintPreviewPanel: View {
     private func option(_ title: String, values: [Double], selection: Binding<Double>) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space2) {
             Text("\(title) (mm)").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-            Picker(title, selection: selection) {
-                ForEach(values, id: \.self) { Text($0.formatted(.number.precision(.fractionLength(2)))).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            SegmentedPicker(selection: selection, options: values) { $0.formatted(.number.precision(.fractionLength(2))) }
         }
     }
 }

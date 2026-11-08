@@ -499,7 +499,7 @@ extension View {
             .frame(width: width)
             .frame(maxHeight: .infinity)
             .clipShape(shape)
-            .panelGlass(in: shape)
+            .background { Color.clear.panelGlass(in: shape) }
     }
 }
 
@@ -612,7 +612,7 @@ struct Sidebar: View {
         GeometryReader { geo in
             let h = Self.heights(total: geo.size.height, browserOpen: model.browserOpen, parametersOpen: model.parametersOpen, split: split)
             VStack(spacing: 0) {
-                SidebarPanel(title: "Browser", open: $model.browserOpen, accessory: {
+                SidebarPanel(title: "Browser", open: $model.browserOpen, headerLeading: PanelTouch.panelToggleRoom - 8, accessory: {
                     HeaderIconButton(systemImage: "folder.badge.plus", help: "Add a folder") {
                         model.browserOpen = true
                         model.pendingFolderRename = model.newFolder()
@@ -674,6 +674,8 @@ struct SidebarPanel<Accessory: View, Content: View>: View {
     static var headerHeight: CGFloat { PanelTouch.headerHeight }
     let title: String
     @Binding var open: Bool
+    /// Room kept at the title's leading side (the panel's show/hide button sits there on iPad).
+    var headerLeading: CGFloat = 0
     @ViewBuilder let accessory: () -> Accessory
     @ViewBuilder let content: () -> Content
 
@@ -698,7 +700,7 @@ struct SidebarPanel<Accessory: View, Content: View>: View {
                     open.toggle()
                 }
             }
-            .padding(.leading, DS.Spacing.space5)
+            .padding(.leading, PanelTouch.contentLeading + headerLeading)
             .padding(.trailing, DS.Spacing.space4)
             .frame(height: Self.headerHeight)
             content()
@@ -710,7 +712,9 @@ struct SidebarPanel<Accessory: View, Content: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .clipShape(shape)
-        .panelGlass(in: shape)
+        // The glass is a layer of its own behind the content: on the content itself it went with a row that was lifted
+        // for its long-press menu, leaving the panel without a background while the menu was open.
+        .background { Color.clear.panelGlass(in: shape) }
     }
 }
 
@@ -749,10 +753,11 @@ struct ParametersList: View {
                                     selected: selection, row: row, drop: drop)
             }
             ForEach(model.document.parameters.filter { model.document.parameterFolder(of: $0.name) == nil }) { p in
-                row(p)
+                row(p).panelRowInsets()
             }
         }
         .listStyle(.sidebar)
+        .panelListTop()
         .browserDropDestination { drop($0, nil) }
         .background(OutsideClickMonitor {
             // A click anywhere else (the 3D view, a body in the browser) lets go of the row and its field.
@@ -871,8 +876,8 @@ struct ParameterFolderNode: View {
             }
             ForEach(model.document.parameters.filter { model.document.parameterFolder(of: $0.name) == folder.id }) { row($0) }
         } label: {
-            HStack(spacing: DS.Spacing.labelGap) {
-                Image(systemName: "folder").frame(width: 18)
+            HStack(spacing: PanelTouch.rowIconGap) {
+                Image(systemName: "folder").frame(minWidth: 18)
                 if renaming == folder.id {
                     InlineNameField(name: folder.name,
                                     commit: { model.renameParameterFolder(folder.id, to: $0); renaming = nil },
@@ -885,6 +890,7 @@ struct ParameterFolderNode: View {
             .draggable(BrowserDrag(folder: folder.id))
             .browserDropDestination { drop($0, folder.id) }
         }
+        .panelRowInsets()
         .tag("folder:" + folder.id)
     }
 }
@@ -968,6 +974,11 @@ struct BrowserList: View {
                 set: { tags in
                     let current = currentTags
                     let added = tags.subtracting(current)
+                    #if os(iOS)
+                    // A tap only ever picks: the list may report a tap on the picked row as taking it away again, which would
+                    // undo the selection (taking a selection away is done by tapping the empty view).
+                    if added.isEmpty { return }
+                    #endif
                     // Bodies can be selected together (⌘- or ⇧-click); anything else is selected alone, and the
                     // latest click decides which of the two it is.
                     if let tag = added.first(where: { !$0.hasPrefix(Self.bodyTag) }) {
@@ -979,7 +990,11 @@ struct BrowserList: View {
                             selectedFolder = nil
                             if model.selectedBodies.isEmpty == false { model.clearSelection() }
                             model.dismissedSketchBar = nil
+                            #if os(iOS)
+                            model.editFeature(featureID(tag))  // a tap is the only action there is: it opens the feature
+                            #else
                             model.selectedFeature = tag
+                            #endif
                         }
                         return
                     }
@@ -1018,7 +1033,7 @@ struct BrowserList: View {
             DisclosureGroup(isExpanded: $bodiesOpen) {
                 ForEach(model.document.subfolders(of: nil)) { folder in
                     BrowserFolderNode(model: model, folder: folder, closed: $closedFolders, renaming: $renaming,
-                                      row: { AnyView(row($0)) }, drop: drop,
+                                      row: { AnyView(row($0)) }, menu: { AnyView(menu(for: [$0])) }, drop: drop,
                                       itemIDs: model.document.ordered(model.bodies.map(\.id)),
                                       selection: currentTags)
                 }
@@ -1052,9 +1067,19 @@ struct BrowserList: View {
             }
         }
         .listStyle(.sidebar)
+        .panelListTop()
         .onChange(of: model.pendingFolderRename) {
             if let id = model.pendingFolderRename { renaming = id; model.pendingFolderRename = nil }
         }
+        #if os(iOS)
+        // The menu belongs to each row (see `row`): one on the whole list lifts the entire panel when it opens.
+        // A body or sketch picked in the viewport may be listed below the fold: bring its row into view.
+        .onChange(of: model.browserHighlights) {
+            if let id = model.document.features.map(\.id).first(where: model.browserHighlights.contains) {
+                withAnimation { proxy.scrollTo(id) }
+            }
+        }
+        #else
         .contextMenu(forSelectionType: FeatureID.self) { ids in
             menu(for: ids)
         } primaryAction: { ids in
@@ -1067,19 +1092,20 @@ struct BrowserList: View {
                 model.editFeature(featureID(id))
             }
         }
-#if os(iOS)
-        // A body or sketch picked in the viewport may be listed below the fold: bring its row into view.
-        .onChange(of: model.browserHighlights) {
-            if let id = model.document.features.map(\.id).first(where: model.browserHighlights.contains) {
-                withAnimation { proxy.scrollTo(id) }
-            }
-        }
-#endif
+        #endif
         }
     }
 
     /// The row of a body, sketch, plane or canvas, wherever it is listed.
     @ViewBuilder private func row(_ id: FeatureID) -> some View {
+        #if os(iOS)
+        rowContent(id).contextMenu { menu(for: [model.bodies.contains { $0.id == id } ? Self.bodyTag + id : id]) }
+        #else
+        rowContent(id)
+        #endif
+    }
+
+    @ViewBuilder private func rowContent(_ id: FeatureID) -> some View {
         if let b = model.bodies.first(where: { $0.id == id }) {
             BrowserRow(name: b.name, hidden: model.isHidden(b.id),
                        toggle: { model.setHidden([b.id], !model.isHidden(b.id)) },
@@ -1311,6 +1337,8 @@ struct BrowserFolderNode: View {
     @Binding var closed: Set<String>
     @Binding var renaming: FeatureID?
     let row: (FeatureID) -> AnyView
+    /// The folder's long-press menu (iOS: each row has its own, the list has none).
+    var menu: (String) -> AnyView = { _ in AnyView(EmptyView()) }
     let drop: ([BrowserDrag], String?) -> Bool
     /// Every item the browser lists, in its order (a folder's items follow it).
     let itemIDs: [FeatureID]
@@ -1326,14 +1354,14 @@ struct BrowserFolderNode: View {
         DisclosureGroup(isExpanded: expanded) {
             ForEach(model.document.subfolders(of: folder.id)) { child in
                 BrowserFolderNode(model: model, folder: child, closed: $closed, renaming: $renaming,
-                                  row: row, drop: drop, itemIDs: itemIDs, selection: selection)
+                                  row: row, menu: menu, drop: drop, itemIDs: itemIDs, selection: selection)
             }
             ForEach(itemIDs.filter { model.document.folder(of: $0) == folder.id }, id: \.self) { row($0) }
         } label: {
             let inside = model.items(inFolder: folder.id)
             let allHidden = !inside.isEmpty && inside.allSatisfy { model.isHidden($0) }
-            HStack(spacing: DS.Spacing.labelGap) {
-                Image(systemName: "folder").frame(width: 18)
+            HStack(spacing: PanelTouch.rowIconGap) {
+                Image(systemName: "folder").frame(minWidth: 18)
                 if renaming == folder.id {
                     InlineNameField(name: folder.name,
                                     commit: { model.renameFolder(folder.id, to: $0); renaming = nil },
@@ -1344,14 +1372,19 @@ struct BrowserFolderNode: View {
                 Spacer(minLength: DS.Spacing.labelGap)
                 let lockable = inside.filter(model.isLockable)
                 let allLocked = !lockable.isEmpty && lockable.allSatisfy { model.isLocked($0) }
-                LockButton(locked: allLocked) { model.setLocked(lockable, !allLocked) }
-                    .disabled(lockable.isEmpty)
-                EyeButton(hidden: allHidden) { model.setHidden(inside, !allHidden) }
-                    .disabled(inside.isEmpty)
+                HStack(spacing: 0) {
+                    LockButton(locked: allLocked) { model.setLocked(lockable, !allLocked) }
+                        .disabled(lockable.isEmpty)
+                    EyeButton(hidden: allHidden) { model.setHidden(inside, !allHidden) }
+                        .disabled(inside.isEmpty)
+                }
             }
             .foregroundStyle(allHidden ? .secondary : .primary)
             .draggable(BrowserDrag(folder: folder.id))
             .browserDropDestination { drop($0, folder.id) }
+            #if os(iOS)
+            .contextMenu { menu("folder:" + folder.id) }
+            #endif
         }
         .tag("folder:" + folder.id)
         .listRowBackground(SelectedRowBackground(on: selection.contains("folder:" + folder.id)))
@@ -1439,16 +1472,18 @@ struct BrowserRow<Icon: View>: View {
     @ViewBuilder let icon: () -> Icon
 
     var body: some View {
-        HStack(spacing: DS.Spacing.labelGap) {
-            icon().frame(width: 18)
+        HStack(spacing: PanelTouch.rowIconGap) {
+            icon().frame(minWidth: 18)
             if renaming {
                 InlineNameField(name: name, commit: { rename($0); renaming = false }, cancel: { renaming = false })
             } else {
                 Text(name)
             }
             Spacer(minLength: DS.Spacing.labelGap)
-            if let locked, let toggleLock { LockButton(locked: locked, toggle: toggleLock) }
-            EyeButton(hidden: hidden, toggle: toggle)
+            HStack(spacing: 0) {
+                if let locked, let toggleLock { LockButton(locked: locked, toggle: toggleLock) }
+                EyeButton(hidden: hidden, toggle: toggle)
+            }
         }
         .foregroundStyle(hidden ? .secondary : .primary)
     }
@@ -1630,7 +1665,25 @@ extension View {
     /// A browser group's header row on iPad: no row background of its own, like the rows below it. (The Mac's sidebar list draws none.)
     @ViewBuilder func plainGroupRow() -> some View {
 #if os(iOS)
-        listRowBackground(Color.clear)
+        listRowBackground(Color.clear).panelRowInsets()
+#else
+        self
+#endif
+    }
+
+    /// The iPad's sidebar list leaves a wide empty band under the panel's header: the rows start right below it.
+    @ViewBuilder func panelListTop() -> some View {
+#if os(iOS)
+        contentMargins(.top, 0, for: .scrollContent)
+#else
+        self
+#endif
+    }
+
+    /// A top-level row on iPad starts where the panel's title does (the sidebar list's own inset is wider).
+    @ViewBuilder func panelRowInsets() -> some View {
+#if os(iOS)
+        listRowInsets(EdgeInsets(top: 0, leading: 2, bottom: 0, trailing: DS.Spacing.space3))
 #else
         self
 #endif
@@ -1649,13 +1702,15 @@ struct FolderRow: View {
         let allHidden = !ids.isEmpty && ids.allSatisfy { model.isHidden($0) }
         let lockIDs = ids.filter(model.isLockable)
         let allLocked = !lockIDs.isEmpty && lockIDs.allSatisfy { model.isLocked($0) }
-        HStack(spacing: DS.Spacing.labelGap) {
-            Image(systemName: "folder").frame(width: 18)
+        HStack(spacing: PanelTouch.rowIconGap) {
+            Image(systemName: "folder").frame(minWidth: 18)
             Text(title)
             Spacer(minLength: DS.Spacing.labelGap)
-            if lockable { LockButton(locked: allLocked) { model.setLocked(lockIDs, !allLocked) }.disabled(lockIDs.isEmpty) }
-            EyeButton(hidden: allHidden) { model.setHidden(ids, !allHidden) }
-                .disabled(ids.isEmpty)
+            HStack(spacing: 0) {
+                if lockable { LockButton(locked: allLocked) { model.setLocked(lockIDs, !allLocked) }.disabled(lockIDs.isEmpty) }
+                EyeButton(hidden: allHidden) { model.setHidden(ids, !allHidden) }
+                    .disabled(ids.isEmpty)
+            }
         }
     }
 }
@@ -1983,6 +2038,7 @@ struct ExpressionField: View {
             .font(monospaced ? .body.monospaced() : .body)
             .fieldAppearance(inSelectableRow: inSelectableRow, focused: focused)
             .focused($focused)
+            .numericEntry(if: completes)  // a size or an expression (not a name, nor the words of a text): the iPad's number pad
             .completesParameters(completes ? completionModel : nil, excluding: excluding, focused: focused)
             .onKeyPress(phases: [.down, .repeat]) { press in
                 guard nudges, press.key == .upArrow || press.key == .downArrow else { return .ignored }
@@ -2054,7 +2110,11 @@ struct ToolButton: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: DS.Spacing.space1) {
+                // With a title, only the icon is highlighted (the title stays as it is); without one, the whole button is.
                 Icon(icon, size: 18, renderedStroke: Icon.toolStroke).frame(height: 20)
+                    .padding(.horizontal, showsTitle ? DS.Spacing.space5 : 0)
+                    .padding(.vertical, showsTitle ? DS.Spacing.space2 : 0)
+                    .background(showsTitle ? background : .clear, in: shape)
                 if showsTitle {
                     Text(title)
                         .font(.system(size: 11))
@@ -2063,10 +2123,10 @@ struct ToolButton: View {
                 }
             }
             .frame(minWidth: showsTitle ? 44 : ToolListMetrics.toolMinWidth, minHeight: showsTitle ? 0 : ToolListMetrics.toolMinHeight)
-            .padding(.horizontal, showsTitle ? DS.Spacing.space4 : DS.Spacing.space1)
+            .padding(.horizontal, showsTitle ? DS.Spacing.space2 : DS.Spacing.space1)
             .padding(.vertical, showsTitle ? ToolListMetrics.titledToolPadding : 0)
             .foregroundStyle(active && !onTint ? accent : ink)
-            .background(background, in: shape)
+            .background(showsTitle ? .clear : background, in: shape)
             .contentShape(Rectangle())
             // The keyboard focus ring follows the same rounded shape as the hover and active fill,
             // drawn in the app's accent (the system's own ring would use the system colour).
@@ -2385,13 +2445,9 @@ struct DimensionEditor: View {
                     .help("Delete this dimension; the sketch keeps its size but can change again")
             }
             if let direction = session.distanceDirection(of: dimensionID) {
-                Picker("Measured", selection: Binding(get: { direction }, set: { d in
+                SegmentedPicker(selection: Binding(get: { direction }, set: { d in
                     model.sketchCommand { $0.setDistanceDirection(dimensionID, d) }
-                })) {
-                    ForEach(SketchSession.DistanceDirection.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                })) { $0.rawValue }
                 .help("Straight between the points, or only the horizontal or vertical part of it")
             }
             if let message = session.message {

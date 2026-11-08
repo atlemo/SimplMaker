@@ -754,6 +754,35 @@ import simd
         }
     }
 
+    /// A hollow box sunk below the ground has the floor at its bottom: the picture is the one of the same box standing on the ground,
+    /// not one with the floor drawn over the box's sunken inside.
+    @Test func aPartBelowTheGroundStandsOnAFloorAtItsBottom() async throws {
+        func box(sunk: Double) async throws -> DocumentModel {
+            var d = CADDocument()
+            d.features = [
+                Feature(id: "a", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "60 mm", length: "40 mm", height: "25 mm"))),
+                Feature(id: "sh", name: "Shell1", .shell(ShellFeature(body: "a", faces: [FaceRef(body: "a", face: "a.top")], thickness: "2 mm"))),
+            ]
+            if sunk != 0 { d.features.append(Feature(id: "m", name: "Move1", .move(MoveFeature(bodies: ["a"], dz: "\(-sunk) mm")))) }
+            let model = DocumentModel(document: d)
+            try await settle(model)
+            return model
+        }
+        var settings = RenderSettings.fresh
+        settings.noise = 0
+        settings.reflection = 1
+        settings.reflectionBlur = 0.65
+        let (standing, _, _) = try await render(try await box(sunk: 0), name: "box-standing", settings: settings, yaw: -.pi / 4, pitch: 0.6,
+                                                orthographic: false, distance: 150, target: SIMD3(30, 20, 13))
+        let (sunk, _, _) = try await render(try await box(sunk: 8), name: "box-sunk", settings: settings, yaw: -.pi / 4, pitch: 0.6,
+                                            orthographic: false, distance: 150, target: SIMD3(30, 20, 5))
+        try #require(standing.bgra.count == sunk.bgra.count)
+        var total = 0
+        for i in 0..<standing.bgra.count { total += abs(Int(standing.bgra[i]) - Int(sunk.bgra[i])) }
+        let mean = Float(total) / Float(standing.bgra.count) / 255
+        #expect(mean < 0.004, "the sunken box looks different from the standing one (mean difference \(mean))")
+    }
+
     @Test func theQualityPresetsAreRecognisedAndLeaveTheLightAlone() {
         var s = RenderSettings()
         #expect(s.matchingQuality == .simple)

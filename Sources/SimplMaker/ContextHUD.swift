@@ -52,32 +52,19 @@ struct FeatureHUD: View {
     private func controls(_ id: FeatureID) -> some View {
         HStack(spacing: DS.Spacing.space3) {
             if let op = model.operation(of: id) {
-                Picker("Operation", selection: Binding(get: { op }, set: { model.setOperation($0, of: id) })) {
-                    ForEach(BodyOperation.allCases, id: \.self) { o in
-                        Text(o == .newBody ? "New" : o.rawValue).tag(o)
-                    }
+                SegmentedPicker(selection: Binding(get: { op }, set: { model.setOperation($0, of: id) }), options: Array(BodyOperation.allCases), compact: true) { o in
+                    o == .newBody ? "New" : o.rawValue
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
                 .fixedSize()
                 .help("Join adds to the body, Cut removes from it, New makes a separate body, Intersect keeps the overlap")
             }
             if model.isMoveFeature(id) {
-                Picker("Type", selection: Binding(get: { model.isRotating(id) }, set: { model.setRotating($0, of: id) })) {
-                    Text("Move").tag(false)
-                    Text("Rotate").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                SegmentedPicker(selection: Binding(get: { model.isRotating(id) }, set: { model.setRotating($0, of: id) }), options: [false, true], compact: true) { $0 ? "Rotate" : "Move" }
                 .fixedSize()
                 .help("What the typed value sets: a distance to move, or an angle to turn")
             }
             if let axis = model.transformAxis(id) {
-                Picker("Axis", selection: Binding(get: { axis }, set: { model.setTransformAxis($0, of: id) })) {
-                    ForEach(Axis3.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                SegmentedPicker(selection: Binding(get: { axis }, set: { model.setTransformAxis($0, of: id) }), options: Array(Axis3.allCases), compact: true) { $0.rawValue }
                 .fixedSize()
                 .help("The axis to move along or turn about")
             }
@@ -154,14 +141,10 @@ struct SketchPatternHUD: View {
                         .errorWrap(problem, width: 280)
                 }
                 HStack(spacing: DS.Spacing.space3) {
-                    Picker("Pattern", selection: Binding(get: { setup.kind }, set: { kind in
+                    SegmentedPicker(selection: Binding(get: { setup.kind }, set: { kind in
                         session.setPatternKind(kind)
                         model.overlayRevision += 1
-                    })) {
-                        ForEach(SketchPatternDef.Kind.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                    }), compact: true) { $0.title }
                     .fixedSize()
                     .help("Copy in a grid, or around a point")
                     if !session.patternIsNew {

@@ -1418,16 +1418,13 @@ struct PatternInspector: View {
 
     var body: some View {
         Section("Pattern") {
-            Picker("Kind", selection: Binding(get: { pattern.kind }, set: { k in
+            SegmentedPicker(selection: Binding(get: { pattern.kind }, set: { k in
                 edit.update("Change Pattern") { p in
                     guard p.kind != k else { return }
                     p.kind = k
                     p.spacing = k == .linear ? "20 mm" : "360 deg"
                 }
-            })) {
-                ForEach(PatternKind.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
+            })) { $0.rawValue }
             edit.row("Count", pattern.count, "Edit Count") { $0.count = $1 }
             if pattern.kind == .linear {
                 edit.row("Spacing", pattern.spacing, "Edit Spacing") { $0.spacing = $1 }

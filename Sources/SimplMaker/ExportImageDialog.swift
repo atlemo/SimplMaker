@@ -92,10 +92,9 @@ struct ExportImageDialog: View {
                 preview = image
             }
 
-            Picker("Format", selection: $formatName) {
-                ForEach(PictureFormat.allCases) { Text($0.title).tag($0.rawValue) }
+            SegmentedPicker(selection: $formatName, options: PictureFormat.allCases.map(\.rawValue)) { name in
+                PictureFormat.allCases.first { $0.rawValue == name }?.title ?? name
             }
-            .pickerStyle(.segmented)
 
             VStack(alignment: .leading, spacing: DS.Spacing.space2) {
                 Toggle("Transparent background", isOn: $wantsTransparent)

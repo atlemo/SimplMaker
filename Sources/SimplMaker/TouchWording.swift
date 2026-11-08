@@ -3,6 +3,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 
+#if os(iOS)
+/// The bounds of the screen the app's window is on (UIScreen.main is deprecated: a device can have several screens).
+@MainActor var currentScreenBounds: CGRect {
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+    return scene?.screen.bounds ?? CGRect(x: 0, y: 0, width: 1024, height: 768)
+}
+#endif
+
 enum Hint {
     /// The hint as it should read on this device: unchanged on the Mac.
     static func text(_ s: String) -> String {
@@ -56,6 +65,10 @@ extension View {
 extension View {
     /// A field for a size: the iPad shows numbers and symbols (digits, a point, a minus and the operators of an expression) first, not letters
     /// (the keyboard's own "ABC" key still reaches a parameter's name). The Mac types as it always did.
+    @ViewBuilder func numericEntry(if on: Bool) -> some View {
+        if on { numericEntry() } else { self }
+    }
+
     @ViewBuilder func numericEntry() -> some View {
 #if os(macOS)
         self
@@ -73,11 +86,19 @@ enum PanelTouch {
     static let headerHeight: CGFloat = 40
     static let rowButtonWidth: CGFloat = 18
     static let rowButtonHeight: CGFloat? = nil
+    static let contentLeading: CGFloat = 12
+    static let panelToggleRoom: CGFloat = 0
+    /// The gap between a browser row's icon and its name.
+    static let rowIconGap: CGFloat = DS.Spacing.labelGap
 #else
     static let headerButton: CGFloat = 44
     static let headerIcon: CGFloat = 18
     static let headerHeight: CGFloat = 52
     static let rowButtonWidth: CGFloat = 44
     static let rowButtonHeight: CGFloat? = 44
+    static let contentLeading: CGFloat = 10
+    /// The room a panel keeps at its top corner for its show/hide button (iPad).
+    static let panelToggleRoom: CGFloat = 44
+    static let rowIconGap: CGFloat = 8  // lands at the gap between a panel's toggle button and its title
 #endif
 }

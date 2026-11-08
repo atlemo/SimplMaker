@@ -14,7 +14,7 @@ struct RenderPanel: View {
     @Environment(\.accent) private var accent
     static let width: CGFloat = 324
     private let labelWidth: CGFloat = 90
-    private let valueWidth: CGFloat = 44
+    private let valueWidth: CGFloat = 56  // wide enough for "100 %" as some languages write it
     private let defaults = RenderSettings()
     @State private var tab: Tab
 
@@ -57,6 +57,7 @@ struct RenderPanel: View {
             }
         }
         .frame(width: Self.width)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))  // what scrolls ends at the panel's edge
         .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
     }
 
@@ -308,6 +309,7 @@ struct RenderPanel: View {
         row(title) {
             Slider(value: value, in: range).tint(accent)
             Text(show(value.wrappedValue)).monospacedDigit().foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(0.8)
                 .frame(width: valueWidth, alignment: .trailing)
         }
         .contentShape(Rectangle())
@@ -321,39 +323,6 @@ struct RenderPanel: View {
             Toggle(title, isOn: isOn).labelsHidden().toggleStyle(.switch)
         }
         .help(help)
-    }
-}
-
-/// A row of segments, one selected: the tabs and the presets. A segment without an action ("Custom") only shows where the
-/// settings are, and is not something to click.
-private struct SegmentedRow: View {
-    struct Item {
-        var title: String
-        var selected: Bool
-        var action: (() -> Void)?
-    }
-    let items: [Item]
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in segment(item) }
-        }
-        .padding(2)
-        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: DS.Radius.lg))
-        .overlay { RoundedRectangle(cornerRadius: DS.Radius.lg).strokeBorder(Color.primary.opacity(0.1), lineWidth: 1) }
-    }
-
-    private func segment(_ item: Item) -> some View {
-        Text(item.title)
-            .lineLimit(1)
-            .foregroundStyle(item.selected ? Color.primary : item.action == nil ? Color.secondary.opacity(0.6) : Color.primary.opacity(0.85))
-            .frame(maxWidth: .infinity, minHeight: DS.ControlHeight.large)
-            .background {
-                if item.selected { RoundedRectangle(cornerRadius: DS.Radius.md).fill(Color.primary.opacity(0.2)) }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { item.action?() }
-            .accessibilityAddTraits(item.selected ? .isSelected : [])
     }
 }
 

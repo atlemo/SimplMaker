@@ -1229,11 +1229,10 @@ final class Renderer {
             let r = sqrt((Float(view) + 0.5) / Float(views)), a = Float(view) * 2.39996323
             let shear = SIMD2(cos(a), sin(a)) * (r * blur * 0.5)
             var m = uniforms
-            m.viewProj = uniforms.viewProj * simd_float4x4(columns: (SIMD4(1, 0, 0, 0), SIMD4(0, 1, 0, 0),
-                                                                    SIMD4(shear.x, shear.y, -1, 0), SIMD4(0, 0, 0, 1)))
-            m.eye.z = -m.eye.z
+            m.viewProj = uniforms.viewProj * mirrorMatrix(tilt: shear)
+            m.eye.z = 2 * floorHeight - m.eye.z
             m.viewDir.z = -m.viewDir.z
-            m.clipPlane = SIMD4(0, 0, -1, 0)  // what stands below the floor is not reflected
+            m.clipPlane = SIMD4(0, 0, -1, -floorHeight)  // what stands below the floor is not reflected
             m.clipOn = 1
             m.hovered = 0
             m.selectedCount = 0
@@ -1291,12 +1290,24 @@ final class Renderer {
         enc.endEncoding()
     }
 
+    /// How high the Render view's floor lies: at the ground (z = 0), or at the lowest point of the part when some of it is below
+    /// the ground, so a part that sinks under z = 0 stands on the floor and does not have the floor drawn over its sunken part.
+    private var floorHeight: Float { min(0, sceneBounds?.min.z ?? 0) }
+
+    /// Turns the scene upside down about the floor (the reflection), with a sideways tilt per height above it for a blurred one.
+    private func mirrorMatrix(tilt: SIMD2<Float> = .zero) -> simd_float4x4 {
+        let h = floorHeight
+        func lift(_ z: Float) -> simd_float4x4 { simd_float4x4(columns: (SIMD4(1, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(0, 0, z, 1))) }
+        let flip = simd_float4x4(columns: (SIMD4(1, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(tilt.x, tilt.y, -1, 0), SIMD4(0, 0, 0, 1)))
+        return lift(h) * flip * lift(-h)
+    }
+
     /// The Render view's floor, as the shader reads it: a square on the XY plane around the part that fades into the backdrop.
     private func floorParams(_ look: RenderSettings) -> FloorParams {
         let lo = sceneBounds?.min ?? SIMD3(-50, -50, 0), hi = sceneBounds?.max ?? SIMD3(50, 50, 0)
         let size = max(hi.x - lo.x, hi.y - lo.y, hi.z - lo.z, 20)
         let fadeStart = size * 1.2, fadeEnd = size * 3.2
-        return FloorParams(centerHalf: SIMD4((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, 0, fadeEnd * 1.1),
+        return FloorParams(centerHalf: SIMD4((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, floorHeight, fadeEnd * 1.1),
                            lit: SIMD4(look.floorColor, fadeStart),
                            backdrop: SIMD4(look.backdropColor, fadeEnd),
                            shadowed: SIMD4(look.floorShadowColor, Float(look.reflectionBlur)))
@@ -1645,7 +1656,7 @@ final class Renderer {
             uniforms.floorLit = floor.lit
             uniforms.floorShadow = SIMD4(floor.shadowed.x, floor.shadowed.y, floor.shadowed.z, floor.backdrop.w)
             uniforms.floorBack = SIMD4(floor.backdrop.x, floor.backdrop.y, floor.backdrop.z, 0)
-            uniforms.floorCenter = SIMD4(floor.centerHalf.x, floor.centerHalf.y, 0, 0)
+            uniforms.floorCenter = SIMD4(floor.centerHalf.x, floor.centerHalf.y, floorHeight, 0)
             let part = max(sceneBounds.map { simd_length($0.max - $0.min) } ?? 100, 20)
             refractingGlass = look.refraction && look.physicalLight && materials.contains(2) && !sectioning
             cameraDepth = !sectioning && !bodies.isEmpty && size.width >= 16 && size.height >= 16
@@ -1748,10 +1759,10 @@ final class Renderer {
                 } else if look.reflectionStrength > 0, !sectioning, !bodies.isEmpty {
                     // The bodies again, upside down under the floor, over it where nothing stands in their way.
                     var mirrored = uniforms
-                    mirrored.viewProj = uniforms.viewProj * simd_float4x4(diagonal: SIMD4(1, 1, -1, 1))
-                    mirrored.eye.z = -mirrored.eye.z
+                    mirrored.viewProj = uniforms.viewProj * mirrorMatrix()
+                    mirrored.eye.z = 2 * floorHeight - mirrored.eye.z
                     mirrored.viewDir.z = -mirrored.viewDir.z
-                    mirrored.clipPlane = SIMD4(0, 0, -1, 0)  // what stands below the floor is not reflected
+                    mirrored.clipPlane = SIMD4(0, 0, -1, -floorHeight)  // what stands below the floor is not reflected
                     mirrored.clipOn = 1
                     mirrored.renderParams.z = 1
                     enc.setVertexBytes(&mirrored, length: MemoryLayout<Uniforms>.stride, index: 1)
