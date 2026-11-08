@@ -1,5 +1,7 @@
 # SimplMaker
 
+![SimplMaker: a parametric phone case with the browser, parameters and inspector open](docs/images/screenshot.webp)
+
 A small, native, **parametric** CAD tool for macOS, made for people who 3D print. You sketch, extrude, fillet and chamfer; every
 size is an expression that can use named parameters, so changing a number rebuilds the whole part. Free and open source, with no
 account, no subscription and no cloud: your parts are plain files on your Mac.
