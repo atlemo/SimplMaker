@@ -39,6 +39,7 @@ struct PadDocumentView: View {
     @State private var viewState = PadViewState()
     /// How much of the top the tool bar takes: it grows when the layout has fewer, bigger buttons.
     @State private var toolBarHeight = PadToolBar.height
+    @State private var navButtonsFrame = CGRect.zero
 
     var body: some View {
         let model = model
@@ -46,9 +47,12 @@ struct PadDocumentView: View {
         return DocumentPanels(model: model, guide: guide, viewport: viewport(model), chrome:
             // The bar is drawn here, under the side panels, so its shadow never falls on them (all the glass is at one level);
             // the empty inset below keeps the room it needs. Offset up by that room: this layer sits under the inset.
-            PadToolBar(model: model, height: $toolBarHeight)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .offset(y: -toolBarHeight))
+            ZStack {
+                PadToolBar(model: model, height: $toolBarHeight)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .offset(y: -toolBarHeight)
+                PadTopGlass(frame: navButtonsFrame)
+            })
             // The keyboard covers the bottom of the screen instead of squeezing the view above it: the fields that are typed in move up by themselves.
             .ignoresSafeArea(.keyboard)
             // The size fields and the OK / Cancel bar of a feature float above the panels, never under them.
@@ -103,7 +107,9 @@ struct PadDocumentView: View {
             .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: toolBarHeight).allowsHitTesting(false) }
             // Undo, Render, View, Help, Settings and Export live in the navigation bar as a view of our own, not as items of the
             // system bar: those kept disappearing (after another app, or a dialog) and took the way out of the Render view with them.
-            .background(PadNavBarButtons(model: model, guide: guide, undoManager: undoManager))
+            .scrollEdgeEffectHidden(true, for: .top)
+            .toolbarBackgroundVisibility(.hidden, for: .navigationBar)  // the bar's own backdrop would wash out the glass under it
+            .background(PadNavBarButtons(model: model, guide: guide, undoManager: undoManager, frame: $navButtonsFrame))
             .modifier(PadDialogs(model: model))
             .modifier(AccentScope(sketching: model.sketchSession != nil))
             .environment(\.completionModel, model)
@@ -405,6 +411,22 @@ private struct BarBackground: ViewModifier {
     }
 }
 
+/// The glass behind the part's action buttons, at the buttons' place, in the layer of the tool bar so that all glass is at one level.
+private struct PadTopGlass: View {
+    let frame: CGRect
+    var body: some View {
+        GeometryReader { proxy in
+            let origin = proxy.frame(in: .global).origin
+            if frame.width > 0 {
+                Color.clear.panelGlass(in: Capsule())
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX - origin.x, y: frame.midY - origin.y)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 /// Undo, redo, render, view, help, settings and export, in a glass capsule at the top right.
 struct PadTopButtons: View {
     let model: DocumentModel
@@ -462,7 +484,7 @@ struct PadTopButtons: View {
         // Every control is a finger-sized square of its own.
         .buttonStyle(PadTopButtonStyle())
         .padding(.horizontal, 6)
-        .panelGlass(in: Capsule())
+        // The glass behind the buttons is drawn with the tool bar's (see `PadTopGlass`): the nav bar is a layer above everything.
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Part actions")
     }

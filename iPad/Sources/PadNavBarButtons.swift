@@ -10,6 +10,8 @@ struct PadNavBarButtons: UIViewRepresentable {
     let model: DocumentModel
     let guide: TutorialGuide
     let undoManager: UndoManager?
+    /// Where the buttons are, in window coordinates: the glass behind them is drawn with the rest of the glass, not here.
+    @Binding var frame: CGRect
 
     private var content: some View {
         PadTopButtons(model: model, guide: guide, undoManager: undoManager)
@@ -19,6 +21,7 @@ struct PadNavBarButtons: UIViewRepresentable {
     func makeUIView(context: Context) -> Anchor {
         let anchor = Anchor()
         anchor.isUserInteractionEnabled = false
+        anchor.onFrame = { new in if new != frame { frame = new } }
         anchor.host = UIHostingController(rootView: AnyView(content))
         anchor.host?.view.backgroundColor = .clear
         return anchor
@@ -26,6 +29,7 @@ struct PadNavBarButtons: UIViewRepresentable {
 
     func updateUIView(_ anchor: Anchor, context: Context) {
         anchor.host?.rootView = AnyView(content)
+        anchor.onFrame = { new in if new != frame { frame = new } }
         anchor.attach()
     }
 
@@ -34,6 +38,18 @@ struct PadNavBarButtons: UIViewRepresentable {
     /// An invisible view in the document's hierarchy: through it the navigation bar above is found.
     final class Anchor: UIView {
         var host: UIHostingController<AnyView>?
+        var onFrame: (CGRect) -> Void = { _ in }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            DispatchQueue.main.async { [weak self] in self?.report() }
+        }
+
+        func report() {
+            guard let view = host?.view, view.window != nil else { return }
+            view.layoutIfNeeded()
+            onFrame(view.convert(view.bounds, to: nil))
+        }
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -42,6 +58,10 @@ struct PadNavBarButtons: UIViewRepresentable {
 
         func attach() {
             guard let host, let bar = navigationBar() else { return }
+            // The bar has no backdrop of its own: the view shows through, and the glass is all that is on it.
+            let clear = UINavigationBarAppearance()
+            clear.configureWithTransparentBackground()
+            bar.standardAppearance = clear; bar.scrollEdgeAppearance = clear; bar.compactAppearance = clear; bar.compactScrollEdgeAppearance = clear
             if host.view.superview === bar { return }
             host.view.removeFromSuperview()
             bar.addSubview(host.view)
@@ -51,6 +71,7 @@ struct PadNavBarButtons: UIViewRepresentable {
                 host.view.centerYAnchor.constraint(equalTo: bar.safeAreaLayoutGuide.centerYAnchor),
             ])
             if let controller = owningController(of: bar), host.parent == nil { controller.addChild(host); host.didMove(toParent: controller) }
+            DispatchQueue.main.async { [weak self] in self?.report() }
         }
 
         func detach() {
