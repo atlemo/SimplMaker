@@ -1129,14 +1129,23 @@ public enum Regenerator {
         if let length, length <= 0 { throw KernelError(message: "the thread length must be positive") }
         if f.faces.count > 1, threadTogether(f, feature, length: length, &r) { return }
         for (n, face) in f.faces.enumerated() {
-            let spec = f.spec(at: n)
+            var spec = f.spec(at: n)
+            guard let i = r.bodies.firstIndex(where: { $0.id == face.body }) else {
+                throw KernelError(message: "the body with the thread's face is missing")
+            }
+            // A hole whose diameter comes from a parameter can change size under the thread: when the stored size no
+            // longer suits the face, the thread is fitted to the face's present diameter instead of failing.
+            if let cylinder = try? r.bodies[i].body.faceCylinder(face.face, flipped: f.flipped),
+               let stored = try? f.size(of: spec, r.parameters),
+               !ThreadFit.suits(stored, radius: cylinder.radius, isHole: cylinder.isHole),
+               // Only a face that has drifted from its size; a plainly wrong pick (M20 on a Ø8 shaft) is still an error.
+               (0.5...2).contains(2 * cylinder.radius / stored.diameter) {
+                spec = ThreadSpec.suggested(forDiameter: 2 * cylinder.radius, hole: cylinder.isHole)
+            }
             let size: ThreadSize
             do { size = try f.size(of: spec, r.parameters) } catch { throw KernelError(message: "\(error)") }
             let diameter = try f.modeledDiameter(of: size, r.parameters)
             if diameter <= size.pitch * 1.2 { throw KernelError(message: "the tolerance offset leaves the thread too thin") }
-            guard let i = r.bodies.firstIndex(where: { $0.id == face.body }) else {
-                throw KernelError(message: "the body with the thread's face is missing")
-            }
             // The body as it was: the faces (and so the length handle) are found on it.
             if r.featureInputs[feature.id]?[face.body] == nil {
                 r.featureInputs[feature.id, default: [:]][face.body] = r.bodies[i].body

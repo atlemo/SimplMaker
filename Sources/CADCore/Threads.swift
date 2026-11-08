@@ -136,6 +136,15 @@ public enum ThreadMaterial: String, Codable, Hashable, Sendable, CaseIterable {
     }
 }
 
+/// The kernel's rule for whether a thread size suits a round face (see planThread in SimplKernel.cpp): a nut thread
+/// about as wide as the hole (between its tap drill and full size), a bolt thread about as wide as the shaft.
+public enum ThreadFit {
+    public static func suits(_ size: ThreadSize, radius: Double, isHole: Bool) -> Bool {
+        let rMajor = size.diameter / 2, rMinor = rMajor - 0.541265877365 * size.pitch
+        return isHole ? (radius > rMinor * 0.8 && radius < rMajor * 1.1) : (radius > rMajor * 0.8 && radius < rMajor * 1.25)
+    }
+}
+
 /// One thread's standard and size, for a face of a thread feature that is not threaded like the first.
 public struct ThreadSpec: Hashable, Codable, Sendable {
     public var standard: ThreadStandard

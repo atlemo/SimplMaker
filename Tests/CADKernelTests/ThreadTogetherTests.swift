@@ -177,3 +177,25 @@ import Testing
         #expect(abs(other.start.z - 5) < 1e-9 && other.direction.z > 0.999)
     }
 }
+
+@Suite struct ThreadFollowsParameterTests {
+    /// Five holes whose diameter is the parameter "d", all threaded in one feature: changing d re-fits the threads.
+    @Test func threadsFollowAHoleDiameterParameter() throws {
+        var (features, walls) = try ThreadTogetherTests.block(holes: (0..<5).map { ("6.8", Double($0) * 10 - 20) })
+        features = features.map { f in
+            guard case .hole(var h) = f.kind else { return f }
+            h.diameter = "d"
+            return Feature(id: f.id, name: f.name, .hole(h))
+        }
+        let th = ThreadFeature(face: walls[0], moreFaces: Array(walls.dropFirst()), standard: .metric, size: "M8x1.25")
+        features.append(Feature(id: "th", name: "thread", .thread(th)))
+        var doc = CADDocument()
+        doc.features = features
+        for d in ["6.8", "5", "8"] {
+            doc.parameters = [Parameter("d", "\(d) mm")]
+            let r = Regenerator.regenerate(doc)
+            #expect(r.errors.isEmpty, "d = \(d): \(r.errors)")
+            #expect(r.body("b")?.isValid == true)
+        }
+    }
+}
