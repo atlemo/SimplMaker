@@ -375,8 +375,13 @@ public enum Regenerator {
         case .cylinder(let f):
             guard let body = r.body(f.body), body.hasFace(f.face) else { throw KernelError(message: "the round face that gives the axis is missing") }
             let m = try body.measure(.face(f.face))
+            // A flat face gives the line through its middle, square to it (the top of a box: its vertical middle line).
+            if m.geometry == .plane, let direction = m.direction {
+                // The middle of its outline, not its centre of mass: a notch in the face must not move the axis.
+                return ((m.bounds.min + m.bounds.max) / 2, simd_normalize(direction))
+            }
             guard m.geometry == .cylinder, let center = m.center, let direction = m.direction else {
-                throw KernelError(message: "the face that gives the axis is no longer round")
+                throw KernelError(message: "the face that gives the axis is no longer round or flat")
             }
             return (center, simd_normalize(direction))
         }

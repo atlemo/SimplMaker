@@ -123,6 +123,16 @@ import simd
         #expect(abs(try #require(turned.body("e")).volume - 980) < 1e-6, "the half-turned slot lies outside the block, so it removes nothing")
     }
 
+    @Test func aFlatFaceIsAnAxisThroughItsMiddle() throws {
+        let base = try run(try slotted(nil))
+        let body = try #require(base.body("e"))
+        let top = try #require(try ["e.end", "e.start"].first { (try? body.faceFrame($0).normal.z).map { abs($0) > 0.99 } == true })
+        // The block spans x 10…30, y 0…10, so a vertical line through the middle of its top turns the slot (13, 3) to (27, 7).
+        let turned = try run(try slotted(PatternFeature(kind: .circular, bodies: [], axis: .cylinder(FaceRef(body: "e", face: top)),
+                                                        count: "2", spacing: "180 deg", features: ["slot"])))
+        #expect(abs(try #require(turned.body("e")).volume - 960) < 1e-6, "the turned slot lands in the block, a second one cut")
+    }
+
     @Test func featurePatternRefusesWhatMakesABody() throws {
         let r = Regenerator.regenerate(try block(extra: [Feature(id: "fp", name: "Pattern1", .pattern(PatternFeature(
             kind: .linear, bodies: [], axis: .x, count: "3", spacing: "6 mm", features: ["e"])))]))

@@ -1437,10 +1437,10 @@ struct PatternInspector: View {
                 Text("Y axis").tag("Y")
                 Text("Z axis").tag("Z")
                 if case .edge(let e) = pattern.axis { Text("Edge \(e.edge)").tag("Edge") }
-                if case .cylinder = pattern.axis { Text("Round face").tag("Cylinder") }
+                if case .cylinder = pattern.axis { Text("Face axis").tag("Cylinder") }
             }
             if model.selection.count == 1, let pick = model.selection.first, let ref = model.cylinderFaceRef(pick) {
-                Button("Use the Selected Round Face as the Axis") {
+                Button("Use the Selected Round or Flat Face as the Axis") {
                     edit.update("Change Direction") { $0.axis = .cylinder(ref) }
                     model.clearSelection()
                 }

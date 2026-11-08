@@ -296,8 +296,9 @@ struct CreatePatternOperation: AIOperation {
             switch AIEntityRef(axis) {
             case .face(let ref)?:
                 let body = try AIChecks.body(ref.body, field: "axis", context)
-                guard body.hasFace(ref.face), (try? body.measure(.face(ref.face)))?.geometry == .cylinder else {
-                    throw AIError(.invalidArguments, "\"\(axis)\" is not a round (cylindrical) face of \(ref.body).", reason: "Take a cylinder's side face from get_body, or use \"x\", \"y\" or \"z\".")
+                let geometry = body.hasFace(ref.face) ? (try? body.measure(.face(ref.face)))?.geometry : nil
+                guard geometry == .cylinder || geometry == .plane else {
+                    throw AIError(.invalidArguments, "\"\(axis)\" is not a round (cylindrical) or flat face of \(ref.body).", reason: "Take a cylinder's side face (goes round its axis) or a flat face (goes round the line through its middle, square to it) from get_body, or use \"x\", \"y\" or \"z\".")
                 }
                 patternAxis = .cylinder(ref)
             case .edge(let ref)?:

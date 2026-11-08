@@ -296,6 +296,36 @@ import simd
         #expect(model.pendingTool == nil)
     }
 
+    @Test func thePatternToolRepeatsAFeatureAroundAPickedFlatFace() async throws {
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "0 mm", v: "0 mm",
+                                                                       width: "20", length: "20", height: "20"))),
+            Feature(id: "notch", name: "Notch", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "8 mm", v: "1 mm",
+                                                                            width: "4", length: "4", height: "20",
+                                                                            operation: .cut, target: "b"))),
+        ]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let body = try #require(model.result?.body("b"))
+        let one = body.volume
+        let names = try #require(model.meshes.first).mesh.faceNames
+        let notchFace = try #require(names.first { $0.hasPrefix("notch.") })
+        let top = try #require(names.first { n in (try? body.faceFrame(n))?.normal.z ?? 0 > 0.99 })
+
+        model.run(.pattern)
+        model.setPatternSource(.features)
+        model.toolClick(.pattern, PickID(body: 0, face: try #require(names.firstIndex(of: notchFace))))
+        model.setPatternChoosingAxis(true)
+        model.toolClick(.pattern, PickID(body: 0, face: try #require(names.firstIndex(of: top))))
+        #expect(!model.toolMissed, "a flat face is an axis")
+        #expect(model.pendingTool == nil)
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        let got = model.result?.body("b")?.volume ?? 0
+        #expect(abs(got - (8000 - 4 * (8000 - one))) < 1e-3, "\(got) vs \(8000 - 4 * (8000 - one))")
+    }
+
     @Test func mirrorPatternAndShell() async throws {
         let model = try await boxModel()
         let one = try #require(model.result?.body("b")).volume

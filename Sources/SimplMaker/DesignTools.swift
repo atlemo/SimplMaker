@@ -382,12 +382,12 @@ extension DocumentModel {
                 : "Click more bodies, then the plane to mirror across, or a straight edge to mirror along (\(pickedBodies.count) picked)"
         case .pattern:
             if toolMissed {
-                return patternChoosingAxis ? "That isn't an axis · click a round face (a cylinder), a circular edge or a straight edge"
+                return patternChoosingAxis ? "That isn't an axis · click a round or flat face, a circular edge or a straight edge"
                                            : "That wasn't made by a projection, cut, join or hole · pick one of those, or switch to Bodies"
             }
             let axis = patternAxisPick == nil ? "" : " · axis picked"
             if patternChoosingAxis {
-                return "Click the axis: a round face, a circular edge (goes round it) or a straight edge (goes along it) · the pattern is made as soon as you pick it"
+                return "Click the axis: a round face, a flat face (goes round its middle), a circular edge (goes round it) or a straight edge (goes along it) · the pattern is made as soon as you pick it"
             }
             if patternSource == .features {
                 let n = patternFeatures.count
@@ -960,7 +960,7 @@ extension DocumentModel {
     /// A round (cylindrical) face as a reference: a pattern can go round its axis.
     func cylinderFaceRef(_ pick: PickID) -> FaceRef? {
         guard pick.isFace, !pick.isWholeBody, let ref = faceRef(pick), let body = result?.body(ref.body),
-              (try? body.measure(.face(ref.face)))?.geometry == .cylinder else { return nil }
+              let g = (try? body.measure(.face(ref.face)))?.geometry, g == .cylinder || g == .plane else { return nil }
         return ref
     }
 
