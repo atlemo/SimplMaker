@@ -797,6 +797,13 @@ extension Sketch {
         case (2, .circle?, .point?), (2, .arc?, .point?):
             guard let c = center(of: ids[0]) else { return nil }
             return result(.distance(c, ids[1]))
+        case (2, .line?, .circle?), (2, .line?, .arc?):
+            // A line and a round end or hole: from the line to its center (the Distance tool measures to the rim).
+            guard let c = center(of: ids[1]) else { return nil }
+            return result(.pointLineDistance(point: c, line: ids[0]))
+        case (2, .circle?, .line?), (2, .arc?, .line?):
+            guard let c = center(of: ids[0]) else { return nil }
+            return result(.pointLineDistance(point: c, line: ids[1]))
         default: return nil
         }
     }

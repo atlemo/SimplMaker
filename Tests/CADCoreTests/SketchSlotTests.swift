@@ -31,4 +31,16 @@ import Testing
             #expect(abs(radius - 6) < 1e-6)
         }
     }
+
+    @Test func dimensionOfASlotEndAndALineMeasuresFromItsCenter() {
+        var s = Sketch()
+        let a = s.addPoint(-50, 19), b = s.addPoint(50, 19)
+        let line = s.addLine(a, b, construction: true)
+        let slot = s.addSlot(from: SketchSnap(SIMD2(0, 0)), to: SketchSnap(SIMD2(20, -27)), width: 12)
+        for pick in [[slot.ends[0], line], [line, slot.ends[0]]] {
+            let d = s.suggestDimension(for: pick)
+            #expect(d?.kind == .pointLineDistance(point: slot.centers[0], line: line))
+            #expect(abs((d?.value ?? 0) - 19) < 1e-6)
+        }
+    }
 }
