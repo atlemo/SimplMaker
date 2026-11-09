@@ -1347,11 +1347,54 @@ final class DocumentModel {
             }
             return
         }
+        if additive, addToSelectedEdgeFeature(pick) { return }
         let picks = single ? [pick] : profileGroup(of: pick)
         if additive {
             toggle(picks)
         } else {
             selection = Set(selection) == Set(picks) ? [] : picks
+        }
+    }
+
+    /// ⇧-click on an edge (or face) while a Fillet or Chamfer is selected in the timeline: it is added to that feature at
+    /// once, or taken out again when it is already one of its edges. False when the click is not for such a feature.
+    private func addToSelectedEdgeFeature(_ pick: PickID) -> Bool {
+        guard pendingTool == nil, let id = selectedFeature, pick.isEdge || pick.isFace,
+              let feature = document.features.first(where: { $0.id == id }) else { return false }
+        let current: EdgeFeature
+        switch feature.kind {
+        case .fillet(let e), .chamfer(let e): current = e
+        default: return false
+        }
+        if pick.isEdge {
+            guard pick.body < meshes.count, let name = name(of: pick) else { return false }
+            let ref = EdgeRef(body: meshes[pick.body].id, edge: name)
+            if let i = current.edges.firstIndex(of: ref) {
+                guard current.edges.count + current.faces.count > 1 else { return true }  // keep one thing to round
+                edit(id, "Remove Edge") { $0.edges.remove(at: i) }
+            } else {
+                edit(id, "Add Edge") { $0.edges.append(ref) }
+            }
+        } else {
+            guard let ref = faceRef(pick) else { return false }
+            if let i = current.faces.firstIndex(of: ref) {
+                guard current.edges.count + current.faces.count > 1 else { return true }
+                edit(id, "Remove Face") { $0.faces.remove(at: i) }
+            } else {
+                edit(id, "Add Face") { $0.faces.append(ref) }
+            }
+        }
+        selection = []
+        return true
+    }
+
+    private func edit(_ id: FeatureID, _ name: String, _ change: @escaping (inout EdgeFeature) -> Void) {
+        updateFeature(id, name) { f in
+            switch f.kind {
+            case .fillet(var e): change(&e); f.kind = .fillet(e)
+            case .chamfer(var e): change(&e); f.kind = .chamfer(e)
+            default: break
+            }
         }
     }
 

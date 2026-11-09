@@ -198,4 +198,20 @@ import Testing
         #expect(model.document.features(using: "tilt").count == 1, "the angle counts as using the parameter")
         #expect(!model.commitHandle("cut", slot: 1), "a length isn't an angle")
     }
+    @Test func shiftClickAddsAnEdgeToTheSelectedChamfer() async throws {
+        let model = try await boxModel()
+        try pickTop(model)
+        model.run(.chamfer)
+        try await settle(model)
+        let id = try #require(model.document.features.last?.id)
+        model.finishFeatureEdit()
+        model.selectedFeature = id
+        let before = try #require(chamfer(model)).edges.count
+        let m = try #require(model.meshes.first?.mesh)
+        let vertical = try #require(m.edgeNames.firstIndex { n in !(chamfer(model)?.edges.contains { $0.edge == n } ?? false) && n.contains("left") && n.contains("front") })
+        model.click(PickID(body: 0, edge: vertical), additive: true)
+        try await settle(model)
+        #expect(try #require(chamfer(model)).edges.count == before + 1, "the edge joined the chamfer")
+        #expect(model.selection.isEmpty)
+    }
 }
