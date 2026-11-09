@@ -113,6 +113,23 @@ extension Sketch {
         return (pa, pb)
     }
 
+    /// A projected model edge that came in as a Bézier but lies straight (a circle seen edge-on, say): all four of its
+    /// points are fixed and in a row. Distances to it are measured to the line through its ends.
+    public func isStraightProjectedBezier(_ id: EntityID) -> Bool {
+        guard let c = curve(id), case .bezier(let a, let c1, let c2, let b) = c.geometry else { return false }
+        let ids = [a, c1, c2, b]
+        guard ids.allSatisfy({ point($0)?.fixed == true }), let pa = position(a), let pb = position(b), vlen(pb - pa) > 1e-9 else { return false }
+        return [c1, c2].allSatisfy { id in position(id).map { abs(vcross(pb - pa, $0 - pa)) / vlen(pb - pa) < 1e-6 } ?? false }
+    }
+
+    /// The ends of a line, or of a straight projected Bézier (see `isStraightProjectedBezier`).
+    func chordEnds(_ id: EntityID) -> (SIMD2<Double>, SIMD2<Double>)? {
+        if let e = lineEnds(id) { return e }
+        guard isStraightProjectedBezier(id), case .bezier(let a, _, _, let b)? = curve(id)?.geometry,
+              let pa = position(a), let pb = position(b) else { return nil }
+        return (pa, pb)
+    }
+
     public func center(of id: EntityID) -> EntityID? {
         guard let c = curve(id) else { return nil }
         switch c.geometry {
@@ -636,7 +653,7 @@ extension Sketch {
             guard let pa = position(a), let pb = position(b) else { return nil }
             return abs(pb.y - pa.y)
         case .pointLineDistance(let p, let l):
-            guard let pp = position(p), case let (a, b)? = lineEnds(l) else { return nil }
+            guard let pp = position(p), case let (a, b)? = chordEnds(l) else { return nil }
             return abs(vcross(b - a, pp - a)) / max(vlen(b - a), 1e-12)
         case .length(let l):
             guard case let (a, b)? = lineEnds(l) else { return nil }
@@ -753,7 +770,8 @@ extension Sketch {
             return measure(k).map { (kind: k, value: $0) }
         }
         switch (k0, k1) {
-        case (.bezier, _), (_, .bezier): return nil
+        case (.bezier, _), (_, .bezier):
+            return ids.contains(where: isStraightProjectedBezier) ? suggestDimension(for: ids) : nil
         case (.circle, _), (.arc, _): return gap(ids[0], ids[1])
         case (_, .circle), (_, .arc): return gap(ids[1], ids[0])
         case (.line, .line):
@@ -797,6 +815,16 @@ extension Sketch {
         case (2, .circle?, .point?), (2, .arc?, .point?):
             guard let c = center(of: ids[0]) else { return nil }
             return result(.distance(c, ids[1]))
+        case (2, .point?, .bezier?) where isStraightProjectedBezier(ids[1]):
+            return result(.pointLineDistance(point: ids[0], line: ids[1]))
+        case (2, .bezier?, .point?) where isStraightProjectedBezier(ids[0]):
+            return result(.pointLineDistance(point: ids[1], line: ids[0]))
+        case (2, .bezier?, .circle?) where isStraightProjectedBezier(ids[0]), (2, .bezier?, .arc?) where isStraightProjectedBezier(ids[0]):
+            guard let c = center(of: ids[1]) else { return nil }
+            return result(.pointLineDistance(point: c, line: ids[0]))
+        case (2, .circle?, .bezier?) where isStraightProjectedBezier(ids[1]), (2, .arc?, .bezier?) where isStraightProjectedBezier(ids[1]):
+            guard let c = center(of: ids[0]) else { return nil }
+            return result(.pointLineDistance(point: c, line: ids[1]))
         case (2, .line?, .circle?), (2, .line?, .arc?):
             // A line and a round end or hole: from the line to its center (the Distance tool measures to the rim).
             guard let c = center(of: ids[1]) else { return nil }

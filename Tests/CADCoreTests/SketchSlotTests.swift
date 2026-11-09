@@ -43,4 +43,29 @@ import Testing
             #expect(abs((d?.value ?? 0) - 19) < 1e-6)
         }
     }
+
+    /// A circular edge seen edge-on comes into the sketch as a fixed, straight Bézier: a distance to it works like one to a line.
+    @Test func aSlotEndCanBeDimensionedToAStraightProjectedBezier() {
+        var s = Sketch()
+        let ids = [-50.0, -17, 17, 50].map { x -> EntityID in
+            let id = s.addPoint(x, 19)
+            if let i = s.points.firstIndex(where: { $0.id == id }) { s.points[i].fixed = true }
+            return id
+        }
+        let bez = s.addBezier(start: ids[0], control1: ids[1], control2: ids[2], end: ids[3])
+        let slot = s.addSlot(from: SketchSnap(SIMD2(0, 0)), to: SketchSnap(SIMD2(20, -27)), width: 12)
+        s.dimension(.diameter(slot.ends[0]), "12", id: "w")
+        for pick in [[slot.centers[0], bez], [bez, slot.centers[0]], [slot.ends[0], bez], [bez, slot.ends[0]]] {
+            for d in [s.suggestDimension(for: pick), s.suggestDistance(for: pick).flatMap { pick.contains(slot.centers[0]) ? $0 : nil }] {
+                guard let d else { continue }
+                #expect(abs(d.value - 19) < 1e-6)
+                var t = s
+                let applied = t.applyDimension(d.kind, expression: "19", value: 19, values: ["w": 12], id: "d")
+                #expect(applied)
+                _ = SketchSolver.solve(&t, dimensionValues: ["w": 12, "d": 25])
+                #expect(abs((t.position(slot.centers[0])?.y ?? 0) - (19 - 25)) < 1e-6 || abs((t.position(slot.centers[0])?.y ?? 0) - 44) < 1e-6)
+            }
+        }
+        #expect(s.suggestDimension(for: [slot.centers[0], bez]) != nil)
+    }
 }

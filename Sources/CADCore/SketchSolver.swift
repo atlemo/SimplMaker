@@ -316,8 +316,14 @@ public enum SketchSolver {
             else { target = .point(p(other, x)) }
             return RimGap(center: p(c, x), radius: radius(circle, x), other: target)
         }
+        /// A line's two ends, or the ends of a (straight, projected) Bézier standing in for one.
+        func chord(_ id: EntityID) -> (EntityID, EntityID)? {
+            if let l = lines[id] { return l }
+            if let b = beziers[id], b.count == 4 { return (b[0], b[3]) }
+            return nil
+        }
         func dir(_ line: EntityID, _ x: [Double]) -> SIMD2<Double> {
-            guard case let (a, b)? = lines[line] else { return .zero }
+            guard case let (a, b)? = chord(line) else { return .zero }
             return p(b, x) - p(a, x)
         }
 
@@ -454,7 +460,7 @@ public enum SketchSolver {
                 let sign: Double = me.p(b, x0).y >= me.p(a, x0).y ? 1 : -1
                 add { (me.p(b, $0).y - me.p(a, $0).y) - sign * v }
             case .pointLineDistance(let pt, let l):
-                guard case let (a, _)? = me.lines[l] else { return }
+                guard case let (a, _)? = me.chord(l) else { return }
                 let d0 = me.dir(l, x0)
                 let sign: Double = vcross(d0, me.p(pt, x0) - me.p(a, x0)) >= 0 ? 1 : -1
                 add { let d = me.dir(l, $0); return vcross(d, me.p(pt, $0) - me.p(a, $0)) / max(vlen(d), 1e-12) - sign * v }
