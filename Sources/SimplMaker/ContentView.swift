@@ -1552,7 +1552,7 @@ struct RowFieldStyle: ViewModifier {
             .focusEffectDisabled()  // the system's ring would add a second edge under ours
             .overlay(shape.strokeBorder(
                 mode == .selected ? Color.white.opacity(0.4)
-                    : mode == .focused ? (prominence == .increased ? darkerAccent : accent) : Color.secondary.opacity(0.4),
+                    : mode == .focused ? Color.gray : Color.secondary.opacity(0.4),
                 lineWidth: mode == .focused ? 2 : 1))
     }
 }
@@ -1881,23 +1881,8 @@ struct ParameterRow: View {
                 .padding(.horizontal, 8).padding(.vertical, 6)
                 .contentShape(Rectangle())
                 .overlay {
-                    Menu {
-                        ForEach([(UnitKind.length, "Length (mm)"), (.angle, "Angle (deg)"), (.none, "Number")], id: \.0) { unit, title in
-                            Button {
-                                model.setParameterUnit(parameter.name, unit)
-                            } label: {
-                                if parameter.unit == unit { Label(title, systemImage: "checkmark") } else { Text(title) }
-                            }
-                        }
-                    } label: {
-                        Color.clear.contentShape(Rectangle())
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .menuIndicator(.hidden)
-                    .opacity(0.011)
+                    UnitMenuHandle(current: parameter.unit) { model.setParameterUnit(parameter.name, $0) }
                 }
-                .padding(.horizontal, -3).padding(.vertical, -4)  // the bigger target without a bigger row
                 .help("Length, angle or plain number")
             }
             if let renameError {
@@ -1916,6 +1901,54 @@ struct ParameterRow: View {
         .padding(.vertical, DS.Spacing.space2)
         .onChange(of: renaming) { if renaming { renameError = nil } }
     }
+}
+
+/// The Length / Angle / Number menu over the unit label. On the Mac it takes the mouse itself and pops the menu up
+/// on the press, because a list row's own tracking swallowed clicks on a SwiftUI menu laid over it.
+private struct UnitMenuHandle: View {
+    let current: UnitKind
+    let choose: (UnitKind) -> Void
+    static let choices: [(UnitKind, String)] = [(.length, "Length (mm)"), (.angle, "Angle (deg)"), (.none, "Number")]
+
+    #if os(macOS)
+    var body: some View { Representable(current: current, choose: choose) }
+
+    private struct Representable: NSViewRepresentable {
+        let current: UnitKind
+        let choose: (UnitKind) -> Void
+        func makeNSView(context: Context) -> HandleView { HandleView() }
+        func updateNSView(_ view: HandleView, context: Context) { view.current = current; view.choose = choose }
+
+        final class HandleView: NSView {
+            var current: UnitKind = .length
+            var choose: (UnitKind) -> Void = { _ in }
+            override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+            override func mouseDown(with event: NSEvent) {
+                let menu = NSMenu()
+                for (i, choice) in UnitMenuHandle.choices.enumerated() {
+                    let item = NSMenuItem(title: choice.1, action: #selector(picked(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.tag = i
+                    item.state = choice.0 == current ? .on : .off
+                    menu.addItem(item)
+                }
+                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.height + 2), in: self)
+            }
+            @objc private func picked(_ item: NSMenuItem) { choose(UnitMenuHandle.choices[item.tag].0) }
+        }
+    }
+    #else
+    var body: some View {
+        Menu {
+            ForEach(Self.choices, id: \.0) { unit, title in
+                Button { choose(unit) } label: {
+                    if current == unit { Label(title, systemImage: "checkmark") } else { Text(title) }
+                }
+            }
+        } label: { Color.clear.contentShape(Rectangle()) }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).opacity(0.011)
+    }
+    #endif
 }
 
 #if os(macOS)
