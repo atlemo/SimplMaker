@@ -749,11 +749,12 @@ struct ParametersList: View {
 
     private func row(_ p: Parameter) -> AnyView {
         AnyView(
-            ParameterRow(model: model, parameter: p, selected: selection == p.name, renaming: renamingBinding(p.name),
+            ParameterRow(model: model, parameter: p, selected: false, renaming: renamingBinding(p.name),
                          valueFocused: focusBinding(p.name), tabbed: { moveFocus(from: p.name, backwards: $0) })
                 .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
+                .environment(\.backgroundProminence, .standard)  // no accent row, so no white-on-accent text
                 .tag(p.name)
-                .listRowBackground(SelectedRowBackground(on: selection == p.name)))
+                .listRowBackground(ParameterRowBackground(selected: selection == p.name, sketching: model.sketchSession != nil)))
     }
 
     var body: some View {
@@ -1657,6 +1658,31 @@ struct InlineNameField: View {
 /// A list row's background in the app's accent colour: solid when the row is selected (a sidebar list draws its own
 /// selection in the system's colour), or a soft tint when it is only `highlighted`, as for the browser row of a body
 /// or sketch that owns something selected in the viewport.
+/// A parameter's row: nothing while it is idle, a quiet gray card while it is the active one (it also covers the
+/// system's blue selection). While sketching the card takes the colour of the user's sketch paper instead.
+struct ParameterRowBackground: View {
+    let selected: Bool
+    var sketching = false
+    @AppStorage(Preferences.sketchPaper) private var paper = Preferences.SketchPaper.blue
+    @Environment(\.colorScheme) private var scheme
+
+    private var fill: Color {
+        if sketching, let c = paper.color(dark: scheme == .dark) {
+            // The paper colour itself, as chosen in Settings.
+            return Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z))
+        }
+        return Color.primary.opacity(0.1)
+    }
+
+    var body: some View {
+        if selected {
+            RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous)
+                .fill(fill)
+                .padding(.horizontal, DS.Spacing.space2)
+        }
+    }
+}
+
 struct SelectedRowBackground: View {
     @Environment(\.accent) private var accent
     let on: Bool
