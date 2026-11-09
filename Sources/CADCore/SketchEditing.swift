@@ -114,19 +114,29 @@ extension Sketch {
     }
 
     /// A projected model edge that came in as a Bézier but lies straight (a circle seen edge-on, say): all four of its
-    /// points are fixed and in a row. Distances to it are measured to the line through its ends.
-    public func isStraightProjectedBezier(_ id: EntityID) -> Bool {
-        guard let c = curve(id), case .bezier(let a, let c1, let c2, let b) = c.geometry else { return false }
+    /// points are fixed and in a row. Distances to it are measured to the line they lie on.
+    public func isStraightProjectedBezier(_ id: EntityID) -> Bool { straightLine(of: id) != nil }
+
+    /// The two points (the farthest apart of its four) that give a straight projected Bézier's line; the ends alone
+    /// can be the same point when the piece runs out and back. Nil for any other curve.
+    public func straightLine(of id: EntityID) -> (EntityID, EntityID)? {
+        guard let c = curve(id), case .bezier(let a, let c1, let c2, let b) = c.geometry else { return nil }
         let ids = [a, c1, c2, b]
-        guard ids.allSatisfy({ point($0)?.fixed == true }), let pa = position(a), let pb = position(b), vlen(pb - pa) > 1e-9 else { return false }
-        return [c1, c2].allSatisfy { id in position(id).map { abs(vcross(pb - pa, $0 - pa)) / vlen(pb - pa) < 1e-6 } ?? false }
+        guard ids.allSatisfy({ point($0)?.fixed == true }) else { return nil }
+        let pos = ids.compactMap { position($0) }
+        guard pos.count == 4 else { return nil }
+        var best: (Int, Int, Double) = (0, 0, 0)
+        for i in 0..<4 { for j in (i + 1)..<4 where vlen(pos[j] - pos[i]) > best.2 { best = (i, j, vlen(pos[j] - pos[i])) } }
+        guard best.2 > 1e-9 else { return nil }
+        let origin = pos[best.0], d = pos[best.1] - origin
+        guard pos.allSatisfy({ abs(vcross(d, $0 - origin)) / best.2 < 1e-6 }) else { return nil }
+        return (ids[best.0], ids[best.1])
     }
 
-    /// The ends of a line, or of a straight projected Bézier (see `isStraightProjectedBezier`).
+    /// The ends of a line, or two points on the line of a straight projected Bézier (see `isStraightProjectedBezier`).
     func chordEnds(_ id: EntityID) -> (SIMD2<Double>, SIMD2<Double>)? {
         if let e = lineEnds(id) { return e }
-        guard isStraightProjectedBezier(id), case .bezier(let a, _, _, let b)? = curve(id)?.geometry,
-              let pa = position(a), let pb = position(b) else { return nil }
+        guard let (a, b) = straightLine(of: id), let pa = position(a), let pb = position(b) else { return nil }
         return (pa, pb)
     }
 

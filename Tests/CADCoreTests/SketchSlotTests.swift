@@ -53,9 +53,15 @@ import Testing
             return id
         }
         let bez = s.addBezier(start: ids[0], control1: ids[1], control2: ids[2], end: ids[3])
+        // The piece of a circle's chain that runs out and back: its ends are the same point, its line still counts.
+        let back = s.addPoint(-15, 19), out = s.addPoint(-33, 19)
+        for id in [back, out] { if let i = s.points.firstIndex(where: { $0.id == id }) { s.points[i].fixed = true } }
+        let loop = s.addBezier(start: back, control1: out, control2: out, end: back)
+        #expect(s.isStraightProjectedBezier(loop))
         let slot = s.addSlot(from: SketchSnap(SIMD2(0, 0)), to: SketchSnap(SIMD2(20, -27)), width: 12)
         s.dimension(.diameter(slot.ends[0]), "12", id: "w")
-        for pick in [[slot.centers[0], bez], [bez, slot.centers[0]], [slot.ends[0], bez], [bez, slot.ends[0]]] {
+        for pick in [[slot.centers[0], bez], [bez, slot.centers[0]], [slot.ends[0], bez], [bez, slot.ends[0]],
+                     [slot.centers[0], loop], [loop, slot.ends[0]]] {
             for d in [s.suggestDimension(for: pick), s.suggestDistance(for: pick).flatMap { pick.contains(slot.centers[0]) ? $0 : nil }] {
                 guard let d else { continue }
                 #expect(abs(d.value - 19) < 1e-6)

@@ -262,6 +262,7 @@ public enum SketchSolver {
         var lines: [EntityID: (EntityID, EntityID)] = [:]
         var circleCenters: [EntityID: EntityID] = [:]  // circles and arcs
         var beziers: [EntityID: [EntityID]] = [:]      // start, control 1, control 2, end
+        var straightBeziers: [EntityID: (EntityID, EntityID)] = [:]  // fixed, straight projected ones: two points on their line
         var ellipses: [EntityID: (center: EntityID, major: EntityID, minor: EntityID)] = [:]
         var terms: [([Double]) -> Double] = []
         /// The constraint or dimension each term belongs to (nil for the solver's own terms), for naming what conflicts.
@@ -291,6 +292,7 @@ public enum SketchSolver {
                     arcs[c.id] = (center, start); arcEnds[c.id] = end; circleCenters[c.id] = center
                 case .bezier(let a, let c1, let c2, let b):
                     beziers[c.id] = [a, c1, c2, b]
+                    if let straight = s.straightLine(of: c.id) { straightBeziers[c.id] = straight }
                 case .ellipse(let center, let major, let minor):
                     ellipses[c.id] = (center, major, minor)
                 }
@@ -319,8 +321,7 @@ public enum SketchSolver {
         /// A line's two ends, or the ends of a (straight, projected) Bézier standing in for one.
         func chord(_ id: EntityID) -> (EntityID, EntityID)? {
             if let l = lines[id] { return l }
-            if let b = beziers[id], b.count == 4 { return (b[0], b[3]) }
-            return nil
+            return straightBeziers[id]
         }
         func dir(_ line: EntityID, _ x: [Double]) -> SIMD2<Double> {
             guard case let (a, b)? = chord(line) else { return .zero }
