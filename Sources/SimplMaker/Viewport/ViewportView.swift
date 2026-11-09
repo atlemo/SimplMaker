@@ -31,7 +31,24 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var marqueeStart: NSPoint?
     private var marqueeAdditive = false
     private var marqueeView: MarqueeView?
-    private var handleDrag = false
+    private var handleDrag = false {
+        didSet {
+            guard handleDrag != oldValue else { return }
+            if handleDrag {
+                // While an arrow is dragged the viewport takes the mouse at window level: a field or panel that
+                // moves under the pointer must not strand the drag (it then stopped at some height).
+                handleDragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+                    guard let self, self.handleDrag, event.window === self.window else { return event }
+                    if event.type == .leftMouseDragged { self.mouseDragged(with: event) } else { self.mouseUp(with: event) }
+                    return nil
+                }
+            } else if let m = handleDragMonitor {
+                NSEvent.removeMonitor(m)
+                handleDragMonitor = nil
+            }
+        }
+    }
+    private var handleDragMonitor: Any?
     /// A hole's move dot is being dragged.
     private var holeMoveDrag = false
     private var sectionDrag = false
