@@ -756,6 +756,42 @@ public enum Regenerator {
         return ModelSnap(edge: edge, start: start, end: end, center: local(c.center), isFullCircle: c.isFull)
     }
 
+    /// Any curved edge as it lands in a sketch frame (looked at along the frame's normal): cubic Bézier pieces laid end
+    /// to end as start, two handles, start of the next piece, ... and the last end. Through points of the edge with its
+    /// own tangents, so a tilted circle, a spline or a helix comes out true to a hair. `pieces` nil picks as many as
+    /// the bending needs. Nil when the edge can't be sampled or lands as a point.
+    public static func curveChain(_ body: KBody, edge: EdgeRef, frame: Frame, pieces: Int? = nil) -> [SIMD2<Double>]? {
+        func local(_ w: SIMD3<Double>) -> SIMD2<Double> { SIMD2(simd_dot(w, frame.xAxis), simd_dot(w, frame.yAxis)) }
+        func sample(_ n: Int) -> [(p: SIMD2<Double>, t: SIMD2<Double>)]? {
+            guard let raw = try? body.edgeSamples(edge.edge, count: n) else { return nil }
+            return raw.map { (local($0.point - frame.origin), local($0.tangent)) }
+        }
+        var n = pieces ?? 0
+        if n == 0 {
+            guard let rough = sample(64) else { return nil }
+            var turning = 0.0
+            for i in 1..<rough.count {
+                let a = rough[i - 1].t, b = rough[i].t
+                guard simd_length(a) > 1e-9, simd_length(b) > 1e-9 else { continue }
+                turning += abs(atan2(a.x * b.y - a.y * b.x, simd_dot(a, b)))
+            }
+            n = min(48, max(3, Int((turning / (Double.pi / 8)).rounded(.up))))
+        }
+        guard var s = sample(n) else { return nil }
+        var length = 0.0
+        for i in 1..<s.count { length += simd_length(s[i].p - s[i - 1].p) }
+        guard length > 1e-6 else { return nil }
+        if simd_length(s[0].p - s[n].p) < 1e-7 { s[n].p = s[0].p }
+        var out: [SIMD2<Double>] = []
+        for i in 0..<n {
+            out.append(s[i].p)
+            out.append(s[i].p + s[i].t / Double(3 * n))
+            out.append(s[i + 1].p - s[i + 1].t / Double(3 * n))
+        }
+        out.append(s[n].p)
+        return out
+    }
+
     /// Puts a sketch's projected model edges where the edges are now, so geometry tied to them follows.
     public static func followProjections(_ sketch: inout Sketch, frame: Frame, _ r: RegenResult) throws {
         for p in sketch.projections {
@@ -765,6 +801,13 @@ public enum Regenerator {
             func place(_ id: EntityID, _ uv: SIMD2<Double>) {
                 guard let i = sketch.points.firstIndex(where: { $0.id == id }) else { return }
                 sketch.points[i].x = uv.x; sketch.points[i].y = uv.y; sketch.points[i].fixed = true
+            }
+            if let ids = p.chainPoints {
+                guard let chain = curveChain(body, edge: p.edge, frame: frame, pieces: (ids.count - 1) / 3), chain.count == ids.count else {
+                    throw KernelError(message: "projected edge not found or no longer curved the same way: \(p.edge.edge)")
+                }
+                for (id, q) in zip(ids, chain) { place(id, q) }
+                continue
             }
             if let center = p.center {
                 guard let snap = roundEdgeSnap(body, edge: p.edge, frame: frame), let mid = snap.center else {

@@ -452,6 +452,14 @@ public final class KBody: @unchecked Sendable {
         return (SIMD3(o[0], o[1], o[2]), SIMD3(o[3], o[4], o[5]), o[6], SIMD3(o[7], o[8], o[9]), SIMD3(o[10], o[11], o[12]), o[13] != 0)
     }
 
+    /// Any edge sampled at `n + 1` evenly spaced parameters: a point and the derivative with respect to the parameter
+    /// (running 0 to 1) at each, so a Hermite spline through them follows the edge.
+    public func edgeSamples(_ edge: String, count n: Int) throws -> [(point: SIMD3<Double>, tangent: SIMD3<Double>)] {
+        var o = [Double](repeating: 0, count: (n + 1) * 6)
+        guard sk_body_edge_sample(handle, edge, Int32(n), &o) else { throw KernelError.last("edge samples") }
+        return (0...n).map { (SIMD3(o[$0 * 6], o[$0 * 6 + 1], o[$0 * 6 + 2]), SIMD3(o[$0 * 6 + 3], o[$0 * 6 + 4], o[$0 * 6 + 5])) }
+    }
+
     /// Cuts a thread into a round face (see sk_thread); `length` nil = the whole face.
     public func thread(face: String, majorDiameter: Double, pitch: Double, length: Double?, flipped: Bool, leftHanded: Bool,
                        featureID: String) throws -> KBody {

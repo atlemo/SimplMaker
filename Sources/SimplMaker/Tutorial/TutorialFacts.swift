@@ -195,7 +195,7 @@ struct TutorialFacts {
 
         /// Whether a corner of the box is a corner of the floor, which the sketch then follows.
         func followsFloor(_ box: Box) -> Bool {
-            let projected = Set(solved.projections.flatMap { [$0.start, $0.end] + ($0.center.map { [$0] } ?? []) }.map(roots))
+            let projected = Set(solved.projections.flatMap(\.pointIDs).map(roots))
             return box.points.contains { projected.contains(roots($0)) }
         }
 
@@ -288,7 +288,7 @@ struct TutorialFacts {
 
     /// The rectangles in a solved sketch: groups of four lines joined end to end, all level or upright.
     static func boxes(in sketch: Sketch, root: (EntityID) -> EntityID) -> [Box] {
-        let projected = Set(sketch.projections.map(\.line))
+        let projected = Set(sketch.projections.flatMap(\.curveIDs))
         var lines: [(id: EntityID, a: EntityID, b: EntityID, construction: Bool)] = []
         for c in sketch.curves where !projected.contains(c.id) {
             if case .line(let a, let b) = c.geometry { lines.append((c.id, a, b, c.construction)) }

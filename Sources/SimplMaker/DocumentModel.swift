@@ -1593,8 +1593,13 @@ final class DocumentModel {
                 }
                 // A circular edge seen straight on can be projected too (Project Edge), from anywhere on the body.
                 if run.count > 1, let name = edge[first] < m.mesh.edgeNames.count ? m.mesh.edgeNames[Int(edge[first])] : nil,
-                   let body, let round = Regenerator.roundEdgeSnap(body, edge: EdgeRef(body: m.id, edge: name), frame: f) {
-                    refs.roundEdges[round.edge] = round
+                   let body {
+                    let ref = EdgeRef(body: m.id, edge: name)
+                    if let round = Regenerator.roundEdgeSnap(body, edge: ref, frame: f) {
+                        refs.roundEdges[round.edge] = round
+                    } else if let chain = Regenerator.curveChain(body, edge: ref, frame: f) {
+                        refs.curvedEdges[ref] = ModelSnap(edge: ref, start: chain[0], end: chain[chain.count - 1], chain: chain)
+                    }
                 }
                 // Off the plane, nothing below applies: its segments and points are not in the plane to snap to.
                 guard run.contains(where: { abs($0.a.w) < 1e-3 && abs($0.b.w) < 1e-3 }) else { continue }

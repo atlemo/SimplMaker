@@ -98,7 +98,7 @@ import Testing
         #expect(session.sketch.projections.isEmpty && session.message != nil)
         _ = session.handle(SketchMouse(phase: .down, uv: nil, pick: nil, edge: EdgeRef(body: "box", edge: "box.nothing")))
         #expect(session.sketch.projections.isEmpty)
-        #expect(session.message == "Only straight edges, and circles and arcs facing the sketch, can be projected")
+        #expect(session.message == "That edge can't be projected: it is a point or a line seen end on")
     }
 
     @Test func anEdgePointingAtTheSketchIsRefused() async throws {
@@ -142,5 +142,38 @@ import Testing
         #expect(abs(radius - 10) < 1e-6)
         _ = session.handle(SketchMouse(phase: .down, uv: nil, pick: nil, edge: edge))
         #expect(session.sketch.projections.count == 1, "a second click on the same circle changes nothing")
+    }
+    /// A circle seen at an angle lands as an ellipse: the projection carries it as Bézier pieces that stay on it.
+    @Test func aTiltedCircleIsProjectedAsAChainOfCurves() async throws {
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "c", name: "Cylinder1", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, height: "10", diameter: "20"))),
+            Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: Sketch()))),
+        ]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let body = try #require(model.result?.body("c"))
+        let name = try #require(model.meshes.first { $0.id == "c" }?.mesh.edgeNames.first { (try? body.edgeCircle($0)) != nil })
+        let c = try body.edgeCircle(name)
+        // Looked at from 60 degrees off the cylinder's axis: the 10 mm circle becomes an ellipse 10 by 5 mm.
+        let tilt = Double.pi / 3
+        let frame = Frame(origin: c.center, normal: SIMD3(sin(tilt), 0, cos(tilt)), xAxis: SIMD3(0, 1, 0))
+        let chain = try #require(Regenerator.curveChain(body, edge: EdgeRef(body: "c", edge: name), frame: frame))
+        #expect((chain.count - 1) % 3 == 0)
+        #expect(simd_length(chain[0] - chain[chain.count - 1]) < 1e-9, "a closed edge closes")
+        var sketch = Sketch()
+        sketch.project(ModelSnap(edge: EdgeRef(body: "c", edge: name), start: chain[0], end: chain[chain.count - 1], chain: chain))
+        let p = try #require(sketch.projections.first)
+        #expect(p.start == p.end && p.chainCurves?.count == (chain.count - 1) / 3)
+        // Every point along the pieces sits on the ellipse x^2/10^2 + y^2/5^2 = 1.
+        var worst = 0.0
+        for k in stride(from: 0, to: chain.count - 1, by: 3) {
+            for t in stride(from: 0.0, through: 1.0, by: 0.25) {
+                let u = 1 - t
+                let q = u*u*u * chain[k] + 3*u*u*t * chain[k+1] + 3*u*t*t * chain[k+2] + t*t*t * chain[k+3]
+                worst = max(worst, abs((q.x / 10) * (q.x / 10) + (q.y / 5) * (q.y / 5) - 1))
+            }
+        }
+        #expect(worst < 1e-3, "worst deviation \(worst)")
     }
 }

@@ -752,7 +752,6 @@ struct ParametersList: View {
             ParameterRow(model: model, parameter: p, selected: selection == p.name, renaming: renamingBinding(p.name),
                          valueFocused: focusBinding(p.name), tabbed: { moveFocus(from: p.name, backwards: $0) })
                 .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
-                .draggable(BrowserDrag(items: [p.name]))
                 .tag(p.name)
                 .listRowBackground(SelectedRowBackground(on: selection == p.name)))
     }
@@ -1879,7 +1878,8 @@ struct ParameterRow: View {
                     Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
                 }
                 .foregroundStyle(selected ? Color.white : accent)
-                .padding(.horizontal, 5).padding(.vertical, 2)
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .contentShape(Rectangle())
                 .overlay {
                     Menu {
                         ForEach([(UnitKind.length, "Length (mm)"), (.angle, "Angle (deg)"), (.none, "Number")], id: \.0) { unit, title in
@@ -1897,6 +1897,7 @@ struct ParameterRow: View {
                     .menuIndicator(.hidden)
                     .opacity(0.011)
                 }
+                .padding(.horizontal, -3).padding(.vertical, -4)  // the bigger target without a bigger row
                 .help("Length, angle or plain number")
             }
             if let renameError {
@@ -1909,6 +1910,8 @@ struct ParameterRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
+                // Dragging the row to a folder starts here, not over a field or button, which a drag recognizer made hard to click.
+                .draggable(BrowserDrag(items: [parameter.name]))
         }
         .padding(.vertical, DS.Spacing.space2)
         .onChange(of: renaming) { if renaming { renameError = nil } }

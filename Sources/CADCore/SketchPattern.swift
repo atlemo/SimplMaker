@@ -111,7 +111,7 @@ extension Sketch {
     /// nothing is selected), their points, the loose points selected, and the texts anchored on them.
     /// Copies made by other patterns are never included.
     func patternParts(_ selection: [EntityID]) -> (curves: [SketchCurve], points: Set<EntityID>) {
-        let projected = Set(projections.map(\.line))
+        let projected = Set(projections.flatMap(\.curveIDs))
         // A circle or arc's centre dot sits on top of it, so picking the dot means the shape.
         var selection = selection
         for id in selection where point(id) != nil {
@@ -122,7 +122,7 @@ extension Sketch {
         for c in curves { points.formUnion(pointIDs(of: c)) }
         if selection.isEmpty {
             // Whole sketch: loose points and text anchors come along, but not the origin or the projected edges' ends.
-            let ends = Set(projections.flatMap { [$0.start, $0.end] + ($0.center.map { [$0] } ?? []) })
+            let ends = Set(projections.flatMap(\.pointIDs))
             for p in self.points where p.id != "origin" && !ends.contains(p.id) && !Sketch.isGenerated(p.id) { points.insert(p.id) }
         } else {
             for id in selection where point(id) != nil && !Sketch.isGenerated(id) { points.insert(id) }

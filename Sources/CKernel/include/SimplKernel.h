@@ -171,6 +171,7 @@ bool sk_body_edge_ends(SKHandle body, const char *edgeName, double out[6]);
 // clockwise about from its start to its end, out[6] = the radius, out[7..9] = where it starts, out[10..12] = where it
 // ends, out[13] = 1 for a full circle, else 0. False if the edge isn't circular.
 bool sk_body_edge_circle(SKHandle body, const char *edgeName, double out[14]);
+bool sk_body_edge_sample(SKHandle body, const char *edgeName, int n, double *out);  // (n+1) samples of point + d/dt, t in 0...1
 
 /// Boolean between two bodies; names from both operands are carried through.
 SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op);

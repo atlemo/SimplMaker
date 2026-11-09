@@ -25,10 +25,13 @@ public struct ModelSnap: Sendable, Equatable {
     public var center: SIMD2<Double>?
     /// A circular edge that closes on itself.
     public var isFullCircle = false
+    /// Any other curved edge: Bézier pieces laid end to end as start, two handles, start of the next piece, ... and
+    /// the last end (see `Regenerator.curveChain`).
+    public var chain: [SIMD2<Double>]?
     public init(edge: EdgeRef, start: SIMD2<Double>, end: SIMD2<Double>, endIndex: Int? = nil, center: SIMD2<Double>? = nil,
-                isFullCircle: Bool = false) {
+                isFullCircle: Bool = false, chain: [SIMD2<Double>]? = nil) {
         self.edge = edge; self.start = start; self.end = end; self.endIndex = endIndex
-        self.center = center; self.isFullCircle = isFullCircle
+        self.center = center; self.isFullCircle = isFullCircle; self.chain = chain
     }
 }
 
@@ -162,7 +165,8 @@ extension Sketch {
     @discardableResult
     public mutating func project(_ m: ModelSnap) -> SketchProjection {
         if let have = projections.first(where: { $0.edge == m.edge }), point(have.start) != nil, point(have.end) != nil,
-           curve(have.line) != nil, have.center.map({ point($0) != nil }) ?? true {
+           curve(have.line) != nil, have.center.map({ point($0) != nil }) ?? true,
+           (have.chainPoints ?? []).allSatisfy({ point($0) != nil }), (have.chainCurves ?? []).allSatisfy({ curve($0) != nil }) {
             return have
         }
         projections.removeAll { $0.edge == m.edge }
@@ -170,6 +174,22 @@ extension Sketch {
             let id = addPoint(p.x, p.y)
             if let i = points.firstIndex(where: { $0.id == id }) { points[i].fixed = true }
             return id
+        }
+        if let chain = m.chain, chain.count >= 4, (chain.count - 1) % 3 == 0 {
+            // Any other curved edge: fixed points, with a construction Bézier between every two ends.
+            let closed = simd_length(chain[0] - chain[chain.count - 1]) < 1e-7
+            var ids: [EntityID] = []
+            for (i, q) in chain.enumerated() { ids.append(closed && i == chain.count - 1 ? ids[0] : fixedPoint(q)) }
+            var made: [EntityID] = []
+            for k in stride(from: 0, to: chain.count - 1, by: 3) {
+                let id = addBezier(start: ids[k], control1: ids[k + 1], control2: ids[k + 2], end: ids[k + 3])
+                if let i = curves.firstIndex(where: { $0.id == id }) { curves[i].construction = true }
+                made.append(id)
+            }
+            let p = SketchProjection(edge: m.edge, start: ids[0], end: ids[ids.count - 1], line: made[0],
+                                     chainPoints: ids, chainCurves: made)
+            projections.append(p)
+            return p
         }
         let a = fixedPoint(m.start)
         let line: EntityID, b: EntityID, c: EntityID?
@@ -210,6 +230,7 @@ extension Sketch {
     mutating func dropBrokenProjections() {
         let kept = projections.filter { p in
             point(p.start) != nil && point(p.end) != nil && curve(p.line) != nil && (p.center.map { point($0) != nil } ?? true)
+                && (p.chainPoints ?? []).allSatisfy({ point($0) != nil }) && (p.chainCurves ?? []).allSatisfy({ curve($0) != nil })
         }
         projections = kept
     }

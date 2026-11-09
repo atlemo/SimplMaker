@@ -58,7 +58,7 @@ extension Sketch {
     /// Unlike a pattern, a mirror also copies what other mirrors, patterns and gears made, so mirroring a shape
     /// again takes its image along. The projected model edges are never copied.
     func mirrorParts(_ selection: [EntityID]) -> (curves: [SketchCurve], points: Set<EntityID>) {
-        let projected = Set(projections.map(\.line))
+        let projected = Set(projections.flatMap(\.curveIDs))
         // A circle or arc's centre dot sits on top of it, so picking the dot means the shape.
         var selection = selection
         for id in selection where point(id) != nil {
@@ -69,7 +69,7 @@ extension Sketch {
         for c in chosen { points.formUnion(pointIDs(of: c)) }
         if selection.isEmpty {
             // Whole sketch: loose points come along, but not the origin or the projected edges' ends.
-            let ends = Set(projections.flatMap { [$0.start, $0.end] + ($0.center.map { [$0] } ?? []) })
+            let ends = Set(projections.flatMap(\.pointIDs))
             for p in self.points where p.id != "origin" && !ends.contains(p.id) { points.insert(p.id) }
         } else {
             for id in selection where point(id) != nil { points.insert(id) }

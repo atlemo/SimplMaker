@@ -170,9 +170,20 @@ public struct SketchProjection: Codable, Hashable, Sendable, Identifiable {
     public var line: EntityID
     /// The fixed center point of a circular edge; nil for a straight one.
     public var center: EntityID?
-    public init(id: EntityID = IDs.make(), edge: EdgeRef, start: EntityID, end: EntityID, line: EntityID, center: EntityID? = nil) {
+    /// For any other curved edge: its fixed points in order (each piece's start and two handles, then the last end;
+    /// the last is `start` again for an edge that closes on itself) and the construction Béziers between them.
+    /// `line` is the first of those.
+    public var chainPoints: [EntityID]?
+    public var chainCurves: [EntityID]?
+    public init(id: EntityID = IDs.make(), edge: EdgeRef, start: EntityID, end: EntityID, line: EntityID, center: EntityID? = nil,
+                chainPoints: [EntityID]? = nil, chainCurves: [EntityID]? = nil) {
         self.id = id; self.edge = edge; self.start = start; self.end = end; self.line = line; self.center = center
+        self.chainPoints = chainPoints; self.chainCurves = chainCurves
     }
+    /// Every fixed point the projection made.
+    public var pointIDs: [EntityID] { [start, end] + (center.map { [$0] } ?? []) + (chainPoints ?? []) }
+    /// Every construction curve the projection made.
+    public var curveIDs: [EntityID] { [line] + (chainCurves ?? []) }
 }
 
 public struct Sketch: Codable, Hashable, Sendable {

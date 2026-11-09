@@ -222,7 +222,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
         case .extend: return "Click near the end of a line or arc to extend it to the next curve"
         case .dimension: return "Click a line (then click again to place its length), a circle or arc, or two items for a distance or angle · or click any grey size"
-        case .projectEdge: return "Click straight body edges, or circles and arcs facing the sketch, to bring them into the sketch · they follow the body, and their points can be constrained and dimensioned · Esc ends"
+        case .projectEdge: return "Click body edges, straight or curved, to bring them into the sketch · they follow the body, and their points can be constrained and dimensioned · Esc ends"
         case .distance: return "Click two items (points, lines, circles or arcs), then type the distance between them · a circle is measured from its edge, its center point from the middle"
         }
     }
@@ -322,6 +322,8 @@ struct SketchReferences {
     var straightEdges: [EdgeRef: ModelSnap] = [:]
     /// Every circular body edge (a circle or an arc) that faces the sketch plane, with its center, for Project Edge.
     var roundEdges: [EdgeRef: ModelSnap] = [:]
+    /// Every other curved edge, as Bézier pieces (see ModelSnap.chain).
+    var curvedEdges: [EdgeRef: ModelSnap] = [:]
 
     func segmentModel(_ i: Int) -> ModelSnap? { i < segmentModels.count ? segmentModels[i] : nil }
     func pointModel(_ i: Int) -> ModelSnap? { i < pointModels.count ? pointModels[i] : nil }
@@ -872,12 +874,12 @@ final class SketchSession {
             message = "Click a body edge to project it into the sketch"
             return (true, nil)
         }
-        guard let model = references.straightEdges[edge] ?? references.roundEdges[edge] else {
-            message = "Only straight edges, and circles and arcs facing the sketch, can be projected"
+        guard let model = references.straightEdges[edge] ?? references.roundEdges[edge] ?? references.curvedEdges[edge] else {
+            message = "That edge can't be projected: it is a point or a line seen end on"
             return (true, nil)
         }
         // An edge pointing straight at the sketch plane lands as a point, not a line.
-        guard model.center != nil || simdLength(model.end - model.start) > 1e-6 else {
+        guard model.center != nil || model.chain != nil || simdLength(model.end - model.start) > 1e-6 else {
             message = "That edge points straight at the sketch, so it has no length in it"
             return (true, nil)
         }

@@ -3602,6 +3602,31 @@ bool sk_body_edge_circle(SKHandle body, const char *edgeName, double out[14]) {
   SK_CATCH(false)
 }
 
+/// Any edge sampled at `n + 1` evenly spaced parameters: each sample is a point and the derivative with respect to the
+/// parameter running 0...1 (so a Hermite spline through the samples reproduces the edge). out holds (n + 1) * 6 numbers.
+bool sk_body_edge_sample(SKHandle body, const char *edgeName, int n, double *out) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b || n < 1) return false;
+  auto it = b->edgeIndex.find(edgeName);
+  if (it == b->edgeIndex.end()) {
+    setError(std::string("edge not found: ") + edgeName);
+    return false;
+  }
+  BRepAdaptor_Curve c(TopoDS::Edge(b->edges(it->second + 1)));
+  const double t0 = c.FirstParameter(), span = c.LastParameter() - t0;
+  for (int i = 0; i <= n; i++) {
+    gp_Pnt p;
+    gp_Vec d;
+    c.D1(t0 + span * i / n, p, d);
+    out[i * 6] = p.X(); out[i * 6 + 1] = p.Y(); out[i * 6 + 2] = p.Z();
+    out[i * 6 + 3] = d.X() * span; out[i * 6 + 4] = d.Y() * span; out[i * 6 + 5] = d.Z() * span;
+  }
+  return true;
+  SK_CATCH(false)
+}
+
 SKHandle sk_translate(SKHandle body, double dx, double dy, double dz) {
   SK_TRY
   gp_Trsf t;
