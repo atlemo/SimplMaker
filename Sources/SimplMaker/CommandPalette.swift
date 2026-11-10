@@ -76,7 +76,7 @@ extension DocumentModel {
 
         if sketchSession != nil {
             for tool in SketchTool.allCases {
-                add(tool.rawValue, "Sketch", keywords: Self.paletteKeywords[tool.rawValue] ?? "",
+                add(tool.menuTitle, "Sketch", keywords: Self.paletteKeywords[tool.rawValue] ?? "",
                     shortcut: tool.family[0] == tool ? .sketch(tool) : nil) { self.setSketchTool(tool) }
             }
             add("Finish Sketch", "Sketch", keywords: "done exit close") { self.finishSketch() }

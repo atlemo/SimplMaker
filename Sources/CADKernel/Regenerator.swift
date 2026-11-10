@@ -875,61 +875,70 @@ public enum Regenerator {
     /// Puts a sketch's projected model edges (and projected curves of other sketches) where they are now, so geometry tied
     /// to them follows.
     public static func followProjections(_ sketch: inout Sketch, frame: Frame, _ r: RegenResult) throws {
-        for p in sketch.projections {
-            func place(_ id: EntityID, _ uv: SIMD2<Double>) {
-                guard let i = sketch.points.firstIndex(where: { $0.id == id }) else { return }
-                sketch.points[i].x = uv.x; sketch.points[i].y = uv.y; sketch.points[i].fixed = true
-            }
-            // A curve of another sketch: the "body" is that sketch (a sketch makes no body, so the two can't be confused).
-            if r.body(p.edge.body) == nil, let source = r.sketches[p.edge.body] {
-                guard let snap = sketchCurveSnap(source, edge: p.edge, frame: frame, pieces: p.chainPoints.map { ($0.count - 1) / 3 },
-                                                 straight: p.chainPoints == nil && p.center == nil) else {
-                    throw KernelError(message: "a projected sketch curve is gone, or no longer lands in this sketch the way it did (project it again)")
-                }
-                if let ids = p.chainPoints {
-                    guard let chain = snap.chain, chain.count == ids.count else {
-                        throw KernelError(message: "a projected sketch curve no longer lands in this sketch the way it did (project it again)")
-                    }
-                    for (id, q) in zip(ids, chain) { place(id, q) }
-                } else if let center = p.center {
-                    guard let mid = snap.center else {
-                        throw KernelError(message: "a projected circle's sketch no longer faces this sketch (project it again)")
-                    }
-                    place(center, mid); place(p.start, snap.start); place(p.end, snap.end)
-                    if let i = sketch.curves.firstIndex(where: { $0.id == p.line }), case .circle(let c, _) = sketch.curves[i].geometry {
-                        sketch.curves[i].geometry = .circle(center: c, radius: simd_length(snap.start - mid))
-                    }
-                } else {
-                    place(p.start, snap.start); place(p.end, snap.end)
-                }
-                continue
-            }
-            guard let body = r.body(p.edge.body) else {
-                throw KernelError(message: "the body with the projected edge \(p.edge.edge) is missing")
+        for p in sketch.projections { try followProjection(p, in: &sketch, frame: frame, r) }
+    }
+
+    /// The projections that can't follow the model any more: their edge is gone, or no longer the same kind of edge.
+    public static func staleProjections(_ sketch: Sketch, frame: Frame, _ r: RegenResult) -> Set<EntityID> {
+        var scratch = sketch
+        return Set(sketch.projections.filter { (try? followProjection($0, in: &scratch, frame: frame, r)) == nil }.map(\.id))
+    }
+
+    /// Puts one projection where its edge (or sketch curve) is now; throws when that edge can't be found.
+    static func followProjection(_ p: SketchProjection, in sketch: inout Sketch, frame: Frame, _ r: RegenResult) throws {
+        func place(_ id: EntityID, _ uv: SIMD2<Double>) {
+            guard let i = sketch.points.firstIndex(where: { $0.id == id }) else { return }
+            sketch.points[i].x = uv.x; sketch.points[i].y = uv.y; sketch.points[i].fixed = true
+        }
+        // A curve of another sketch: the "body" is that sketch (a sketch makes no body, so the two can't be confused).
+        if r.body(p.edge.body) == nil, let source = r.sketches[p.edge.body] {
+            guard let snap = sketchCurveSnap(source, edge: p.edge, frame: frame, pieces: p.chainPoints.map { ($0.count - 1) / 3 },
+                                             straight: p.chainPoints == nil && p.center == nil) else {
+                throw KernelError(message: "a projected sketch curve is gone, or no longer lands in this sketch the way it did (project it again)")
             }
             if let ids = p.chainPoints {
-                guard let chain = curveChain(body, edge: p.edge, frame: frame, pieces: (ids.count - 1) / 3), chain.count == ids.count else {
-                    throw KernelError(message: "projected edge not found or no longer curved the same way: \(p.edge.edge)")
+                guard let chain = snap.chain, chain.count == ids.count else {
+                    throw KernelError(message: "a projected sketch curve no longer lands in this sketch the way it did (project it again)")
                 }
                 for (id, q) in zip(ids, chain) { place(id, q) }
-                continue
-            }
-            if let center = p.center {
-                guard let snap = roundEdgeSnap(body, edge: p.edge, frame: frame), let mid = snap.center else {
-                    throw KernelError(message: "projected edge not found or no longer circular: \(p.edge.edge)")
+            } else if let center = p.center {
+                guard let mid = snap.center else {
+                    throw KernelError(message: "a projected circle's sketch no longer faces this sketch (project it again)")
                 }
                 place(center, mid); place(p.start, snap.start); place(p.end, snap.end)
                 if let i = sketch.curves.firstIndex(where: { $0.id == p.line }), case .circle(let c, _) = sketch.curves[i].geometry {
                     sketch.curves[i].geometry = .circle(center: c, radius: simd_length(snap.start - mid))
                 }
-                continue
+            } else {
+                place(p.start, snap.start); place(p.end, snap.end)
             }
-            guard let ends = try? body.edgeEnds(p.edge.edge) else {
-                throw KernelError(message: "projected edge not found: \(p.edge.edge)")
-            }
-            func local(_ w: SIMD3<Double>) -> SIMD2<Double> { SIMD2(simd_dot(w - frame.origin, frame.xAxis), simd_dot(w - frame.origin, frame.yAxis)) }
-            place(p.start, local(ends.start)); place(p.end, local(ends.end))
+            return
         }
+        guard let body = r.body(p.edge.body) else {
+            throw KernelError(message: "the body with the projected edge \(p.edge.edge) is missing")
+        }
+        if let ids = p.chainPoints {
+            guard let chain = curveChain(body, edge: p.edge, frame: frame, pieces: (ids.count - 1) / 3), chain.count == ids.count else {
+                throw KernelError(message: "projected edge not found or no longer curved the same way: \(p.edge.edge)")
+            }
+            for (id, q) in zip(ids, chain) { place(id, q) }
+            return
+        }
+        if let center = p.center {
+            guard let snap = roundEdgeSnap(body, edge: p.edge, frame: frame), let mid = snap.center else {
+                throw KernelError(message: "projected edge not found or no longer circular: \(p.edge.edge)")
+            }
+            place(center, mid); place(p.start, snap.start); place(p.end, snap.end)
+            if let i = sketch.curves.firstIndex(where: { $0.id == p.line }), case .circle(let c, _) = sketch.curves[i].geometry {
+                sketch.curves[i].geometry = .circle(center: c, radius: simd_length(snap.start - mid))
+            }
+            return
+        }
+        guard let ends = try? body.edgeEnds(p.edge.edge) else {
+            throw KernelError(message: "projected edge not found: \(p.edge.edge)")
+        }
+        func local(_ w: SIMD3<Double>) -> SIMD2<Double> { SIMD2(simd_dot(w - frame.origin, frame.xAxis), simd_dot(w - frame.origin, frame.yAxis)) }
+        place(p.start, local(ends.start)); place(p.end, local(ends.end))
     }
 
     /// A solved sketch's profiles on a plane.

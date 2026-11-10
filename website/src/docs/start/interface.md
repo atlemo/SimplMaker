@@ -50,10 +50,10 @@ Press **Sketch** and pick a plane or a face to enter sketch mode. The toolbar ch
 
 | Group | Tools |
 |---|---|
-| **Draw** | Line, Rectangle, Slot, Circle, Polygon, Arc, Tangent Arc, Ellipse, Spline, Gear, Point, Text, Project Edge |
+| **Create** | Lines, Point, Rectangles, Circles, Arcs, Other Geometry (Ellipse, Polygons, Slots, Splines, Gear), Text, Patterns, References (Project Edge, Clean Up Projections, Canvas), Sketch Dimension |
 | **Modify** | Round Corner, Chamfer, Trim, Extend, Offset |
-| **Transform** | Move, Scale, Pattern, Mirror |
-| **Constraints** | Dimension, Distance, Constrain, Construction |
+| **Transform** | Move, Scale |
+| **Constraints** | Constrain, Construction |
 
 **Select** stands apart at the left. Press **Finish Sketch** at the right end to leave. See [Sketching](doc:sketch/start).
 

@@ -19,9 +19,10 @@ import Testing
     }
 
     @Test func roundedRectangleIsAFamilyOfTheRectangleTools() {
-        #expect(SketchTool.roundedRectangle.family == [.rectangle, .centerRectangle, .roundedRectangle])
-        #expect(SketchTool.forKey("r", current: .centerRectangle) == .roundedRectangle)
-        #expect(SketchTool.forKey("r", current: .roundedRectangle) == .rectangle)
+        #expect(SketchTool.roundedRectangle.family == [.rectangle, .centerRectangle, .rectangle3Point, .roundedRectangle, .centerRoundedRectangle])
+        #expect(SketchTool.forKey("r", current: .rectangle3Point) == .roundedRectangle)
+        #expect(SketchTool.forKey("r", current: .roundedRectangle) == .centerRoundedRectangle)
+        #expect(SketchTool.forKey("r", current: .centerRoundedRectangle) == .rectangle)
     }
 
     @Test func twoCornersDrawARoundedRectangleOfTheTypedRadius() {

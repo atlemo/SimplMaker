@@ -2309,16 +2309,46 @@ struct SketchToolbar: View {
     @Environment(\.controlActiveState) private var activeState
     @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
 
+    /// The way each drawing button draws until the user picks another (the button then draws that way).
+    @State private var lastMode: [String: String] = [:]
+
     private var groups: [ToolGroupSpec] {
-        [ToolGroupSpec(title: "Draw", id: "sketch.draw", defaults: ["Line", "Rectangle", "Circle", "Polygon", "Spline", "Text"],
-                       // Tools in a family (rectangle, circle, arc) share one button, under the first one's name.
-                       tools: SketchTool.draw.filter { $0.family.first == $0 }.map(tool) + [canvas]),
-         ToolGroupSpec(title: "Modify", id: "sketch.modify", defaults: ["Round Corner", "Trim", "Extend", "Offset"],
-                       tools: SketchTool.modify.map(tool) + [offset]),
-         ToolGroupSpec(title: "Transform", id: "sketch.transform", defaults: SketchTransformTool.allCases.map(\.rawValue),
-                       tools: SketchTransformTool.allCases.map(transform)),
-         ToolGroupSpec(title: "Constraints", id: "sketch.constraints", defaults: ["Dimension", "Distance", "Constrain", "Construction"],
-                       tools: [tool(.dimension), tool(.distance), constrain, construction])]
+        let create = [drawing("Lines", SketchTool.lines), drawing("Point", SketchTool.points), drawing("Rectangles", SketchTool.rectangles),
+                      drawing("Circles", SketchTool.circles), drawing("Arcs", SketchTool.arcs),
+                      drawing("Other Geometry", SketchTool.otherGeometry), drawing("Text", SketchTool.texts),
+                      menu("Patterns", [transform(.pattern), transform(.mirror)]),
+                      menu("References", SketchTool.references.map(tool) + [cleanUpProjections, cleanUpStaleProjections, canvas]),
+                      menu("Sketch Dimension", [tool(.dimension), tool(.distance)])]
+        return [ToolGroupSpec(title: "Create", id: "sketch.create",
+                              defaults: ["Lines", "Point", "Rectangles", "Circles", "Arcs", "Sketch Dimension"], tools: create),
+                ToolGroupSpec(title: "Modify", id: "sketch.modify", defaults: ["Round Corner", "Trim", "Extend", "Offset"],
+                              tools: SketchTool.modify.map(tool) + [offset]),
+                ToolGroupSpec(title: "Transform", id: "sketch.transform", defaults: [SketchTransformTool.move.rawValue, SketchTransformTool.scale.rawValue],
+                              tools: [transform(.move), transform(.scale)]),
+                ToolGroupSpec(title: "Constraints", id: "sketch.constraints", defaults: ["Constrain", "Construction"],
+                              tools: [constrain, construction])]
+    }
+
+    /// A button for a kind of shape: it draws the way used last, and its arrow and its row in the list offer the others.
+    private func drawing(_ title: String, _ tools: [SketchTool]) -> GroupTool {
+        menu(title, tools.map(tool), keys: tools[0].family[0] == tools[0] ? tools[0].keyLabel : nil)
+    }
+
+    /// Several tools under one name: the button runs the one used last.
+    private func menu(_ title: String, _ items: [GroupTool], keys: String? = nil) -> GroupTool {
+        let modes = items.map { item in
+            GroupTool(id: item.id, title: item.title, icon: item.icon, help: item.help, shortcut: item.shortcut, active: item.active, enabled: item.enabled) {
+                lastMode[title] = item.id
+                item.action()
+            }
+        }
+        let current = modes.first { $0.active } ?? modes.first { $0.id == lastMode[title] } ?? modes[0]
+        guard modes.count > 1 else {
+            return GroupTool(id: title, title: title, icon: current.icon, help: current.help, shortcut: keys, active: current.active,
+                             enabled: current.enabled, action: current.action)
+        }
+        return GroupTool(id: title, title: title, icon: current.icon, help: current.help, shortcut: keys, active: modes.contains { $0.active },
+                         enabled: current.enabled, modes: modes, modesAsMenu: true, action: current.action)
     }
 
     private var finish: GroupTool {
@@ -2362,17 +2392,12 @@ struct SketchToolbar: View {
         .toolsPanel()
     }
 
-    /// A sketch tool's button. A shape with several ways to draw it (rectangle, circle, arc) draws
-    /// it the way used last, and offers the others (the tool's key switches too).
-    private func tool(_ head: SketchTool) -> GroupTool {
-        let mode = session.mode(of: head)
-        let modes = head.family.count < 2 ? [] : head.family.map { t in
-            GroupTool(id: t.rawValue, title: t.modeTitle, icon: t.symbol, help: t.help, active: session.tool == t) {
-                model.setSketchTool(t)
-            }
-        }
-        return GroupTool(id: head.rawValue, title: head.shortTitle, icon: mode.symbol, help: mode.help, shortcut: head.keyLabel,
-                         badge: head.isExperimental ? "Experimental" : nil, active: head.family.contains(session.tool), modes: modes) { model.setSketchTool(mode) }
+    /// A sketch tool's button. Each way of drawing a shape is a tool of its own, listed in its group (the tool's key
+    /// goes through them one after the other).
+    private func tool(_ tool: SketchTool) -> GroupTool {
+        GroupTool(id: tool.rawValue, title: tool.menuTitle, icon: tool.symbol, help: tool.help,
+                  shortcut: tool.family[0] == tool ? tool.keyLabel : nil, badge: tool.isExperimental ? "Experimental" : nil,
+                  active: session.tool == tool) { model.setSketchTool(tool) }
     }
 
     private func transform(_ tool: SketchTransformTool) -> GroupTool {
@@ -2384,6 +2409,21 @@ struct SketchToolbar: View {
                                                             set: { if $0 { session.transformRequested = tool } else if session.transformRequested == tool { session.transformRequested = nil } }),
                                        content: AnyView(TransformPopover(model: model, session: session, tool: tool)))) {
             model.beginSketchTransform(tool)
+        }
+    }
+
+    private var cleanUpProjections: GroupTool {
+        GroupTool(id: "Clean Up Projections", title: "Clean Up Projections", icon: "trash-2",
+                  help: "Remove the projected edges that nothing in the sketch uses", enabled: session.canCleanUpProjections) {
+            model.sketchCommand { $0.cleanUpProjections() }
+        }
+    }
+
+    private var cleanUpStaleProjections: GroupTool {
+        GroupTool(id: "Clean Up Stale Projections", title: "Clean Up Stale Projections", icon: "circle-x",
+                  help: "Remove the projected edges whose edge is gone from the model, with what is tied to them",
+                  enabled: session.canCleanUpStaleProjections) {
+            model.sketchCommand { $0.cleanUpStaleProjections() }
         }
     }
 

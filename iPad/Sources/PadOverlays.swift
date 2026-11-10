@@ -230,7 +230,7 @@ private struct PadSketchFields: View {
     var body: some View {
         let inputs = session.inputFields
         if !inputs.isEmpty, let t = session.manipulatorMiddle ?? session.target()?.position {
-            let startsAtFirstClick: Set<SketchTool> = [.rectangle, .centerRectangle, .roundedRectangle, .slot, .overallSlot, .circle, .circle2Point, .polygon, .triangle]
+            let startsAtFirstClick: Set<SketchTool> = [.rectangle, .centerRectangle, .roundedRectangle, .centerRoundedRectangle, .slot, .overallSlot, .slotCenterPoint, .arcSlotCenter, .circle, .circle2Point, .polygon, .circumscribedPolygon, .edgePolygon, .triangle]
             let anchor = session.gearAnchor ?? (session.manipulatorMiddle == nil && startsAtFirstClick.contains(session.tool)
                 ? session.clicks.first?.position ?? t : t)
             let world = session.frame.point(anchor.x, anchor.y)

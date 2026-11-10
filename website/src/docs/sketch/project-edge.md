@@ -41,6 +41,15 @@ A sketch that comes later in the timeline can't be projected, since each would h
 - An edge that points straight at the sketch plane has no length in the sketch, so it can't be projected. SimplMaker says so.
 - An edge that is already projected is not added twice.
 
+## Tidy up projections
+
+Projecting leaves construction lines and fixed points in the sketch. Two commands under **References** in the **Create** list remove them again.
+
+- **Clean Up Projections** removes the projected edges that nothing uses: no drawn shape ends on their points, and no constraint or dimension refers to them. A projection you have drawn from or dimensioned stays.
+- **Clean Up Stale Projections** removes the projected edges whose edge is gone from the model, for example after you changed an earlier feature so the edge no longer exists. Whatever was tied to them goes with them, as with any delete.
+
+Both say how many they removed. If there was nothing to remove, they say that instead, and the sketch is left as it was.
+
 ## Snapping
 
 Edges of the body that already lie in the sketch plane, such as the outline of the face you are sketching on, are also snapping points while you draw. Projecting an edge keeps a link to it, so the sketch holds onto the edge itself, not just to where it sits now.

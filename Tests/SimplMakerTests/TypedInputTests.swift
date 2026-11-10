@@ -181,8 +181,8 @@ import Testing
             #expect(abs(simdLength(g.point(1) - g.point(0)) - 12) < 1e-6)
         }
         #expect(t.sketch.dimensions.map(\.expression) == ["12 mm"])
-        #expect(SketchTool.forKey("g", current: .polygon) == .triangle)
-        #expect(SketchTool.forKey("g", current: .triangle) == .polygon)
+        #expect(SketchTool.forKey("g", current: .polygon) == .circumscribedPolygon && SketchTool.forKey("g", current: .circumscribedPolygon) == .edgePolygon)
+        #expect(SketchTool.forKey("g", current: .edgePolygon) == .triangle && SketchTool.forKey("g", current: .triangle) == .polygon)
     }
 
     @Test func polygonStaysRegularWhenADimensionChanges() throws {
@@ -218,7 +218,7 @@ import Testing
         #expect(typed.sketch.radius(of: d).map { abs($0 - 6) < 1e-6 } == true)
 
         #expect(SketchTool.forKey("c", current: .circle) == .circle2Point)
-        #expect(SketchTool.forKey("c", current: .circle2Point) == .circle)
+        #expect(SketchTool.forKey("c", current: .circle3Tangent) == .circle)
         #expect(SketchTool.forKey("c", current: .line) == .circle)
     }
 
@@ -281,8 +281,9 @@ import Testing
     }
 
     @Test func splineIsItsOwnToolWithItsOwnKey() {
-        #expect(SketchTool.bezier.family == [.bezier] && SketchTool.line.family == [.line])
-        #expect(SketchTool.forKey("b", current: .select) == .bezier && SketchTool.forKey("l", current: .bezier) == .line)
+        #expect(SketchTool.bezier.family == [.bezier, .splineControl] && SketchTool.line.family == [.line, .midpointLine])
+        #expect(SketchTool.forKey("b", current: .select) == .bezier && SketchTool.forKey("b", current: .bezier) == .splineControl)
+        #expect(SketchTool.forKey("l", current: .bezier) == .line)
         #expect(SketchTool.bezier.shortTitle == "Spline" && SketchTool.draw.contains(.bezier))
     }
 

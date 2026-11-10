@@ -208,7 +208,7 @@ extension DocumentModel {
             items.append(.separator)
         }
         items += ([.select] + SketchTool.draw + [.dimension, .distance]).map { tool in
-            .action(tool.rawValue, symbol: tool.symbol, enabled: session.tool != tool) { self.setSketchTool(tool) }
+            .action(tool.menuTitle, symbol: tool.symbol, enabled: session.tool != tool) { self.setSketchTool(tool) }
         }
         return items
     }

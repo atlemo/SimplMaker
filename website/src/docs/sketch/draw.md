@@ -1,32 +1,32 @@
 ---
 title: Drawing tools
-description: Line, rectangle, slot, circle, polygon, arc, tangent arc, ellipse, spline, gear, point and project edge. How to draw them, type exact values and snap.
+description: Line, rectangle, slot, circle, polygon, arc, tangent arc, ellipse, spline, gear, point and project edge, with every way to draw each. How to draw them, type exact values and snap.
 ---
 
-The **Draw** group holds the shapes. The key in brackets picks the tool while you sketch.
+The **Create** group holds the shapes. The key in brackets picks the tool while you sketch.
 
 ![The sketch toolbar.](shot:toolbar-sketch)
 
 | Tool | Key | How to use it |
 |---|---|---|
-| **Line** | [[L]] | Click points to draw connected lines. [[Esc]] ends the chain. |
-| **Rectangle** | [[R]] | **Two corners:** click two opposite corners. **Center:** click the centre, then a corner. **Rounded:** see [Rounded Rectangle](doc:sketch/rounded-rectangle). Press [[R]] again to go on to the next way. |
-| **Slot** | [[O]] | **Slot:** click the centre of each end. **Overall Slot:** click the two outside ends. See [Slot](doc:sketch/slot). Press [[O]] again to switch. |
-| **Circle** | [[C]] | **Center:** click the centre, then a point on the circle. **2-Point:** click two points on opposite sides. Press [[C]] again to switch. |
-| **Polygon** | [[G]] | Click the centre, then a corner. The polygon has six sides until you change it: type a number (3 to 64) or press [[↑]] and [[↓]] before the first click. The sides are always equal. Press [[G]] again for a **Triangle** (three sides). |
+| **Line** | [[L]] | **Line:** click points to draw connected lines. [[Esc]] ends the chain. **Midpoint Line:** click the middle of the line, then one end. The other end mirrors it, so the middle stays in the middle when you resize. Press [[L]] again to switch. |
+| **Rectangle** | [[R]] | **Two corners:** click two opposite corners. **Center:** click the centre, then a corner. **3-Point:** click the two ends of one side, at any angle, then how far the rectangle reaches. **Rounded** and **Center Rounded:** see [Rounded Rectangle](doc:sketch/rounded-rectangle). Press [[R]] again to go on to the next way. |
+| **Slot** | [[O]] | **Slot:** click the centre of each end. **Overall Slot:** click the two outside ends. **Center Point**, **3-Point Arc** and **Center Arc** slots too. See [Slot](doc:sketch/slot). Press [[O]] again to switch. |
+| **Circle** | [[C]] | **Center:** click the centre, then a point on the circle. **2-Point:** click two points on opposite sides. **3-Point:** click three points the circle passes through. **2-Tangent:** click two lines, circles or arcs, then move to choose which circle touches both and click to place it. **3-Tangent:** click three lines, circles or arcs. Press [[C]] again to switch. |
+| **Polygon** | [[G]] | **Inscribed:** click the centre, then a corner, so the corners sit on the circle. **Circumscribed:** click the centre, then the middle of a side, so the sides touch the circle. **Edge:** click the two ends of one side, and the polygon grows to the left of the way you went. The polygon has six sides until you change it: type a number (3 to 64) or press [[↑]] and [[↓]] before the first click. The sides are always equal. Press [[G]] again to go through the ways, ending with a **Triangle** (three sides). |
 | **Arc** | [[A]] | **Center:** click the centre, the start, then the end (counter-clockwise). **3-Point:** click the start, the end, then a point the arc passes through. Press [[A]] again to switch. |
 | **Tangent Arc** | [[N]] | Click the free end of a line or arc, then where the arc ends. The arc leaves that end smoothly. See [Tangent Arc](doc:sketch/tangent-arc). |
 | **Ellipse** | [[J]] | Click the centre, the end of one axis, then how far the other axis reaches. See [Ellipse](doc:sketch/ellipse). |
-| **Spline** | [[B]] | Click points for a smooth curve through them, or press and drag to pull a handle. Click the first point to close the shape. [[Esc]] ends it. |
+| **Spline** | [[B]] | **Fit Point:** click points for a smooth curve through them, or press and drag to pull a handle. Click the first point to close the shape. [[Esc]] ends it. **Control Point:** click control points: the curve starts at the first, ends at the last and is pulled toward the ones between. [[Return]] or a double-click finishes it, [[Esc]] cancels. Press [[B]] again to switch. |
 | **Gear** | [[K]] | Set the teeth, module and the rest, then click where the centre goes. See [Gear](doc:sketch/gear). |
 | **Point** | [[P]] | Click to place a point. |
 | **Text** | [[X]] | See [Text](doc:sketch/text). |
-| **Project Edge** | [[U]] | Click straight body edges to bring them into the sketch. See [Project Edge](doc:sketch/project-edge). |
+| **Project Edge** | [[U]] | Click body edges to bring them into the sketch. See [Project Edge](doc:sketch/project-edge). |
 
-Some tools share a button. The small arrow beside it picks the way to draw, and the button then keeps using it.
+Some tools share a button. The small arrow beside it picks the way to draw, and the button then keeps using it. In the list under **Create**, rest the pointer on a name such as **Rectangles** and its ways to draw open beside it. The pin beside a name, or beside a single way, puts that button on the toolbar.
 
 :::note
-Arc, Gear and Point are in the Draw group's list rather than on the toolbar by default. Click **Draw** to see all of them, and pin the ones you want. See [The interface](doc:start/interface).
+Arc, Gear, Text, Patterns and References are in the Create group's list rather than on the toolbar by default. Click **Create** to see all of them, and pin the ones you want. See [The interface](doc:start/interface).
 :::
 
 ## Type exact values
@@ -35,12 +35,14 @@ You don't have to place every point with the mouse. After the first click, small
 
 | Shape | Fields |
 |---|---|
-| Line | Length, Angle |
+| Line, Midpoint Line | Length, Angle |
 | Rectangle | Width, Height |
+| 3-Point Rectangle | Length and Angle of the first side, then Height |
 | Rounded Rectangle | Width, Height and Radius, after the first click. The Radius can also come before it |
 | Slot | Width before the first click, and Length and Width after it |
-| Circle | Diameter |
-| Polygon, Triangle | Length (of one side) or Diameter (of the circle round the corners). Polygon also has Sides, the number of sides |
+| Arc slots | Width |
+| Circle | Diameter. The 2-Tangent circle takes a Radius |
+| Polygon, Triangle | Length (of one side) or Diameter (of the circle round the corners). Polygon also has Sides, the number of sides. Circumscribed and Edge polygons take Sides too |
 | Arc (centre) | Radius after the first click, then Sweep after the second |
 
 ![Width and height fields while drawing a rectangle.](shot:draw-typed-values)

@@ -142,8 +142,9 @@ import Testing
     }
 
     @Test func overallSlotIsTheOtherModeOfTheSlotKey() {
-        #expect(SketchTool.overallSlot.family == [.slot, .overallSlot])
+        #expect(SketchTool.overallSlot.family == [.slot, .overallSlot, .slotCenterPoint, .arcSlot3Point, .arcSlotCenter])
         #expect(SketchTool.forKey("o", current: .slot) == .overallSlot)
+        #expect(SketchTool.forKey("o", current: .arcSlotCenter) == .slot, "the last way goes round to the first")
     }
 
     @Test func previewDrawsTheWholeOutlineIncludingBothSides() throws {

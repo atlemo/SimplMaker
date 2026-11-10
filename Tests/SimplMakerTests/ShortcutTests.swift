@@ -103,7 +103,7 @@ import Testing
     @Test func tooltipsFollowTheShortcut() {
         // Uses the real defaults, which the tests never change.
         #expect(DesignTool.fillet.help.hasPrefix("Fillet (F): "))
-        #expect(SketchTool.circle2Point.help.contains("C again for center"))
+        #expect(SketchTool.circle2Point.help.contains("C again for 3-point"))
     }
 
     @Test func aSketchFamilyIsListedOnceUnderItsFirstTool() {

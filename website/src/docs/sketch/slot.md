@@ -3,17 +3,20 @@ title: Slot
 description: Draw a bar with round ends, centre to centre or by its overall length, with a width you set.
 ---
 
-A **slot** is a bar with round ends. Use one for a screw slot, a channel for a cable, or a hole that a bolt can slide along. Press [[O]] for the **Slot** tool. The Slot button holds two ways of drawing one, and [[O]] again switches between them.
+A **slot** is a bar with round ends. Use one for a screw slot, a channel for a cable, or a hole that a bolt can slide along. Press [[O]] for the **Slot** tool. The Slot button holds five ways of drawing one, and [[O]] again goes on to the next.
 
 | Way | Click | The length is |
 |---|---|---|
 | **Slot** (Center) | The centre of one end, then the centre of the other | Centre to centre |
 | **Overall Slot** | The two outside ends of the slot | End to end |
+| **Center Point Slot** | The middle of the slot, then the centre of one end | Centre to centre. The other end is the same distance on the far side of the middle |
+| **3-Point Arc Slot** | The centre of one end, the centre of the other, then a point the curve passes through | Along the arc |
+| **Center Point Arc Slot** | The centre of the arc, the centre of the first end, then where the other end goes (counter-clockwise) | Along the arc |
 
 ## Draw one
 
-1. Press [[O]]. Press it again if you want **Overall Slot**.
-2. Click the two points that set the slot, as in the table above.
+1. Press [[O]]. Press it again to go through the other ways.
+2. Click the points that set the slot, as in the table above.
 3. The slot is drawn with its width. Press [[Esc]] to leave the tool.
 
 Before the first click, or after it, type a **Width** in the field beside the pointer. The first click fixes the centre, or the first outside end, and the second click sets the other end. For a slot in the **Slot** mode, the length field appears after the first click, so you can type a length there instead of clicking the second point.
@@ -37,6 +40,8 @@ A slot is two round ends of the same size, joined by two straight sides that are
 :::note
 In **Overall Slot**, the overall length must be longer than the width. If you click two points closer together than that, nothing is drawn and SimplMaker says so.
 :::
+
+In the two **arc slots**, the width is the only size that is a dimension. The arc must be wider than the slot, and the two ends must not be in the same place. If not, nothing is drawn and SimplMaker says so. A 3-Point Arc Slot whose three clicks are in a straight line is refused too: it needs a bend.
 
 ## Next
 

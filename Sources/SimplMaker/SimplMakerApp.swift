@@ -239,7 +239,7 @@ struct SimplMakerCommands: Commands {
             if model?.sketchSession != nil {
                 Divider()
                 ForEach(SketchTool.allCases) { tool in
-                    Button(tool.rawValue) { model?.setSketchTool(tool) }
+                    Button(tool.menuTitle) { model?.setSketchTool(tool) }
                 }
                 Button("Offset Selection…") { model?.beginSketchOffset() }
                     .disabled(!(model?.sketchSession?.canOffset ?? false))

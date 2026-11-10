@@ -41,6 +41,9 @@ struct GroupTool: Identifiable {
     /// Ways of doing it (a rectangle from two corners, or from its center). The button does the
     /// one used last; a small arrow beside it, or the chips in the group's list, pick another.
     var modes: [GroupTool] = []
+    /// The modes are a submenu: the arrow beside the button and the row in the group's list open a list of them by name,
+    /// rather than showing them as small icons.
+    var modesAsMenu = false
     /// A popover the tool asks for (the offset distance, the list of constraints). It opens on the
     /// tool's button, or on the group's name while the tool isn't in the toolbar.
     var popover: ToolPopover?
@@ -73,11 +76,12 @@ struct ToolGroup: View {
 
     init(_ spec: ToolGroupSpec) { self.init(spec.title, id: spec.id, defaults: spec.defaults, tools: spec.tools) }
 
-    private var pins: ToolPins { ToolPins(stored: stored, available: tools.map(\.id), defaults: defaults) }
+    private var pins: ToolPins { ToolPins(stored: stored, available: tools.flatMap { [$0.id] + $0.modes.map(\.id) }, defaults: defaults) }
 
     var body: some View {
         let pins = pins
-        let pinned = tools.filter { pins.contains($0.id) }
+        // A tool pinned as a whole, and any of its ways of working pinned on their own.
+        let pinned = tools.flatMap { tool in (pins.contains(tool.id) ? [tool] : []) + tool.modes.filter { pins.contains($0.id) } }
         let shown = Array(pinned.dropLast(min(trim, max(pinned.count - 1, 0))))
         let hidden = tools.filter { tool in !shown.contains { $0.id == tool.id } }
         VStack(spacing: 0) {
@@ -309,6 +313,9 @@ private struct PinnedTool: View {
                 .toolTip("Choose how to draw the \(tool.title.lowercased())")
                 .accessibilityLabel("\(tool.title) options")
                 .popover(isPresented: $modesOpen, arrowEdge: ToolListMetrics.arrowEdge) {
+                    if tool.modesAsMenu {
+                        ModeList(tool: tool, isPinned: nil, togglePin: nil) { modesOpen = false; $0.action() }
+                    } else {
                     HStack(spacing: DS.Spacing.space1) {
                         ForEach(tool.modes) { mode in
                             ToolButton(title: mode.title, icon: mode.icon, active: mode.active, help: mode.help) {
@@ -320,6 +327,7 @@ private struct PinnedTool: View {
                     .environment(\.toolTitles, true)
                     .environment(\.toolsOnTint, false)
                     .padding(DS.Spacing.space3)
+                    }
                 }
             }
         }
@@ -342,11 +350,34 @@ private struct ToolGroupList: View {
     let run: (GroupTool) -> Void
     let toggle: (String) -> Void
     let restore: () -> Void
+    /// The row whose submenu is open: only ever one, and the pointer entering another row changes it at once.
+    @State private var openSub: String?
+    @State private var overSub = false
+    @State private var generation = 0
+
+    /// The pointer came onto or left a row (`id`), or its submenu (`id` nil).
+    private func hover(_ id: String?, row: GroupTool? = nil, entered: Bool) {
+        generation += 1
+        if let id { overSub = false; if entered { openSub = (row?.modes.isEmpty ?? true) ? nil : id } else { scheduleClose() } }
+        else { overSub = entered; if !entered { scheduleClose() } }
+    }
+
+    /// Closes the open submenu a moment after the pointer has left the row and the submenu (the moment lets it cross the gap).
+    private func scheduleClose() {
+        let mine = generation
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            if mine == generation, !overSub { openSub = nil }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(tools) { tool in
-                ToolGroupRow(tool: tool, pinned: pins.contains(tool.id), run: run, toggle: { toggle(tool.id) })
+                ToolGroupRow(tool: tool, pinned: pins.contains(tool.id), run: run, toggle: { toggle(tool.id) },
+                             isPinned: pins.contains, togglePin: toggle, subOpen: openSub == tool.id,
+                             onHover: { hover(tool.id, row: tool, entered: $0) }, onSubHover: { hover(nil, entered: $0) },
+                             closeSub: { if openSub == tool.id { openSub = nil } })  // only its own: another row's popover dismissing must not close the new one
             }
             Divider().padding(.vertical, DS.Spacing.space3)
             HStack(alignment: .firstTextBaseline) {
@@ -426,9 +457,66 @@ private struct ToolGroupRow: View {
     let pinned: Bool
     let run: (GroupTool) -> Void
     let toggle: () -> Void
+    let isPinned: (String) -> Bool
+    let togglePin: (String) -> Void
+    /// Whether this row's submenu is open (the list decides), and the hover reports that decide it.
+    let subOpen: Bool
+    let onHover: (Bool) -> Void
+    let onSubHover: (Bool) -> Void
+    let closeSub: () -> Void
     @State private var hovering = false
 
     var body: some View {
+        if tool.modesAsMenu && !tool.modes.isEmpty { submenuRow } else { plainRow }
+    }
+
+    /// A tool with ways of drawing it: its name, and a submenu of them that opens as the pointer rests on the row.
+    private var submenuRow: some View {
+        HStack(spacing: DS.Spacing.space2) {
+            Button { onHover(true) } label: {
+                HStack(spacing: DS.Spacing.space4) {
+                    Icon(tool.icon, size: 16, renderedStroke: Icon.toolStroke).frame(width: 20)
+                    Text(tool.title).lineLimit(1)
+                    Spacer(minLength: DS.Spacing.space4)
+                }
+                .foregroundStyle(tool.active ? accent : .primary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Text(tool.shortcut ?? "")
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 16)
+                .accessibilityHidden(true)
+            pinButton
+            Icon("chevron-right", size: 10)
+                .foregroundStyle(.secondary)
+                .frame(width: 12)
+        }
+        .padding(.horizontal, DS.Spacing.space3)
+        .frame(height: ToolListMetrics.rowHeight)
+        .background(hovering || subOpen ? Color.primary.opacity(0.07) : .clear,
+                    in: RoundedRectangle(cornerRadius: DS.Radius.menuItem, style: .continuous))
+        .popover(isPresented: Binding(get: { subOpen }, set: { if !$0 { closeSub() } }), arrowEdge: .trailing) {
+            ModeList(tool: tool, isPinned: isPinned, togglePin: togglePin) { closeSub(); run($0) }
+                .onHover(perform: onSubHover)
+        }
+        .onHover { hovering = $0; onHover($0) }
+    }
+
+    private var pinButton: some View {
+        Button(action: toggle) {
+            Image(systemName: pinned ? "pin.fill" : "pin")
+                .font(.system(size: 11))
+                .frame(width: ToolListMetrics.smallButton, height: ToolListMetrics.smallButton)
+                .foregroundStyle(pinned ? accent : .secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(pinned ? "Remove from the toolbar" : "Show in the toolbar")
+        .accessibilityLabel(pinned ? "Unpin \(tool.title)" : "Pin \(tool.title)")
+    }
+
+    private var plainRow: some View {
         HStack(spacing: DS.Spacing.space2) {
             Button { run(tool) } label: {
                 HStack(spacing: DS.Spacing.space4) {
@@ -484,7 +572,7 @@ private struct ToolGroupRow: View {
         .frame(height: ToolListMetrics.rowHeight)
         .background(hovering ? Color.primary.opacity(0.07) : .clear,
                     in: RoundedRectangle(cornerRadius: DS.Radius.menuItem, style: .continuous))
-        .onHover { hovering = $0 }
+        .onHover { hovering = $0; onHover($0) }
     }
 }
 
@@ -523,5 +611,73 @@ extension View {
         #else
         self
         #endif
+    }
+}
+
+/// A tool's ways of working, listed by name with their icons: what a pinned button's arrow and a group's submenu rows open.
+private struct ModeList: View {
+    let tool: GroupTool
+    /// Whether a way of working is in the toolbar, and a way to put it there or take it out (nil: no pins).
+    let isPinned: ((String) -> Bool)?
+    let togglePin: ((String) -> Void)?
+    let choose: (GroupTool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(tool.modes) { mode in
+                ModeRow(mode: mode, pinned: isPinned?(mode.id), togglePin: togglePin.map { t in { t(mode.id) } }) { choose(mode) }
+            }
+        }
+        .padding(DS.Spacing.space3)
+        .frame(width: ToolListMetrics.listWidth)
+        .environment(\.toolsOnTint, false)
+    }
+}
+
+private struct ModeRow: View {
+    let mode: GroupTool
+    let pinned: Bool?
+    let togglePin: (() -> Void)?
+    let choose: () -> Void
+    @Environment(\.accent) private var accent
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.space2) {
+            Button(action: choose) {
+                HStack(spacing: DS.Spacing.space4) {
+                    Icon(mode.icon, size: 16, renderedStroke: Icon.toolStroke).frame(width: 20)
+                    Text(mode.title).lineLimit(1)
+                    Spacer(minLength: DS.Spacing.space4)
+                }
+                .foregroundStyle(mode.active ? accent : .primary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!mode.enabled)
+            .opacity(mode.enabled ? 1 : DS.opacityDisabled)
+            .help(mode.help)
+            Text(mode.shortcut ?? "")
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 16)
+                .accessibilityHidden(true)
+            if let pinned, let togglePin {
+                Button(action: togglePin) {
+                    Image(systemName: pinned ? "pin.fill" : "pin")
+                        .font(.system(size: 11))
+                        .frame(width: ToolListMetrics.smallButton, height: ToolListMetrics.smallButton)
+                        .foregroundStyle(pinned ? accent : .secondary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(pinned ? "Remove from the toolbar" : "Show in the toolbar")
+                .accessibilityLabel(pinned ? "Unpin \(mode.title)" : "Pin \(mode.title)")
+            }
+        }
+        .padding(.horizontal, DS.Spacing.space3)
+        .frame(height: ToolListMetrics.rowHeight)
+        .background(hovering && mode.enabled ? Color.primary.opacity(0.07) : .clear,
+                    in: RoundedRectangle(cornerRadius: DS.Radius.menuItem, style: .continuous))
+        .onHover { hovering = $0 }
     }
 }

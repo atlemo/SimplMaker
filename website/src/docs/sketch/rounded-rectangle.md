@@ -3,17 +3,19 @@ title: Rounded Rectangle
 description: Draw a rectangle with all four corners rounded by one radius, and change the size and radius with dimensions.
 ---
 
-A **rounded rectangle** is a rectangle with its four corners rounded by the same radius. It is one of the three ways of drawing a rectangle. Press [[R]] to pick the Rectangle, then press it again for the **Center** rectangle, and once more for **Rounded**.
+A **rounded rectangle** is a rectangle with its four corners rounded by the same radius. It is one of the ways of drawing a rectangle. Press [[R]] to pick the Rectangle, then press it again to go through them: **Center**, **3-Point**, **Rounded** and **Center Rounded**.
 
 | Mode | Click |
 |---|---|
 | **2-Point** | Two opposite corners |
 | **Center** | The centre, then a corner |
+| **3-Point** | The two ends of one side, then how far the rectangle reaches (not rounded) |
 | **Rounded** | Two opposite corners, with the corners rounded |
+| **Center Rounded** | The centre, then a corner, with the corners rounded |
 
 ## Draw one
 
-1. Press [[R]] until the toolbar says **Rounded**.
+1. Press [[R]] until the toolbar says **Rounded** (or **Center Rounded**, which you click from the centre).
 2. Type the **Radius** in the field beside the pointer, or leave it at the last value you used. It starts at 5 mm. You can type it before the first click or after it.
 3. Click two opposite corners. The rectangle is drawn with its corners rounded.
 

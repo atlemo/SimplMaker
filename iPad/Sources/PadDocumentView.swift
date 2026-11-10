@@ -249,7 +249,8 @@ struct PadToolBar: View {
     /// What the measured widths depend on: the mode, and the tools pinned in each group (the user can change them).
     private var signature: String {
         let pins = ["design.create", "design.shapes", "design.modify", "design.construct", "design.inspect",
-                    "sketch.draw", "sketch.modify", "sketch.transform", "sketch.constraints"]
+                    "sketch.create",
+                    "sketch.modify", "sketch.transform", "sketch.constraints"]
             .map { UserDefaults.standard.string(forKey: Preferences.toolbarPins($0)) ?? "-" }
         return "\(model.sketchSession != nil) \(model.isPickingSketchPlane) \(pins.joined(separator: "|"))"
     }

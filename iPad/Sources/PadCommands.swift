@@ -95,7 +95,7 @@ struct PadCommands: Commands {
             .disabled(model == nil)
             if model?.sketchSession != nil {
                 Divider()
-                ForEach(SketchTool.allCases) { tool in Button(tool.rawValue) { model?.setSketchTool(tool) } }
+                ForEach(SketchTool.allCases) { tool in Button(tool.menuTitle) { model?.setSketchTool(tool) } }
                 Button("Offset Selection…") { model?.beginSketchOffset() }.disabled(!(model?.sketchSession?.canOffset ?? false))
                 ForEach(SketchTransformTool.allCases) { tool in
                     Button(tool == .scale ? "Scale Selection…" : tool == .pattern ? "Pattern Selection" : "\(tool.rawValue) Selection") { model?.beginSketchTransform(tool) }

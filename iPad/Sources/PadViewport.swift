@@ -646,7 +646,7 @@ struct PadViewport: UIViewRepresentable {
                     if session.typed.isEmpty, !session.isPatterning, !session.isMirroring, !session.isOffsetting { model.finishSketch() }
                     else { model.commitSketchTyped(); refresh() }
                     return true
-                case .keyboardDownArrow where session.tool == .polygon, .keyboardUpArrow where session.tool == .polygon:
+                case .keyboardDownArrow where session.hasSideCount, .keyboardUpArrow where session.hasSideCount:
                     session.adjustSides(by: key.keyCode == .keyboardUpArrow ? 1 : -1); refresh(); return true
                 default: break
                 }
