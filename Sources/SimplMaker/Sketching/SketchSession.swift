@@ -311,7 +311,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .trim: return "Click the part of a curve to remove (up to where other curves cross it)"
         case .extend: return "Click near the end of a line or arc to extend it to the next curve"
         case .dimension: return "Click a line (then click again to place its length), a circle or arc, or two items for a distance or angle · or click any grey size"
-        case .projectEdge: return "Click body edges, straight or curved, to bring them into the sketch · they follow the body, and their points can be constrained and dimensioned · Esc ends"
+        case .projectEdge: return "Click body edges, or curves of other sketches, to bring them into the sketch · they follow where they came from, and their points can be constrained and dimensioned · Esc ends"
         case .intersect: return "Click a body to bring in the curves where the sketch plane cuts it · they follow the body, like projected edges · Esc ends"
         case .projectAgain: return "Click a projected curve (or select one first), then the new edge it should follow: a body edge or a curve of another sketch, of the same kind · its points and what is tied to them stay · Esc ends"
         case .distance: return "Click two items (points, lines, circles or arcs), then type the distance between them · a circle is measured from its edge, its center point from the middle"
@@ -975,7 +975,7 @@ final class SketchSession {
     /// projection (its ends, and a circle's center, are fixed points, and a construction line, arc or circle joins them). The tool stays on for more edges; Esc ends it.
     private func projectEdgeClick(_ edge: EdgeRef?) -> (handled: Bool, commit: String?) {
         guard let edge else {
-            message = "Click a body edge to project it into the sketch"
+            message = "Click a body edge, or a curve of another sketch, to project it into the sketch"
             return (true, nil)
         }
         guard let model = references.straightEdges[edge] ?? references.roundEdges[edge] ?? references.curvedEdges[edge] else {
