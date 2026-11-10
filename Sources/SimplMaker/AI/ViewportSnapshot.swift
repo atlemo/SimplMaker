@@ -24,8 +24,8 @@ enum SnapshotDirection: String, CaseIterable, Sendable {
         case .back: return (.pi / 2, 0)
         case .right: return (0, 0)
         case .left: return (.pi, 0)
-        case .top: return (-.pi / 2, 1.55)
-        case .bottom: return (-.pi / 2, -1.55)
+        case .top: return (-.pi / 2, .pi / 2)
+        case .bottom: return (-.pi / 2, -.pi / 2)
         }
     }
 
@@ -169,7 +169,7 @@ enum ViewportSnapshot {
         camera.orthographic = !options.perspective
         let angles = direction.angles
         camera.yaw = azimuth.map { Float($0 * .pi / 180) } ?? angles.yaw
-        camera.pitch = elevation.map { min(max(Float($0 * .pi / 180), -1.55), 1.55) } ?? angles.pitch
+        camera.pitch = elevation.map { min(max(Float($0 * .pi / 180), -.pi / 2), .pi / 2) } ?? angles.pitch
         camera.fit(min: bounds.min, max: bounds.max, aspect: Float(width) / Float(height))
         renderer.camera = camera
         if let cut = options.section {

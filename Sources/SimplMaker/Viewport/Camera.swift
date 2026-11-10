@@ -120,7 +120,8 @@ struct Camera {
     /// eye of its own to place, or with the eye below it in a perspective one.
     var isBelowGround: Bool { orthographic ? sin(pitch) < -1e-4 : eye.z < 0 }
     /// Right and up before the roll: up is as near the world's Z as the view allows.
-    private var levelRight: SIMD3<Float> { simd_normalize(simd_cross(forward, SIMD3(0, 0, 1))) }
+    /// Taken from the yaw, not from forward × Z, which collapses to zero when looking straight down or up.
+    private var levelRight: SIMD3<Float> { SIMD3(-sin(yaw), cos(yaw), 0) }
     private var levelUp: SIMD3<Float> { simd_cross(levelRight, forward) }
     var right: SIMD3<Float> { roll == 0 ? levelRight : cos(roll) * levelRight - sin(roll) * levelUp }
     var up: SIMD3<Float> { roll == 0 ? levelUp : sin(roll) * levelRight + cos(roll) * levelUp }
@@ -170,7 +171,7 @@ struct Camera {
 
     mutating func orbit(dx: Float, dy: Float) {
         yaw -= dx * 0.008
-        pitch = min(max(pitch + dy * 0.008, -1.55), 1.55)
+        pitch = min(max(pitch + dy * 0.008, -.pi / 2), .pi / 2)
     }
 
     /// Turns the picture about the line of sight by `radians`, counter-clockwise on screen when positive.
@@ -234,14 +235,14 @@ struct Camera {
         self.target = target
         roll = 0
         let n = simd_normalize(normal)
-        pitch = min(max(asin(n.z), -1.55), 1.55)
+        pitch = min(max(asin(min(max(n.z, -1), 1)), -.pi / 2), .pi / 2)
         if abs(n.x) + abs(n.y) > 1e-4 { yaw = atan2(n.y, n.x) } else { yaw = -.pi / 2 }
     }
 
     mutating func setStandard(_ view: StandardView) {
         roll = 0
         switch view {
-        case .top: pitch = 1.55; yaw = -.pi / 2
+        case .top: pitch = .pi / 2; yaw = -.pi / 2
         case .front: pitch = 0; yaw = -.pi / 2
         case .right: pitch = 0; yaw = 0
         case .home: pitch = 0.55; yaw = -.pi / 3
