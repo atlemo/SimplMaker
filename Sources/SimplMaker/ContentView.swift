@@ -1553,7 +1553,7 @@ struct RowFieldStyle: ViewModifier {
             .focusEffectDisabled()  // the system's ring would add a second edge under ours
             .overlay(shape.strokeBorder(
                 mode == .selected ? Color.white.opacity(0.4)
-                    : mode == .focused ? Color.gray : Color.secondary.opacity(0.4),
+                    : mode == .focused ? accent : Color.secondary.opacity(0.4),
                 lineWidth: mode == .focused ? 2 : 1))
     }
 }
