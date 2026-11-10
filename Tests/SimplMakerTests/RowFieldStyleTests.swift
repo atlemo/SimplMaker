@@ -46,7 +46,9 @@ extension KeyWindowTests {
             try await Task.sleep(for: .milliseconds(400))
             let editor = try #require(window.firstResponder as? NSTextView)
             #expect(editor.insertionPointColor == .textColor)
-            #expect(editor.selectedTextAttributes[.foregroundColor] as? NSColor == .white)
+            // White on the accent in the active window, the dark text on the quiet gray in one that isn't.
+            let expected: NSColor = window.isKeyWindow ? .white : .textColor
+            #expect(editor.selectedTextAttributes[.foregroundColor] as? NSColor == expected)
             window.makeFirstResponder(nil)
             try await Task.sleep(for: .milliseconds(400))
             window.close()

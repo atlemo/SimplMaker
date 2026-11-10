@@ -749,12 +749,13 @@ struct ParametersList: View {
 
     private func row(_ p: Parameter) -> AnyView {
         AnyView(
-            ParameterRow(model: model, parameter: p, selected: false, renaming: renamingBinding(p.name),
+            ParameterRow(model: model, parameter: p, selected: false,
+                         active: focused == p.name || (focused == nil && selection == p.name), renaming: renamingBinding(p.name),
                          valueFocused: focusBinding(p.name), tabbed: { moveFocus(from: p.name, backwards: $0) })
                 .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
                 .environment(\.backgroundProminence, .standard)  // no accent row, so no white-on-accent text
                 .tag(p.name)
-                .listRowBackground(ParameterRowBackground(selected: selection == p.name, sketching: model.sketchSession != nil)))
+                .listRowBackground(Color.clear))
     }
 
     var body: some View {
@@ -770,6 +771,7 @@ struct ParametersList: View {
         .listStyle(.sidebar)
         .panelListTop()
         .browserDropDestination { drop($0, nil) }
+        .background(NoSelectionHighlight())
         .background(OutsideClickMonitor {
             // A click anywhere else (the 3D view, a body in the browser) lets go of the row and its field.
             #if os(macOS)
@@ -853,7 +855,7 @@ struct ParametersList: View {
 
     private func focusBinding(_ name: String) -> Binding<Bool> {
         Binding(get: { focused == name },
-                set: { if $0 { focused = name; selection = name } else if focused == name { focused = nil } })
+                set: { if $0 { focused = name } else if focused == name { focused = nil } })  // the list's selection is left alone: changing it re-rendered the row and lost the click
     }
 
     /// Tab goes to the next parameter's value, Shift-Tab to the previous one; past either end it wraps around.
@@ -1561,48 +1563,59 @@ struct RowFieldStyle: ViewModifier {
 #if os(macOS)
 /// The caret and the selection of the field being edited. The text view that edits the field draws them in
 /// colours of its own, which inside a selected list row come out white on the white field (the caret and the
-/// highlight vanish), so while the field is active they are set explicitly, and put back when it isn't.
+/// highlight vanish), so they are set explicitly on the window's shared field editor, ahead of the focus and again when it arrives.
 private struct FieldEditorColors: NSViewRepresentable {
     let active: Bool
     let accent: NSColor
 
-    /// Which field's colours are on the shared field editor, so a field that lost the focus doesn't undo the
-    /// colours of the one that just got it.
-    @MainActor final class Owner {
-        static var current: ObjectIdentifier?
-    }
     final class Coordinator {}
 
     func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
 
-    func updateNSView(_ view: NSView, context: Context) {
-        let (active, accent, id) = (active, accent, ObjectIdentifier(context.coordinator))
-        // The field editor is installed a moment after the focus changes.
-        for delay in [0.0, 0.05, 0.2] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in
-                guard let editor = view?.window?.firstResponder as? NSTextView, editor.isFieldEditor else { return }
-                if active {
-                    Owner.current = id
-                    editor.insertionPointColor = .textColor
-                    editor.selectedTextAttributes = [.backgroundColor: accent, .foregroundColor: NSColor.white]
-                } else if Owner.current == nil || Owner.current == id {
-                    Owner.current = nil
-                    Self.restore(editor)
-                }
+    /// Sets the colours on the window's shared field editor the moment it has a window, before any field asks
+    /// for the keyboard: set a beat after the focus moved, the selected text showed in its own black first.
+    final class ColorView: NSView {
+        var accent: NSColor = .controlAccentColor { didSet { apply() } }
+        private var observers: [NSObjectProtocol] = []
+
+        override func viewDidMoveToWindow() {
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            guard let window else { return }
+            // In a window that isn't the active one the selection is the quiet gray with dark text, as everywhere else.
+            for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.apply() }
+                })
             }
+            apply()
+        }
+
+        func apply() {
+            guard let window, let editor = window.fieldEditor(true, for: nil) as? NSTextView else { return }
+            Self.style(editor, accent: accent, windowActive: window.isKeyWindow)
+        }
+
+        static func style(_ editor: NSTextView, accent: NSColor, windowActive: Bool) {
+            editor.insertionPointColor = .textColor
+            editor.selectedTextAttributes = windowActive
+                ? [.backgroundColor: accent, .foregroundColor: NSColor.white]
+                : [.backgroundColor: NSColor.unemphasizedSelectedTextBackgroundColor, .foregroundColor: NSColor.textColor]
         }
     }
 
-    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
-        guard Owner.current == ObjectIdentifier(coordinator) else { return }
-        Owner.current = nil
-        if let editor = view.window?.firstResponder as? NSTextView, editor.isFieldEditor { restore(editor) }
-    }
+    func makeNSView(context: Context) -> ColorView { ColorView(frame: .zero) }
 
-    private static func restore(_ editor: NSTextView) {
-        editor.insertionPointColor = .textInsertionPointColor
-        editor.selectedTextAttributes = [.backgroundColor: NSColor.selectedTextBackgroundColor, .foregroundColor: NSColor.selectedTextColor]
+    func updateNSView(_ view: ColorView, context: Context) {
+        view.accent = accent
+        guard active else { return }
+        // The editor in use is installed a moment after the focus changes: once more, in case it is another one.
+        for delay in [0.0, 0.05] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in
+                guard let editor = view?.window?.firstResponder as? NSTextView, editor.isFieldEditor else { return }
+                ColorView.style(editor, accent: accent, windowActive: view?.window?.isKeyWindow ?? true)
+            }
+        }
     }
 }
 #else
@@ -1658,30 +1671,42 @@ struct InlineNameField: View {
 /// A list row's background in the app's accent colour: solid when the row is selected (a sidebar list draws its own
 /// selection in the system's colour), or a soft tint when it is only `highlighted`, as for the browser row of a body
 /// or sketch that owns something selected in the viewport.
-/// A parameter's row: nothing while it is idle, a quiet gray card while it is the active one (it also covers the
-/// system's blue selection). While sketching the card takes the colour of the user's sketch paper instead.
+/// A parameter's row: nothing while it is idle, a very soft tint of the text colour while it is the active one
+/// (black at 5 % in a light window), the same while sketching. The list's own blue highlight is switched off
+/// (`NoSelectionHighlight`), so the card is all there is.
 struct ParameterRowBackground: View {
     let selected: Bool
-    var sketching = false
-    @AppStorage(Preferences.sketchPaper) private var paper = Preferences.SketchPaper.blue
-    @Environment(\.colorScheme) private var scheme
-
-    private var fill: Color {
-        if sketching, let c = paper.color(dark: scheme == .dark) {
-            // The paper colour itself, as chosen in Settings.
-            return Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z))
-        }
-        return Color.primary.opacity(0.1)
-    }
 
     var body: some View {
         if selected {
             RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous)
-                .fill(fill)
-                .padding(.horizontal, DS.Spacing.space2)
+                .fill(Color.primary.opacity(0.05))
         }
     }
 }
+
+#if os(macOS)
+/// Turns off the highlight the system draws behind a selected row (and the white text that goes with it) in the
+/// list this sits behind, for a list that shows its selection some other way.
+struct NoSelectionHighlight: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+    func updateNSView(_ view: NSView, context: Context) {
+        // The hosting view holds every list of the window, so the table is the one under this view's middle.
+        DispatchQueue.main.async { [weak view] in
+            guard let view, let root = view.window?.contentView else { return }
+            let middle = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+            for table in Self.tables(in: root) where (table.enclosingScrollView ?? table).convert((table.enclosingScrollView ?? table).bounds, to: nil).contains(middle) {
+                table.selectionHighlightStyle = .none
+            }
+        }
+    }
+    private static func tables(in view: NSView) -> [NSTableView] {
+        (view as? NSTableView).map { [$0] } ?? view.subviews.flatMap { tables(in: $0) }
+    }
+}
+#else
+struct NoSelectionHighlight: View { var body: some View { EmptyView() } }
+#endif
 
 struct SelectedRowBackground: View {
     @Environment(\.accent) private var accent
@@ -1816,6 +1841,8 @@ struct ParameterRow: View {
     let parameter: Parameter
     /// Whether the row is the selected one, on the accent colour.
     var selected = false
+    /// Whether the row is the active one (its field has the keyboard, or it is the selected row): it gets the soft card.
+    var active = false
     @Binding var renaming: Bool
     /// Whether the value field has the keyboard; setting it true moves the keyboard there.
     @Binding var valueFocused: Bool
@@ -1925,6 +1952,8 @@ struct ParameterRow: View {
                 .draggable(BrowserDrag(items: [parameter.name]))
         }
         .padding(.vertical, DS.Spacing.space2)
+        // The card is drawn here and not as the list row's background, so the row stays the same view when it turns active.
+        .background { ParameterRowBackground(selected: active).padding(.horizontal, -10).padding(.vertical, -2) }
         .onChange(of: renaming) { if renaming { renameError = nil } }
     }
 }
@@ -2113,8 +2142,10 @@ struct ExpressionField: View {
         TextField("expression", text: $draft)
             .labelsHidden()  // in a Form row the label beside the field would read "expression"
             .font(monospaced ? .body.monospaced() : .body)
-            .fieldAppearance(inSelectableRow: inSelectableRow, focused: focused)
             .focused($focused)
+            .fieldAppearance(inSelectableRow: inSelectableRow, focused: focused)
+            .contentShape(Rectangle())  // the padded edge of the field is part of it, too
+            .simultaneousGesture(TapGesture().onEnded { focused = true })
             .numericEntry(if: completes)  // a size or an expression (not a name, nor the words of a text): the iPad's number pad
             .completesParameters(completes ? completionModel : nil, excluding: excluding, focused: focused)
             .onKeyPress(phases: [.down, .repeat]) { press in
