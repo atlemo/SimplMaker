@@ -1089,20 +1089,21 @@ import simd
         let model = try await loaded()
         var settings = RenderSettings.quiet
         let whole = [PickID(wholeBody: 0).raw]
-        func darkestAlongTheBoxEdge(_ settings: RenderSettings, selected: [UInt32], name: String) async throws -> Float {
-            let (p, renderer, view) = try await render(model, name: name, settings: settings, selected: selected)
-            // The box's vertical front corner, a few pixels either side.
+        /// The pixels across the box's vertical front corner (a few either side), and the two faces that meet there.
+        func acrossTheBoxEdge(_ settings: RenderSettings, name: String) async throws -> (edge: [SIMD3<Float>], faces: [SIMD3<Float>]) {
+            let (p, renderer, view) = try await render(model, name: name, settings: settings, selected: whole)
             let q = pixel(of: SIMD3(30, -20, 15), p, renderer, view)
-            var darkest: Float = 1
-            for x in (q.x - 4)...(q.x + 4) { darkest = min(darkest, p.color(x, q.y).x) }
-            return darkest
+            return ((q.x - 3...q.x + 3).map { p.color($0, q.y) }, [p.color(q.x - 14, q.y), p.color(q.x + 14, q.y)])
         }
         settings.showEdges = false
-        let selected = try await darkestAlongTheBoxEdge(settings, selected: whole, name: "outline-selected")
+        let without = try await acrossTheBoxEdge(settings, name: "outline-selected")
         settings.showEdges = true
-        let withEdges = try await darkestAlongTheBoxEdge(settings, selected: whole, name: "outline-edges-on")
-        // The selected body is tinted either way; the difference is the dark line along its edge.
-        #expect(withEdges < selected - 0.05, "with Show edges on the outline is drawn, without it it is not: \(withEdges) vs \(selected)")
+        let with = try await acrossTheBoxEdge(settings, name: "outline-edges-on")
+        // The selected body is tinted either way. The outline is a line lighter than both faces it separates (the
+        // selection's own blue), so look for the brightest blue along the corner, not for a dark line.
+        let facesBlue = without.faces.map(\.z).max()!
+        #expect(without.edge.map(\.z).max()! <= facesBlue + 0.03, "without Show edges the corner is only the two faces meeting")
+        #expect(with.edge.map(\.z).max()! > facesBlue + 0.1, "with Show edges on the outline is drawn along the corner")
     }
 
 
