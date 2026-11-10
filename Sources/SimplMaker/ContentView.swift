@@ -750,11 +750,19 @@ struct ParametersList: View {
     private func row(_ p: Parameter) -> AnyView {
         AnyView(
             ParameterRow(model: model, parameter: p, selected: false,
-                         active: focused == p.name || (focused == nil && selection == p.name), renaming: renamingBinding(p.name),
+                         active: focused == p.name || renaming == p.name, renaming: renamingBinding(p.name),
                          valueFocused: focusBinding(p.name), tabbed: { moveFocus(from: p.name, backwards: $0) })
                 .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
                 .environment(\.backgroundProminence, .standard)  // no accent row, so no white-on-accent text
-                .tag(p.name)
+                // A parameter row is not a selectable row: a click goes straight to the field, like any plain input, and
+                // the list has no selection of its own to take the first click with.
+                .selectionDisabled()
+                .contextMenu {
+                    Button("Rename") { renaming = p.name }
+                    moveMenu([p.name])
+                    Divider()
+                    Button("Delete", role: .destructive) { model.removeParameter(p.name) }
+                }
                 .listRowBackground(Color.clear))
     }
 
@@ -794,16 +802,6 @@ struct ParametersList: View {
                 }
                 Divider()
                 Button("Delete Folder", role: .destructive) { model.deleteParameterFolder(fid) }
-            } else {
-                let names = tags.filter { folderID($0) == nil }.sorted()
-                if names.count == 1, let name = names.first {
-                    Button("Rename") { renaming = name }
-                }
-                if !names.isEmpty {
-                    moveMenu(names)
-                    Divider()
-                    Button("Delete", role: .destructive) { names.forEach { model.removeParameter($0) } }
-                }
             }
         }
     }
@@ -1941,7 +1939,7 @@ struct ParameterRow: View {
             if let renameError {
                 Text(renameError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
-            ExpressionField(text: scrub?.expression ?? parameter.expression, excluding: parameter.name, inSelectableRow: true, nudges: true,
+            ExpressionField(text: scrub?.expression ?? parameter.expression, excluding: parameter.name, nudges: true,
                             focusRequest: $valueFocused, tabbed: tabbed) { model.setParameter(parameter.name, expression: $0) }
             let users = model.document.features(using: parameter.name).map(\.name)
             Text(users.isEmpty ? "Not used yet · type \(parameter.name) in any size field" : "Used by \(users.joined(separator: ", "))")
@@ -2144,8 +2142,6 @@ struct ExpressionField: View {
             .font(monospaced ? .body.monospaced() : .body)
             .focused($focused)
             .fieldAppearance(inSelectableRow: inSelectableRow, focused: focused)
-            .contentShape(Rectangle())  // the padded edge of the field is part of it, too
-            .simultaneousGesture(TapGesture().onEnded { focused = true })
             .numericEntry(if: completes)  // a size or an expression (not a name, nor the words of a text): the iPad's number pad
             .completesParameters(completes ? completionModel : nil, excluding: excluding, focused: focused)
             .onKeyPress(phases: [.down, .repeat]) { press in
