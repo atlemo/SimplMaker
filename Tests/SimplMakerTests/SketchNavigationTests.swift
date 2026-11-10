@@ -29,12 +29,14 @@ import Testing
         return (view, renderer, window)
     }
 
-    @Test func draggingEmptyGroundWithTheSelectToolOrbitsTheView() async throws {
+    /// Since 1.2.3 a drag across empty space in a sketch selects what the box covers; the view cube turns the view.
+    @Test func draggingEmptyGroundWithTheSelectToolSelectsAndNeverTurnsTheView() async throws {
         let (view, renderer, window) = try await sketchView()
-        let yaw = renderer.camera.yaw, pitch = renderer.camera.pitch
+        let yaw = renderer.camera.yaw, pitch = renderer.camera.pitch, target = renderer.camera.target
         view.mouseDown(with: event(.leftMouseDown, 400, 300, window))
         view.mouseDragged(with: event(.leftMouseDragged, 300, 250, window))
-        #expect(renderer.camera.yaw != yaw && renderer.camera.pitch != pitch, "the view turns, as outside a sketch")
+        view.mouseUp(with: event(.leftMouseUp, 300, 250, window))
+        #expect(renderer.camera.yaw == yaw && renderer.camera.pitch == pitch && renderer.camera.target == target, "the view stays put")
     }
 
     @Test func rightDragPansTheViewWithTheCursor() async throws {

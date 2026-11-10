@@ -868,7 +868,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if model?.sketchSession != nil {
             let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
             sketchDrag = sketchEvent(.down, at: p, additive: additive)
-            if !sketchDrag, model?.sketchSession?.tool == .select {  // empty space: a drag selects what it covers
+            if !sketchDrag, model?.sketchSession?.tool == .select, !dragRollsSketch(event) {  // empty space: a drag selects what it covers
                 marqueeStart = p
                 marqueeAdditive = additive
             }
@@ -980,6 +980,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                     marqueeView?.rect = rect
                     marqueeView?.crossing = b.x < a.x
                 }
+            } else if dragRollsSketch(event) {
+                navigateByDragging(event, bindings: navigation.left)  // ⌥ (⇧⌥ in steps) turns the sketch on its paper
             }
             return
         }
@@ -1173,6 +1175,15 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             }
             config.navigate(&renderer.camera, action, input: .drag, dx: dx, dy: -dyUp, viewHeight: Float(bounds.height))
         }
+    }
+
+    /// A drag on empty space in a sketch with the keys that roll (⌥, or ⇧⌥ to land on round angles): it turns the
+    /// sketch on its paper instead of selecting. Any other drag in a sketch selects, and never turns the view.
+    private func dragRollsSketch(_ event: NSEvent) -> Bool {
+        guard model?.sketchSession != nil else { return false }
+        let bindings = navigation.left
+        if navAction(bindings[NavModifier(event.modifierFlags)]) == .roll { return true }
+        return event.modifierFlags.contains(.shift) && event.modifierFlags.contains(.option) && navAction(bindings.option) == .roll
     }
 
     /// Where a roll drag would have the picture without snapping, so the snapping doesn't eat small movements.
