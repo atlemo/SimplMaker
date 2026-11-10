@@ -183,4 +183,38 @@ import simd
             #expect(picture.width > 0 && picture.bgra.contains { $0 != 0 }, Comment(rawValue: name))
         }
     }
+
+    /// Two bodies that touch: looking into one, the far wall it sees is the face of the other. The cut face is drawn at the
+    /// depth of that wall, so without a bias it fought the neighbour's face and grey blocks showed through the hatching.
+    @Test func aBodyThatTouchesAnotherDoesNotShowThroughTheCutFace() async throws {
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "a", name: "A", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "60 mm", length: "20 mm", height: "30 mm"))),
+            // Smaller, so the two faces where they meet are triangulated differently and their depths differ in the last bits.
+            Feature(id: "b", name: "B", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "7.3 mm", v: "20 mm", width: "41.7 mm", length: "20 mm", height: "23.1 mm"))),
+        ]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let bounds = try #require(model.sceneBounds)
+        model.clickRay = (SIMD3(100, 0, 100), simd_normalize(SIMD3(-1, 0.3, -1)))
+        model.beginSection(.origin(.yz), title: "YZ plane")
+        model.setSectionOffset(Double(bounds.min.x) + 30)
+        for orthographic in [true, false] {
+            let (picture, renderer, view) = try await render(model, name: orthographic ? "touching" : "touching-perspective", orthographic: orthographic)
+            let clipX = model.sectionClip!.w / model.sectionClip!.x
+            let scale = CGFloat(picture.width) / view.bounds.width
+            // Anywhere on the cut of body A (the cut is solid there) a pixel is the pink fill or the dark hatch, never a lit grey face.
+            var shownThrough = 0, sampled = 0
+            for z in stride(from: bounds.min.z + 1, to: bounds.max.z - 1, by: 0.5) {
+                for y in stride(from: bounds.min.y + 3, to: bounds.min.y + 17, by: 0.5) {  // (not under the offset arrow, in the middle)
+                    let q = renderer.camera.project(SIMD3(clipX, y, z), viewSize: view.bounds.size)!
+                    let c = picture.color(Int(q.x * scale), Int(q.y * scale))
+                    sampled += 1
+                    if !(c.g < c.r - 8 || c.r < 90) { shownThrough += 1 }
+                }
+            }
+            #expect(sampled > 1000)
+            #expect(shownThrough == 0, "\(shownThrough) of \(sampled) cut-face pixels show the neighbouring body's face (orthographic: \(orthographic))")
+        }
+    }
 }

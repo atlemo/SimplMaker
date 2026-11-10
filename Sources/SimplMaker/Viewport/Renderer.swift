@@ -1829,8 +1829,12 @@ final class Renderer {
             drawFaces(pipeline, wireframe: !style.isShaded)
             if cutting {
                 // The cut faces, after every body's other faces, so only those nothing nearer hides are marked.
+                // Looking into a body that touches another, the far wall the cut face sits on is also the neighbour's
+                // face. Pulled a little toward the camera, the cut face wins that tie instead of fighting it pixel by pixel.
                 enc.setDepthStencilState(capState)
+                enc.setDepthBias(-8, slopeScale: 0, clamp: 0)
                 drawFaces(pipeline, wireframe: false, capsOnly: true)
+                enc.setDepthBias(0, slopeScale: 0, clamp: 0)
                 enc.setDepthStencilState(depthState)
             }
         }
