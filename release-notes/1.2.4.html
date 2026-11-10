@@ -1,4 +1,11 @@
 <h2>SimplMaker 1.2.4</h2>
+<p>The Parameters panel now behaves like the rest of the app, and Project Edge stopped being picky about what shape an edge has.</p>
 <ul>
+  <li><strong>Parameters take a click</strong>: the value fields are the same plain inputs as in the Inspector, so one click anywhere in the field is enough to start typing (it used to take two or three). The mm / deg / # button opens its menu on the first press as well. Right-click a parameter to rename it, move it to a folder or delete it.</li>
   <li><strong>Project Edge takes curved edges</strong>: it used to be straight edges, plus circles looking straight at the sketch. Now any edge will do: a circle seen at an angle (it lands as an ellipse), a spline, a helix. The edge comes in as fixed construction curves that follow the body when it changes, and you can snap, constrain and dimension to them like any other projected edge.</li>
+  <li><strong>Dimension and Distance know more shapes</strong>: an arc or circle plus a line measures from the center of the arc to the line (a slot end and a projected edge, say), and a projected edge that is really a straight line in curve clothing is measured like a line.</li>
+  <li><strong>Fillet and Chamfer by Shift-click</strong>: Shift-click an edge or face to add it to the selected Fillet or Chamfer, and Shift-click it again to take it out. No trip to the Inspector button.</li>
+  <li><strong>Circular patterns around a flat face</strong>: a flat face can be the axis (the line through the middle of its outline, square to it). For AI assistants, <strong>create_pattern</strong> accepts it too.</li>
+  <li><strong>Sketch shortcuts keep working</strong>: the single-key tool letters, Esc and Delete now work after you have clicked in the browser, the Parameters list or a panel, not only when the viewport has the keyboard. Text you are typing keeps its keys.</li>
+  <li>Dragging an extrude arrow keeps following the mouse even when a field or panel moves under the pointer.</li>
 </ul>
