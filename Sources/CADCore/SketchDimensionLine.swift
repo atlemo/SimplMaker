@@ -39,7 +39,7 @@ extension Sketch {
             return DimensionLine(p1: p1, p2: p2, normal: n, offset: d.offset ?? 0)
         }
         func direction(_ l: EntityID) -> SIMD2<Double>? {
-            guard case let (a, b)? = lineEnds(l), vlen(b - a) > 1e-12 else { return nil }
+            guard case let (a, b)? = chordEnds(l), vlen(b - a) > 1e-12 else { return nil }
             return (b - a) / vlen(b - a)
         }
         switch d.kind {
@@ -47,7 +47,7 @@ extension Sketch {
         case .horizontalDistance(let a, let b): return line(position(a), position(b), normal: SIMD2(0, 1))
         case .verticalDistance(let a, let b): return line(position(a), position(b), normal: SIMD2(1, 0))
         case .pointLineDistance(let p, let l):
-            guard let pp = position(p), case let (a, _)? = lineEnds(l), let u = direction(l) else { return nil }
+            guard let pp = position(p), case let (a, _)? = chordEnds(l), let u = direction(l) else { return nil }
             return line(pp, a + u * vdot(pp - a, u), normal: u)
         case .gap(let c, let o):
             guard let ends = gapEnds(c, o) else { return nil }

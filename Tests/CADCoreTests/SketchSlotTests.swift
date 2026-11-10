@@ -73,5 +73,9 @@ import Testing
             }
         }
         #expect(s.suggestDimension(for: [slot.centers[0], bez]) != nil)
+        // It is drawn too (a dimension line from the center straight to the edge), so the value can be seen and typed.
+        let drawn = s.dimensionLine(of: SketchDimension(.pointLineDistance(point: slot.centers[0], line: loop), "19"))
+        #expect(drawn != nil)
+        #expect(abs((drawn?.p1 ?? .zero).y - 0) < 1e-6 && abs((drawn?.p2 ?? .zero).y - 19) < 1e-6)
     }
 }

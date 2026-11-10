@@ -501,7 +501,9 @@ enum SketchOverlayBuilder {
         func position(_ id: EntityID) -> SIMD2<Double>? { lookup.map { $0.positions[id] } ?? s.position(id) }
         func curve(_ id: EntityID) -> SketchCurve? { lookup.map { $0.curves[id] } ?? s.curve(id) }
         func lineMid(_ l: EntityID) -> SIMD2<Double>? {
-            guard case .line(let a, let b)? = curve(l)?.geometry, let pa = position(a), let pb = position(b) else { return nil }
+            guard case .line(let a, let b)? = curve(l)?.geometry, let pa = position(a), let pb = position(b) else {
+                return s.chordEnds(l).map { ($0.0 + $0.1) / 2 }  // a straight projected Bézier stands in for a line
+            }
             return (pa + pb) / 2
         }
         switch k {

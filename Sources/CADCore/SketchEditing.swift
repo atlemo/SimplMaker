@@ -134,7 +134,7 @@ extension Sketch {
     }
 
     /// The ends of a line, or two points on the line of a straight projected Bézier (see `isStraightProjectedBezier`).
-    func chordEnds(_ id: EntityID) -> (SIMD2<Double>, SIMD2<Double>)? {
+    public func chordEnds(_ id: EntityID) -> (SIMD2<Double>, SIMD2<Double>)? {
         if let e = lineEnds(id) { return e }
         guard let (a, b) = straightLine(of: id), let pa = position(a), let pb = position(b) else { return nil }
         return (pa, pb)
