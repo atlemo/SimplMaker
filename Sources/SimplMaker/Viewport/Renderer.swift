@@ -132,6 +132,8 @@ struct SketchOverlay {
     /// A sketch axis picked to constrain against, drawn in the selection colour over the sketch's own axis.
     var axisSelected: [SegmentInstance] = []
     var inactive: [SegmentInstance] = []   // finished sketches: thin, pickable as paths and axes
+    /// The inactive curves are the backdrop of a sketch being edited: drawn at half strength, so the sketch itself stands out.
+    var inactiveFaded = false
     var preview: [SegmentInstance] = []
     var points: [SegmentInstance] = []     // zero-length segments drawn as squares
     var handle: [SegmentInstance] = []     // drag handle: shaft + tip (zero-length)
@@ -602,6 +604,7 @@ final class Renderer {
         var construction: MTLBuffer?, constructionCount = 0
         var axisSelected: MTLBuffer?, axisSelectedCount = 0
         var inactive: MTLBuffer?, inactiveCount = 0
+        var inactiveFaded = false
         var preview: MTLBuffer?, previewCount = 0
         var points: MTLBuffer?, pointCount = 0
         var handle: MTLBuffer?, handleCount = 0
@@ -924,7 +927,7 @@ final class Renderer {
         g.curves = makeBuffer(o.curves); g.curveCount = o.curves.count
         g.construction = makeBuffer(o.construction); g.constructionCount = o.construction.count
         g.axisSelected = makeBuffer(o.axisSelected); g.axisSelectedCount = o.axisSelected.count
-        g.inactive = makeBuffer(o.inactive); g.inactiveCount = o.inactive.count
+        g.inactive = makeBuffer(o.inactive); g.inactiveCount = o.inactive.count; g.inactiveFaded = o.inactiveFaded
         g.preview = makeBuffer(o.preview); g.previewCount = o.preview.count
         g.points = makeBuffer(o.points); g.pointCount = o.points.count
         g.handle = makeBuffer(o.handle); g.handleCount = o.handle.count
@@ -2045,11 +2048,12 @@ final class Renderer {
             enc.setDepthStencilState(depthState)
         }
         let curveColor = overlay.fullyConstrained ? p.sketchConstrained : p.sketch
+        let inactiveColor = overlay.inactiveFaded ? simd_mix(p.inactiveSketch, p.background, SIMD4(repeating: 0.5)) : p.inactiveSketch
         // With hidden edges on, the part of a sketch that lies inside or behind a body shows too, dashed and softened like the edges.
         if style.showsHiddenEdges {
             enc.setDepthStencilState(cuttingShaded ? hiddenCutState : hiddenDepthState)
             let seenThrough = style.isShaded ? p.face : p.background
-            for (buffer, count, color) in [(overlay.inactive, overlay.inactiveCount, p.inactiveSketch),
+            for (buffer, count, color) in [(overlay.inactive, overlay.inactiveCount, inactiveColor),
                                            (overlay.curves, overlay.curveCount, curveColor),
                                            (overlay.construction, overlay.constructionCount, p.construction)] {
                 let hidden = simd_mix(color, seenThrough, SIMD4(repeating: 0.3))
@@ -2059,7 +2063,7 @@ final class Renderer {
             enc.setDepthStencilState(depthState)
         }
         segments(overlay.inactive, overlay.inactiveCount,
-                 DrawParams(color: p.inactiveSketch, hoverColor: hover, selectColor: select,
+                 DrawParams(color: inactiveColor, hoverColor: hover, selectColor: select,
                             thickness: 1.6 * scale, depthBias: 0.0006, pickable: 1, selectedThickness: 3.6 * scale))
         segments(overlay.curves, overlay.curveCount,
                  DrawParams(color: curveColor, hoverColor: hover, selectColor: select,

@@ -379,7 +379,9 @@ enum SketchOverlayBuilder {
     }
 
     /// A finished sketch's curves, pickable (as paths, axes and rib lines) under its slot.
-    static func finished(_ r: SketchResult, slot: Int, parameters: ParameterValues, pickable: Bool = true, into o: inout SketchOverlay) {
+    /// `backdrop`: it is drawn behind a sketch being edited, so its construction lines are plain faded lines too.
+    static func finished(_ r: SketchResult, slot: Int, parameters: ParameterValues, pickable: Bool = true, backdrop: Bool = false,
+                         into o: inout SketchOverlay) {
         let s = r.solved
         for t in s.texts {
             for contour in t.contours(in: s, parameters: parameters) {
@@ -388,7 +390,7 @@ enum SketchOverlayBuilder {
         }
         for (i, c) in s.curves.enumerated() {
             let segs = segments(polyline(c, in: s), frame: r.frame, id: pickable ? PickID(sketchCurve: i, slot: slot).raw : 0)
-            if c.construction { o.construction += segs } else { o.inactive += segs }
+            if c.construction && !backdrop { o.construction += segs } else { o.inactive += segs }
         }
     }
 

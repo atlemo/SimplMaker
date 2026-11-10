@@ -1857,8 +1857,9 @@ final class DocumentModel {
             // Project Edge can click their curves, to bring them into this sketch.
             for b in backgroundSketches {
                 SketchOverlayBuilder.finished(b.sketch, slot: b.slot, parameters: parameterValues,
-                                              pickable: session.tool == .projectEdge && b.earlier, into: &o)
+                                              pickable: session.tool == .projectEdge && b.earlier, backdrop: true, into: &o)
             }
+            o.inactiveFaded = true
             SketchOverlayBuilder.editing(session, into: &o, showCentres: showShapeCentres)
             // The fill is from the last rebuild: while a gear's fields are changing it, it would show the old gear,
             // and while a text's words are changing, the old words.

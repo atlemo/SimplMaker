@@ -48,6 +48,7 @@ import Testing
         let shown = model.sketchOverlay()
         #expect(shown.inactive.count > 4, "the square's four sides and the circle: \(shown.inactive.count)")
         #expect(shown.inactive.allSatisfy { $0.id == 0 }, "they are a backdrop: a click goes through them")
+        #expect(shown.inactiveFaded, "and drawn at half strength")
         model.showOtherSketches = false
         #expect(model.sketchOverlay().inactive.isEmpty)
         #expect(model.sketchSession?.references.points.isEmpty == true)

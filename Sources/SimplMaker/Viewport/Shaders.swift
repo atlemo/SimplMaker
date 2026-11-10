@@ -1276,7 +1276,8 @@ enum Shaders {
             && !edgeSelected(in.id, sel, u.selectedCount)) discard_fragment();
         float4 c = p.color;
         if (p.pickable != 0) {
-            if (in.id == u.hovered) c = p.hoverColor;
+            // Id 0 is "nothing" (and what hovered holds when nothing is under the cursor): never a hover.
+            if (in.id != 0u && in.id == u.hovered) c = p.hoverColor;
             if (isSelected(in.id, sel, u.selectedCount) || edgeSelected(in.id, sel, u.selectedCount)) c = p.selectColor;
         }
         FragOut o;
