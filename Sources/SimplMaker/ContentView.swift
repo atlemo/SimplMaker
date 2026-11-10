@@ -2397,7 +2397,7 @@ struct SketchToolbar: View {
     private func tool(_ tool: SketchTool) -> GroupTool {
         GroupTool(id: tool.rawValue, title: tool.menuTitle, icon: tool.symbol, help: tool.help,
                   shortcut: tool.family[0] == tool ? tool.keyLabel : nil, badge: tool.isExperimental ? "Experimental" : nil,
-                  active: session.tool == tool) { model.setSketchTool(tool) }
+                  active: session.tool == tool, enabled: tool != .projectAgain || session.canProjectAgain) { model.setSketchTool(tool) }
     }
 
     private func transform(_ tool: SketchTransformTool) -> GroupTool {

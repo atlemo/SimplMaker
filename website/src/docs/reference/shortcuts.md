@@ -61,6 +61,8 @@ While you sketch, the letters pick sketch tools instead.
 | [[P]] | Point |
 | [[X]] | Text |
 | [[U]] | Project Edge |
+| [[Q]] | Intersect |
+| [[W]] | Project Again |
 | [[F]] | Round Corner |
 | [[H]] | Chamfer |
 | [[T]] | Trim |

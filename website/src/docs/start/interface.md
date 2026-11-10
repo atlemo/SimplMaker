@@ -50,7 +50,7 @@ Press **Sketch** and pick a plane or a face to enter sketch mode. The toolbar ch
 
 | Group | Tools |
 |---|---|
-| **Create** | Lines, Point, Rectangles, Circles, Arcs, Other Geometry (Ellipse, Polygons, Slots, Splines, Gear), Text, Patterns, References (Project Edge, Clean Up Projections, Canvas), Sketch Dimension |
+| **Create** | Lines, Point, Rectangles, Circles, Arcs, Other Geometry (Ellipse, Polygons, Slots, Splines, Gear), Text, Patterns, References (Project Edge, Intersect, Project Again, Clean Up Projections, Clean Up Stale Projections, Canvas), Sketch Dimension |
 | **Modify** | Round Corner, Chamfer, Trim, Extend, Offset |
 | **Transform** | Move, Scale |
 | **Constraints** | Constrain, Construction |

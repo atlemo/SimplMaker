@@ -187,6 +187,11 @@ SKHandle sk_boolean(SKHandle target, SKHandle tool, SKBooleanOp op);
 /// kept; the faces the cut makes are "<featureId>.split".
 int sk_split(SKHandle body, SKHandle toolBody, const char *toolFace, double ox, double oy, double oz, double nx, double ny,
              double nz, const char *featureId, SKHandle *out, int max);
+/// The cut a plane (through (ox, oy, oz), normal (nx, ny, nz)) makes through a body, as a body of edges only (no faces,
+/// no volume). Each edge is named after the face of the body it lies on ("#2", "#3"... when a face is cut in several
+/// places, in positional order); the edge helpers (sk_body_edge_ends, _circle, _sample) work on it. 0 when the plane
+/// misses the body or only touches it.
+SKHandle sk_body_section(SKHandle body, double ox, double oy, double oz, double nx, double ny, double nz, const char *featureId);
 /// Splits a body into the separate solids it is made of (bodies that were joined without touching). Writes at most
 /// `max` handles to `out`, biggest first, and returns how many: 1 when the body is a single piece, 0 on failure.
 int sk_split_parts(SKHandle body, const char *featureId, SKHandle *out, int max);

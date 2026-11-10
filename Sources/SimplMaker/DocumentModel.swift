@@ -1292,9 +1292,17 @@ final class DocumentModel {
         sceneRevision += 1
         overlayRevision += 1
         if fit { fitRevision += 1 }
-        if let session = sketchSession, let frame = r.sketches[session.featureID]?.frame {
-            session.frame = frame
-            session.followModel(r)
+        if let session = sketchSession {
+            // A sketch that failed to build (a projected edge is gone) still lies on its plane, and still finds out which of
+            // its projections are stale, for Project Again and Clean Up Stale Projections.
+            var frame = r.sketches[session.featureID]?.frame
+            if frame == nil, let f = document.features.first(where: { $0.id == session.featureID }), case .sketch(let sf) = f.kind {
+                frame = try? Regenerator.sketchFrame(sf, r)
+            }
+            if let frame {
+                session.frame = frame
+                session.followModel(r)
+            }
         }
         updateSketchReferences()
     }
@@ -1553,7 +1561,12 @@ final class DocumentModel {
             return
         }
         let frame: Frame
-        if let r = result?.sketches[id] { frame = r.frame } else {
+        if let r = result?.sketches[id] { frame = r.frame }
+        else if let result, !sf.sketch.projections.isEmpty, let f = try? Regenerator.sketchFrame(sf, result) {
+            // The sketch failed to build, perhaps because a projected edge is gone: it opens all the same, on its plane, so the
+            // projection can be given another edge (Project Again) or cleaned up.
+            frame = f
+        } else {
             switch sf.plane {
             case .xy: frame = .xy
             case .xz: frame = .xz
@@ -1567,6 +1580,10 @@ final class DocumentModel {
         isPickingSketchPlane = false
         pendingTool = nil
         sketchSession = SketchSession(featureID: id, frame: frame, sketch: sf.sketch, parameters: parameterValues)
+        sketchSession?.sectionsOf = { [weak self] body in
+            guard let self, let session = self.sketchSession, let b = self.result?.body(body) else { return [] }
+            return Regenerator.sectionSnaps(of: b, id: body, frame: session.frame)
+        }
         selection = []
         selectedFeature = id
         regenerate()
@@ -1739,6 +1756,7 @@ final class DocumentModel {
         var m = m
         // The curve of another sketch under the cursor counts as an edge too (Project Edge brings either in).
         m.edge = m.pick.flatMap(edgeRef(of:)) ?? m.pick.flatMap(curve(of:)).map { EdgeRef(body: $0.sketch, edge: $0.curve) }
+        if let pick = m.pick, pick.isFace || pick.isEdge, pick.body >= 0, pick.body < meshes.count { m.body = meshes[pick.body].id }  // Intersect
         let r = session.handle(m)
         if m.phase != .moved || !session.clicks.isEmpty || session.anglePicks != nil || (session.tool == .gear && session.gearActive == nil) { overlayRevision += 1 }  // the ghost gear and a placing angle follow the cursor
         commitSketch(r.commit)
@@ -1857,7 +1875,7 @@ final class DocumentModel {
             // Project Edge can click their curves, to bring them into this sketch.
             for b in backgroundSketches {
                 SketchOverlayBuilder.finished(b.sketch, slot: b.slot, parameters: parameterValues,
-                                              pickable: session.tool == .projectEdge && b.earlier, backdrop: true, into: &o)
+                                              pickable: (session.tool == .projectEdge || session.tool == .projectAgain) && b.earlier, backdrop: true, into: &o)
             }
             o.inactiveFaded = true
             SketchOverlayBuilder.editing(session, into: &o, showCentres: showShapeCentres)

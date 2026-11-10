@@ -34,6 +34,7 @@
 #include <GCPnts_AbscissaPoint.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepAlgoAPI_Section.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
@@ -4060,6 +4061,76 @@ int sk_split(SKHandle body, SKHandle toolBody, const char *toolFace, double ox, 
     out[written++] = store(makeBody(copy.Shape(), mine, feat));
   }
   return written;
+  SK_CATCH(0)
+}
+
+/// The cut a plane makes through a body: an edge-only body whose edges are the section curves. Each is named after the
+/// face of the body it lies on (a face cut in several places gets "#2", "#3"... in positional order), so a rebuild
+/// finds the same piece again.
+SKHandle sk_body_section(SKHandle body, double ox, double oy, double oz, double nx, double ny, double nz, const char *featureId) {
+  SK_TRY
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  const std::string feat = featureOrDefault(featureId, "section");
+  const gp_Dir dir = (nx * nx + ny * ny + nz * nz) > 1e-12 ? gp_Dir(nx, ny, nz) : gp_Dir(0, 0, 1);
+  Bnd_Box box;
+  BRepBndLib::Add(b->shape, box);
+  if (box.IsVoid()) {
+    setError("the body is empty");
+    return 0;
+  }
+  double x0, y0, z0, x1, y1, z1;
+  box.Get(x0, y0, z0, x1, y1, z1);
+  const gp_Pnt middle((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+  const double reach = gp_Pnt(x0, y0, z0).Distance(gp_Pnt(x1, y1, z1)) + 1.0;
+  const gp_Pln plane(gp_Pnt(ox, oy, oz), dir);
+  const gp_Vec toMiddle(plane.Location(), middle);
+  const gp_Pnt centre = middle.Translated(-gp_Vec(dir) * toMiddle.Dot(gp_Vec(dir)));
+  const TopoDS_Face tool = BRepBuilderAPI_MakeFace(gp_Pln(centre, dir), -reach, reach, -reach, reach).Face();
+
+  BRepAlgoAPI_Section sec(b->shape, tool, false);
+  sec.Approximation(false);
+  sec.ComputePCurveOn1(false);
+  sec.Build();
+  if (!sec.IsDone() || sec.HasErrors()) {
+    setError("could not cut the body with the plane");
+    return 0;
+  }
+
+  // The edges the section made, named after the face each came from.
+  ShapeIndexedMap found;
+  TopExp::MapShapes(sec.Shape(), TopAbs_EDGE, found);
+  std::vector<std::string> names(found.Extent(), "");
+  for (int i = 1; i <= b->faces.Extent(); ++i) {
+    for (const TopoDS_Shape &g : sec.Generated(b->faces(i))) {
+      const int idx = g.ShapeType() == TopAbs_EDGE ? found.FindIndex(g) : 0;
+      if (idx > 0 && names[idx - 1].empty()) names[idx - 1] = b->faceNames[i - 1];
+    }
+  }
+  for (auto &n : names)
+    if (n.empty()) n = feat + ".edge";
+  if (names.empty()) {
+    setError("the plane doesn't cut the body");
+    return 0;
+  }
+  uniquify(found, names);
+
+  Body out;
+  BRep_Builder builder;
+  TopoDS_Compound compound;
+  builder.MakeCompound(compound);
+  for (int i = 1; i <= found.Extent(); ++i) builder.Add(compound, found(i));
+  out.shape = compound;
+  TopExp::MapShapes(compound, TopAbs_EDGE, out.edges);
+  out.edgeNames.assign(out.edges.Extent(), "");
+  for (int i = 1; i <= found.Extent(); ++i) {
+    const int idx = out.edges.FindIndex(found(i));
+    if (idx > 0) out.edgeNames[idx - 1] = names[i - 1];
+  }
+  out.edgeHidden.assign(out.edges.Extent(), false);
+  for (int i = 0; i < (int)out.edgeNames.size(); ++i) out.edgeIndex[out.edgeNames[i]] = i;
+  return store(std::move(out));
   SK_CATCH(0)
 }
 

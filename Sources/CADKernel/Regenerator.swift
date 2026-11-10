@@ -875,17 +875,60 @@ public enum Regenerator {
     /// Puts a sketch's projected model edges (and projected curves of other sketches) where they are now, so geometry tied
     /// to them follows.
     public static func followProjections(_ sketch: inout Sketch, frame: Frame, _ r: RegenResult) throws {
-        for p in sketch.projections { try followProjection(p, in: &sketch, frame: frame, r) }
+        let cuts = SectionCache()
+        for p in sketch.projections { try followProjection(p, in: &sketch, frame: frame, r, cuts: cuts) }
     }
 
     /// The projections that can't follow the model any more: their edge is gone, or no longer the same kind of edge.
     public static func staleProjections(_ sketch: Sketch, frame: Frame, _ r: RegenResult) -> Set<EntityID> {
         var scratch = sketch
-        return Set(sketch.projections.filter { (try? followProjection($0, in: &scratch, frame: frame, r)) == nil }.map(\.id))
+        let cuts = SectionCache()
+        return Set(sketch.projections.filter { (try? followProjection($0, in: &scratch, frame: frame, r, cuts: cuts)) == nil }.map(\.id))
+    }
+
+    /// The edge names of a projection made by Intersect start with this; the rest is the name of the section curve (see
+    /// `KBody.section`), which is the name of the face of the body it lies on.
+    public static let sectionPrefix = "section:"
+
+    /// The cut of bodies by one plane, made once per rebuild however many curves of it the sketch follows.
+    final class SectionCache {
+        private var cuts: [String: KBody?] = [:]
+        func cut(_ id: String, of body: KBody, frame: Frame) -> KBody? {
+            if let hit = cuts[id] { return hit }
+            let made = try? body.section(planeThrough: frame.origin, normal: frame.normal)
+            cuts[id] = .some(made)
+            return made
+        }
+    }
+
+    /// What cutting a body with a sketch's plane gives, as projections can bring it in: one snap for every curve of the
+    /// cut that has some length in the sketch (a straight one, a circle or arc, or any other curve as Bézier pieces), named
+    /// `sectionPrefix` + the section curve's name. Empty when the plane misses the body.
+    public static func sectionSnaps(of body: KBody, id: String, frame: Frame) -> [ModelSnap] {
+        guard let cut = try? body.section(planeThrough: frame.origin, normal: frame.normal) else { return [] }
+        return cut.edgeNames.compactMap { name in
+            let inner = EdgeRef(body: id, edge: name)
+            guard var snap = sectionSnap(cut, inner, frame: frame) else { return nil }
+            snap.edge = EdgeRef(body: id, edge: sectionPrefix + name)
+            return snap
+        }
+    }
+
+    /// One curve of a section as a snap (see `sectionSnaps`): nil for one that lands as a point.
+    static func sectionSnap(_ cut: KBody, _ edge: EdgeRef, frame: Frame) -> ModelSnap? {
+        if let e = try? cut.edgeEnds(edge.edge) {
+            func local(_ w: SIMD3<Double>) -> SIMD2<Double> { SIMD2(simd_dot(w - frame.origin, frame.xAxis), simd_dot(w - frame.origin, frame.yAxis)) }
+            let a = local(e.start), b = local(e.end)
+            return simd_distance(a, b) > 1e-6 ? ModelSnap(edge: edge, start: a, end: b) : nil
+        }
+        if let round = roundEdgeSnap(cut, edge: edge, frame: frame) { return round }
+        if let chain = curveChain(cut, edge: edge, frame: frame) { return ModelSnap(edge: edge, start: chain[0], end: chain[chain.count - 1], chain: chain) }
+        return nil
     }
 
     /// Puts one projection where its edge (or sketch curve) is now; throws when that edge can't be found.
-    static func followProjection(_ p: SketchProjection, in sketch: inout Sketch, frame: Frame, _ r: RegenResult) throws {
+    static func followProjection(_ p: SketchProjection, in sketch: inout Sketch, frame: Frame, _ r: RegenResult,
+                                 cuts: SectionCache = SectionCache()) throws {
         func place(_ id: EntityID, _ uv: SIMD2<Double>) {
             guard let i = sketch.points.firstIndex(where: { $0.id == id }) else { return }
             sketch.points[i].x = uv.x; sketch.points[i].y = uv.y; sketch.points[i].fixed = true
@@ -914,19 +957,28 @@ public enum Regenerator {
             }
             return
         }
-        guard let body = r.body(p.edge.body) else {
+        guard var body = r.body(p.edge.body) else {
             throw KernelError(message: "the body with the projected edge \(p.edge.edge) is missing")
         }
+        var edge = p.edge
+        if edge.edge.hasPrefix(sectionPrefix) {
+            // A curve where the sketch plane cuts the body (Intersect): the same piece of the cut, found by the face it lies on.
+            guard let cut = cuts.cut(edge.body, of: body, frame: frame) else {
+                throw KernelError(message: "the sketch plane no longer cuts the body \(edge.body)")
+            }
+            body = cut
+            edge = EdgeRef(body: edge.body, edge: String(edge.edge.dropFirst(sectionPrefix.count)))
+        }
         if let ids = p.chainPoints {
-            guard let chain = curveChain(body, edge: p.edge, frame: frame, pieces: (ids.count - 1) / 3), chain.count == ids.count else {
-                throw KernelError(message: "projected edge not found or no longer curved the same way: \(p.edge.edge)")
+            guard let chain = curveChain(body, edge: edge, frame: frame, pieces: (ids.count - 1) / 3), chain.count == ids.count else {
+                throw KernelError(message: "projected edge not found or no longer curved the same way: \(edge.edge)")
             }
             for (id, q) in zip(ids, chain) { place(id, q) }
             return
         }
         if let center = p.center {
-            guard let snap = roundEdgeSnap(body, edge: p.edge, frame: frame), let mid = snap.center else {
-                throw KernelError(message: "projected edge not found or no longer circular: \(p.edge.edge)")
+            guard let snap = roundEdgeSnap(body, edge: edge, frame: frame), let mid = snap.center else {
+                throw KernelError(message: "projected edge not found or no longer circular: \(edge.edge)")
             }
             place(center, mid); place(p.start, snap.start); place(p.end, snap.end)
             if let i = sketch.curves.firstIndex(where: { $0.id == p.line }), case .circle(let c, _) = sketch.curves[i].geometry {
@@ -934,8 +986,8 @@ public enum Regenerator {
             }
             return
         }
-        guard let ends = try? body.edgeEnds(p.edge.edge) else {
-            throw KernelError(message: "projected edge not found: \(p.edge.edge)")
+        guard let ends = try? body.edgeEnds(edge.edge) else {
+            throw KernelError(message: "projected edge not found: \(edge.edge)")
         }
         func local(_ w: SIMD3<Double>) -> SIMD2<Double> { SIMD2(simd_dot(w - frame.origin, frame.xAxis), simd_dot(w - frame.origin, frame.yAxis)) }
         place(p.start, local(ends.start)); place(p.end, local(ends.end))

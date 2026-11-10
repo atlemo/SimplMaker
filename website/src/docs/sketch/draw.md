@@ -22,6 +22,8 @@ The **Create** group holds the shapes. The key in brackets picks the tool while 
 | **Point** | [[P]] | Click to place a point. |
 | **Text** | [[X]] | See [Text](doc:sketch/text). |
 | **Project Edge** | [[U]] | Click body edges to bring them into the sketch. See [Project Edge](doc:sketch/project-edge). |
+| **Intersect** | [[Q]] | Click a body to bring in the curves where the sketch plane cuts it. See [Intersect](doc:sketch/project-edge). |
+| **Project Again** | [[W]] | Click a projected curve, then a new edge for it to follow. See [Project Again](doc:sketch/project-edge). |
 
 Some tools share a button. The small arrow beside it picks the way to draw, and the button then keeps using it. In the list under **Create**, rest the pointer on a name such as **Rectangles** and its ways to draw open beside it. The pin beside a name, or beside a single way, puts that button on the toolbar.
 

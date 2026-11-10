@@ -400,6 +400,13 @@ public final class KBody: @unchecked Sendable {
         }
     }
 
+    /// The cut a plane makes through this body, as a body of edges only: its `edgeNames` are the section curves, each
+    /// named after the face of this body it lies on ("#2", "#3"... where a face is cut in several places). The edge
+    /// helpers (`edgeEnds`, `edgeCircle`, `edgeSamples`) work on it. Throws when the plane misses the body.
+    public func section(planeThrough origin: SIMD3<Double>, normal: SIMD3<Double>, featureID: String = "section") throws -> KBody {
+        try KBody.wrap(sk_body_section(handle, origin.x, origin.y, origin.z, normal.x, normal.y, normal.z, featureID), "section")
+    }
+
     /// The pieces the face `face` of `tool` cuts this body into, the face as it is (curved faces don't run on).
     public func split(byFace face: String, of tool: KBody, featureID: String) throws -> [KBody] {
         try splitPieces("split") { out, max in sk_split(handle, tool.handle, face, 0, 0, 0, 0, 0, 1, featureID, out, max) }

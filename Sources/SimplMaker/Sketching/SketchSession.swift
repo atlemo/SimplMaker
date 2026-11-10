@@ -55,7 +55,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     case splineControl = "Control Point Spline"
     case point = "Point", text = "Text", fillet = "Round Corner", chamfer = "Chamfer", trim = "Trim", extend = "Extend", dimension = "Dimension"
     case distance = "Distance"
-    case projectEdge = "Project Edge"
+    case projectEdge = "Project Edge", intersect = "Intersect", projectAgain = "Project Again"
 
     var id: String { rawValue }
 
@@ -77,7 +77,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     static let otherGeometry: [SketchTool] = [.ellipse, .polygon, .circumscribedPolygon, .edgePolygon, .triangle, .slot, .overallSlot, .slotCenterPoint,
                                              .arcSlot3Point, .arcSlotCenter, .bezier, .splineControl, .gear]
     static let texts: [SketchTool] = [.text]
-    static let references: [SketchTool] = [.projectEdge]
+    static let references: [SketchTool] = [.projectEdge, .intersect, .projectAgain]
     /// Everything that draws something new.
     static let draw: [SketchTool] = lines + points + rectangles + circles + arcs + otherGeometry + texts + references
     static let modify: [SketchTool] = [.fillet, .chamfer, .trim, .extend]
@@ -111,7 +111,7 @@ enum SketchTool: String, CaseIterable, Identifiable {
     /// Tools whose clicks place points (and so snap to shape centers).
     var placesPoints: Bool {
         switch self {
-        case .select, .fillet, .chamfer, .trim, .extend, .dimension, .distance, .projectEdge, .circle2Tangent, .circle3Tangent: return false
+        case .select, .fillet, .chamfer, .trim, .extend, .dimension, .distance, .projectEdge, .intersect, .projectAgain, .circle2Tangent, .circle3Tangent: return false
         default: return true
         }
     }
@@ -222,6 +222,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .point: return "dot"
         case .text: return "type"
         case .projectEdge: return "link"
+        case .intersect: return "blend"
+        case .projectAgain: return "refresh-cw"
         case .fillet: return "corner-round"
         case .chamfer: return "corner-chamfer"
         case .trim: return "scissors"
@@ -251,6 +253,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .point: return "p"
         case .text: return "x"
         case .projectEdge: return "u"
+        case .intersect: return "q"
+        case .projectAgain: return "w"
         case .fillet: return "f"
         case .chamfer: return "h"
         case .trim: return "t"
@@ -308,6 +312,8 @@ enum SketchTool: String, CaseIterable, Identifiable {
         case .extend: return "Click near the end of a line or arc to extend it to the next curve"
         case .dimension: return "Click a line (then click again to place its length), a circle or arc, or two items for a distance or angle · or click any grey size"
         case .projectEdge: return "Click body edges, straight or curved, to bring them into the sketch · they follow the body, and their points can be constrained and dimensioned · Esc ends"
+        case .intersect: return "Click a body to bring in the curves where the sketch plane cuts it · they follow the body, like projected edges · Esc ends"
+        case .projectAgain: return "Click a projected curve (or select one first), then the new edge it should follow: a body edge or a curve of another sketch, of the same kind · its points and what is tied to them stay · Esc ends"
         case .distance: return "Click two items (points, lines, circles or arcs), then type the distance between them · a circle is measured from its edge, its center point from the middle"
         }
     }
@@ -392,6 +398,8 @@ struct SketchMouse {
     var snapping = true
     /// The body edge under the cursor (set from `pick` by the document), for Project Edge.
     var edge: EdgeRef?
+    /// The body under the cursor (set from `pick` by the document), for Intersect.
+    var body: String?
 }
 
 /// Model geometry the cursor can snap to while sketching: body edges and corners that lie in the
@@ -438,6 +446,7 @@ final class SketchSession {
         axisSelection = []
         if t.family.count > 1 { lastInFamily[t.family[0]] = t }
         resetToolState()
+        if t == .projectAgain { beginProjectAgain() } else { reattaching = nil }
     }
     /// The way of drawing each kind of shape that its toolbar button picks: the one used last.
     private var lastInFamily: [SketchTool: SketchTool] = [:]
@@ -986,6 +995,80 @@ final class SketchSession {
         return (true, finish("Project Edge"))
     }
 
+    /// Where the cut of a body by the sketch plane comes from: the cut curves of a body (by its id) as projections can bring
+    /// them in. The document sets it; it works on the model as it is now.
+    @ObservationIgnored var sectionsOf: (String) -> [ModelSnap] = { _ in [] }
+
+    /// Intersect: a click on a body brings in every curve where the sketch plane cuts it, as projections that follow the
+    /// body (each is found again on a rebuild by the face it lies on). The tool stays on for more bodies; Esc ends it.
+    private func intersectClick(_ body: String?) -> (handled: Bool, commit: String?) {
+        guard let body else {
+            message = "Click a body to cut it with the sketch plane"
+            return (true, nil)
+        }
+        let cut = sectionsOf(body)
+        guard !cut.isEmpty else {
+            message = "The sketch plane doesn't cut that body"
+            return (true, nil)
+        }
+        let fresh = cut.filter { c in !sketch.projections.contains { $0.edge == c.edge } }
+        guard !fresh.isEmpty else {
+            message = "Where the plane cuts that body is already in the sketch"
+            return (true, nil)
+        }
+        for c in fresh { sketch.project(c) }
+        message = fresh.count == 1 ? "Brought in 1 curve" : "Brought in \(fresh.count) curves"
+        return (true, finish("Intersect"))
+    }
+
+    // MARK: Project Again
+
+    /// The projection Project Again is waiting to give a new edge.
+    private(set) var reattaching: EntityID?
+
+    /// Picks the projection to move: the one the selection is in, else the only stale one.
+    private func beginProjectAgain() {
+        let owners = Set(selection.compactMap { sketch.projection(owning: $0)?.id })
+        if owners.count == 1 { chooseReattaching(owners.first!) }
+        else if owners.isEmpty, staleProjections.count == 1 { chooseReattaching(staleProjections.first!) }
+        else { reattaching = nil; message = owners.count > 1 ? "Select one projected curve at a time" : "Click a projected curve to give a new edge" }
+    }
+
+    private func chooseReattaching(_ id: EntityID) {
+        guard let p = sketch.projections.first(where: { $0.id == id }) else { return }
+        reattaching = id
+        selection = p.curveIDs
+        message = "Now click the new edge: \(p.kind.title)" + (staleProjections.contains(id) ? " (the old one is gone)" : "")
+    }
+
+    /// Project Again: the first click names the projection (a click on its curve or points), the next one the new edge
+    /// (a body edge or a curve of another sketch); the projection keeps its points and curves and follows that edge.
+    private func projectAgainClick(_ m: SketchMouse) -> (handled: Bool, commit: String?) {
+        if let id = reattaching, let edge = m.edge {
+            guard sketch.projections.contains(where: { $0.id == id }) else { reattaching = nil; return (true, nil) }
+            guard let model = references.straightEdges[edge] ?? references.roundEdges[edge] ?? references.curvedEdges[edge] else {
+                message = "That edge can't be projected: it is a point or a line seen end on"
+                return (true, nil)
+            }
+            do {
+                try sketch.reattachProjection(id, to: model)
+            } catch {
+                message = "\(error)"
+                return (true, nil)
+            }
+            reattaching = nil
+            staleProjections.remove(id)
+            message = "The projection follows that edge now"
+            return (true, finish("Project Again"))
+        }
+        if let h = hover, let p = sketch.projection(owning: h) {
+            chooseReattaching(p.id)
+            return (true, nil)
+        }
+        message = reattaching == nil ? "Click a projected curve to give a new edge" : "Click the new edge: a body edge or a curve of another sketch"
+        return (true, nil)
+    }
+
     private func mouseDown(_ m: SketchMouse) -> (handled: Bool, commit: String?) {
         message = nil
         if patternSetup != nil { return (patternClick(), nil) }
@@ -993,6 +1076,8 @@ final class SketchSession {
         if offsetSetup != nil { return (hover != nil, nil) }  // the arrow and the field set it; clicks on curves are ignored
         switch tool {
         case .projectEdge: return projectEdgeClick(m.edge)
+        case .intersect: return intersectClick(m.body)
+        case .projectAgain: return projectAgainClick(m)
         case .circle2Tangent, .circle3Tangent: return (true, tangentClick(m))
         case .select:
             if let h = hover, let gid = sketch.gear(ofGenerated: h) {  // a gear: change it with the Gear tool's fields
@@ -1364,7 +1449,7 @@ final class SketchSession {
             pendingText = s
             beginTextDraft(words: "", height: newTextHeight)
             return nil
-        case .select, .dimension, .distance, .fillet, .chamfer, .trim, .extend, .bezier, .projectEdge:
+        case .select, .dimension, .distance, .fillet, .chamfer, .trim, .extend, .bezier, .projectEdge, .intersect, .projectAgain:
             clicks = []
             return nil
         }
@@ -2877,6 +2962,8 @@ final class SketchSession {
     private(set) var staleProjections: Set<EntityID> = []
 
     var canCleanUpProjections: Bool { !sketch.projections.isEmpty }
+    /// Project Again needs a projection to give a new edge.
+    var canProjectAgain: Bool { !sketch.projections.isEmpty }
     var canCleanUpStaleProjections: Bool { !staleProjections.isEmpty }
 
     /// Clean Up Projections: takes away the projected edges that nothing in the sketch uses.
