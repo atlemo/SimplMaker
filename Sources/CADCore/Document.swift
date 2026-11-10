@@ -277,10 +277,15 @@ public struct LoftFeature: Codable, Hashable, Sendable {
     public var sections: [LoftSection]
     /// Straight sides between sections instead of smooth ones.
     public var ruled: Bool
+    /// A centerline for the loft to follow, drawn in a sketch that crosses the profiles: an open chain of curves that runs from
+    /// the first profile to the last. The shape then bends along it instead of taking the shortest way between the profiles
+    /// (and `ruled` is not used: a loft along a path is always smooth). Nil = a plain loft.
+    public var path: CurveRef?
     public var operation: BodyOperation
     public var target: FeatureID?
-    public init(sections: [LoftSection], ruled: Bool = false, operation: BodyOperation = .newBody, target: FeatureID? = nil) {
-        self.sections = sections; self.ruled = ruled; self.operation = operation; self.target = target
+    public init(sections: [LoftSection], ruled: Bool = false, path: CurveRef? = nil, operation: BodyOperation = .newBody,
+                target: FeatureID? = nil) {
+        self.sections = sections; self.ruled = ruled; self.path = path; self.operation = operation; self.target = target
     }
 }
 
@@ -879,7 +884,7 @@ public struct Feature: Codable, Hashable, Sendable, Identifiable {
         case .extrude(let e): return e.face == nil ? [e.sketch] : []
         case .revolve(let r): return [r.sketch]
         case .sweep(let s): return [s.sketch, s.path.sketch]
-        case .loft(let l): return l.sections.map(\.sketch)
+        case .loft(let l): return l.sections.map(\.sketch) + (l.path.map { [$0.sketch] } ?? [])
         case .twistSweep(let t): return [t.sketch]
         case .rib(let r): return [r.path.sketch]
         case .pipe(let p): return [p.path.sketch]

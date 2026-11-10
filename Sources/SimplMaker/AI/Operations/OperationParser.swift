@@ -224,7 +224,11 @@ enum AIOperationParser {
                 tolerance: arguments["tolerance"]?.number ?? 0.05, id: try a.string("id") ?? "sec")
 
         case "create_loft":
-            try a.rejectUnknown(["document_id", "sections", "stations", "axis", "ruled", "operation", "target", "name", "id", "expected_revision"], in: tool)
+            try a.rejectUnknown(["document_id", "sections", "stations", "axis", "path_sketch", "path", "ruled", "operation", "target", "name", "id", "expected_revision"], in: tool)
+            let loftPathSketch = try a.string("path_sketch")
+            let loftPath = arguments["path"] == nil ? [] : try ids(a, "path").map {
+                $0.contains(":") || loftPathSketch == nil ? $0 : AIEntityRef.curve(sketch: loftPathSketch!, id: $0).string
+            }
             if let list = try a.array("stations") {
                 guard try a.array("sections") == nil else { throw AIError(.invalidArguments, "Send either sections (sketches you made) or stations (outlines given here), not both.") }
                 let stations: [SectionStation] = try list.enumerated().map { index, item in
@@ -246,7 +250,7 @@ enum AIOperationParser {
                     return SectionStation(offset: try s.requiredQuantity("offset", kind: .length, hint: "Where the station is along the axis, mm."), loops: loops)
                 }
                 return CreateLoftOperation(sections: [], stations: stations, axis: try a.requiredString("axis", hint: "\"x\", \"y\" or \"z\": the stations lie in planes square to it, in the sketch coordinates of the \"yz\", \"xz\" or \"xy\" plane."),
-                                           ruled: try a.bool("ruled") ?? false, operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody),
+                                           path: loftPath, ruled: try a.bool("ruled") ?? false, operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody),
                                            target: try a.string("target"), name: try a.string("name"), id: try a.string("id"))
             }
             let sections: [LoftSectionRequest] = try (a.array("sections") ?? []).enumerated().map { index, item in
@@ -260,7 +264,7 @@ enum AIOperationParser {
                 }
                 return LoftSectionRequest(sketchID: try sectionArgs.requiredString("sketch_id"), profile: selector)
             }
-            return CreateLoftOperation(sections: sections, ruled: try a.bool("ruled") ?? false,
+            return CreateLoftOperation(sections: sections, path: loftPath, ruled: try a.bool("ruled") ?? false,
                                        operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody), target: try a.string("target"),
                                        name: try a.string("name"), id: try a.string("id"))
 

@@ -30,6 +30,7 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAdaptor_CompCurve.hxx>
+#include <functional>
 #include <GCPnts_AbscissaPoint.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -2434,28 +2435,238 @@ std::string edgeTagAt(const Profile &p, const TopLoc_Location &at, const TopoDS_
   return "?";
 }
 
-/// Lofts through the outer boundaries of `faces` (one per section, in order), cutting out the holes they all share. Side faces
-/// are named after the edges of `tagProfile`, which `faces[0]` is a copy of moved by `tagAt`.
-bool loftFaces(const std::vector<TopoDS_Face> &faces, const Profile &tagProfile, const TopLoc_Location &tagAt, bool ruled,
-               const std::string &feat, TopoDS_Shape &outShape, std::vector<Named> &outNames, bool sameWires = false) {
-  BRepOffsetAPI_ThruSections loft(true, ruled);
-  // Sections that are exact copies of one wire (a twist sweep) already match edge for edge from the same start. The loft's own
-  // search for how the corners of one section map to the next's guesses wrong once the sections have turned far from each other,
-  // and then fails or twists the solid inside out; with the check off the copies are used as they are.
-  if (sameWires) loft.CheckCompatibility(false);
-  std::vector<TopoDS_Wire> wires;
-  for (const TopoDS_Face &f : faces) {
-    wires.push_back(BRepTools::OuterWire(f));
-    loft.AddWire(wires.back());
+/// The centerline a loft follows: the part of the path between the first and the last section, and the direction square to the
+/// path's plane, which keeps the sections from rolling about the path as they go.
+struct Spine {
+  TopoDS_Wire wire;
+  gp_Dir normal;
+  bool reversed = false;  // the wire runs from the last section to the first
+  /// How the shape is carried along the path. Where the path meets every section at a right angle the shape stays square to
+  /// the path all the way, turning with it (a bent duct). Otherwise the sections are parallel and the shape stays parallel to
+  /// them, only moving sideways with the path: OCCT's turning sweep through sections that stand at a slant to the path gets
+  /// thinner the more they slant and then collapses to nothing, without reporting an error.
+  bool turns = true;
+  gp_Ax2 fixed;  // the sections' own axes, for the sweep that does not turn
+};
+
+/// Where the planar face `f` meets the path: the parameter on `curve` where it crosses the face's plane, the crossing nearest to
+/// the face's middle if there are several. A path that stops short of the plane gives its end nearest to the face.
+double spineParameter(const BRepAdaptor_CompCurve &curve, const TopoDS_Face &f) {
+  BRepAdaptor_Surface surf(f);
+  GProp_GProps props;
+  BRepGProp::SurfaceProperties(f, props);
+  const gp_Pnt middle = props.CentreOfMass();
+  const double t0 = curve.FirstParameter(), t1 = curve.LastParameter();
+  double best = middle.Distance(curve.Value(t0)) <= middle.Distance(curve.Value(t1)) ? t0 : t1;
+  if (surf.GetType() != GeomAbs_Plane) return best;
+  const gp_Pln plane = surf.Plane();
+  const gp_Dir n = plane.Axis().Direction();
+  auto height = [&](double t) { return gp_Vec(plane.Location(), curve.Value(t)).Dot(gp_Vec(n)); };
+  const int steps = 512;
+  double bestD = -1, prevT = t0, prevH = height(t0);
+  for (int i = 1; i <= steps; ++i) {
+    const double t = t0 + (t1 - t0) * i / steps, h = height(t);
+    if ((prevH <= 0) != (h <= 0) || std::fabs(prevH) < 1e-9 || (i == steps && std::fabs(h) < 1e-9)) {
+      double a = prevT, b = t, ha = prevH;
+      if (std::fabs(prevH) < 1e-9) b = a;
+      else if (std::fabs(h) < 1e-9) a = b;
+      for (int k = 0; k < 60 && b - a > 1e-12; ++k) {
+        const double m = 0.5 * (a + b), hm = height(m);
+        if ((ha <= 0) == (hm <= 0)) a = m, ha = hm;
+        else b = m;
+      }
+      const double root = 0.5 * (a + b), d = middle.Distance(curve.Value(root));
+      if (bestD < 0 || d < bestD) bestD = d, best = root;
+    }
+    prevT = t, prevH = h;
   }
-  loft.Build();
-  if (!loft.IsDone()) {
-    setError("loft failed (are the profiles far enough apart, and not crossing?)");
+  return best;
+}
+
+/// The stretch of `path` from the plane of the first face to the plane of the last, as the spine of a loft.
+bool spineBetween(const Path &path, const std::vector<TopoDS_Face> &faces, Spine &out) {
+  const TopoDS_Face &first = faces.front(), &last = faces.back();
+  if (path.wire.Closed()) {
+    setError("a loft's path has to be an open curve that runs from the first profile to the last");
     return false;
   }
-  std::vector<Named> names{{loft.FirstShape(), feat + ".start"}, {loft.LastShape(), feat + ".end"}};
+  BRepAdaptor_CompCurve curve(path.wire);
+  double a = spineParameter(curve, first), b = spineParameter(curve, last);
+  out.normal = path.frame.Direction();
+  out.reversed = a > b;
+  if (out.reversed) std::swap(a, b);
+  const char *reach = "the path has to run from the first profile to the last (draw it so that it reaches both profiles' planes)";
+  if (b - a < 1e-7 || curve.Value(a).Distance(curve.Value(b)) < 1e-6) {
+    setError(reach);
+    return false;
+  }
+  // A path drawn by hand may stop a hair short of a profile's plane; more than that and it is not this loft's path.
+  GProp_GProps length;
+  BRepGProp::LinearProperties(path.wire, length);
+  const double slack = std::max(0.02 * length.Mass(), 1e-6);
+  auto gap = [&](const TopoDS_Face &f, double t) {
+    BRepAdaptor_Surface surf(f);
+    return surf.GetType() == GeomAbs_Plane ? surf.Plane().Distance(curve.Value(t)) : 0.0;
+  };
+  if (gap(first, out.reversed ? b : a) > slack || gap(last, out.reversed ? a : b) > slack) {
+    setError(reach);
+    return false;
+  }
+  bool square = true, parallel = true;
+  gp_Dir firstNormal;
+  for (size_t k = 0; k < faces.size(); ++k) {
+    BRepAdaptor_Surface surf(faces[k]);
+    if (surf.GetType() != GeomAbs_Plane) continue;
+    const gp_Ax3 axes = surf.Plane().Position();
+    const gp_Dir n = axes.Direction();
+    if (k == 0) firstNormal = n, out.fixed = gp_Ax2(axes.Location(), n, axes.XDirection());
+    else if (!n.IsParallel(firstNormal, 1e-6)) parallel = false;
+    gp_Pnt at;
+    gp_Vec tangent;
+    curve.D1(spineParameter(curve, faces[k]), at, tangent);
+    if (tangent.Magnitude() < 1e-12 || !gp_Dir(tangent).IsParallel(n, 3 * M_PI / 180)) square = false;
+  }
+  if (!square && !parallel) {
+    setError("the path has to meet every profile at a right angle, unless the profiles are all parallel to each other");
+    return false;
+  }
+  out.turns = square;
+  TopoDS_Edge edgeA, edgeB;
+  double onA, onB;
+  curve.Edge(a, edgeA, onA);
+  curve.Edge(b, edgeB, onB);
+  BRepBuilderAPI_MakeWire wire;
+  bool inside = false, done = false;
+  for (BRepTools_WireExplorer ex(path.wire); ex.More() && !done; ex.Next()) {
+    const TopoDS_Edge e = ex.Current();
+    const bool isA = e.IsSame(edgeA), isB = e.IsSame(edgeB);
+    if (!inside && !isA) continue;
+    BRepAdaptor_Curve c(e);
+    double lo = c.FirstParameter(), hi = c.LastParameter();
+    const bool flipped = e.Orientation() == TopAbs_REVERSED;  // the wire runs through this edge from its end to its start
+    if (isA) (flipped ? hi : lo) = onA;
+    if (isB) (flipped ? lo : hi) = onB;
+    inside = true;
+    done = isB;
+    if (hi - lo < 1e-9) continue;
+    TopLoc_Location loc;
+    double f, l;
+    Handle(Geom_Curve) g = BRep_Tool::Curve(e, loc, f, l);
+    if (g.IsNull()) continue;
+    Handle(Geom_Curve) placed = Handle(Geom_Curve)::DownCast(g->Transformed(loc.Transformation()));
+    BRepBuilderAPI_MakeEdge mk(placed, lo, hi);
+    if (!mk.IsDone()) continue;
+    wire.Add(TopoDS::Edge(mk.Edge().Oriented(e.Orientation())));
+  }
+  if (!wire.IsDone()) {
+    setError("the path could not be followed between the profiles");
+    return false;
+  }
+  out.wire = wire.Wire();
+  return true;
+}
+
+/// One solid through closed wires, in order: a loft, or with a spine a sweep along it that takes the shape of each wire where
+/// the wire stands.
+struct Blend {
+  TopoDS_Shape shape, first, last;
+  /// The side face that grew from an edge of the first wire (null when it can't be told).
+  std::function<TopoDS_Shape(const TopoDS_Shape &)> faceOf;
+};
+
+bool blendWires(const std::vector<TopoDS_Wire> &wires, bool ruled, bool sameWires, const Spine *spine, const char *failure,
+                Blend &out) {
+  if (!spine) {
+    auto loft = std::make_shared<BRepOffsetAPI_ThruSections>(true, ruled);
+    // Sections that are exact copies of one wire (a twist sweep) already match edge for edge from the same start. The loft's own
+    // search for how the corners of one section map to the next's guesses wrong once the sections have turned far from each
+    // other, and then fails or twists the solid inside out; with the check off the copies are used as they are.
+    if (sameWires) loft->CheckCompatibility(false);
+    for (const TopoDS_Wire &w : wires) loft->AddWire(w);
+    loft->Build();
+    if (!loft->IsDone()) {
+      setError(failure);
+      return false;
+    }
+    out.shape = loft->Shape();
+    out.first = loft->FirstShape();
+    out.last = loft->LastShape();
+    out.faceOf = [loft](const TopoDS_Shape &edge) { return loft->GeneratedFace(edge); };
+    return true;
+  }
+  auto pipe = std::make_shared<BRepOffsetAPI_MakePipeShell>(spine->wire);
+  if (spine->turns) pipe->SetMode(spine->normal);
+  else pipe->SetMode(spine->fixed);
+  for (const TopoDS_Wire &w : wires) pipe->Add(w, false, false);  // each section stays where it was drawn
+  if (!pipe->IsReady()) {
+    setError(failure);
+    return false;
+  }
+  pipe->Build();
+  if (!pipe->IsDone() || !pipe->MakeSolid()) {
+    setError(failure);
+    return false;
+  }
+  out.shape = pipe->Shape();
+  {
+    // Depending on which way a section runs around against the spine, the solid can come out inside out (all of space but
+    // the loft); cutting with that removes everything.
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(out.shape, props);
+    if (props.Mass() < 0) out.shape.Reverse();
+  }
+  out.first = spine->reversed ? pipe->LastShape() : pipe->FirstShape();
+  out.last = spine->reversed ? pipe->FirstShape() : pipe->LastShape();
+  const TopoDS_Shape shape = out.shape, first = out.first, last = out.last;
+  out.faceOf = [pipe, shape, first, last](const TopoDS_Shape &edge) -> TopoDS_Shape {
+    for (const TopoDS_Shape &g : pipe->Generated(edge))
+      if (g.ShapeType() == TopAbs_FACE) return g;
+    // No history for this edge (the sections were re-cut to match each other): the side face that touches the edge's middle.
+    BRepAdaptor_Curve c(TopoDS::Edge(edge));
+    const TopoDS_Vertex mid = BRepBuilderAPI_MakeVertex(c.Value(0.5 * (c.FirstParameter() + c.LastParameter()))).Vertex();
+    for (TopExp_Explorer fx(shape, TopAbs_FACE); fx.More(); fx.Next()) {
+      const TopoDS_Shape &f = fx.Current();
+      if (f.IsSame(first) || f.IsSame(last)) continue;
+      BRepExtrema_DistShapeShape d(mid, f);
+      if (d.IsDone() && d.Value() < 1e-6) return f;
+    }
+    return TopoDS_Shape();
+  };
+  return true;
+}
+
+/// Lofts through the outer boundaries of `faces` (one per section, in order), cutting out the holes they all share. Side faces
+/// are named after the edges of `tagProfile`, which `faces[0]` is a copy of moved by `tagAt`. With a `spine` the loft follows it.
+bool loftFaces(const std::vector<TopoDS_Face> &faces, const Profile &tagProfile, const TopLoc_Location &tagAt, bool ruled,
+               const std::string &feat, TopoDS_Shape &outShape, std::vector<Named> &outNames, bool sameWires = false,
+               const Spine *spine = nullptr) {
+  std::vector<TopoDS_Wire> wires;
+  for (const TopoDS_Face &f : faces) wires.push_back(BRepTools::OuterWire(f));
+  Blend loft;
+  if (!blendWires(wires, ruled, sameWires, spine,
+                  spine ? "loft failed (does the path bend too tightly for the profiles, or do the profiles cross?)"
+                        : "loft failed (are the profiles far enough apart, and not crossing?)",
+                  loft))
+    return false;
+  if (spine) {
+    // A sweep that folded up on itself still counts as done and valid: it shows as next to no volume for its size.
+    GProp_GProps volume, length;
+    BRepGProp::VolumeProperties(loft.shape, volume);
+    BRepGProp::LinearProperties(spine->wire, length);
+    double smallest = -1;
+    for (const TopoDS_Face &f : faces) {
+      GProp_GProps area;
+      BRepGProp::SurfaceProperties(BRepBuilderAPI_MakeFace(BRepTools::OuterWire(f)).Face(), area);
+      if (smallest < 0 || std::fabs(area.Mass()) < smallest) smallest = std::fabs(area.Mass());
+    }
+    if (volume.Mass() < 0.05 * smallest * length.Mass()) {
+      setError("the loft folds up along this path (does the path bend too tightly for the profiles, or run almost along one?)");
+      return false;
+    }
+  }
+  std::vector<Named> names{{loft.first, feat + ".start"}, {loft.last, feat + ".end"}};
   for (TopExp_Explorer ex(wires[0], TopAbs_EDGE); ex.More(); ex.Next()) {
-    TopoDS_Shape g = loft.GeneratedFace(ex.Current());
+    TopoDS_Shape g = loft.faceOf(ex.Current());
     if (!g.IsNull()) names.push_back({g, feat + ".side." + edgeTagAt(tagProfile, tagAt, ex.Current())});
   }
 
@@ -2466,7 +2677,7 @@ bool loftFaces(const std::vector<TopoDS_Face> &faces, const Profile &tagProfile,
     for (TopExp_Explorer wx(faces[k], TopAbs_WIRE); wx.More(); wx.Next())
       if (!wx.Current().IsSame(wires[k])) holes[k].push_back(TopoDS::Wire(wx.Current()));
   if (std::all_of(holes.begin(), holes.end(), [](auto &h) { return h.empty(); })) {
-    outShape = loft.Shape();
+    outShape = loft.shape;
     outNames = names;
     return true;
   }
@@ -2496,31 +2707,27 @@ bool loftFaces(const std::vector<TopoDS_Face> &faces, const Profile &tagProfile,
       chain.push_back(holes[k][best]);
     }
   }
-  TopoDS_Shape result = loft.Shape();
+  TopoDS_Shape result = loft.shape;
   std::vector<Named> boreNames;
   for (size_t h = 0; h < chains.size(); ++h) {
-    BRepOffsetAPI_ThruSections bore(true, ruled);
-    if (sameWires) bore.CheckCompatibility(false);
+    std::vector<TopoDS_Wire> boreWires;
     TopoDS_Wire firstWire;
     TopoDS_Edge firstEdge;
     for (size_t k = 0; k < chains[h].size(); ++k) {
       TopoDS_Edge own;
       TopoDS_Wire w = forwardWire(chains[h][k], own);
       if (k == 0) firstWire = w, firstEdge = own;
-      bore.AddWire(w);
+      boreWires.push_back(w);
     }
-    bore.Build();
-    if (!bore.IsDone()) {
-      setError("could not loft the profiles' holes");
-      return false;
-    }
+    Blend bore;
+    if (!blendWires(boreWires, ruled, sameWires, spine, "could not loft the profiles' holes", bore)) return false;
     for (TopExp_Explorer ex(firstWire, TopAbs_EDGE); ex.More(); ex.Next()) {
-      TopoDS_Shape g = bore.GeneratedFace(ex.Current());
+      TopoDS_Shape g = bore.faceOf(ex.Current());
       // the rebuilt wire has one edge; its tag is the profile edge's
       const TopoDS_Shape &tagged = firstWire.IsSame(chains[h][0]) ? ex.Current() : firstEdge;
       if (!g.IsNull()) boreNames.push_back({g, feat + ".hole." + edgeTagAt(tagProfile, tagAt, tagged)});
     }
-    BRepAlgoAPI_Cut cut(result, bore.Shape());
+    BRepAlgoAPI_Cut cut(result, bore.shape);
     if (!cut.IsDone() || cut.HasErrors()) {
       setError("could not hollow the loft");
       return false;
@@ -2539,8 +2746,8 @@ bool loftFaces(const std::vector<TopoDS_Face> &faces, const Profile &tagProfile,
 }
 
 
-SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *featureId) {
-  SK_TRY
+/// A loft through `profiles`, in order; with a path it follows the path between the first profile and the last.
+SKHandle loftProfiles(const SKHandle *profiles, int count, bool ruled, const Path *path, const char *featureId) {
   const std::string feat = featureOrDefault(featureId, "loft");
   std::vector<std::shared_ptr<Object>> keep;
   std::vector<Profile *> ps;
@@ -2551,10 +2758,28 @@ SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *fe
   }
   std::vector<TopoDS_Face> faces;
   for (Profile *p : ps) faces.push_back(p->face);
+  Spine spine;
+  if (path && !spineBetween(*path, faces, spine)) return 0;
   TopoDS_Shape shape;
   std::vector<Named> names;
-  if (!loftFaces(faces, *ps[0], TopLoc_Location(), ruled, feat, shape, names)) return 0;
-  return storeChecked(shape, names, feat, "loft produced an invalid solid");
+  if (!loftFaces(faces, *ps[0], TopLoc_Location(), ruled, feat, shape, names, false, path ? &spine : nullptr)) return 0;
+  return storeChecked(shape, names, feat,
+                      path ? "the loft along the path is not a valid solid (does the path bend too tightly for the profiles?)"
+                           : "loft produced an invalid solid");
+}
+
+SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *featureId) {
+  SK_TRY
+  return loftProfiles(profiles, count, ruled, nullptr, featureId);
+  SK_CATCH(0)
+}
+
+SKHandle sk_loft_along(const SKHandle *profiles, int count, SKHandle path, const char *featureId) {
+  SK_TRY
+  Path *pa;
+  auto keepPath = lookup(path, pa);
+  if (!pa) return 0;
+  return loftProfiles(profiles, count, false, pa, featureId);
   SK_CATCH(0)
 }
 

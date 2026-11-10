@@ -173,6 +173,35 @@ import Testing
         #expect(one?.code == .invalidArguments)
     }
 
+    @Test func aLoftFollowsAPath() async throws {
+        let t = await open()
+        let sections: JSONValue = [["sketch_id": "low", "profile": "solid"], ["sketch_id": "high", "profile": "solid"]]
+        let steps: [any AIOperation] = [
+            CreateSketchOperation(plane: "xy", name: nil, id: "low"),
+            EditSketchOperation(sketchID: "low", add: [.rectangle(id: "sq", center: SketchPoint2(x: "0 mm", y: "0 mm"), corner: nil, width: "20", height: "20", cornerRadius: nil)]),
+            try op("create_plane", ["base": "xy", "offset": 30, "id": "top"]),
+            CreateSketchOperation(plane: "plane:top", name: nil, id: "high"),
+            EditSketchOperation(sketchID: "high", add: [.circle(id: "c", center: SketchPoint2(x: "0 mm", y: "0 mm"), diameter: "10", radius: nil)]),
+            // The path: up from the middle of the square, out to x = 15 halfway, and back to the middle of the circle.
+            CreateSketchOperation(plane: "xz", name: nil, id: "route"),
+            EditSketchOperation(sketchID: "route", add: [.line(id: "up", from: SketchPoint2(x: "0 mm", y: "0 mm"), to: SketchPoint2(x: "15 mm", y: "15 mm")),
+                                                         .line(id: "back", from: SketchPoint2(x: "15 mm", y: "15 mm"), to: SketchPoint2(x: "0 mm", y: "30 mm"))]),
+            try op("create_loft", ["sections": sections, "id": "plain"]),
+            try op("create_loft", ["sections": sections, "path_sketch": "route", "path": ["up", "back"], "id": "bent"]),
+        ]
+        _ = try await t.service.batch(documentID: t.id, expectedRevision: nil, label: "Bent funnel", steps)
+        let plain = try #require(bounds(t, "plain")), bent = try #require(bounds(t, "bent"))
+        #expect(plain.max.x < 10.1 && bent.max.x > 18, "the path pushes the middle out: \(bent)")
+        #expect(abs(bent.max.z - 30) < 0.05 && abs(bent.min.z) < 0.05, "\(bent)")
+        let feature = try await t.service.getFeature(documentID: t.id, featureID: "bent")
+        #expect("\(feature)".contains("curve:route/up"), "get_feature shows the path: \(feature)")
+
+        let ruled = await refusal { _ = try await run(t, "create_loft", ["sections": sections, "path_sketch": "route", "path": ["up", "back"], "ruled": true]) }
+        #expect(ruled?.code == .invalidArguments)
+        let own = await refusal { _ = try await run(t, "create_loft", ["sections": sections, "path_sketch": "low", "path": ["sq.1"]]) }
+        #expect(own != nil, "a path in a section's own sketch is refused")
+    }
+
     // MARK: thread
 
     @Test func aThreadGoesOnARoundFaceAndNotAFlatOne() async throws {

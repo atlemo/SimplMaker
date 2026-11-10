@@ -792,15 +792,120 @@ public enum Regenerator {
         return out
     }
 
-    /// Puts a sketch's projected model edges where the edges are now, so geometry tied to them follows.
+    /// A curve of another sketch as it lands in a sketch frame (looked at along the frame's normal), for a projection:
+    /// `edge` names the sketch (as its body) and the curve. A line lands as a line. A circle or an arc on a plane parallel to
+    /// the frame's lands as itself (with a `center`); seen edge-on it lands, like an ellipse seen edge-on, as the straight
+    /// stretch it covers; at any other angle, and for a Bézier, as Bézier pieces (`chain`). `pieces` asks for a chain of that
+    /// many pieces and `straight` for a straight stretch, to refresh a projection as the kind it was made as. Nil when the
+    /// curve is gone, lands as a point, or can't land as the kind asked for.
+    public static func sketchCurveSnap(_ source: SketchResult, edge: EdgeRef, frame: Frame, pieces: Int? = nil,
+                                       straight: Bool = false) -> ModelSnap? {
+        let s = source.solved
+        guard let c = s.curve(edge.edge) else { return nil }
+        func local(_ p: SIMD2<Double>) -> SIMD2<Double> {
+            let w = source.frame.point(p.x, p.y) - frame.origin
+            return SIMD2(simd_dot(w, frame.xAxis), simd_dot(w, frame.yAxis))
+        }
+        let facing = simd_dot(source.frame.normal, frame.normal)
+        // A turning curve: center + major·cos t + minor·sin t for t from t0 to t1, in the source sketch.
+        var turn: (center: SIMD2<Double>, major: SIMD2<Double>, minor: SIMD2<Double>, t0: Double, t1: Double)?
+        switch c.geometry {
+        case .line(let a, let b):
+            guard pieces == nil, let pa = s.position(a), let pb = s.position(b), simd_distance(local(pa), local(pb)) > 1e-6 else { return nil }
+            return ModelSnap(edge: edge, start: local(pa), end: local(pb))
+        case .bezier:
+            let poles = s.pointIDs(of: c).compactMap { s.position($0) }.map(local)
+            guard !straight, pieces ?? 1 == 1, poles.count == 4, poles.contains(where: { simd_distance($0, poles[0]) > 1e-6 }) else { return nil }
+            return ModelSnap(edge: edge, start: poles[0], end: poles[3], chain: poles)
+        case .circle(let center, let radius):
+            guard let pc = s.position(center) else { return nil }
+            if abs(facing) > 1 - 1e-8, pieces == nil, !straight {
+                let at = local(pc + SIMD2(radius, 0))
+                return ModelSnap(edge: edge, start: at, end: at, center: local(pc), isFullCircle: true)
+            }
+            turn = (pc, SIMD2(radius, 0), SIMD2(0, radius), 0, 2 * .pi)
+        case .arc(let center, let a, let b):
+            guard let pc = s.position(center), let pa = s.position(a), let pb = s.position(b) else { return nil }
+            if abs(facing) > 1 - 1e-8, pieces == nil, !straight {
+                // Counter-clockwise in its own sketch is clockwise in this one when the two face opposite ways.
+                let (start, end) = facing < 0 ? (pb, pa) : (pa, pb)
+                return ModelSnap(edge: edge, start: local(start), end: local(end), center: local(pc))
+            }
+            let radius = simd_length(pa - pc), t0 = atan2(pa.y - pc.y, pa.x - pc.x)
+            var t1 = atan2(pb.y - pc.y, pb.x - pc.x)
+            if t1 <= t0 + 1e-12 { t1 += 2 * .pi }
+            turn = (pc, SIMD2(radius, 0), SIMD2(0, radius), t0, t1)
+        case .ellipse(let center, let major, let minor):
+            guard let pc = s.position(center), let pm = s.position(major), let pn = s.position(minor) else { return nil }
+            turn = (pc, pm - pc, pn - pc, 0, 2 * .pi)
+        }
+        guard let turn else { return nil }
+        let middle = local(turn.center), ex = local(turn.center + turn.major) - middle, ey = local(turn.center + turn.minor) - middle
+        func at(_ t: Double) -> SIMD2<Double> { middle + ex * cos(t) + ey * sin(t) }
+        let closed = turn.t1 - turn.t0 > 2 * .pi - 1e-9
+        if abs(facing) < 1e-8, pieces == nil {
+            // Edge-on: everything falls on one line. The stretch it covers runs between the two extremes along that line.
+            let along = simd_length(ex) >= simd_length(ey) ? ex : ey
+            guard simd_length(along) > 1e-9 else { return nil }
+            let u = simd_normalize(along), a = simd_dot(ex, u), b = simd_dot(ey, u)
+            var stops = [turn.t0, turn.t1]
+            for k in -2...2 {
+                let t = atan2(b, a) + Double(k) * .pi
+                if t > turn.t0, t < turn.t1 { stops.append(t) }
+            }
+            let reach = stops.map { a * cos($0) + b * sin($0) }
+            guard let low = reach.min(), let high = reach.max(), high - low > 1e-6 else { return nil }
+            return ModelSnap(edge: edge, start: middle + u * low, end: middle + u * high)
+        }
+        guard !straight else { return nil }
+        let sweep = turn.t1 - turn.t0
+        let n = pieces ?? min(48, max(3, Int((sweep / (Double.pi / 8)).rounded(.up))))
+        var chain: [SIMD2<Double>] = []
+        for i in 0..<n {
+            let ta = turn.t0 + sweep * Double(i) / Double(n), tb = turn.t0 + sweep * Double(i + 1) / Double(n)
+            let da = (ey * cos(ta) - ex * sin(ta)) * sweep, db = (ey * cos(tb) - ex * sin(tb)) * sweep
+            chain.append(at(ta))
+            chain.append(at(ta) + da / Double(3 * n))
+            chain.append(at(tb) - db / Double(3 * n))
+        }
+        chain.append(closed ? chain[0] : at(turn.t1))
+        return ModelSnap(edge: edge, start: chain[0], end: chain[chain.count - 1], chain: chain)
+    }
+
+    /// Puts a sketch's projected model edges (and projected curves of other sketches) where they are now, so geometry tied
+    /// to them follows.
     public static func followProjections(_ sketch: inout Sketch, frame: Frame, _ r: RegenResult) throws {
         for p in sketch.projections {
-            guard let body = r.body(p.edge.body) else {
-                throw KernelError(message: "the body with the projected edge \(p.edge.edge) is missing")
-            }
             func place(_ id: EntityID, _ uv: SIMD2<Double>) {
                 guard let i = sketch.points.firstIndex(where: { $0.id == id }) else { return }
                 sketch.points[i].x = uv.x; sketch.points[i].y = uv.y; sketch.points[i].fixed = true
+            }
+            // A curve of another sketch: the "body" is that sketch (a sketch makes no body, so the two can't be confused).
+            if r.body(p.edge.body) == nil, let source = r.sketches[p.edge.body] {
+                guard let snap = sketchCurveSnap(source, edge: p.edge, frame: frame, pieces: p.chainPoints.map { ($0.count - 1) / 3 },
+                                                 straight: p.chainPoints == nil && p.center == nil) else {
+                    throw KernelError(message: "a projected sketch curve is gone, or no longer lands in this sketch the way it did (project it again)")
+                }
+                if let ids = p.chainPoints {
+                    guard let chain = snap.chain, chain.count == ids.count else {
+                        throw KernelError(message: "a projected sketch curve no longer lands in this sketch the way it did (project it again)")
+                    }
+                    for (id, q) in zip(ids, chain) { place(id, q) }
+                } else if let center = p.center {
+                    guard let mid = snap.center else {
+                        throw KernelError(message: "a projected circle's sketch no longer faces this sketch (project it again)")
+                    }
+                    place(center, mid); place(p.start, snap.start); place(p.end, snap.end)
+                    if let i = sketch.curves.firstIndex(where: { $0.id == p.line }), case .circle(let c, _) = sketch.curves[i].geometry {
+                        sketch.curves[i].geometry = .circle(center: c, radius: simd_length(snap.start - mid))
+                    }
+                } else {
+                    place(p.start, snap.start); place(p.end, snap.end)
+                }
+                continue
+            }
+            guard let body = r.body(p.edge.body) else {
+                throw KernelError(message: "the body with the projected edge \(p.edge.edge) is missing")
             }
             if let ids = p.chainPoints {
                 guard let chain = curveChain(body, edge: p.edge, frame: frame, pieces: (ids.count - 1) / 3), chain.count == ids.count else {
@@ -1108,7 +1213,11 @@ public enum Regenerator {
     static func loft(_ f: LoftFeature, _ feature: Feature, _ r: inout RegenResult) throws {
         guard f.sections.count >= 2 else { throw KernelError(message: "a loft needs at least two profiles") }
         let profiles = try f.sections.map { s in try Self.profiles([s.profile], in: try sketchResult(s.sketch, r))[0] }
-        let tool = try KBody.loft(profiles, ruled: f.ruled, featureID: feature.id)
+        let tool = if let along = f.path {
+            try KBody.loft(profiles, along: try path(along, r).path, featureID: feature.id)
+        } else {
+            try KBody.loft(profiles, ruled: f.ruled, featureID: feature.id)
+        }
         try combine(tool, f.operation, target: f.target, feature, &r)
     }
 

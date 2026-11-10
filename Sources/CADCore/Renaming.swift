@@ -161,7 +161,7 @@ extension Feature {
             add(f.start?.body)
         case .revolve(let f): add(f.sketch); add(f.target)
         case .sweep(let f): add(f.sketch); add(f.path.sketch); add(f.target)
-        case .loft(let f): f.sections.forEach { add($0.sketch) }; add(f.target)
+        case .loft(let f): f.sections.forEach { add($0.sketch) }; add(f.path?.sketch); add(f.target)
         case .twistSweep(let f): add(f.sketch); add(f.target); f.targets?.forEach { add($0) }
         case .rib(let f): add(f.path.sketch); add(f.target)
         case .hole(let f): add(f.face.body)

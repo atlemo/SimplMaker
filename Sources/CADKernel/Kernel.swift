@@ -305,6 +305,12 @@ public final class KBody: @unchecked Sendable {
         return try wrap(sk_loft(hs, Int32(hs.count), ruled, featureID), "loft")
     }
 
+    /// A loft that follows `path` between the first profile and the last (a centerline loft).
+    public static func loft(_ profiles: [KProfile], along path: KPath, featureID: String) throws -> KBody {
+        let hs = profiles.map(\.handle)
+        return try wrap(sk_loft_along(hs, Int32(hs.count), path.handle, featureID), "loft")
+    }
+
     /// Sweeps profiles along a straight line while turning them about it (`pivot`, or each profile's own middle when nil)
     /// and sliding them by `shift` over the whole length: after the fraction t of `distance` a profile has turned by
     /// `startAngle + (endAngle - startAngle) * t^power` (radians). Smooth, through `sections + 1` copies of the profile.

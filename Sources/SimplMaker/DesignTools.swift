@@ -183,7 +183,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     func accepts(_ kind: PickID.Kind) -> Bool {
         switch self {
         case .extrude: return kind == .region || kind == .face
-        case .loft: return kind == .region
+        case .loft: return kind == .region || kind == .sketchCurve  // the profiles, and optionally a path to follow
         case .revolve, .sweep: return kind == .region || kind == .sketchCurve
         case .twistSweep: return kind == .region
         case .rib, .pipe: return kind == .sketchCurve
@@ -362,7 +362,9 @@ extension DocumentModel {
         case .sweep: return profiles == 0 ? "Select the profile to sweep" : "Select the path to sweep along"
         case .twistSweep: return "Select the profile to twist along its length · Return uses \(profiles) selected"
         case .loft:
-            return profiles < 2 ? "Select profiles in order (\(profiles) so far)" : "Select more profiles, or press Return to loft \(profiles)"
+            if profiles < 2 { return "Select profiles in order (\(profiles) so far)" }
+            return loftPath(for: selectedProfiles.map(\.sketch)) != nil ? "Press Return to loft \(profiles) profiles along the path"
+                : "Select more profiles or a curve to follow, or press Return to loft \(profiles)"
         case .rib: return "Select an open sketch curve for the rib"
         case .pipe: return "Select sketch curves for the pipe's path"
         case .hole: return "Click a flat face where the hole goes"
@@ -482,7 +484,8 @@ extension DocumentModel {
             var seen = Set<FeatureID>()
             let sections = profiles.filter { seen.insert($0.sketch).inserted }.map { LoftSection(sketch: $0.sketch, profile: $0.ref) }
             guard sections.count >= 2, !waiting else { return false }
-            add(Feature(name: document.nextName("Loft"), .loft(LoftFeature(sections: sections, operation: noBodies ? .newBody : .join))))
+            add(Feature(name: document.nextName("Loft"), .loft(LoftFeature(
+                sections: sections, path: loftPath(for: sections.map(\.sketch)), operation: noBodies ? .newBody : .join))))
         case .rib:
             guard !noBodies, let path = pathRef(curves) else { return false }
             add(Feature(name: document.nextName("Rib"), .rib(RibFeature(path: path, thickness: "2 mm"))))
@@ -1100,6 +1103,12 @@ extension DocumentModel {
         for c in curves where c.sketch == first.sketch && !ids.contains(c.curve) { ids.append(c.curve) }
         if ids.count == 1, let s = result?.sketches[first.sketch]?.solved { ids = Self.chain(from: ids[0], in: s) }
         return CurveRef(sketch: first.sketch, curves: ids)
+    }
+
+    /// The path a loft through profiles of these sketches would follow: the selected curves that are not in one of them
+    /// (a curve of a profile's own sketch lies in the profile's plane and can't lead to the next one).
+    func loftPath(for sketches: [FeatureID]) -> CurveRef? {
+        pathRef(selectedCurves.filter { !sketches.contains($0.sketch) })
     }
 
     /// Curves joined end to end with `seed`, following each end while exactly two curves meet there.

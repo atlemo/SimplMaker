@@ -76,6 +76,7 @@ struct FeatureDescriber {
         case .loft(let f):
             out["sections"] = .list(f.sections.map { AIEntityRef.profile(sketch: $0.sketch, curves: $0.profile.curves, copy: 0).string })
             out["ruled"] = .flag(f.ruled); operation(f.operation); target(f.target)
+            if let along = f.path { out["path"] = path(along) }
         case .twistSweep(let f):
             out["sketch"] = .text(f.sketch); out["profiles"] = profiles(f.profiles, in: f.sketch)
             out["distance"] = length(f.distance); out["flipped"] = .flag(f.flipped)

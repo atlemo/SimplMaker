@@ -733,7 +733,11 @@ enum AITools {
                 sketch are made for each station (ids "<id>_p1", "<id>_s1", … where id is the loft's id, or "loft"), so the sections can be \
                 edited by hand afterwards; each outline is drawn as a closed polyline, so give every station the same number of corners in the \
                 same order for the cleanest blend. ruled (optional, default false: straight sides between sections instead of a smooth \
-                blend); operation ("new_body" (default), "join", "cut", "intersect"), target, name, id, expected_revision. Sections with a similar number \
+                blend); path_sketch and path (optional: a centerline for the loft to follow instead of going straight from section to section, \
+                for a bent duct, a curved neck or a horn; the curve ids of one open, connected path as for create_sweep, drawn in a sketch of its \
+                own on a plane that crosses the sections, running from the first section's plane to the last's. Where the path meets every \
+                section at a right angle the shape stays square to the path and turns with it; otherwise the sections must be parallel, and the \
+                shape stays parallel to them while it moves sideways with the path. Not with ruled); operation ("new_body" (default), "join", "cut", "intersect"), target, name, id, expected_revision. Sections with a similar number \
                 of corners blend best. To rebuild something you have read with slice_body, create_sections draws the stations of a body for you.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
@@ -753,6 +757,8 @@ enum AITools {
                             "loops": ["type": "array", "items": ["type": "array", "items": ["type": "array"]], "description": "Outer outline first, then holes."]],
                         "required": ["offset"]]],
                     "ruled": ["type": "boolean", "description": "Straight sides between sections (default false: smooth)."],
+                    "path_sketch": ["type": "string", "description": "The sketch with the path the loft follows (optional)."],
+                    "path": ["type": "array", "items": ["type": "string"], "description": "Curve ids of the path, from the first section to the last (optional)."],
                     "operation": ["type": "string", "enum": ["new_body", "join", "cut", "intersect"], "description": "Default new_body."],
                     "target": ["type": "string", "description": "The body to combine with (default the newest)."],
                     "name": ["type": "string", "description": "A name for the feature (default Loft1…)."],

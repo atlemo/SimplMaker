@@ -44,6 +44,14 @@ Sometimes the plane you sketch on is hidden behind the rest of the part, for exa
 
 It switches on by itself when the plane is hidden, and SimplMaker tells you why the first time. Turn it on or off with **Sketch → Slice View**, or with the **Slice View** switch in the sketch's inspector. It only changes what you see. It does not change the part.
 
+### Other sketches
+
+While you draw, the other sketches that are shown in the browser stay on screen in a lighter colour, so you can place things against them. The cursor snaps to their points and lines, flattened onto the plane you are drawing on. A sketch on a plane that stands square to yours shows as a line: where its plane crosses yours.
+
+The snap gives a position only. Nothing is linked, so if the other sketch changes later, yours stays where it is. To make it follow, bring the curve in with [Project Edge](doc:sketch/project-edge) and tie your shape to that.
+
+To see a sketch that a feature has already used, show it in the browser first. Turn the backdrop off with the **Show Other Sketches** switch in the sketch's inspector.
+
 ## Finish a sketch
 
 Press **Finish Sketch**, or press [[Return]]. The view goes back to where it was.

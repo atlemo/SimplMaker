@@ -12,6 +12,7 @@ enum Preferences {
     static let showAxes = "showAxes"
     static let showConstraints = "showConstraints"
     static let showShapeCentres = "showShapeCentres"
+    static let hideOtherSketches = "hideOtherSketches"  // stored the other way round, so that showing them is the default
     static let showWelcome = "showWelcome"
     static let settingsHeight = "settingsWindowHeight"  // the height the user dragged the Settings window to
     static let snapToGrid = "snapToGrid"

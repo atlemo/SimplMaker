@@ -193,6 +193,27 @@ final class DocumentModel {
     var showShapeCentres = UserDefaults.standard.bool(forKey: Preferences.showShapeCentres) {
         didSet { UserDefaults.standard.set(showShapeCentres, forKey: Preferences.showShapeCentres) }
     }
+    /// Sketching: the other sketches that are shown in the browser are drawn too, dimmed, and the cursor snaps to their points
+    /// and lines (flattened onto this sketch's plane), to place things against them. Kept between launches; on by default.
+    var showOtherSketches = !UserDefaults.standard.bool(forKey: Preferences.hideOtherSketches) {
+        didSet {
+            UserDefaults.standard.set(!showOtherSketches, forKey: Preferences.hideOtherSketches)
+            updateSketchReferences()
+            overlayRevision += 1
+        }
+    }
+    /// The sketches drawn behind the one being edited (see `showOtherSketches`).
+    var backgroundSketches: [(id: FeatureID, slot: Int, sketch: SketchResult, earlier: Bool)] {
+        guard let session = sketchSession, showOtherSketches else { return [] }
+        let order = document.features.map(\.id)
+        let own = order.firstIndex(of: session.featureID) ?? order.count  // a new sketch goes last
+        return sketchSlots.enumerated().compactMap { i, id in
+            guard id != session.featureID, isSketchShown(id), let r = result?.sketches[id] else { return nil }
+            // Only a sketch that is built before this one can be projected into it (Project Edge): the other way round
+            // the two would wait for each other.
+            return (id, i + 1, r, (order.firstIndex(of: id) ?? order.count) < own)
+        }
+    }
     /// The sketch plane the renderer slices at, while sketching with the slice on.
     var sketchSlicePlane: (origin: SIMD3<Float>, normal: SIMD3<Float>)? {
         guard sketchSlice, let f = sketchSession?.frame else { return nil }
@@ -1619,6 +1640,39 @@ final class DocumentModel {
                 }
             }
         }
+        // The other sketches on show, flattened onto this sketch's plane: their points (corners, ends, centres) and their
+        // curves can be snapped to. A sketch seen edge-on is a line, which is where its plane crosses this one. Nothing is
+        // linked: the snap gives a position only.
+        for b in backgroundSketches {
+            let r = b.sketch
+            // What Project Edge can bring in: every curve of a sketch built before this one, as it lands on this plane.
+            for c in r.solved.curves where b.earlier {
+                let ref = EdgeRef(body: b.id, edge: c.id)
+                guard let snap = Regenerator.sketchCurveSnap(r, edge: ref, frame: f) else { continue }
+                if snap.chain != nil { refs.curvedEdges[ref] = snap } else if snap.center != nil { refs.roundEdges[ref] = snap } else { refs.straightEdges[ref] = snap }
+            }
+            func uv(_ p: SIMD2<Double>) -> SIMD2<Double> {
+                let d = r.frame.point(p.x, p.y) - f.origin
+                return SIMD2(simd_dot(d, f.xAxis), simd_dot(d, f.yAxis))
+            }
+            for point in r.solved.points {
+                let at = uv(point.position)
+                if !refs.points.contains(where: { simd_distance($0, at) < 1e-6 }) { refs.points.append(at); refs.pointModels.append(nil) }
+            }
+            for c in r.solved.curves {
+                let line = SketchOverlayBuilder.polyline(c, in: r.solved).map(uv)
+                guard line.count > 1 else { continue }
+                // Seen edge-on a curve falls onto one straight stretch: its two far ends say it all.
+                let flat = line.allSatisfy { p in
+                    let d = line[line.count - 1] - line[0], e = p - line[0]
+                    return abs(d.x * e.y - d.y * e.x) < 1e-6 * max(simd_length(d), 1)
+                }
+                let pieces = flat ? [line.min { ($0.x, $0.y) < ($1.x, $1.y) }!, line.max { ($0.x, $0.y) < ($1.x, $1.y) }!] : line
+                for i in 0..<(pieces.count - 1) where simd_distance(pieces[i], pieces[i + 1]) > 1e-6 {
+                    refs.segments.append((pieces[i], pieces[i + 1])); refs.segmentModels.append(nil)
+                }
+            }
+        }
         session.references = refs
     }
 
@@ -1683,7 +1737,8 @@ final class DocumentModel {
     func sketchMouse(_ m: SketchMouse) -> Bool {
         guard let session = sketchSession else { return false }
         var m = m
-        m.edge = m.pick.flatMap(edgeRef(of:))
+        // The curve of another sketch under the cursor counts as an edge too (Project Edge brings either in).
+        m.edge = m.pick.flatMap(edgeRef(of:)) ?? m.pick.flatMap(curve(of:)).map { EdgeRef(body: $0.sketch, edge: $0.curve) }
         let r = session.handle(m)
         if m.phase != .moved || !session.clicks.isEmpty || session.anglePicks != nil || (session.tool == .gear && session.gearActive == nil) { overlayRevision += 1 }  // the ghost gear and a placing angle follow the cursor
         commitSketch(r.commit)
@@ -1798,6 +1853,12 @@ final class DocumentModel {
         o.images = imageDraws()
         o.imageBorder = imageBorder()
         if let session = sketchSession {
+            // The other sketches first, dimmed and not pickable: something to place this one against.
+            // Project Edge can click their curves, to bring them into this sketch.
+            for b in backgroundSketches {
+                SketchOverlayBuilder.finished(b.sketch, slot: b.slot, parameters: parameterValues,
+                                              pickable: session.tool == .projectEdge && b.earlier, into: &o)
+            }
             SketchOverlayBuilder.editing(session, into: &o, showCentres: showShapeCentres)
             // The fill is from the last rebuild: while a gear's fields are changing it, it would show the old gear,
             // and while a text's words are changing, the old words.

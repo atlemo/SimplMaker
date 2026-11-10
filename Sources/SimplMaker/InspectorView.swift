@@ -147,6 +147,8 @@ struct SketchInspector: View {
                     .help("Hide everything between this sketch's plane and the camera, to reach a sketch that lies between walls")
                 Toggle("Show Shape Centres", isOn: Bindable(model).showShapeCentres)
                     .help("Mark the middle of each closed shape with an X, to see where a click will snap")
+                Toggle("Show Other Sketches", isOn: Bindable(model).showOtherSketches)
+                    .help("Draw the other visible sketches behind this one, and snap to their points and lines")
             }
             LabeledContent("Plane", value: planeName)
             if sketch.uprightAxes != true, session == nil, sketch.plane.isFaceOrPlane {
@@ -717,8 +719,32 @@ struct LoftInspector: View {
 
     var body: some View {
         Section("Loft") {
-            Toggle("Straight sides", isOn: Binding(get: { loft.ruled }, set: { v in edit.update("Change Loft") { $0.ruled = v } }))
+            Toggle("Straight sides", isOn: Binding(get: { loft.ruled && loft.path == nil }, set: { v in edit.update("Change Loft") { $0.ruled = v } }))
+                .disabled(loft.path != nil)
+                .help(loft.path == nil ? "Join the profiles with straight lines instead of a smooth blend" : "A loft along a path is always smooth")
             edit.operation(loft.operation) { $0.operation = $1 }
+        }
+        Section("Path") {
+            let picked = model.loftPath(for: loft.sections.map(\.sketch))
+            if let path = loft.path {
+                HStack {
+                    Text("\(path.curves.count) curve\(path.curves.count == 1 ? "" : "s") in \(model.featureName(path.sketch))")
+                    Spacer()
+                    Button { edit.update("Remove Path") { $0.path = nil } } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                        .help("Loft straight between the profiles again")
+                }
+            }
+            if let picked, picked != loft.path {
+                Button(loft.path == nil ? "Follow the selected curve\(picked.curves.count == 1 ? "" : "s")"
+                                        : "Use the \(picked.curves.count) selected curve\(picked.curves.count == 1 ? "" : "s")") {
+                    edit.update(loft.path == nil ? "Add Path" : "Change Path") { $0.path = picked }
+                    model.clearSelection()
+                }
+            } else if loft.path == nil {
+                Text("To bend the loft along a curve, draw one from the first profile to the last in a sketch that crosses them, then click it.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         Section("Profiles, in order (\(loft.sections.count))") {
             ForEach(Array(loft.sections.enumerated()), id: \.offset) { i, section in

@@ -89,6 +89,11 @@ SKHandle sk_sweep(const SKHandle *profiles, int count, SKHandle path, const char
 SKHandle sk_pipe(SKHandle path, double diameter, double wall, const char *featureId);
 /// Loft through the outer boundaries of profiles, in order. Faces: "<featureId>.start|end|side.<tag>".
 SKHandle sk_loft(const SKHandle *profiles, int count, bool ruled, const char *featureId);
+/// A loft that follows a path (its centerline): the shape goes smoothly from one profile to the next along the part of the path
+/// between the first profile's plane and the last's. Each profile stays where it is. Where the path meets every profile at a right
+/// angle the shape stays square to the path and turns with it; otherwise the profiles have to be parallel, and the shape stays
+/// parallel to them and moves sideways with the path. Faces as for sk_loft.
+SKHandle sk_loft_along(const SKHandle *profiles, int count, SKHandle path, const char *featureId);
 /// Sweeps profiles along a straight line (`dir`, for `distance`) while turning them about the line through the pivot (the
 /// point given, else each profile's middle) and sliding them sideways: at the fraction t of the way the profile has turned by
 /// startAngle + (endAngle - startAngle) * t^power (radians) and moved by shift * t. It is a smooth loft through `sections` + 1

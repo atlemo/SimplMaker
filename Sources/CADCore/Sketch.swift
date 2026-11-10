@@ -161,6 +161,8 @@ public struct SketchText: Codable, Hashable, Sendable, Identifiable {
 /// (a corner on the line, a point coincident with an end) follows the model when it changes.
 public struct SketchProjection: Codable, Hashable, Sendable, Identifiable {
     public var id: EntityID
+    /// The edge of a body, or a curve of another (earlier) sketch: then `edge.body` is that sketch's id and `edge.edge`
+    /// the curve's id (see `Regenerator.sketchCurveSnap`).
     public var edge: EdgeRef
     /// The edge's two ends, as fixed sketch points.
     public var start: EntityID

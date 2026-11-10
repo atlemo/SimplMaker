@@ -58,6 +58,8 @@ struct CreateLoftOperation: AIOperation {
     /// Stations given inline instead of sketches: the loft makes a plane and a sketch for each (see SectionSketches), along `axis`.
     var stations: [SectionStation]?
     var axis: String?
+    /// Curve ids of one sketch that make the path the loft follows; empty for a plain loft.
+    var path: [String] = []
     let ruled: Bool
     let operation: BodyOperation
     let target: FeatureID?
@@ -91,12 +93,26 @@ struct CreateLoftOperation: AIOperation {
             }
             made.append(LoftSection(sketch: section.sketchID, profile: ref))
         }
+        var along: CurveRef?
+        if !path.isEmpty {
+            let (pathSketch, curves) = try AIChecks.curves(path, field: "path", context)
+            guard !made.contains(where: { $0.sketch == pathSketch }) else {
+                throw AIError(.invalidArguments, "The path is in the sketch of one of the sections (\(pathSketch)).",
+                              reason: "Draw the path in a sketch of its own, on a plane that crosses the sections' planes, from the first section to the last.")
+            }
+            guard !ruled else {
+                throw AIError(.invalidArguments, "A loft along a path is always smooth: leave out ruled, or leave out the path.")
+            }
+            along = CurveRef(sketch: pathSketch, curves: curves)
+        }
         try AIChecks.requireBody(for: operation, target: target, in: doc)
         let featureID = try AIValues.newFeatureID(id, in: doc)
         let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("Loft")
-        doc.addFeature(Feature(id: featureID, name: featureName, .loft(LoftFeature(sections: made, ruled: ruled, operation: operation, target: target))))
+        doc.addFeature(Feature(id: featureID, name: featureName,
+                               .loft(LoftFeature(sections: made, ruled: ruled, path: along, operation: operation, target: target))))
         return OperationOutcome(featureID: featureID,
                                 message: "Created \(featureName): a \(ruled ? "ruled" : "smooth") loft through \(made.count) sections"
+                                    + (along.map { " along \($0.curves.count) curve\($0.curves.count == 1 ? "" : "s") of \($0.sketch)" } ?? "")
                                     + (stations == nil ? "" : " (planes \(id ?? "loft")_p1…, sketches \(id ?? "loft")_s1… made from the stations)")
                                     + " (\(AIOperationNames.name(operation))).")
     }

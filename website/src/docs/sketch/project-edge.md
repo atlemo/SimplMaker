@@ -24,6 +24,17 @@ The projection follows the body. When you change a parameter or an earlier featu
 If a later change removes the edge, the rebuild reports that the projected edge is missing. Undo the change, or change the feature that removed the edge.
 :::
 
+## Curves of other sketches
+
+Project Edge also takes curves of **other sketches**: a profile's outline, a centre line, anything drawn in a sketch that comes before this one in the timeline and is shown in the browser. Press [[U]] and click the curve. It is flattened onto the plane you are drawing on and follows its own sketch from then on.
+
+- A **line** comes in as a construction line.
+- A **circle or arc** on a plane parallel to yours comes in as itself, with its centre as a point.
+- A circle, arc or ellipse seen **edge-on** comes in as the straight stretch it covers. The middle of that line is the circle's centre, which is handy for ending a [loft's path](doc:create/loft) on it.
+- A **spline**, and a circle seen at a slant, come in as curves.
+
+A sketch that comes later in the timeline can't be projected, since each would have to wait for the other.
+
 ## Limits
 
 - Only **straight** edges can be projected for now. Click a curved edge and SimplMaker says so.
