@@ -166,6 +166,33 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             self, selector: #selector(displayOptionsChanged),
             name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         applyAppearance()
+        if let m = sketchKeyMonitor { NSEvent.removeMonitor(m); sketchKeyMonitor = nil }
+        if window != nil {
+            sketchKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, self.forwardSketchKey(event) else { return event }
+                return nil
+            }
+        }
+    }
+
+    private var sketchKeyMonitor: Any?
+
+    /// Single-key sketch shortcuts (tool letters, Esc, ⌫) work wherever the keyboard focus happens to be: after a click in
+    /// the browser, the Parameters list or a panel, the viewport is no longer the first responder and its own `keyDown`
+    /// never saw the key. Text being edited keeps its keys.
+    private func forwardSketchKey(_ event: NSEvent) -> Bool {
+        guard let window, event.window === window, window.attachedSheet == nil, window.isKeyWindow,
+              let session = model?.sketchSession, window.firstResponder !== self,
+              event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return false }
+        if let text = window.firstResponder as? NSText, text.isEditable || text.isFieldEditor { return false }
+        if window.firstResponder is NSTextField { return false }
+        let isTool = event.charactersIgnoringModifiers?.lowercased().first
+            .flatMap { SketchTool.forKey($0, current: session.tool) } != nil
+        let inList = window.firstResponder is NSTableView  // ⌫ there deletes the list's own row
+        guard isTool || (!inList && [53, 51, 117].contains(event.keyCode)) else { return false }
+        window.makeFirstResponder(self)
+        keyDown(with: event)
+        return true
     }
 
     @objc private func displayOptionsChanged(_ note: Notification) { applyAppearance() }
