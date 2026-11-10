@@ -2824,7 +2824,36 @@ final class SketchSession {
             message = "Click where to place the angle · Esc cancels"
             return nil
         }
+        // A curve held equal to one that already has this size (the corners of a rounded rectangle, the ends of a
+        // slot) shares that dimension: a second one beside it would fight it as soon as either changed.
+        if dimensionPicks.count == 1, let shared = sharedSizeDimension(of: dimensionPicks[0], kind: suggestion.kind) {
+            editingDimension = shared
+            return nil
+        }
         return addDimension(suggestion.kind, value: suggestion.value)
+    }
+
+    /// The dimension of a curve that `curve` is held equal to (through any chain of Equal constraints) and that
+    /// has the same kind of size (radius, diameter or length); nil when there is none, or `curve` has its own.
+    private func sharedSizeDimension(of curve: EntityID, kind: SketchDimension.Kind) -> EntityID? {
+        func sizedCurve(_ k: SketchDimension.Kind) -> EntityID? {
+            switch (kind, k) {
+            case (.radius, .radius(let c)), (.diameter, .diameter(let c)), (.length, .length(let c)): return c
+            default: return nil
+            }
+        }
+        var group: Set<EntityID> = [curve]
+        var grew = true
+        while grew {
+            grew = false
+            for c in sketch.constraints {
+                guard case .equal(let a, let b) = c.kind else { continue }
+                if group.contains(a), !group.contains(b) { group.insert(b); grew = true }
+                if group.contains(b), !group.contains(a) { group.insert(a); grew = true }
+            }
+        }
+        guard group.count > 1 else { return nil }
+        return sketch.dimensions.first { d in sizedCurve(d.kind).map(group.contains) ?? false }?.id
     }
 
     /// Return with a typed value for a picked angle: the wedge the cursor was in, set to the typed value.

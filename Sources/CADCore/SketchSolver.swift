@@ -656,7 +656,10 @@ extension SketchSolver {
         for d in sketch.dimensions {
             guard let target = dimensionValues[d.id], let now = sketch.measure(d.kind), abs(now - target) > 1e-9 else { continue }
             let anchors = sketch.anchorPoints(of: d.kind)
-            moving.formUnion(sketch.points(of: Sketch.references(d.kind)).subtracting(anchors))
+            // A size shared through Equal constraints (the four corners of a rounded rectangle) changes on every curve
+            // that has it, so all of them move at once: held to the first alone, the rest could only follow by
+            // pulling the whole outline with them, and the rectangle would grow or shrink with its corners.
+            moving.formUnion(sketch.points(of: sketch.equalGroup(of: Sketch.references(d.kind))).subtracting(anchors))
             anchored.formUnion(anchors)
         }
         anchored.subtract(moving)  // held, unless another dimension has to move it
@@ -683,6 +686,21 @@ extension Sketch {
         var out = points(of: Sketch.anchors(of: kind))
         if case .lineAngle(let l) = kind, case .line(let start, _)? = curve(l)?.geometry { out.insert(start) }
         return out
+    }
+
+    /// `ids` and every curve held equal to one of them, through any chain of Equal constraints.
+    func equalGroup(of ids: [EntityID]) -> [EntityID] {
+        var group = Set(ids)
+        var grew = true
+        while grew {
+            grew = false
+            for c in constraints {
+                guard case .equal(let a, let b) = c.kind else { continue }
+                if group.contains(a), !group.contains(b) { group.insert(b); grew = true }
+                if group.contains(b), !group.contains(a) { group.insert(a); grew = true }
+            }
+        }
+        return ids + group.subtracting(ids)
     }
 
     /// The points of some entities: points themselves, and the points curves are built from.
