@@ -721,10 +721,14 @@ public struct EdgeFeature: Codable, Hashable, Sendable {
     /// The first distance goes on the other of the edge's two faces. Without it: on the picked face when
     /// faces were picked, else on the face with the smaller name.
     public var flipped: Bool
+    /// A fillet that curves the other way: a quarter-round scoop on a convex edge, a bead on a concave one, the arc
+    /// centred on the edge (so it meets the faces at a crease, not tangent). Fillets only.
+    public var concave: Bool
 
     public init(edges: [EdgeRef], faces: [FaceRef] = [], size: String, mode: ChamferMode = .equalDistance, second: String = "",
-                flipped: Bool = false) {
+                flipped: Bool = false, concave: Bool = false) {
         self.edges = edges; self.faces = faces; self.size = size; self.mode = mode; self.second = second; self.flipped = flipped
+        self.concave = concave
     }
 
     /// Switches how the chamfer is measured. The second value starts afresh when what it measures changes
@@ -741,7 +745,7 @@ public struct EdgeFeature: Codable, Hashable, Sendable {
         }
     }
 
-    private enum CodingKeys: String, CodingKey { case edges, faces, size, mode, second, flipped }
+    private enum CodingKeys: String, CodingKey { case edges, faces, size, mode, second, flipped, concave }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -751,6 +755,7 @@ public struct EdgeFeature: Codable, Hashable, Sendable {
         mode = try c.decodeIfPresent(ChamferMode.self, forKey: .mode) ?? .equalDistance
         second = try c.decodeIfPresent(String.self, forKey: .second) ?? ""
         flipped = try c.decodeIfPresent(Bool.self, forKey: .flipped) ?? false
+        concave = try c.decodeIfPresent(Bool.self, forKey: .concave) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -761,6 +766,7 @@ public struct EdgeFeature: Codable, Hashable, Sendable {
         if mode != .equalDistance { try c.encode(mode, forKey: .mode) }
         if !second.isEmpty { try c.encode(second, forKey: .second) }
         if flipped { try c.encode(flipped, forKey: .flipped) }
+        if concave { try c.encode(concave, forKey: .concave) }
     }
 }
 

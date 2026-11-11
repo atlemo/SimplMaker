@@ -434,7 +434,9 @@ enum AITools {
 
                 Arguments: document_id (required); size (required: the radius, a number in mm or an expression); edges (optional: edge ids \
                 "edge:<body>/<name>" from get_body); faces (optional: face ids "face:<body>/<name>"; every edge around the face is rounded, \
-                and keeps following the face if the part changes). At least one of edges and faces. name, id, expected_revision (optional). \
+                and keeps following the face if the part changes). At least one of edges and faces. concave (optional, default false): curve the \
+                other way, a scoop (cove) cut into a convex edge or a quarter-round bead added in a concave corner, the arc centred on the edge so \
+                it meets the faces at a crease instead of blending smoothly. name, id, expected_revision (optional). \
                 A radius that is too large for the edges or the neighbouring faces fails with REBUILD_FAILED and leaves the part unchanged; \
                 try a smaller one. Check the result with measure or get_body: the kernel may accept a radius that is larger than the \
                 part's walls allow.
@@ -447,6 +449,7 @@ enum AITools {
                 inputSchema: object([
                     "document_id": ["type": "string", "description": "The part to change, from list_documents."],
                     "size": quantity("The fillet radius."),
+                    "concave": ["type": "boolean", "description": "Curve the other way: a scoop into a convex edge, a bead in a concave corner (default false)."],
                     "edges": ["type": "array", "items": ["type": "string"], "description": "Edge ids to round, from get_body."],
                     "faces": ["type": "array", "items": ["type": "string"], "description": "Face ids whose every edge is rounded, from get_body."],
                     "name": ["type": "string", "description": "A name for the feature (default Fillet1, Fillet2…)."],

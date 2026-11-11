@@ -104,7 +104,7 @@ enum AIOperationParser {
         case "create_fillet", "create_chamfer":
             let fillet = tool == "create_fillet"
             try a.rejectUnknown(["document_id", "edges", "faces", "size", "name", "id", "expected_revision"]
-                                + (fillet ? [] : ["mode", "second", "flipped"]), in: tool)
+                                + (fillet ? ["concave"] : ["mode", "second", "flipped"]), in: tool)
             func ids(_ key: String) throws -> [String] {
                 try (a.array(key) ?? []).enumerated().map { index, item in
                     guard let text = item.string else { throw AIError(.invalidArguments, "\(key)[\(index)] must be an id text.") }
@@ -122,7 +122,8 @@ enum AIOperationParser {
             return EdgeFinishOperation(fillet: fillet, edges: try ids("edges"), faces: try ids("faces"),
                                        size: try a.requiredQuantity("size", kind: .length, hint: fillet ? "The radius in mm, for example 2." : "The distance in mm, for example 1."),
                                        mode: mode, second: try a.quantity("second", kind: secondKind ?? .length),
-                                       flipped: try a.bool("flipped") ?? false, name: try a.string("name"), id: try a.string("id"))
+                                       flipped: try a.bool("flipped") ?? false, concave: try a.bool("concave") ?? false,
+                                       name: try a.string("name"), id: try a.string("id"))
 
         case "create_hole":
             try a.rejectUnknown(["document_id", "face", "at", "u", "v", "kind", "diameter", "depth", "through_all", "tip_angle", "head_diameter", "head_depth",

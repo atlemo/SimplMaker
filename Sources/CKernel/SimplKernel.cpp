@@ -9,6 +9,7 @@
 #include <atomic>
 #include <array>
 #include <map>
+#include <set>
 #include <typeinfo>
 #include <cctype>
 #include <cmath>
@@ -631,6 +632,57 @@ double volumeChange(const TopoDS_Shape &before, const TopoDS_Shape &after) {
   return change;
 }
 
+/// The outward normal of `f` where `e` meets it, and the direction along `e` the way `f`'s outline runs.
+static bool edgeFrame(const TopoDS_Edge &e, const TopoDS_Face &f, gp_Vec &n, gp_Vec &t) {
+  double f0, l0;
+  Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(e, f, f0, l0);
+  if (pc.IsNull()) return false;
+  const gp_Pnt2d uv = pc->Value(0.5 * (f0 + l0));
+  BRepAdaptor_Surface surf(f);
+  gp_Pnt p;
+  gp_Vec du, dv;
+  surf.D1(uv.X(), uv.Y(), p, du, dv);
+  n = du.Crossed(dv);
+  if (n.Magnitude() < Precision::Confusion()) return false;
+  n.Normalize();
+  if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
+  int seen = 0;
+  TopAbs_Orientation o = TopAbs_FORWARD;
+  for (TopExp_Explorer ex(f, TopAbs_EDGE); ex.More(); ex.Next())
+    if (ex.Current().IsSame(e)) {
+      o = ex.Current().Orientation();
+      ++seen;
+    }
+  if (seen != 1) return false;  // a seam runs both ways
+  BRepAdaptor_Curve c(e);
+  gp_Pnt at;
+  c.D1(0.5 * (c.FirstParameter() + c.LastParameter()), at, t);
+  if (t.Magnitude() < Precision::Confusion()) return false;
+  t.Normalize();
+  if (o == TopAbs_REVERSED) t.Reverse();
+  return true;
+}
+
+/// 1 when `e` is a convex edge of `shape`, -1 when it is concave, 0 when it is tangent, not shared by exactly two
+/// faces, or too curved at its middle to tell.
+static int edgeCrease(const TopoDS_Shape &shape, const ShapeToShapes &edgeFaces, const TopoDS_Edge &e) {
+  try {
+    if (!edgeFaces.Contains(e)) return 0;
+    const ShapeList &fl = edgeFaces.FindFromKey(e);
+    if (fl.Size() != 2) return 0;
+    std::vector<TopoDS_Face> fs;
+    for (const TopoDS_Shape &x : fl) fs.push_back(TopoDS::Face(x));
+    gp_Vec n1, t1, n2, t2;
+    if (!edgeFrame(e, fs[0], n1, t1) || !edgeFrame(e, fs[1], n2, t2)) return 0;
+    // From the edge into face 1 (left of its outline seen from outside) the other face's plane is left behind
+    // on a convex edge and crossed to its outside on a concave one.
+    const double side = n2.Dot(n1.Crossed(t1));
+    return side <= -1e-6 ? 1 : (side > 1e-6 ? -1 : 0);
+  } catch (Standard_Failure &) {
+    return 0;
+  }
+}
+
 /// True when every edge of `edges` is a convex edge of `shape`. Rounding only convex edges takes material away, so
 /// a rounded body that is bigger than before is wrong; rounding a concave edge fills the corner and does add some.
 /// An edge that is concave, tangent or not shared by exactly two faces counts as not convex.
@@ -638,49 +690,8 @@ bool allConvex(const TopoDS_Shape &shape, const std::vector<TopoDS_Edge> &edges)
   try {
     ShapeToShapes edgeFaces;
     TopExp::MapShapesAndUniqueAncestors(shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
-    // The outward normal of `f` where `e` meets it, and the direction along `e` the way `f`'s outline runs.
-    auto frame = [](const TopoDS_Edge &e, const TopoDS_Face &f, gp_Vec &n, gp_Vec &t) {
-      double f0, l0;
-      Handle(Geom2d_Curve) pc = BRep_Tool::CurveOnSurface(e, f, f0, l0);
-      if (pc.IsNull()) return false;
-      const gp_Pnt2d uv = pc->Value(0.5 * (f0 + l0));
-      BRepAdaptor_Surface surf(f);
-      gp_Pnt p;
-      gp_Vec du, dv;
-      surf.D1(uv.X(), uv.Y(), p, du, dv);
-      n = du.Crossed(dv);
-      if (n.Magnitude() < Precision::Confusion()) return false;
-      n.Normalize();
-      if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
-      int seen = 0;
-      TopAbs_Orientation o = TopAbs_FORWARD;
-      for (TopExp_Explorer ex(f, TopAbs_EDGE); ex.More(); ex.Next())
-        if (ex.Current().IsSame(e)) {
-          o = ex.Current().Orientation();
-          ++seen;
-        }
-      if (seen != 1) return false;  // a seam runs both ways
-      BRepAdaptor_Curve c(e);
-      gp_Pnt at;
-      c.D1(0.5 * (c.FirstParameter() + c.LastParameter()), at, t);
-      if (t.Magnitude() < Precision::Confusion()) return false;
-      t.Normalize();
-      if (o == TopAbs_REVERSED) t.Reverse();
-      return true;
-    };
-    for (const TopoDS_Edge &e : edges) {
-      if (!edgeFaces.Contains(e)) return false;
-      const ShapeList &fl = edgeFaces.FindFromKey(e);
-      if (fl.Size() != 2) return false;
-      std::vector<TopoDS_Face> fs;
-      for (const TopoDS_Shape &x : fl) fs.push_back(TopoDS::Face(x));
-      gp_Vec n1, t1, n2, t2;
-      if (!frame(e, fs[0], n1, t1) || !frame(e, fs[1], n2, t2)) return false;
-      // From the edge into face 1 (left of its outline seen from outside) the other face's plane is left behind
-      // on a convex edge and crossed to its outside on a concave one.
-      const gp_Vec into1 = n1.Crossed(t1);
-      if (n2.Dot(into1) > -1e-6) return false;
-    }
+    for (const TopoDS_Edge &e : edges)
+      if (edgeCrease(shape, edgeFaces, e) != 1) return false;
     return true;
   } catch (Standard_Failure &) {
     return false;
@@ -4220,6 +4231,146 @@ SKHandle sk_fillet(SKHandle body, const char *const *edgeNames, int count, doubl
     if (!made) setError(why);
   }
   return made;
+  SK_CATCH(0)
+}
+
+/// A concave round: the other way from sk_fillet. A convex edge gets a scoop (a quarter-round cove cut out of the
+/// corner), a concave edge a bead (a quarter-round of material added in the corner). Either way the arc is centred on
+/// the edge itself, so it ends `radius` away from the edge on both faces and meets them at a crease, not tangent.
+/// Built as a boolean with a circle swept along each edge, and a ball at each corner where two picked edges meet.
+SKHandle sk_fillet_concave(SKHandle body, const char *const *edgeNames, int count, double radius, const char *featureId) {
+  SK_TRY
+  if (radius <= Precision::Confusion()) {
+    setError("fillet radius must be positive");
+    return 0;
+  }
+  Body *b;
+  auto keep = lookup(body, b);
+  if (!b) return 0;
+  if (count < 1) {
+    setError("fillet needs at least one edge");
+    return 0;
+  }
+  const std::string feat = featureOrDefault(featureId, "fillet");
+  ShapeToShapes edgeFaces;
+  TopExp::MapShapesAndUniqueAncestors(b->shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+
+  struct Tool {
+    TopoDS_Shape solid;
+    std::string name;
+  };
+  std::vector<Tool> scoops, beads;  // cut away from convex edges, added at concave ones
+  using Key = std::tuple<long long, long long, long long>;
+  auto keyOf = [](const gp_Pnt &p) {
+    auto q = [](double v) { return std::llround(v * 1e5); };
+    return Key{q(p.X()), q(p.Y()), q(p.Z())};
+  };
+  struct Joint {
+    gp_Pnt at;
+    int edges = 0;
+    bool convex = false, concave = false;
+  };
+  std::map<Key, Joint> joints;
+  std::set<std::string> seen;
+  for (int k = 0; k < count; ++k) {
+    if (!seen.insert(edgeNames[k]).second) continue;
+    auto it = b->edgeIndex.find(edgeNames[k]);
+    if (it == b->edgeIndex.end()) {
+      setError(std::string("edge not found: ") + edgeNames[k]);
+      return 0;
+    }
+    const TopoDS_Edge &e = TopoDS::Edge(b->edges(it->second + 1));
+    const int crease = edgeCrease(b->shape, edgeFaces, e);
+    if (crease == 0) {
+      setError(std::string("a concave round needs an edge where two faces meet at a corner (not a smooth one): ") + edgeNames[k]);
+      return 0;
+    }
+    BRepAdaptor_Curve curve(e);
+    gp_Pnt start;
+    gp_Vec along;
+    curve.D1(curve.FirstParameter(), start, along);
+    if (along.Magnitude() < Precision::Confusion()) {
+      setError(std::string("the edge is too short to round: ") + edgeNames[k]);
+      return 0;
+    }
+    const gp_Circ circle(gp_Ax2(start, gp_Dir(along)), radius);
+    const TopoDS_Wire ring = BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(circle).Edge()).Wire();
+    const TopoDS_Face disc = BRepBuilderAPI_MakeFace(ring, true).Face();
+    const TopoDS_Wire path = BRepBuilderAPI_MakeWire(e).Wire();
+    BRepOffsetAPI_MakePipe pipe(path, disc);
+    pipe.Build();
+    if (!pipe.IsDone()) {
+      setError(std::string("could not sweep the round along the edge: ") + edgeNames[k]);
+      return 0;
+    }
+    TopoDS_Shape solid = pipe.Shape();
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(solid, props);
+    if (props.Mass() < 0) solid.Reverse();
+    (crease > 0 ? scoops : beads).push_back({solid, feat + ".fillet." + edgeNames[k]});
+    TopoDS_Vertex v0, v1;
+    TopExp::Vertices(e, v0, v1);
+    for (const TopoDS_Vertex &v : {v0, v1}) {
+      if (v.IsNull()) continue;
+      const gp_Pnt at = BRep_Tool::Pnt(v);
+      Joint &j = joints[keyOf(at)];
+      j.at = at;
+      ++j.edges;
+      (crease > 0 ? j.convex : j.concave) = true;
+    }
+  }
+  // A ball where two picked edges meet, so the round turns the corner instead of leaving a square notch.
+  for (auto &[key, j] : joints) {
+    if (j.edges < 2) continue;
+    const TopoDS_Shape ball = BRepPrimAPI_MakeSphere(j.at, radius).Shape();
+    if (j.convex) scoops.push_back({ball, feat + ".fillet.corner"});
+    if (j.concave) beads.push_back({ball, feat + ".fillet.corner"});
+  }
+
+  TopoDS_Shape current = b->shape;
+  std::vector<Named> names = namedFaces(*b);
+  auto apply = [&](const std::vector<Tool> &tools, bool cut) {
+    if (tools.empty()) return true;
+    std::unique_ptr<BRepAlgoAPI_BooleanOperation> op;
+    if (cut) op = std::make_unique<BRepAlgoAPI_Cut>();
+    else op = std::make_unique<BRepAlgoAPI_Fuse>();
+    ShapeList args, toolList;
+    args.Append(current);
+    for (const Tool &t : tools) toolList.Append(t.solid);
+    op->SetArguments(args);
+    op->SetTools(toolList);
+    op->SetRunParallel(true);
+    if (!runGuarded([&] { op->Build(); }) || !op->IsDone() || op->HasErrors()) {
+      op.release();  // a builder that faulted is left alone
+      return false;
+    }
+    std::vector<Named> carried;
+    carry(*op, names, carried);  // the body's names first: they win on merged faces
+    for (const Tool &t : tools) {
+      std::vector<Named> faces;
+      for (TopExp_Explorer ex(t.solid, TopAbs_FACE); ex.More(); ex.Next()) faces.push_back({ex.Current(), t.name});
+      carry(*op, faces, carried);
+    }
+    current = unify(op->Shape(), carried);
+    names = carried;
+    return true;
+  };
+  if (!apply(scoops, true) || !apply(beads, false)) {
+    setError("the concave round could not be built (try a smaller radius)");
+    return 0;
+  }
+  if (!BRepCheck_Analyzer(current).IsValid()) {
+    setError("the concave round produced an invalid solid (is the radius larger than the faces beside the edge?)");
+    return 0;
+  }
+  GProp_GProps before, after;
+  BRepGProp::VolumeProperties(b->shape, before);
+  BRepGProp::VolumeProperties(current, after);
+  if (std::abs(after.Mass() - before.Mass()) <= 1e-9 * std::max(1.0, before.Mass())) {
+    setError("the concave round changed nothing");
+    return 0;
+  }
+  return store(makeBody(current, names, feat + ".fillet"));
   SK_CATCH(0)
 }
 

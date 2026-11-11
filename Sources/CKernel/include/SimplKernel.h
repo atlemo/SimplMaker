@@ -197,6 +197,9 @@ SKHandle sk_body_section(SKHandle body, double ox, double oy, double oz, double 
 int sk_split_parts(SKHandle body, const char *featureId, SKHandle *out, int max);
 /// Constant-radius fillet on the named edges. New faces: "<featureId>.fillet.<edgeName>".
 SKHandle sk_fillet(SKHandle body, const char *const *edgeNames, int count, double radius, const char *featureId);
+/// The other way round: a convex edge gets a quarter-round scoop, a concave edge a quarter-round bead, the arc centred
+/// on the edge (so it meets the faces at a crease, not tangent). New faces: "<featureId>.fillet.<edgeName>".
+SKHandle sk_fillet_concave(SKHandle body, const char *const *edgeNames, int count, double radius, const char *featureId);
 /// Equal-distance chamfer on the named edges. New faces: "<featureId>.chamfer.<edgeName>".
 SKHandle sk_chamfer(SKHandle body, const char *const *edgeNames, int count, double distance, const char *featureId);
 

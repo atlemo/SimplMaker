@@ -57,6 +57,7 @@ struct FeatureDescriber {
             out["edges"] = .list(f.edges.map { AIEntityRef.edge($0).string })
             if !f.faces.isEmpty { out["faces"] = faces(f.faces) }
             out["flipped"] = .flag(f.flipped)
+            if case .fillet = feature.kind { out["concave"] = .flag(f.concave) }
         case .revolve(let f):
             out["sketch"] = .text(f.sketch); out["profiles"] = profiles(f.profiles, in: f.sketch)
             out["angle"] = angle(f.angle)

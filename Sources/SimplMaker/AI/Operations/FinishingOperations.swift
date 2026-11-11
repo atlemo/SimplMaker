@@ -16,6 +16,8 @@ struct EdgeFinishOperation: AIOperation {
     let mode: ChamferMode
     let second: String?
     let flipped: Bool
+    /// A fillet that curves the other way (see EdgeFeature.concave).
+    var concave = false
     let name: String?
     let id: String?
     private var kindName: String { fillet ? "Fillet" : "Chamfer" }
@@ -30,7 +32,7 @@ struct EdgeFinishOperation: AIOperation {
                           reason: "Pass edges (ids like \"edge:<body>/<name>\") and/or faces (ids like \"face:<body>/<name>\", every edge around the face is used). get_body lists both.")
         }
         _ = try AIValues.evaluate(size, kind: .length, field: "size", positive: true, values: context.values)
-        var feature = EdgeFeature(edges: [], faces: [], size: size, flipped: flipped)
+        var feature = EdgeFeature(edges: [], faces: [], size: size, flipped: flipped, concave: concave)
         if !fillet {
             feature.setMode(mode)
             if let kind = mode.secondKind {
@@ -47,6 +49,7 @@ struct EdgeFinishOperation: AIOperation {
         } else if mode != .equalDistance || second != nil {
             throw AIError(.invalidArguments, "A fillet has only a size: mode and second are for chamfers.")
         }
+        if concave && !fillet { throw AIError(.invalidArguments, "concave is for fillets only.") }
 
         var edgeCount = Set<String>()
         for text in edges {
@@ -79,7 +82,7 @@ struct EdgeFinishOperation: AIOperation {
         let featureID = try AIValues.newFeatureID(id, in: doc)
         let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName(kindName)
         doc.addFeature(Feature(id: featureID, name: featureName, fillet ? .fillet(feature) : .chamfer(feature)))
-        let how = fillet ? "radius \(size)" : (mode == .equalDistance ? "distance \(size)" : "\(size) and \(feature.second) (\(Self.modeName(mode)))")
+        let how = fillet ? "radius \(size)\(concave ? ", concave" : "")" : (mode == .equalDistance ? "distance \(size)" : "\(size) and \(feature.second) (\(Self.modeName(mode)))")
         return OperationOutcome(featureID: featureID,
                                 message: "Created \(featureName): \(fillet ? "rounded" : "bevelled") \(edgeCount.count) edge\(edgeCount.count == 1 ? "" : "s"), \(how).")
     }
@@ -96,10 +99,10 @@ struct EdgeFinishOperation: AIOperation {
 extension CADService {
     /// One fillet or chamfer, as one transaction (the tools and the tests use this).
     func createEdgeFinish(documentID: String, expectedRevision: Int? = nil, fillet: Bool, edges: [String] = [], faces: [String] = [], size: String,
-                          mode: ChamferMode = .equalDistance, second: String? = nil, flipped: Bool = false, name: String? = nil,
-                          id: String? = nil) async throws -> ChangeResult {
+                          mode: ChamferMode = .equalDistance, second: String? = nil, flipped: Bool = false, concave: Bool = false,
+                          name: String? = nil, id: String? = nil) async throws -> ChangeResult {
         try await change(documentID: documentID, expectedRevision: expectedRevision,
                          EdgeFinishOperation(fillet: fillet, edges: edges, faces: faces, size: size, mode: mode, second: second,
-                                             flipped: flipped, name: name, id: id))
+                                             flipped: flipped, concave: concave, name: name, id: id))
     }
 }

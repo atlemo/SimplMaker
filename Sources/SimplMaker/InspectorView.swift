@@ -496,6 +496,10 @@ struct EdgeInspector: View {
                     ForEach(ChamferMode.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
             }
+            if fillet {
+                Toggle("Concave", isOn: Binding(get: { edges.concave }, set: { v in update("Concave Fillet") { $0.concave = v } }))
+                    .help("Curve the other way: a scoop cut into a convex edge, a bead added in an inside corner. The arc is centred on the edge, so it meets the faces at a crease")
+            }
             LabeledContent(firstLabel) {
                 ExpressionField(text: edges.size, preview: { v in
                     model.preview(id) { f in

@@ -1692,6 +1692,7 @@ public enum Regenerator {
             let b = r.bodies[i].body
             let faces = edges.map { pickedFace[bodyID]?[$0] ?? "" }
             func round(_ scale: Double) throws -> KBody {
+                if fillet && f.concave { return try b.concaveFillet(edges: edges, radius: size * scale, featureID: feature.id) }
                 if fillet { return try b.fillet(edges: edges, radius: size * scale, featureID: feature.id) }
                 if f.mode == .equalDistance { return try b.chamfer(edges: edges, distance: size * scale, featureID: feature.id) }
                 // A second distance scales with the first; an angle stays what it is.

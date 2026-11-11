@@ -48,6 +48,18 @@ import Testing
         #expect(t.model.document.features.count == 1)
     }
 
+    @Test func aConcaveFilletScoopsTheEdgeAndOnlyFilletsMayBeConcave() async throws {
+        let t = await open()
+        let (_, edge) = try await boxWithTop(t)
+        let before = volume(t.model)
+        let r = try await t.service.createEdgeFinish(documentID: t.id, fillet: true, edges: [edge], size: "2", concave: true, id: "cove")
+        #expect(r.message.contains("concave"), "\(r.message)")
+        // A quarter disc of radius 2 along 100 mm.
+        #expect(abs((before - volume(t.model)) - Double.pi * 100) < 1)
+        let chamfer = await refusal { _ = try await t.service.createEdgeFinish(documentID: t.id, fillet: false, edges: [edge], size: "1", concave: true) }
+        #expect(chamfer?.code == .invalidArguments)
+    }
+
     @Test func aFaceStandsForEveryEdgeAroundIt() async throws {
         let t = await open()
         let (top, _) = try await boxWithTop(t)

@@ -499,6 +499,11 @@ public final class KBody: @unchecked Sendable {
         try withCStrings(edges) { try KBody.wrap(sk_fillet(handle, $0, Int32(edges.count), radius, featureID), "fillet") }
     }
 
+    /// A fillet that curves the other way (a scoop on a convex edge, a bead on a concave one); see sk_fillet_concave.
+    public func concaveFillet(edges: [String], radius: Double, featureID: String) throws -> KBody {
+        try withCStrings(edges) { try KBody.wrap(sk_fillet_concave(handle, $0, Int32(edges.count), radius, featureID), "fillet") }
+    }
+
     public func chamfer(edges: [String], distance: Double, featureID: String) throws -> KBody {
         try withCStrings(edges) { try KBody.wrap(sk_chamfer(handle, $0, Int32(edges.count), distance, featureID), "chamfer") }
     }
