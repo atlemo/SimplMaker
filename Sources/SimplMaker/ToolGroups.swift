@@ -426,6 +426,8 @@ enum ToolListMetrics {
 #if os(macOS)
     /// The edge of the popover that carries its arrow: on the Mac `.bottom` opens it below the toolbar.
     static let arrowEdge = Edge.bottom
+    /// Where a submenu's arrow sits: `.trailing` opens it to the right of its row.
+    static let subArrowEdge = Edge.trailing
     static let rowHeight: CGFloat = 28
     static let smallButton: CGFloat = 22
     static let listWidth: CGFloat = 290
@@ -438,6 +440,9 @@ enum ToolListMetrics {
 #else
     /// On the iPad the edge names where the arrow sits on the popover, so `.top` opens it below the button.
     static let arrowEdge = Edge.top
+    /// The same naming on the iPad: the arrow on the submenu's leading edge opens it to the right of its row (`.trailing` put it
+    /// on the left, over the screen's edge, cut off).
+    static let subArrowEdge = Edge.leading
     static let rowHeight: CGFloat = 52
     static let smallButton: CGFloat = 44
     static let listWidth: CGFloat = 360
@@ -496,7 +501,7 @@ private struct ToolGroupRow: View {
         .frame(height: ToolListMetrics.rowHeight)
         .background(hovering || subOpen ? Color.primary.opacity(0.07) : .clear,
                     in: RoundedRectangle(cornerRadius: DS.Radius.menuItem, style: .continuous))
-        .popover(isPresented: Binding(get: { subOpen }, set: { if !$0 { closeSub() } }), arrowEdge: .trailing) {
+        .popover(isPresented: Binding(get: { subOpen }, set: { if !$0 { closeSub() } }), arrowEdge: ToolListMetrics.subArrowEdge) {
             ModeList(tool: tool, isPinned: isPinned, togglePin: togglePin) { closeSub(); run($0) }
                 .onHover(perform: onSubHover)
         }
