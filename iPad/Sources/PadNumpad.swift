@@ -4,6 +4,10 @@
 // starts editing, its keyboard is replaced by nothing and this pad floats up instead: the keys type into the field as the keyboard
 // would, so the field's own behaviour (the live preview, completing a parameter's name, Return to finish) is unchanged. It takes
 // less room than the keyboard, and the Inspector is opened beside it so every size the feature needs is in view.
+//
+// A field in a popover or sheet (a dimension's value, the Transform sizes, the parameter sheet) sits over the app, where a pad in the
+// document window would be hidden under it, and a tap beside the popover would close it: there the same pad floats in a layer of its
+// own on top of the app window, and taps on it leave the popover alone.
 
 import SwiftUI
 import UIKit
@@ -18,13 +22,23 @@ final class PadNumpad {
     private(set) var label = ""
     /// The user asked for the letters (a parameter's name): the system keyboard takes over for this field.
     private(set) var usesSystemKeyboard = false
+    /// The field is in a popover or sheet: the pad floats in a window above it, not in the document window.
+    private(set) var inOverlayWindow = false
+    /// For the parameters menu on the keys; the document window sets it.
+    weak var model: DocumentModel?
+    private var overlayLayer: PadNumpadLayer?
+    private var overlayHost: UIViewController?
+    /// Where the field being typed in is on the screen.
+    var fieldFrame: CGRect { field.map { $0.convert($0.bounds, to: nil) } ?? .zero }
+    /// Where the pad (or the 123 key) is on the screen while it floats in its window: the only place that window takes touches.
+    var overlayFrame = CGRect.zero
 
     var isActive: Bool { field != nil && !usesSystemKeyboard }
 
     static let width: CGFloat = 300
     static let height: CGFloat = 352
     /// The room the pad takes above the bottom of the screen (the timeline below it included): the fields that are typed in keep above it.
-    var reserve: CGFloat { isActive ? Self.height + 70 : 0 }
+    var reserve: CGFloat { isActive && !inOverlayWindow ? Self.height + 70 : 0 }
 
     private init() {
         let center = NotificationCenter.default
@@ -40,31 +54,73 @@ final class PadNumpad {
             MainActor.assumeIsolated {
                 guard let ended = note.object as? UITextField else { return }
                 // Moving from one field to the next ends one and begins the other: only let go if no other began meanwhile.
-                DispatchQueue.main.async { if PadNumpad.shared.field === ended { PadNumpad.shared.field = nil } }
+                DispatchQueue.main.async { if PadNumpad.shared.field === ended { PadNumpad.shared.release() } }
             }
         }
     }
 
     private func began(_ field: UITextField) {
-        guard field.keyboardType == .numbersAndPunctuation, !Self.isInPresentedController(field) else { return }
+        guard field.keyboardType == .numbersAndPunctuation else { return }
         self.field = field
         usesSystemKeyboard = false
         let named = field.accessibilityLabel ?? field.placeholder ?? ""
         label = named == "expression" ? "Value" : named  // a field with no name of its own says what any of them does
+        inOverlayWindow = Self.presentedController(of: field) != nil
         field.inputView = UIView(frame: .zero)  // nothing: the pad is the keyboard
         field.inputAssistantItem.leadingBarButtonGroups = []
         field.inputAssistantItem.trailingBarButtonGroups = []
         field.reloadInputViews()
+        updateWindow()
     }
 
-    /// A field in a popover or sheet sits over the app: the pad would be out of reach under it, so it keeps the system keyboard.
-    private static func isInPresentedController(_ view: UIView) -> Bool {
+    /// The field is done: the pad goes (and its window, if it had one).
+    func release() {
+        field = nil
+        inOverlayWindow = false
+        updateWindow()
+    }
+
+    /// The pad over a popover or sheet: a transparent layer on top of the app's own window (not a window of its own: a touch in another
+    /// window is not the popover's own, and a popover is dismissed by those), where only the pad itself takes touches.
+    private func updateWindow() {
+        guard inOverlayWindow, field != nil, let model, let window = field?.window else {
+            overlayLayer?.isHidden = true
+            overlayFrame = .zero
+            if !inOverlayWindow { overlayLayer?.removeFromSuperview(); overlayLayer = nil; overlayHost = nil }
+            return
+        }
+        if overlayLayer?.window !== window { overlayLayer?.removeFromSuperview(); overlayLayer = nil; overlayHost = nil }
+        if overlayLayer == nil {
+            let layer = PadNumpadLayer(frame: window.bounds)
+            layer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            layer.backgroundColor = .clear
+            let host = UIHostingController(rootView: PadNumpadOverlay(model: model))
+            host.view.backgroundColor = .clear
+            host.view.frame = layer.bounds
+            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            if let root = window.rootViewController {
+                root.addChild(host)
+                layer.addSubview(host.view)
+                host.didMove(toParent: root)
+            } else {
+                layer.addSubview(host.view)
+            }
+            window.addSubview(layer)
+            overlayLayer = layer
+            overlayHost = host
+        }
+        overlayLayer?.isHidden = false
+        if let layer = overlayLayer { window.bringSubviewToFront(layer) }  // a popover that came up since is under it
+    }
+
+    /// The popover or sheet a field sits in (nil: the document window itself).
+    private static func presentedController(of view: UIView) -> UIViewController? {
         var responder: UIResponder? = view
         while let next = responder?.next {
-            if let controller = next as? UIViewController, controller.presentingViewController != nil { return true }
+            if let controller = next as? UIViewController, controller.presentingViewController != nil { return controller }
             responder = next
         }
-        return false
+        return nil
     }
 
     // MARK: keys
@@ -101,6 +157,9 @@ final class PadNumpad {
     func done() {
         guard let field else { return }
         _ = field.delegate?.textFieldShouldReturn?(field)
+        // A SwiftUI field in a popover or sheet takes its Return (onSubmit) from the control's own action, which the delegate call alone
+        // does not fire.
+        if inOverlayWindow { field.sendActions(for: .primaryActionTriggered) }
         field.resignFirstResponder()
     }
 
@@ -108,9 +167,10 @@ final class PadNumpad {
     func next() {
         guard let field, let window = field.window else { return }
         var fields: [UITextField] = []
+        let here = Self.presentedController(of: field)  // the next size in the same popover or sheet, or in the window itself
         func collect(_ view: UIView) {
             if let f = view as? UITextField, f.keyboardType == .numbersAndPunctuation, !f.isHidden, f.alpha > 0.01, f.window != nil,
-               !Self.isInPresentedController(f) { fields.append(f) }
+               Self.presentedController(of: f) === here { fields.append(f) }
             view.subviews.forEach(collect)
         }
         collect(window)
@@ -118,12 +178,22 @@ final class PadNumpad {
         fields[(index + 1) % fields.count].becomeFirstResponder()
     }
 
-    /// The letters, for a parameter's name: the system keyboard for this field only.
+    /// Back to the pad after the letters: the field's keyboard is nothing again.
+    func useNumpad() {
+        guard let field else { return }
+        usesSystemKeyboard = false
+        field.inputView = UIView(frame: .zero)
+        field.reloadInputViews()
+        updateWindow()
+    }
+
+    /// The letters, for a parameter's name or an expression: the system keyboard for this field only.
     func useSystemKeyboard() {
         guard let field else { return }
         usesSystemKeyboard = true
         field.inputView = nil
         field.reloadInputViews()
+        updateWindow()
     }
 }
 
@@ -131,12 +201,27 @@ final class PadNumpad {
 
 struct PadNumpadPanel: View {
     let model: DocumentModel
+    /// True for the pad in the window of its own over a popover or sheet; false for the one in the document window.
+    var inWindow = false
     @State private var numpad = PadNumpad.shared
     @State private var offset = CGSize.zero
     @State private var dragStart = CGSize.zero
 
     var body: some View {
-        if numpad.isActive {
+        if numpad.isActive, numpad.inOverlayWindow == inWindow {
+            keys
+                .padding(12)
+                .frame(width: PadNumpad.width)
+                .panelGlass(in: RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))
+                .offset(offset)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Number pad")
+                .reportsFrame(if: inWindow)
+        }
+    }
+
+    private var keys: some View {
+        Group {
             VStack(spacing: 8) {
                 header
                 Grid(horizontalSpacing: 8, verticalSpacing: 8) {
@@ -177,12 +262,6 @@ struct PadNumpadPanel: View {
                     }
                 }
             }
-            .padding(12)
-            .frame(width: PadNumpad.width)
-            .panelGlass(in: RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))
-            .offset(offset)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Number pad")
         }
     }
 
@@ -249,5 +328,52 @@ struct PadNumpadPanel: View {
                 .foregroundStyle(Color.primary)
         }
         .accessibilityLabel("Insert a unit")
+    }
+}
+
+/// The pad in its own window: at the bottom of the screen, above a popover or sheet. While the letters are up (an expression, a
+/// parameter's name) a small "123" key under the field goes back to the pad.
+struct PadNumpadOverlay: View {
+    let model: DocumentModel
+    @State private var numpad = PadNumpad.shared
+
+    var body: some View {
+        ZStack {
+            PadNumpadPanel(model: model, inWindow: true)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 24)
+            if numpad.field != nil, numpad.usesSystemKeyboard {
+                let box = numpad.fieldFrame
+                Button { numpad.useNumpad() } label: {
+                    Text("123").font(.headline).padding(.horizontal, 18).frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .panelGlass(in: Capsule())
+                .reportsFrame(if: true)
+                .accessibilityLabel("Show the number pad")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.leading, box.maxX + 130)  // beside the popover: under it the keyboard would cover it
+                .padding(.top, max(box.minY - 8, 8))
+            }
+        }
+    }
+}
+
+private extension View {
+    /// Tells the pad's window where this view is on the screen, so the window takes touches only there.
+    @ViewBuilder func reportsFrame(if on: Bool) -> some View {
+        if on {
+            onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { PadNumpad.shared.overlayFrame = $0 }
+        } else {
+            self
+        }
+    }
+}
+
+/// A layer over the whole window that passes every touch not on the pad through to what is under it. (SwiftUI's buttons are not views of
+/// their own: the hosting view is the hit view for all of them, so what is on the pad is told by its frame.)
+final class PadNumpadLayer: UIView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        PadNumpad.shared.overlayFrame.contains(point) ? super.hitTest(point, with: event) : nil
     }
 }

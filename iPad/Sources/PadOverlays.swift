@@ -684,9 +684,13 @@ struct PadSketchBar: View {
             } else if session.toolInProgress {
                 bar {
                     if session.drawsChains {
+                        // Return in a size field places the next point; with the keyboard up there is no key for it, so OK is that key.
+                        if !session.inputFields.isEmpty { okButton }
                         Button("Done", systemImage: "checkmark") { finish(session) { $0.escape() } }.buttonStyle(.borderedProminent)
                     } else {
                         Button("Cancel", systemImage: "xmark") { finish(session) { $0.escape() } }
+                        // The size fields (width, height, radius...) end with Return, which the touch keyboard has no good key for.
+                        if !session.inputFields.isEmpty { okButton.buttonStyle(.borderedProminent) }
                     }
                 }
             } else if !session.selection.isEmpty, !session.isMirroring {
@@ -696,6 +700,10 @@ struct PadSketchBar: View {
                 }
             }
         }
+    }
+
+    private var okButton: some View {
+        Button("OK", systemImage: "return") { model.commitSketchTyped(); model.overlayRevision += 1 }
     }
 
     private func finish(_ session: SketchSession, _ action: (SketchSession) -> Void) {

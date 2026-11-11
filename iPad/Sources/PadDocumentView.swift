@@ -84,7 +84,7 @@ struct PadDocumentView: View {
                     .ignoresSafeArea()
             }
             .onChange(of: PadNumpad.shared.isActive) {
-                if PadNumpad.shared.isActive, model.selectedFeature != nil || model.newFeature != nil { model.showInspector = true }
+                if PadNumpad.shared.isActive, !PadNumpad.shared.inOverlayWindow, model.selectedFeature != nil || model.newFeature != nil { model.showInspector = true }
             }
             // Each side panel's show/hide button sits in the panel's top corner and stays there when the panel is closed
             // (then it floats on its own), as in Apple Notes.
@@ -117,6 +117,7 @@ struct PadDocumentView: View {
             .focusedSceneValue(\.documentModel, model)
             .onAppear {
                 _ = KeyboardWatcher.shared  // watching from the start, so a keyboard raised later is seen
+                PadNumpad.shared.model = model  // the number pad's parameters menu, in popovers and sheets too
                 model.undoManager = undoManager
                 model.fileURL = fileURL
                 // A narrow screen has room for the viewport or the panels, not both: start with the viewport.

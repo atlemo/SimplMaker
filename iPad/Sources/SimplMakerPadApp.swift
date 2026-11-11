@@ -20,39 +20,65 @@ struct SimplMakerPadApp: App {
         }
         .commands { PadCommands() }
 
-        // Our own launch screen, worded like the Mac's welcome window: icon, title, version, and a button that makes the part and
-        // opens it in one step. The system draws the file browser (recent parts) and does the opening, renaming and duplicating.
-        // (A demo or tutorial button doesn't work here: the system creates the file itself and ignores a prepared document.)
-        DocumentGroupLaunchScene("Welcome to SimplMaker") {
+        // Our own launch screen, worded like the Mac's welcome window: icon, title, button and version, with the button making the
+        // part and opening it in one step. The system draws the file browser (recent parts) and does the opening, renaming and
+        // duplicating. (A demo or tutorial button doesn't work here: the system creates the file itself and ignores a prepared
+        // document.) The system's own title is left empty: it is set left-aligned in a size we cannot change, so the title, like
+        // the icon and the version, is drawn here, centred on the button.
+        DocumentGroupLaunchScene("") {
             NewDocumentButton("Create a new part")
         } background: {
             Color(.systemGroupedBackground)
         } overlayAccessoryView: { geometry in
+            // With no title, the button sits in the middle of this box (the box is tight around it on a roomy screen, and taller on
+            // the short folded phone): everything else is placed around the button.
             let box = geometry.titleViewFrame
-            // Landscape (and any short screen) squeezes the title and the button together, so there the icon rides higher,
-            // clear of the title, and the version, which would land on the button, is left out.
-            let short = geometry.frame.width > geometry.frame.height
-            ZStack(alignment: .topLeading) {
-                PadWelcomeIcon().position(x: box.midX, y: box.minY + (short ? 20 : 72))
-                if !short { PadWelcomeVersion().position(x: box.midX, y: box.maxY - 105) }
+            GeometryReader { proxy in
+                // The overlay is not always laid out from the screen's top left corner: place things relative to where it is.
+                let origin = proxy.frame(in: .global).origin
+                let x = box.midX - origin.x
+                let buttonTop = box.midY - 26 - origin.y
+                ZStack(alignment: .topLeading) {
+                    // The icon where it fits above the title: full size on a roomy screen, smaller when the browser takes the room
+                    // (landscape), and left out on the short folded phone.
+                    if buttonTop >= 150 {
+                        let size: CGFloat = buttonTop >= 212 ? 96 : 56
+                        PadWelcomeIcon(size: size).position(x: x, y: buttonTop - 80 - size / 2)
+                    }
+                    PadWelcomeTitle(size: min(40, max(26, box.width * 0.06))).frame(width: max(box.width - 32, 100)).position(x: x, y: buttonTop - 40)
+                    PadWelcomeVersion().position(x: x, y: box.midY + 26 + 36 - origin.y)
+                }
             }
-            .frame(width: geometry.frame.width, height: geometry.frame.height, alignment: .topLeading)
+            .ignoresSafeArea()
         }
+    }
+}
+
+/// The title, above the button.
+private struct PadWelcomeTitle: View {
+    let size: CGFloat
+    var body: some View {
+        Text("Welcome to SimplMaker")
+            .font(.system(size: size, weight: .bold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+            .multilineTextAlignment(.center)
     }
 }
 
 /// The app icon, above the title.
 private struct PadWelcomeIcon: View {
+    let size: CGFloat
     var body: some View {
         if let icon = UIImage(named: "WelcomeIcon") {
-            Image(uiImage: icon).resizable().frame(width: 96, height: 96)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            Image(uiImage: icon).resizable().frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.23, style: .continuous))
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
         }
     }
 }
 
-/// The version, under the buttons.
+/// The version, under the button.
 private struct PadWelcomeVersion: View {
     var body: some View {
         Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")

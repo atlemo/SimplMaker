@@ -2661,6 +2661,7 @@ struct TransformPopover: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.body.monospaced())
                 .frame(width: 140)
+                .numericEntry()
                 .completesParameters(model, focused: focus && focused)
                 .arrowNudges(text)
                 .onSubmit { submit() }
