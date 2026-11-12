@@ -37,12 +37,23 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
         latest = OSAllocatedUnfairLock(initialState: document)
     }
 
-    init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
+    /// A document from a file's bytes. `tutorial` opens it with the tutorial's card showing.
+    init(data: Data, tutorial: Bool = false) throws {
         initial = try CADDocument.decode(data)
-        startsTutorial = false
+        startsTutorial = tutorial
         latest = OSAllocatedUnfairLock(initialState: initial)
         thumbnail.withLock { $0 = CADDocument.thumbnail(in: data) }
+    }
+
+    convenience init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
+        try self.init(data: data)
+    }
+
+    /// The file's bytes as they are now, for an app that writes the file itself (the iPad's, which has no DocumentGroup).
+    /// Readable from any thread, like `snapshot`.
+    func encodedData() throws -> Data {
+        try latest.withLock { $0 }.encoded(thumbnail: thumbnail.withLock { $0 })
     }
 
     /// The live model for this document's window, created on first use.

@@ -127,7 +127,9 @@ struct PadViewport: UIViewRepresentable {
                 updateCameraInsets(view, insets, toolbar: toolbarHeight)
                 state?.renderer = renderer
                 state?.cameraMayHaveMoved(size: view.bounds.size)
-                if let state, state.topInset != view.safeAreaInsets.top + toolbarHeight { state.topInset = view.safeAreaInsets.top + toolbarHeight }
+                // The top bar's room is not in the view's own safe area (SwiftUI's inset does not reach it), so it is added here.
+                let top = view.safeAreaInsets.top + PadTopBar.height + toolbarHeight
+                if let state, state.topInset != top { state.topInset = top }
                 renderer?.draw(in: view)
             }
         }
@@ -203,7 +205,7 @@ struct PadViewport: UIViewRepresentable {
         func updateCameraInsets(_ view: MTKView, _ panels: (left: CGFloat, right: CGFloat, bottom: CGFloat), toolbar: CGFloat) {
             guard let renderer, view.bounds.width > 1, view.bounds.height > 1 else { return }
             let w = view.bounds.width, h = view.bounds.height
-            let top = min(view.safeAreaInsets.top + toolbar, h * 0.3)
+            let top = min(view.safeAreaInsets.top + PadTopBar.height + toolbar, h * 0.3)
             let left = min(panels.left, w * 0.45), right = min(panels.right, w * 0.45), bottom = min(panels.bottom, h * 0.3)
             renderer.camera.centerShift = SIMD2(Float((left - right) / w), Float((bottom - top) / h))
             renderer.camera.visibleFraction = SIMD2(Float((w - left - right) / w), Float((h - top - bottom) / h))

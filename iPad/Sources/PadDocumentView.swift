@@ -9,6 +9,10 @@ import UniformTypeIdentifiers
 struct PadDocumentView: View {
     let file: CADFile
     let fileURL: URL?
+    /// The name in the top bar, what its back button does, and what its title menu's Rename does (nil: the part cannot be renamed).
+    var title = ""
+    var onClose: () -> Void = {}
+    var onRename: (() -> Void)?
     @Environment(\.undoManager) private var undoManager
     @AppStorage(Preferences.showGrid) private var showGrid = true
     @AppStorage(Preferences.showAxes) private var showAxes = true
@@ -109,7 +113,11 @@ struct PadDocumentView: View {
             // system bar: those kept disappearing (after another app, or a dialog) and took the way out of the Render view with them.
             .scrollEdgeEffectHidden(true, for: .top)
             .toolbarBackgroundVisibility(.hidden, for: .navigationBar)  // the bar's own backdrop would wash out the glass under it
-            .background(PadNavBarButtons(model: model, guide: guide, undoManager: undoManager, frame: $navButtonsFrame))
+            // The bar's room at the top, as the system's navigation bar took it before: the panels start below it.
+            .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: PadTopBar.height).allowsHitTesting(false) }
+            .overlay(alignment: .top) {
+                PadTopBar(model: model, guide: guide, undoManager: undoManager, title: title, onClose: onClose, onRename: onRename, frame: $navButtonsFrame)
+            }
             .modifier(PadDialogs(model: model))
             .modifier(AccentScope(sketching: model.sketchSession != nil))
             .environment(\.completionModel, model)
@@ -456,7 +464,7 @@ struct PadTopButtons: View {
                 Button(guide.canResume ? "Resume Tutorial: Desk Organizer" : "Tutorial: Make a Desk Organizer") {
                     if guide.isActive { return }
                     if guide.canResume || (model.document.features.isEmpty && model.document.parameters.isEmpty) { guide.start() }
-                    else { model.alert = AlertInfo(title: "The tutorial starts in an empty part", message: "Close this part, create a new one from the document browser, and choose Help › Tutorial there.") }
+                    else { model.alert = AlertInfo(title: "The tutorial starts in an empty part", message: "Close this part, go back to the start screen, make a new one there, and choose Help › Tutorial there.") }
                 }
                 Menu("Load Example Part") {
                     Button("Plate with Holes, Fillets and a Chamfer") { loadExample("Plate with Holes, Fillets and a Chamfer", CADDocument.demo()) }
