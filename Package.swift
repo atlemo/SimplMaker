@@ -17,6 +17,25 @@ let occt = ProcessInfo.processInfo.environment["OCCT_ROOT"] ?? "\(packageRoot)/T
 let occtIOS = ProcessInfo.processInfo.environment["OCCT_IOS_ROOT"] ?? "\(packageRoot)/ThirdParty/occt-ios"
 let hasIOSKernel = FileManager.default.fileExists(atPath: "\(occtIOS)/SimplOCCT.xcframework")
 
+// SwiftPM writes the deployment target into the binary as its SDK version too, and macOS 26 and later then draw the app the
+// old way (short toolbar, old greys). Record the SDK that is installed instead; the deployment target stays 15.0. A manifest
+// cannot run xcrun, so the version is read from the SDK's own settings file. bundle-app.sh passes the same numbers, which is
+// harmless; if the file is not found the flags are left out and the build behaves as before.
+let macSDKVersion: String? = {
+    let env = ProcessInfo.processInfo.environment
+    var developerDirs = [env["DEVELOPER_DIR"], try? FileManager.default.destinationOfSymbolicLink(atPath: "/var/db/xcode_select_link"),
+                         "/Applications/Xcode.app/Contents/Developer"].compactMap { $0 }
+    developerDirs.append("/Library/Developer/CommandLineTools")
+    for dir in developerDirs {
+        for sdk in ["Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk", "SDKs/MacOSX.sdk"] {
+            let plist = "\(dir)/\(sdk)/SDKSettings.plist"
+            if let dict = NSDictionary(contentsOfFile: plist), let v = dict["Version"] as? String { return v }
+        }
+    }
+    return nil
+}()
+let macSDKLinkFlags: [String] = macSDKVersion.map { ["-Xlinker", "-platform_version", "-Xlinker", "macos", "-Xlinker", "15.0", "-Xlinker", $0] } ?? []
+
 let package = Package(
     name: "SimplMaker",
     platforms: [.macOS("15.0"), .iOS("18.0")],
@@ -71,7 +90,8 @@ let package = Package(
                            .product(name: "TelemetryDeck", package: "SwiftSDK")],
             path: "Sources/SimplMaker",
             // SwiftPM executables only look for frameworks next to the binary; an .app keeps them in Contents/Frameworks.
-            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
+                             .unsafeFlags(macSDKLinkFlags, .when(platforms: [.macOS]))]
         ),
         // Plain Foundation: forwards MCP messages from standard input to the running app. No CAD, no UI.
         .executableTarget(name: "SimplMakerMCP", path: "Sources/SimplMakerMCP"),
