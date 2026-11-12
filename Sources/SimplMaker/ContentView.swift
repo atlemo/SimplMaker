@@ -423,7 +423,7 @@ struct StartCard: View {
                 Button { model.run(.cylinder) } label: { Label("Cylinder", systemImage: "cylinder") }
             }
             .controlSize(.large)
-            Button { guide.start() } label: { Label("New to CAD? Follow the tutorial: a desk organizer", systemImage: "graduationcap") }
+            Button { guide.start() } label: { Label("New to CAD? Follow the tutorial: a \(guide.kind.title.lowercased())", systemImage: "graduationcap") }
                 .buttonStyle(.platformLink)
                 .padding(.top, DS.Spacing.space5)  // a bigger gap below the three buttons
             Text(Self.footnote)
@@ -752,7 +752,11 @@ struct ParametersList: View {
             ParameterRow(model: model, parameter: p, selected: false,
                          active: focused == p.name || renaming == p.name, renaming: renamingBinding(p.name),
                          valueFocused: focusBinding(p.name), tabbed: { moveFocus(from: p.name, backwards: $0) })
-                .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: 2)
+                // The ring stays well inside the row: the list clips its rows (a ring on the edge lost its corners), so the row has room
+                // all round (padding) and the ring is drawn a little way in from the edge of that room (negative outset).
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .tutorialSpot("parameter-\(p.name)", cornerRadius: DS.Radius.lg, outset: -3)
                 .environment(\.backgroundProminence, .standard)  // no accent row, so no white-on-accent text
                 // A parameter row is not a selectable row: a click goes straight to the field, like any plain input, and
                 // the list has no selection of its own to take the first click with.

@@ -21,7 +21,7 @@ enum Preferences {
     static let gridSizeUS = "gridSizeUS"
     static let sketchPaper = "sketchPaper"
     static let antialiasing = "antialiasing"
-    /// The guided first part (the desk organizer) has been finished.
+    /// The guided first part (the desk organizer on the Mac, the name tag keyring on the iPad) has been finished.
     static let tutorialCompleted = "tutorialCompleted"
     /// Anonymous usage statistics are sent (see Telemetry.swift); on by default.
     static let sendUsageStatistics = "sendUsageStatistics"

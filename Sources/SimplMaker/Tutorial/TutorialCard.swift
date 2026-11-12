@@ -12,10 +12,18 @@ struct TutorialCard: View {
     @Environment(\.accent) private var accent
     let model: DocumentModel
     let guide: TutorialGuide
-    @State private var drag = CGSize.zero
+    /// Where the card was when the current drag began.
     @State private var dragStart: CGSize?
 
     static let width: CGFloat = 380
+
+    private static var closeHelp: String {
+#if os(iOS)
+        "Close the tutorial. The Help menu brings it back."
+#else
+        "Close the tutorial. Help ▸ Tutorial brings it back."
+#endif
+    }
 
     var body: some View {
         // Reading `current` here ties the card to every change in the part that a step looks at.
@@ -65,7 +73,7 @@ struct TutorialCard: View {
         .padding(DS.Spacing.space6)
         .frame(width: Self.width)
         .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
-        .offset(drag)
+        .modifier(CardOffset(guide: guide))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tutorial, step \(position.index + 1) of \(position.count)")
     }
@@ -87,17 +95,19 @@ struct TutorialCard: View {
                            help: guide.isCollapsed ? "Show the whole step" : "Fold the card down to a line") {
                     guide.isCollapsed.toggle()
                 }
-                CardButton(systemImage: "xmark", help: "Close the tutorial. Help ▸ Tutorial brings it back.") { guide.stop() }
+                CardButton(systemImage: "xmark", help: Self.closeHelp) { guide.stop() }
             }
             ProgressStrip(index: position.index, count: position.count)
         }
         .contentShape(Rectangle())
+        // The drag is measured on the screen, not in the card's own space: the card moves with the finger, and a drag measured
+        // in the space of what moves jitters (each move changes what the next one is measured against).
         .gesture(
-            DragGesture(minimumDistance: 3)
+            DragGesture(minimumDistance: 3, coordinateSpace: .global)
                 .onChanged { value in
-                    let start = dragStart ?? drag
+                    let start = dragStart ?? guide.cardOffset
                     dragStart = start
-                    drag = CGSize(width: start.width + value.translation.width, height: start.height + value.translation.height)
+                    guide.cardOffset = CGSize(width: start.width + value.translation.width, height: start.height + value.translation.height)
                 }
                 .onEnded { _ in dragStart = nil }
         )
@@ -117,11 +127,11 @@ struct TutorialCard: View {
             }
             switch step.kind {
             case .read(let title):
-                Button(step.id == TutorialScript.welcome.id ? "Not now" : "Leave tutorial") { guide.stop() }
+                Button(step.id == guide.steps.first?.id ? "Not now" : "Leave tutorial") { guide.stop() }
                     .buttonStyle(.bordered)
                 Spacer(minLength: 0)
                 #if os(macOS)
-                if step.id == TutorialScript.done.id {
+                if step.id == guide.steps.last?.id {
                     Button("Save…") { NSApp.sendAction(#selector(NSDocument.save(_:)), to: nil, from: nil) }
                 }
                 #endif
@@ -136,7 +146,11 @@ struct TutorialCard: View {
                     .help("SimplMaker does this step for you, and the guide moves on")
             }
         }
+        #if os(iOS)
+        .controlSize(.large)
+        #else
         .controlSize(.regular)
+        #endif
         .font(.callout)
     }
 
@@ -206,6 +220,14 @@ private struct ProgressStrip: View {
     }
 }
 
+/// Where the card sits after the user has dragged it. A view of its own, so that dragging redraws only this offset: the card reads
+/// the state of the whole part (every step's check) and must not do that on each frame of a drag.
+private struct CardOffset: ViewModifier {
+    let guide: TutorialGuide
+
+    func body(content: Content) -> some View { content.offset(guide.cardOffset) }
+}
+
 /// A small icon button in the card's header.
 private struct CardButton: View {
     let systemImage: String
@@ -213,11 +235,20 @@ private struct CardButton: View {
     let action: () -> Void
     @State private var hovering = false
 
+    /// A finger needs about 44 points; a pointer far less.
+#if os(iOS)
+    private static let size: CGFloat = 44
+    private static let iconSize: CGFloat = 16
+#else
+    private static let size: CGFloat = 20
+    private static let iconSize: CGFloat = 10
+#endif
+
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 20, height: 20)
+                .font(.system(size: Self.iconSize, weight: .semibold))
+                .frame(width: Self.size, height: Self.size)
                 .foregroundStyle(.secondary)
                 .background(hovering ? Color.primary.opacity(0.1) : .clear, in: Circle())
                 .contentShape(Circle())

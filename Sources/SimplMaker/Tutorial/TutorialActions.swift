@@ -18,8 +18,8 @@ enum TutorialActions {
     // MARK: parameters
 
     /// Adds the tutorial's parameters that the part doesn't have yet.
-    static func seedParameters(_ model: DocumentModel) {
-        let missing = TutorialPart.parameters.filter { p in !model.document.parameters.contains { $0.name == p.name } }
+    static func seedParameters(_ model: DocumentModel, kind: TutorialKind = .deskOrganizer) {
+        let missing = kind.parameters.filter { p in !model.document.parameters.contains { $0.name == p.name } }
         guard !missing.isEmpty else { return }
         model.mutate("Add Tutorial Parameters") { $0.parameters += missing }
     }
@@ -265,8 +265,8 @@ enum TutorialActions {
     }
 
     /// `width` and `depth` set to the bigger organizer's.
-    static func resize(_ model: DocumentModel) async {
-        for change in TutorialPart.resized { model.setParameter(change.name, expression: change.expression) }
+    static func resize(_ model: DocumentModel, kind: TutorialKind = .deskOrganizer) async {
+        for change in kind.resized { model.setParameter(change.name, expression: change.expression) }
         await settle(model)
     }
 }

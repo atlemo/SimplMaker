@@ -38,7 +38,10 @@ final class PadNumpad {
     static let width: CGFloat = 300
     static let height: CGFloat = 352
     /// The room the pad takes above the bottom of the screen (the timeline below it included): the fields that are typed in keep above it.
-    var reserve: CGFloat { isActive && !inOverlayWindow ? Self.height + 70 : 0 }
+    /// Measured from the bottom of the screen: the pad stands above the timeline and status bar (its own padding and the keys' frame included).
+    var reserve: CGFloat {
+        isActive && !inOverlayWindow ? Self.height + 24 + 8 + Panel.bottomInset(timeline: model?.showTimeline ?? true) + 12 : 0
+    }
 
     private init() {
         let center = NotificationCenter.default

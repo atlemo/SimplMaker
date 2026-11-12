@@ -23,6 +23,44 @@ enum TutorialPart {
 
     /// What "Do it for me" changes at the end: a bigger organizer.
     static let resized: [(name: String, expression: String)] = [("width", "190 mm"), ("depth", "120 mm")]
+
+    /// The name tag's numbers: how long and deep the tag is, how thick, the ring hole's diameter and how far the letters stand up.
+    /// (None is the start of another's name: Return completes a half-typed name.)
+    static let tagParameters: [Parameter] = [
+        Parameter("width", "60 mm", comment: "How long the tag is"),
+        Parameter("depth", "25 mm", comment: "How deep it is, top to bottom"),
+        Parameter("thick", "3 mm", comment: "How thick the tag is"),
+        Parameter("hole", "5 mm", comment: "How wide the hole for the key ring is"),
+        Parameter("relief", "1 mm", comment: "How far the letters stand up from the tag"),
+    ]
+
+    /// What "Do it for me" changes at the end of the name tag: a longer tag with a wider hole.
+    static let tagResized: [(name: String, expression: String)] = [("width", "75 mm"), ("hole", "6 mm")]
+}
+
+/// Which tutorial a window runs: each is a script, the numbers it names, and the changes its last task makes.
+enum TutorialKind: Sendable {
+    case deskOrganizer, nameTag
+
+    /// The Mac builds a desk organizer with a mouse; the iPad a name tag keyring with a finger.
+    static var platform: TutorialKind {
+#if os(iOS)
+        .nameTag
+#else
+        .deskOrganizer
+#endif
+    }
+
+    @MainActor var steps: [TutorialStep] {
+        switch self {
+        case .deskOrganizer: return TutorialScript.steps
+        case .nameTag: return NameTagScript.steps
+        }
+    }
+
+    var parameters: [Parameter] { self == .nameTag ? TutorialPart.tagParameters : TutorialPart.parameters }
+    var resized: [(name: String, expression: String)] { self == .nameTag ? TutorialPart.tagResized : TutorialPart.resized }
+    var title: String { self == .nameTag ? "Name Tag Keyring" : "Desk Organizer" }
 }
 
 @MainActor
@@ -113,6 +151,25 @@ struct TutorialFacts {
         guard let start = TutorialPart.parameters.first(where: { $0.name == name }) else { return false }
         return model.document.parameters.first { $0.name == name }.map { $0.expression != start.expression } ?? false
     }
+
+    /// Whether a parameter of the name tag has been given another value than it started with.
+    func isTagChanged(_ name: String) -> Bool {
+        guard let start = TutorialPart.tagParameters.first(where: { $0.name == name }) else { return false }
+        return model.document.parameters.first { $0.name == name }.map { $0.expression != start.expression } ?? false
+    }
+
+    // MARK: the name tag
+
+    /// The ring hole: a hole in the tag (any of its faces).
+    var tagHole: Found<HoleFeature>? {
+        guard let tag = baseExtrude else { return nil }
+        return features.compactMap { f -> Found<HoleFeature>? in
+            if case .hole(let h) = f.kind, !f.suppressed, h.face.body == tag.id { return (f.id, h) } else { return nil }
+        }.first
+    }
+
+    /// The words typed on the tag: the first text in the sketch on its top face.
+    var tagText: String? { wallSketch?.value.sketch.texts.first?.text }
 
     // MARK: the sections
 

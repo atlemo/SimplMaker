@@ -5,6 +5,7 @@
 // told to do what's done. Only the "read" steps (a welcome, a tour of the panels) need remembering.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+import CoreGraphics
 import Foundation
 import Observation
 
@@ -23,8 +24,16 @@ final class TutorialGuide {
     var spotlight: Set<String> = []
     /// The card shows only its title and next move.
     var isCollapsed = false
+    /// How far the user has dragged the card from its place. Kept here, not in the card, so that dragging it redraws only the
+    /// card's position and not the card itself (which would re-read every step's state on each frame of the drag).
+    var cardOffset = CGSize.zero
+    /// Which tutorial this is: the desk organizer on the Mac, the name tag keyring on the iPad.
+    let kind: TutorialKind
 
-    init(active: Bool = false) { isActive = active }
+    init(active: Bool = false, kind: TutorialKind = .platform) {
+        isActive = active
+        self.kind = kind
+    }
 
     // MARK: running
 
@@ -53,7 +62,7 @@ final class TutorialGuide {
 
     // MARK: steps
 
-    var steps: [TutorialStep] { TutorialScript.steps }
+    var steps: [TutorialStep] { kind.steps }
 
     func isDone(_ step: TutorialStep, in model: DocumentModel) -> Bool {
         switch step.kind {
@@ -75,7 +84,7 @@ final class TutorialGuide {
     /// The button of a "read" step.
     func acknowledge(_ step: TutorialStep) {
         acknowledged.insert(step.id)
-        if step.id == TutorialScript.done.id { finish() }
+        if step.id == steps.last?.id { finish() }
     }
 
     /// The step before this one, if there is one to go back to.
@@ -112,7 +121,7 @@ final class TutorialGuide {
         guard !isAssisting, let assist = step.assist else { return }
         isAssisting = true
         defer { isAssisting = false }
-        TutorialActions.seedParameters(model)
+        TutorialActions.seedParameters(model, kind: kind)
         await assist(model)
     }
 }

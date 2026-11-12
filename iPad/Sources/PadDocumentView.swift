@@ -44,6 +44,8 @@ struct PadDocumentView: View {
     /// How much of the top the tool bar takes: it grows when the layout has fewer, bigger buttons.
     @State private var toolBarHeight = PadToolBar.height
     @State private var navButtonsFrame = CGRect.zero
+    /// The Inspector was opened by the number pad (not by the user): it closes when the pad does.
+    @State private var inspectorOpenedForPad = false
 
     var body: some View {
         let model = model
@@ -87,8 +89,18 @@ struct PadDocumentView: View {
                     .padding(.bottom, Panel.bottomInset(timeline: model.showTimeline) + 8)
                     .ignoresSafeArea()
             }
+            // The Inspector opens for a feature's sizes only when it was not open already, and closes again with the pad: it is wide, and
+            // the part needs the room. The tutorial keeps it shut (its steps type in the boxes beside the arrows).
             .onChange(of: PadNumpad.shared.isActive) {
-                if PadNumpad.shared.isActive, !PadNumpad.shared.inOverlayWindow, model.selectedFeature != nil || model.newFeature != nil { model.showInspector = true }
+                if PadNumpad.shared.isActive {
+                    guard !guide.isActive, !PadNumpad.shared.inOverlayWindow, model.selectedFeature != nil || model.newFeature != nil,
+                          !model.showInspector else { return }
+                    model.showInspector = true
+                    inspectorOpenedForPad = true
+                } else if inspectorOpenedForPad {
+                    inspectorOpenedForPad = false
+                    model.showInspector = false
+                }
             }
             // Each side panel's show/hide button sits in the panel's top corner and stays there when the panel is closed
             // (then it floats on its own), as in Apple Notes.
@@ -461,7 +473,7 @@ struct PadTopButtons: View {
                 .disabled(model.sketchSession != nil)
             Menu("View", systemImage: "eye") { PadViewControls(model: model) }
             Menu("Help", systemImage: "questionmark.circle") {
-                Button(guide.canResume ? "Resume Tutorial: Desk Organizer" : "Tutorial: Make a Desk Organizer") {
+                Button(guide.canResume ? "Resume Tutorial: \(guide.kind.title)" : "Tutorial: Make a \(guide.kind.title)") {
                     if guide.isActive { return }
                     if guide.canResume || (model.document.features.isEmpty && model.document.parameters.isEmpty) { guide.start() }
                     else { model.alert = AlertInfo(title: "The tutorial starts in an empty part", message: "Close this part, go back to the start screen, make a new one there, and choose Help › Tutorial there.") }

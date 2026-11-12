@@ -48,6 +48,9 @@ struct PadOverlays: View {
         let _ = model.overlayRevision
         ZStack(alignment: .topLeading) {
             PadManipulator(model: model, state: state)
+            // While a plane is being chosen (no sketch is open yet) the squares carry their names, as buttons: tapping the name
+            // is as good as tapping the square, and it says which square is which.
+            if model.sketchSession == nil, model.showsOriginPlanes { PadPlaneLabels(model: model, state: state) }
             if let session = model.sketchSession {
                 PadSketchRulers(state: state)
                 PadDimensionLabels(model: model, session: session, state: state)
@@ -85,6 +88,37 @@ final class KeyboardWatcher {
             MainActor.assumeIsolated {
                 guard let field = note.object as? UITextField, field.keyboardType == .numbersAndPunctuation else { return }
                 DispatchQueue.main.async { field.selectAll(nil) }
+            }
+        }
+    }
+}
+
+// MARK: plane names
+
+/// The names of the origin planes (XY, XZ, YZ) on their squares, while a plane or face is being chosen.
+private struct PadPlaneLabels: View {
+    let model: DocumentModel
+    let state: PadViewState
+
+    var body: some View {
+        let planes = model.dimensionLabels().compactMap { l in OriginPlane(labelID: l.id).map { (plane: $0, label: l) } }
+        ForEach(planes, id: \.label.id) { item in
+            if let p = state.project(item.label.world) {
+                Button {
+                    model.clickRay = nil
+                    model.click(item.plane.pickID, additive: false)
+                    model.overlayRevision += 1
+                } label: {
+                    Text(item.label.text)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(.thinMaterial, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.8), lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(item.label.text) plane")
+                .position(p)
             }
         }
     }

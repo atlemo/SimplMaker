@@ -21,13 +21,18 @@ struct TutorialHint: Equatable {
 struct TutorialStep: Identifiable {
     enum Chapter: Int, CaseIterable {
         case start, floor, walls, change
+        /// The name tag's chapters (the iPad's tutorial).
+        case tagShape, tagName, tagRing, tagChange
 
         var title: String {
             switch self {
             case .start: return "Get started"
             case .floor: return "The floor"
             case .walls: return "The walls and sections"
-            case .change: return "Make it yours"
+            case .change, .tagChange: return "Make it yours"
+            case .tagShape: return "The tag"
+            case .tagName: return "Your name"
+            case .tagRing: return "The ring hole"
             }
         }
     }
@@ -42,7 +47,7 @@ struct TutorialStep: Identifiable {
     let id: String
     let chapter: Chapter
     let title: String
-    /// Inline Markdown: `code` for what to type, **bold** for what to click.
+    /// Inline Markdown: `code` for what to type, **bold** for what to click (or tap).
     let text: String
     let kind: Kind
     /// The next move, from the state of the part and the sketch.

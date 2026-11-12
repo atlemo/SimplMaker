@@ -28,6 +28,10 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
     let viewport: Viewport
     let chrome: Chrome
 
+    /// Where the tutorial's card floats: the bottom middle on the Mac, the bottom left on the iPad (with a margin from the edge).
+    private static var tutorialAlignment: Alignment { PanelTouch.panelToggleRoom == 0 ? .bottom : .bottomLeading }
+    private static var tutorialInset: CGFloat { PanelTouch.panelToggleRoom == 0 ? 0 : Panel.inset + 4 }
+
     /// The room the iPad's show/hide button for the inspector (or the Render view's own buttons) takes at the top right
     /// when the inspector is closed: what floats there goes left of it. None on the Mac.
     private var toggleRoom: CGFloat {
@@ -129,9 +133,11 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
         .animation(.easeOut(duration: DS.Duration.fast), value: model.importProgress != nil)
         // The tutorial's card floats at the bottom of the free space, above the status bar and the OK bar, where it
         // stays clear of what is built at the middle of the view and of the size fields that appear beside it.
-        .overlay(alignment: .bottom) {
+        // On the iPad it sits at the bottom left, not the middle: the part and the grid's origin are in the middle of the view, and
+        // the number pad comes up there.
+        .overlay(alignment: Self.tutorialAlignment) {
             TutorialCard(model: model, guide: guide)
-                .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
+                .padding(.leading, (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0) + Self.tutorialInset)
                 .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
                 .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
                     + 2 * (DS.ControlHeight.large + Panel.inset) + Panel.inset)
