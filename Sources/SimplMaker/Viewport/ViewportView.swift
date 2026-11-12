@@ -87,6 +87,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var sketchPanel: SketchFieldPanel?
     private var sketchFields: [SketchInput: ValueField] = [:]
     private var sketchFieldOrder: [SketchInput] = []
+    /// Beside the size fields: makes the value being typed a parameter.
+    private var sketchParameterButton: NSButton?
     /// Holds the controls typed into or clicked (the handle's field and options, the sketch fields,
     /// the Text tool's box) above the floating panels, which cover the viewport's own subviews.
     private let controlsLayer = ControlsLayer()
@@ -187,7 +189,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if let text = window.firstResponder as? NSText, text.isEditable || text.isFieldEditor { return false }
         if window.firstResponder is NSTextField { return false }
         let isTool = event.charactersIgnoringModifiers?.lowercased().first
-            .flatMap { SketchTool.forKey($0, current: session.tool) } != nil
+            .flatMap { SketchTool.forKey($0, current: session.tool, lastMode: session.mode(of:)) } != nil
         let inList = window.firstResponder is NSTableView  // ⌫ there deletes the list's own row
         guard isTool || (!inList && [53, 51, 117].contains(event.keyCode)) else { return false }
         window.makeFirstResponder(self)
@@ -1275,7 +1277,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 return
             }
             if let key = event.charactersIgnoringModifiers?.lowercased().first,
-               let tool = SketchTool.forKey(key, current: session.tool) {
+               let tool = SketchTool.forKey(key, current: session.tool, lastMode: session.mode(of:)) {
                 model.setSketchTool(tool)
                 refreshOverlay()
                 return
@@ -1375,6 +1377,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         // Where each label goes: on its anchor, or for a radius or diameter standing clear of the curve; and
         // never on top of a label placed before it (dimensions first, then the lighter measured sizes).
         var placed: [CGRect] = []
+        let drawing = model.sketchSession?.tool.placesPoints ?? false
         for l in wanted {
             let view: DimensionLabelView
             if let existing = labels[l.id] {
@@ -1398,7 +1401,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             view.isReference = l.reference
             view.isDimension = l.isDimension
             view.isEditingHighlight = l.editing
-            view.passesClicks = l.passesClicks
+            view.passesClicks = l.passesClicks || drawing  // a draw tool's click may land on a value: it places a point there
             if view.toolTip != tip { view.toolTip = tip }
             guard let p = renderer.camera.project(l.world, viewSize: bounds.size) else {
                 view.isHidden = true
@@ -1704,6 +1707,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             }
             f.textColor = session.typedIsInvalid(input) ? .systemRed : (session.typed[input] != nil ? .labelColor : .secondaryLabelColor)
         }
+        updateSketchParameterButton()
         // Beside where the shape starts (a rectangle's corner, a circle's center), so the sizes are typed where
         // they apply; for the other tools beside the next point.
         let startsAtFirstClick: Set<SketchTool> = [.rectangle, .centerRectangle, .roundedRectangle, .centerRoundedRectangle, .slot, .overallSlot, .slotCenterPoint, .arcSlotCenter, .circle, .circle2Point, .polygon, .circumscribedPolygon, .edgePolygon, .triangle]
@@ -1826,12 +1830,53 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             panel.addArrangedSubview(field)
             sketchFields[input] = field
         }
+        // A plain value being typed becomes a parameter with this (shown only then). It never takes the keyboard from the field.
+        let button = NSButton(title: "Add parameter", target: self, action: #selector(addSketchParameter))
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.refusesFirstResponder = true
+        button.toolTip = "Make this value a parameter and put its name in the field. Rename it in the Parameters list."
+        button.isHidden = true
+        panel.addArrangedSubview(button)
+        sketchParameterButton = button
         // Start at the size the fields need: added at zero width, its frame would fight the fields'
         // fixed widths the first time it's measured (a "conflicting constraints" log).
         panel.setFrameSize(panel.fittingSize)
         raiseControls().addSubview(panel)
         sketchPanel = panel
         sketchFieldOrder = inputs
+    }
+
+    /// The field being typed in, when it holds a plain value.
+    private var parameterCandidate: (input: SketchInput, field: ValueField)? {
+        guard let (input, field) = sketchFields.first(where: { $0.value.currentEditor() != nil }),
+              DocumentModel.parameterSeed(from: field.stringValue, fallback: input.unit) != nil else { return nil }
+        return (input, field)
+    }
+
+    private func updateSketchParameterButton() {
+        guard let button = sketchParameterButton else { return }
+        let show = parameterCandidate != nil
+        if button.isHidden == show { button.isHidden = !show; sketchPanel?.setFrameSize(sketchPanel?.fittingSize ?? .zero) }
+    }
+
+    @objc private func addSketchParameter() {
+        guard let model, let session = model.sketchSession, let (input, field) = parameterCandidate else { return }
+        let base: String
+        switch input {
+        case .length: base = "length"
+        case .width: base = "width"
+        case .height: base = "height"
+        case .diameter: base = "diameter"
+        case .radius: base = "radius"
+        case .angle, .sweep, .turn: base = "angle"
+        default: base = "size"
+        }
+        guard let name = model.addParameter(from: field.stringValue, named: base, fallback: input.unit) else { return }
+        session.setTyped(input, name)
+        field.stringValue = name
+        field.currentEditor()?.selectedRange = NSRange(location: (name as NSString).length, length: 0)
+        refreshOverlay()
     }
 
     private func removeSketchFields() {
@@ -1841,6 +1886,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         sketchPanel = nil
         sketchFields = [:]
         sketchFieldOrder = []
+        sketchParameterButton = nil
     }
 
     /// Moves typing into a sketch field, starting it with `typing` or selecting what's there.
@@ -1879,6 +1925,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         } else if let input = field.input, let session = model?.sketchSession {
             session.setTyped(input, field.stringValue)
             refreshOverlay()
+            updateSketchParameterButton()
         }
     }
 
@@ -2185,7 +2232,7 @@ final class DimensionLabelView: NSTextField {
     private var isHovered = false { didSet { updateAppearance() } }
     private var tracking: NSTrackingArea?
     /// Clicks go through to the viewport (a readout beside something that is dragged).
-    var passesClicks = false
+    var passesClicks = false { didSet { if passesClicks != oldValue { if passesClicks { isHovered = false }; window?.invalidateCursorRects(for: self) } } }
 
     private func updateAppearance() {
         if isEditingHighlight {
@@ -2229,9 +2276,9 @@ final class DimensionLabelView: NSTextField {
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; NSCursor.pointingHand.set(); onHover?(true) }
+    override func mouseEntered(with event: NSEvent) { guard !passesClicks else { return }; isHovered = true; NSCursor.pointingHand.set(); onHover?(true) }
     override func mouseExited(with event: NSEvent) { isHovered = false; onHover?(false) }
-    override func resetCursorRects() { addCursorRect(bounds.insetBy(dx: -6, dy: -6), cursor: .pointingHand) }
+    override func resetCursorRects() { if !passesClicks { addCursorRect(bounds.insetBy(dx: -6, dy: -6), cursor: .pointingHand) } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)

@@ -8,7 +8,7 @@ A **constraint** is a rule between shapes: this line is horizontal, those two ar
 ## Add a constraint
 
 1. Select the items with the Select tool ([[S]]). [[⇧]]-click adds more.
-2. Press **Constrain** in the **Constraints** group and choose one. Or use **Constrain Selection** in the inspector.
+2. Press **Constrain** in the **Constraints** group and choose one. Or use **Add Constraint** in the inspector.
 
 Only the constraints that fit the selection are enabled.
 

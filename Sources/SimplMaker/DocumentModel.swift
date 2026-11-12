@@ -678,6 +678,35 @@ final class DocumentModel {
         }
     }
 
+    /// What a typed size would be as a parameter: its text with a unit, and the unit. Nil for anything but a plain
+    /// number with an optional unit (an expression or a name already is more than a value).
+    /// `fallback` is the unit a bare number has: a length is mm, an angle is deg.
+    nonisolated static func parameterSeed(from text: String, fallback: UnitKind) -> (expression: String, unit: UnitKind)? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard let m = t.wholeMatch(of: /(-?[0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|m|in|deg|rad|°)?/) else { return nil }
+        let number = String(m.1).replacingOccurrences(of: ",", with: ".")
+        guard let suffix = m.2.map(String.init) else {
+            switch fallback {
+            case .length: return ("\(number) mm", .length)
+            case .angle: return ("\(number) deg", .angle)
+            default: return (number, .none)
+            }
+        }
+        return ("\(number) \(suffix)", suffix == "deg" || suffix == "rad" || suffix == "°" ? .angle : .length)
+    }
+
+    /// Makes a parameter from a typed size, named after `base` ("width", then "width2"), and returns its name, or nil
+    /// when the text isn't a plain value. The field it came from then holds the name.
+    @discardableResult
+    func addParameter(from text: String, named base: String, fallback: UnitKind = .length) -> String? {
+        guard let seed = Self.parameterSeed(from: text, fallback: fallback) else { return nil }
+        var name = base, n = 1
+        while document.parameters.contains(where: { $0.name == name }) { n += 1; name = "\(base)\(n)" }
+        let made = name
+        mutate("Add Parameter") { doc in doc.parameters.append(Parameter(made, seed.expression, unit: seed.unit)) }
+        return made
+    }
+
     /// Renames a parameter and every expression that uses it. Returns why not, if it can't.
     @discardableResult
     func renameParameter(_ old: String, to new: String) -> String? {

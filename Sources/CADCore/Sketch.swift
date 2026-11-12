@@ -70,6 +70,19 @@ public struct SketchConstraint: Codable, Hashable, Sendable, Identifiable {
     public init(id: EntityID = IDs.make(), _ kind: Kind) { self.id = id; self.kind = kind }
 }
 
+extension SketchConstraint.Kind {
+    /// The points, lines and curves it holds, in the order they were picked.
+    public var entities: [EntityID] {
+        switch self {
+        case .coincident(let a, let b), .parallel(let a, let b), .perpendicular(let a, let b), .equal(let a, let b), .tangent(let a, let b): return [a, b]
+        case .horizontal(let a), .vertical(let a), .fix(let a, _, _): return [a]
+        case .pointOnCurve(let p, let c): return [p, c]
+        case .midpoint(let p, let l): return [p, l]
+        case .symmetric(let a, let b, let l): return [a, b, l]
+        }
+    }
+}
+
 public struct SketchDimension: Codable, Hashable, Sendable, Identifiable {
     public enum Kind: Codable, Hashable, Sendable {
         case distance(EntityID, EntityID)             // point–point

@@ -1903,17 +1903,21 @@ struct ParameterRow: View {
                     }, cancel: { renaming = false })
                     .font(.body.monospaced())
                 } else {
-                    // The whole stretch up to the value is the handle, not just the letters.
+                    // Drawn like a text field, so it reads as editable; the whole stretch up to the value is the handle.
                     Text(parameter.name).font(.body.monospaced())
+                        .lineLimit(1)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(nsColor: RowFieldStyle.palette(.regular).fill), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
                         .contentShape(Rectangle())
                         .overlay(ScrubHandle(
                             began: beginScrub,
                             moved: { dx, flags in moveScrub(by: dx, flags) },
                             ended: endScrub,
-                            doubleClicked: { renameError = nil; renaming = true }))
+                            clicked: { renameError = nil; renaming = true }))
                         .platformColumnResizePointer()
-                        .help("Drag left or right to change the value (Shift: coarse, Option: fine); double-click to rename, and every expression that uses it follows")
+                        .help("Click to rename, and every expression that uses it follows. Drag left or right to change the value (Shift: coarse, Option: fine)")
                 }
                 if renaming { Spacer() }
                 if let error = model.result?.parameters.errors[parameter.name] {
@@ -2012,19 +2016,20 @@ private struct ScrubHandle: NSViewRepresentable {
     /// Points moved since the last call, with the modifier keys held.
     let moved: (CGFloat, NSEvent.ModifierFlags) -> Void
     let ended: () -> Void
-    let doubleClicked: () -> Void
+    /// A click that did not drag.
+    let clicked: () -> Void
 
     func makeNSView(context: Context) -> HandleView { HandleView() }
 
     func updateNSView(_ view: HandleView, context: Context) {
-        view.began = began; view.moved = moved; view.ended = ended; view.doubleClicked = doubleClicked
+        view.began = began; view.moved = moved; view.ended = ended; view.clicked = clicked
     }
 
     final class HandleView: NSView {
         var began: () -> Void = {}
         var moved: (CGFloat, NSEvent.ModifierFlags) -> Void = { _, _ in }
         var ended: () -> Void = {}
-        var doubleClicked: () -> Void = {}
+        var clicked: () -> Void = {}
         private var startX: CGFloat = 0
         private var lastX: CGFloat = 0
         private var dragging = false
@@ -2035,7 +2040,6 @@ private struct ScrubHandle: NSViewRepresentable {
             startX = event.locationInWindow.x
             lastX = startX
             dragging = false
-            if event.clickCount == 2 { doubleClicked() }
         }
 
         override func mouseDragged(with event: NSEvent) {
@@ -2051,7 +2055,7 @@ private struct ScrubHandle: NSViewRepresentable {
         }
 
         override func mouseUp(with event: NSEvent) {
-            guard dragging else { return }
+            guard dragging else { clicked(); return }
             dragging = false
             ended()
         }
@@ -2063,7 +2067,7 @@ private struct ScrubHandle: View {
     let began: () -> Void
     let moved: (CGFloat, NSEvent.ModifierFlags) -> Void
     let ended: () -> Void
-    let doubleClicked: () -> Void
+    let clicked: () -> Void
     @State private var dragging = false
     @State private var lastX: CGFloat = 0
 
@@ -2077,7 +2081,7 @@ private struct ScrubHandle: View {
                     lastX = g.location.x
                 }
                 .onEnded { _ in dragging = false; ended() })
-            .onTapGesture(count: 2, perform: doubleClicked)
+            .onTapGesture(count: 2, perform: clicked)
     }
 }
 #endif
@@ -2599,6 +2603,12 @@ struct DimensionEditor: View {
             } else {
                 Text("For example 25 mm, 1 in, 30 deg or width / 2").font(.caption).foregroundStyle(.secondary)
             }
+            // A plain value can become a parameter in one click: the field then holds its name.
+            if DocumentModel.parameterSeed(from: draft, fallback: draftUnit) != nil {
+                Button { addAsParameter() } label: { Label("Add as parameter", systemImage: "plus.circle") }
+                    .buttonStyle(.link)
+                    .help("Make this value a parameter, named for you, and use it here. Rename it in the Parameters list.")
+            }
         }
         .padding(DS.Spacing.space5)
         .onAppear(perform: load)
@@ -2613,6 +2623,18 @@ struct DimensionEditor: View {
     /// Return or Set: completes a half-typed name first, otherwise sets the dimension.
     private func submit(unlessClicked: Bool = false) {
         if ParameterCompleter.shared.complete(&draft, unlessClicked: unlessClicked) { focused = true } else { commit() }
+    }
+
+    /// An angle's unit is deg, anything else mm, for a bare number.
+    private var draftUnit: UnitKind {
+        let current = session.sketch.dimensions.first { $0.id == dimensionID }?.expression ?? ""
+        return current.contains("deg") || current.contains("°") || current.contains("rad") ? .angle : .length
+    }
+
+    private func addAsParameter() {
+        guard let name = model.addParameter(from: draft, named: draftUnit == .angle ? "angle" : "size", fallback: draftUnit) else { return }
+        draft = name
+        commit()
     }
 
     private func remove() {

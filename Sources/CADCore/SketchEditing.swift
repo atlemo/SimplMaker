@@ -930,6 +930,32 @@ extension Sketch {
         return out
     }
 
+    /// Whether `ids` are two different lines (not axes) that `alignMiddles` can take.
+    public func canAlignMiddles(_ ids: [EntityID]) -> Bool {
+        ids.count == 2 && ids[0] != ids[1] && ids.allSatisfy { kind(of: $0) == .line && !SketchMirrorDef.isAxis($0) }
+    }
+
+    /// Puts the middles of two lines on one level or one upright: a point at the middle of each, and a construction
+    /// line between those points kept vertical (lines that run more across than up) or horizontal. The lines slide to
+    /// line up; how far apart they sit is for a dimension on the construction line. Leaves the sketch untouched and
+    /// returns false when that can't be solved or the two middles are the same spot.
+    public mutating func alignMiddles(of a: EntityID, and b: EntityID, values: [EntityID: Double]) -> Bool {
+        guard canAlignMiddles([a, b]), case let (a0, a1)? = lineEnds(a), case let (b0, b1)? = lineEnds(b) else { return false }
+        let ma = (a0 + a1) / 2, mb = (b0 + b1) / 2
+        guard vlen(ma - mb) > 1e-9 else { return false }
+        let d = a1 - a0
+        let acrossMore = abs(d.x) >= abs(d.y)
+        var trial = self
+        let pa = trial.addPoint(ma.x, ma.y), pb = trial.addPoint(mb.x, mb.y)
+        trial.constrain(.midpoint(point: pa, line: a))
+        trial.constrain(.midpoint(point: pb, line: b))
+        let link = trial.addLine(pa, pb, construction: true)
+        trial.constrain(acrossMore ? .vertical(link) : .horizontal(link))
+        guard SketchSolver.solve(&trial, dimensionValues: values).status == .solved else { return false }
+        self = trial
+        return true
+    }
+
     /// Adds constraints and re-solves; leaves the sketch untouched and returns false if that over-constrains it.
     public mutating func applyConstraints(_ kinds: [SketchConstraint.Kind], values: [EntityID: Double]) -> Bool {
         var trial = self

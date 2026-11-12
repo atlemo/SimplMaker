@@ -168,11 +168,12 @@ enum SketchTool: String, CaseIterable, Identifiable {
     var isCircle: Bool { self == .circle || self == .circle2Point }
 
     /// The tool for a key press: pressing the key again switches to the next way of drawing that shape.
-    static func forKey(_ key: Character, current: SketchTool) -> SketchTool? {
+    /// From another tool the key goes to the way of drawing used last (`lastMode`, the session's memory), not to the family's first.
+    static func forKey(_ key: Character, current: SketchTool, lastMode: (SketchTool) -> SketchTool = { $0 }) -> SketchTool? {
         guard let tool = allCases.first(where: { $0.key == key }) else { return nil }  // a family's first tool holds the key
         let family = tool.family
         if family.count > 1, let i = family.firstIndex(of: current) { return family[(i + 1) % family.count] }
-        return tool
+        return lastMode(tool)
     }
 
     /// Tools still being tried out: the Draw list marks them, and their tooltip says so.
@@ -446,6 +447,8 @@ final class SketchSession {
         axisSelection = []
         if t.family.count > 1 { lastInFamily[t.family[0]] = t }
         resetToolState()
+        // One line already selected: Dimension starts with it picked, so a click on empty space places its length.
+        if t == .dimension, selection.count == 1, sketch.kind(of: selection[0]) == .line { dimensionPicks = [selection[0]] }
         if t == .projectAgain { beginProjectAgain() } else { reattaching = nil }
     }
     /// The way of drawing each kind of shape that its toolbar button picks: the one used last.
@@ -2968,12 +2971,23 @@ final class SketchSession {
         return finish("Delete")
     }
 
-    func canApply(_ c: ConstraintTool) -> Bool { sketch.constraints(c, for: selection + axisSelection) != nil }
+    func canApply(_ c: ConstraintTool) -> Bool {
+        if c == .midpoint, axisSelection.isEmpty, sketch.canAlignMiddles(selection) { return true }
+        return sketch.constraints(c, for: selection + axisSelection) != nil
+    }
 
     /// Whether a button for the constraints is worth showing: something is selected, an axis included.
     var hasConstraintSelection: Bool { !selection.isEmpty || !axisSelection.isEmpty }
 
     func apply(_ c: ConstraintTool) -> String? {
+        if c == .midpoint, axisSelection.isEmpty, sketch.canAlignMiddles(selection) {  // two lines: their middles line up
+            guard sketch.alignMiddles(of: selection[0], and: selection[1], values: values) else {
+                message = "Those lines can't have their middles lined up: they already are, or something else holds them"
+                return nil
+            }
+            selection = []
+            return finish(c.rawValue)
+        }
         guard let kinds = sketch.constraints(c, for: selection + axisSelection) else { return nil }
         guard sketch.applyConstraints(kinds, values: values) else {
             message = overConstrainMessage(c.rawValue, sketch.diagnosis(adding: kinds, values: values))
@@ -2981,6 +2995,14 @@ final class SketchSession {
         }
         selection = []
         return finish(c.rawValue)
+    }
+
+    /// Picks what a constraint holds (a click on its row in the Inspector), so the viewport shows what it applies to.
+    func selectConstrained(by id: EntityID) -> String? {
+        guard let c = sketch.constraints.first(where: { $0.id == id }) else { return nil }
+        selection = c.kind.entities.filter { $0 != "origin" && sketch.kind(of: $0) != nil }
+        axisSelection = []
+        return nil
     }
 
     var canToggleConstruction: Bool { selection.contains { sketch.curve($0) != nil } }
@@ -3441,7 +3463,7 @@ extension ConstraintTool {
         case .perpendicular: "Keep two lines at a right angle. Select two lines."
         case .tangent: "Make a line, circle or arc touch a circle or arc smoothly, or a line a spline. Select two curves."
         case .equal: "Give two lines the same length, or two circles or arcs the same radius. Select two of the same kind."
-        case .midpoint: "Keep a point at the middle of a line. Select a point and a line."
+        case .midpoint: "Keep a point at the middle of a line. Select a point and a line. Or select two lines to line up their middles."
         case .concentric: "Give two circles or arcs the same centre. Select two circles or arcs."
         case .symmetric: "Mirror two points (or two circle centres) across a line. Select the two, then the line last."
         case .fix: "Lock points in place so they can't move. Select one or more points."

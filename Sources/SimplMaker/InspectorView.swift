@@ -166,7 +166,7 @@ struct SketchInspector: View {
             LabeledContent("Constraints", value: "\(sketch.sketch.constraints.count)")
         }
         if let session {
-            Section("Constrain Selection (\(session.selection.count + session.axisSelection.count))") {
+            Section("Add Constraint (\(session.selection.count + session.axisSelection.count) selected)") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], alignment: .leading) {
                     ForEach(ConstraintTool.allCases, id: \.self) { c in
                         Button(c.rawValue) { model.sketchCommand { $0.apply(c) } }
@@ -177,7 +177,11 @@ struct SketchInspector: View {
             Section("Constraints") {
                 ForEach(session.sketch.constraints) { c in
                     HStack {
-                        Text(describe(c.kind)).font(.caption)
+                        Button { model.sketchCommand { $0.selectConstrained(by: c.id) } } label: {
+                            Text(describe(c.kind)).font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Click to select what this constraint holds")
                         ruleMark(c.id, in: session.diagnosis)
                         Spacer()
                         Button { model.sketchCommand { $0.deleteConstraint(c.id) } } label: { Image(systemName: "minus.circle") }
