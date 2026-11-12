@@ -101,6 +101,8 @@ private struct PadPlaneLabels: View {
     let state: PadViewState
 
     var body: some View {
+        // Read here too: a child whose inputs did not change is not rebuilt, so it must watch the camera itself to follow a pan.
+        let _ = state.revision
         let planes = model.dimensionLabels().compactMap { l in OriginPlane(labelID: l.id).map { (plane: $0, label: l) } }
         ForEach(planes, id: \.label.id) { item in
             if let p = state.project(item.label.world) {
@@ -162,6 +164,8 @@ private struct PadDimensionLabels: View {
     }
 
     var body: some View {
+        // Read here too: a child whose inputs did not change is not rebuilt, so it must watch the camera itself to follow a pan.
+        let _ = state.revision
         ForEach(placed(), id: \.label.id) { item in
             let l = item.label
             Button { clicked(l.id) } label: {
@@ -227,6 +231,8 @@ private struct PadGlyphs: View {
     }
 
     var body: some View {
+        // Read here too: a child whose inputs did not change is not rebuilt, so it must watch the camera itself to follow a pan.
+        let _ = state.revision
         ForEach(wanted(), id: \.glyph.id) { item in
             let g = item.glyph
             Button {
@@ -262,6 +268,8 @@ private struct PadSketchFields: View {
     }
 
     var body: some View {
+        // Read here too: a child whose inputs did not change is not rebuilt, so it must watch the camera itself to follow a pan.
+        let _ = state.revision
         let inputs = session.inputFields
         if !inputs.isEmpty, let t = session.manipulatorMiddle ?? session.target()?.position {
             let startsAtFirstClick: Set<SketchTool> = [.rectangle, .centerRectangle, .roundedRectangle, .centerRoundedRectangle, .slot, .overallSlot, .slotCenterPoint, .arcSlotCenter, .circle, .circle2Point, .polygon, .circumscribedPolygon, .edgePolygon, .triangle]
@@ -519,6 +527,8 @@ private struct PadTextEntry: View {
     private enum Field { case words, size }
 
     var body: some View {
+        // Read here too: a child whose inputs did not change is not rebuilt, so it must watch the camera itself to follow a pan.
+        let _ = state.revision
         if let at = session.pendingText?.position {
             let world = session.frame.point(at.x, at.y)
             if let p = state.project(world) {
