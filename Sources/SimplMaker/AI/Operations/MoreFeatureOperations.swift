@@ -132,9 +132,13 @@ struct CreateLayOnFloorOperation: AIOperation {
         }
         let featureID = try AIValues.newFeatureID(id, in: doc)
         let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("LayOnFloor")
-        doc.addFeature(Feature(id: featureID, name: featureName, .layOnFloor(LayOnFloorFeature(face: ref))))
+        // The other bodies in its browser folder turn and drop with it.
+        let mates = Set(doc.folderMates(of: ref.body))
+        let alongside = context.built.bodies.map(\.id).filter(mates.contains)
+        doc.addFeature(Feature(id: featureID, name: featureName, .layOnFloor(LayOnFloorFeature(face: ref, alongside: alongside))))
+        let withThem = alongside.isEmpty ? "" : " The other bodies in its folder (\(alongside.joined(separator: ", "))) turn and drop with it."
         return OperationOutcome(featureID: featureID,
-                                message: "Created \(featureName): \(ref.body) turned so that \(face) looks straight down and sits flat on the floor (z = 0). It stays where it is sideways.")
+                                message: "Created \(featureName): \(ref.body) turned so that \(face) looks straight down and sits flat on the floor (z = 0). It stays where it is sideways.\(withThem)")
     }
 }
 

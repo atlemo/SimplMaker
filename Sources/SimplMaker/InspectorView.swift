@@ -57,7 +57,7 @@ struct InspectorView: View {
                 case .shell(let f): ShellInspector(model: model, id: id, shell: f)
                 case .draft(let f): DraftInspector(model: model, id: id, draft: f)
                 case .split(let f): SplitInspector(model: model, id: id, split: f)
-                case .layOnFloor(let f): LayOnFloorInspector(model: model, face: f.face)
+                case .layOnFloor(let f): LayOnFloorInspector(model: model, face: f.face, alongside: f.alongside)
                 case .project(let f): ProjectInspector(model: model, id: id, project: f)
                 case .importBody(let f): ImportInspector(model: model, id: id, imported: f)
                 case .image(let f): ImageInspector(model: model, id: id, image: f)
@@ -1265,13 +1265,17 @@ struct SplitInspector: View {
 struct LayOnFloorInspector: View {
     let model: DocumentModel
     let face: FaceRef
+    let alongside: [FeatureID]
 
     var body: some View {
         Section("Lay on Floor") {
             BodiesRow(model: model, ids: [face.body])
             LabeledContent("Face", value: face.face)
+            if !alongside.isEmpty { BodiesRow(model: model, ids: alongside) }
             Text("The body turns until this face looks straight down, then drops until the face sits on the floor (the XY plane). "
-                 + "The face stays where it is sideways. To lay another face down, delete this feature and click that face.")
+                 + "The face stays where it is sideways."
+                 + (alongside.isEmpty ? "" : " The other bodies in its folder turn and drop with it, so they keep their places against it.")
+                 + " To lay another face down, delete this feature and click that face.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

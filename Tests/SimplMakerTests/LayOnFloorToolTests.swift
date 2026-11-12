@@ -57,6 +57,28 @@ import simd
         #expect(cylinderAfter.min == cylinderBefore.min && cylinderAfter.max == cylinderBefore.max, "the cylinder stays")
     }
 
+    @Test func theOtherBodiesInItsFolderTurnAndDropWithIt() async throws {
+        let model = try await loaded()
+        _ = model.newFolder(holding: ["a", "c"])
+        let cylinderBefore = try #require(model.result?.body("c")?.bounds)
+        model.toolClick(.layOnFloor, try face(model, "a", "a.top"))
+        #expect(lay(model)?.alongside == ["c"])
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        // The box lies on its top face: it was 50 to 70 high, and now sits on the floor.
+        #expect(abs(try #require(model.result?.body("a")?.bounds).min.z) < 1e-6)
+        // The cylinder made the same half turn about the middle of that face (z 70) and dropped by 70 mm: 0...20 became 50...70.
+        let cylinder = try #require(model.result?.body("c")?.bounds)
+        #expect(abs(cylinder.min.z - 50) < 0.1 && abs(cylinder.max.z - 70) < 0.1, "it moved: \(cylinderBefore) -> \(cylinder)")
+        #expect(abs(cylinder.max.z - cylinder.min.z - (cylinderBefore.max.z - cylinderBefore.min.z)) < 1e-6, "same shape")
+    }
+
+    @Test func bodiesOutsideTheFolderStayPut() async throws {
+        let model = try await loaded()
+        model.toolClick(.layOnFloor, try face(model, "a", "a.top"))
+        #expect(lay(model)?.alongside.isEmpty == true)
+    }
+
     @Test func aFaceAlreadySelectedLaysAtOnce() async throws {
         let model = try await loaded()
         model.selection = [try face(model, "a", "a.bottom")]

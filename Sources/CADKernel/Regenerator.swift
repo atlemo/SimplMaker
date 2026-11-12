@@ -1622,10 +1622,19 @@ public enum Regenerator {
         guard let frame = try? whole.faceFrame(f.face.face), let pivot = try? whole.faceOutlineCenter(f.face.face) else {
             throw KernelError(message: "only a flat face can lie on the floor. Pick a flat face")
         }
-        // Turned about the middle of the face, which then drops straight down to the floor.
-        var body = whole
-        if let turn = turnToFaceDown(frame.normal) { body = try body.rotated(about: pivot, axis: turn.axis, angle: turn.angle) }
-        r.bodies[i].body = abs(pivot.z) > 1e-12 ? try body.translated(SIMD3(0, 0, -pivot.z)) : body
+        // Turned about the middle of the face, which then drops straight down to the floor. Bodies that go along
+        // (the others in its folder) make the same turn and drop, so they keep their places against it.
+        let turn = turnToFaceDown(frame.normal)
+        let drop = abs(pivot.z) > 1e-12 ? SIMD3(0, 0, -pivot.z) : nil
+        func lay(_ body: KBody) throws -> KBody {
+            var body = body
+            if let turn { body = try body.rotated(about: pivot, axis: turn.axis, angle: turn.angle) }
+            if let drop { body = try body.translated(drop) }
+            return body
+        }
+        let along = f.alongside.filter { $0 != f.face.body }.compactMap { id in r.bodies.firstIndex { $0.id == id } }
+        r.bodies[i].body = try lay(whole)
+        for j in along { r.bodies[j].body = try lay(r.bodies[j].body) }
     }
 
     static func combine(_ f: CombineFeature, _ feature: Feature, _ r: inout RegenResult) throws {

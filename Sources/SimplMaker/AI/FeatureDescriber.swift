@@ -150,6 +150,7 @@ struct FeatureDescriber {
             }
         case .layOnFloor(let f):
             out["face"] = faces([f.face])
+            if !f.alongside.isEmpty { out["alongside"] = .list(f.alongside) }
         case .plane(let f):
             out["base"] = plane(f.base); out["offset"] = length(f.offset); out["angle"] = angle(f.angle)
             out["axis"] = .text(f.axis.rawValue.lowercased())

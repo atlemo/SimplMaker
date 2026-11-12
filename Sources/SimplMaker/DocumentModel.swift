@@ -765,6 +765,12 @@ final class DocumentModel {
     /// Everything in a folder and the folders inside it: what its eye shows and hides.
     func items(inFolder id: String) -> [FeatureID] { document.items(inTree: id) }
 
+    /// The other bodies in the folder a body sits in: they turn and drop with it when it is laid on the floor.
+    func layAlongside(_ body: FeatureID) -> [FeatureID] {
+        let mates = Set(document.folderMates(of: body))
+        return bodies.map(\.id).filter(mates.contains)
+    }
+
     /// The bodies in a folder and the folders inside it, in the browser's order.
     func bodies(inFolder id: String) -> [BodyResult] {
         let inside = Set(document.items(inTree: id))

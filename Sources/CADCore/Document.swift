@@ -614,9 +614,23 @@ public struct SplitFeature: Codable, Hashable, Sendable {
 
 /// Lays a body on the floor (the XY plane, z = 0, with Z up): turns it so the picked flat face looks straight down,
 /// then lets it drop until that face sits flush. The face stays where it is sideways.
+/// `alongside` are other bodies (the ones in the same browser folder) that turn and drop with it, as one piece.
 public struct LayOnFloorFeature: Codable, Hashable, Sendable {
     public var face: FaceRef
-    public init(face: FaceRef) { self.face = face }
+    public var alongside: [FeatureID]
+    public init(face: FaceRef, alongside: [FeatureID] = []) { self.face = face; self.alongside = alongside }
+
+    private enum CodingKeys: String, CodingKey { case face, alongside }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        face = try c.decode(FaceRef.self, forKey: .face)
+        alongside = try c.decodeIfPresent([FeatureID].self, forKey: .alongside) ?? []  // older files lay one body
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(face, forKey: .face)
+        if !alongside.isEmpty { try c.encode(alongside, forKey: .alongside) }
+    }
 }
 
 /// Combines bodies: joins the tool bodies to the target, cuts them out of it, or keeps only where
@@ -1232,6 +1246,12 @@ extension CADDocument {
             for child in folders where child.parent == next && found.insert(child.id).inserted { queue.append(child.id) }
         }
         return found
+    }
+
+    /// The other items in the folder `item` sits in (and in the folders inside it); empty when it is in no folder.
+    public func folderMates(of item: FeatureID) -> [FeatureID] {
+        guard let home = folder(of: item) else { return [] }
+        return items(inTree: home).filter { $0 != item }
     }
 
     /// The items in the folder and in every folder inside it.

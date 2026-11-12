@@ -181,7 +181,7 @@ extension Feature {
             case .profile(let sketch): add(sketch)
             case .parts: break
             }
-        case .layOnFloor(let f): add(f.face.body)
+        case .layOnFloor(let f): add(f.face.body); f.alongside.forEach { add($0) }
         case .plane(let f): add(f.base.feature)
         case .mirror(let f):
             f.bodies.forEach { add($0) }
@@ -222,7 +222,7 @@ extension Feature {
         case .scale(let f): f.bodies.forEach { out.insert($0) }
         case .combine(let f): out.insert(f.target)
         case .split(let f): f.bodies.forEach { out.insert($0) }
-        case .layOnFloor(let f): out.insert(f.face.body)
+        case .layOnFloor(let f): out.insert(f.face.body); f.alongside.forEach { out.insert($0) }
         case .mirror(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
         case .pattern(let f): if f.operation != .newBody { f.bodies.forEach { out.insert($0) } }
         case .shell(let f): out.insert(f.body)

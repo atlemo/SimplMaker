@@ -563,7 +563,9 @@ extension DocumentModel {
                 alert = AlertInfo(title: "Only flat faces can lie on the floor", message: "Pick a flat face of the body.")
                 return false
             }
-            add(Feature(name: document.nextName("Lay on Floor"), .layOnFloor(LayOnFloorFeature(face: ref))))
+            // The other bodies in the same folder turn and drop with it.
+            let alongside = layAlongside(ref.body)
+            add(Feature(name: document.nextName("Lay on Floor"), .layOnFloor(LayOnFloorFeature(face: ref, alongside: alongside))))
         case .draft:
             let faces = selection.compactMap { faceRef($0) }
             guard let body = faces.first?.body, !waiting else { return false }
