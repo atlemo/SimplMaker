@@ -1176,8 +1176,30 @@ struct MoveInspector: View {
             if !move.sketches.isEmpty {
                 let names = move.sketches.map { id in model.document.features.first { $0.id == id }?.name ?? "missing" }
                 LabeledContent(names.count == 1 ? "Sketch" : "Sketches", value: names.joined(separator: ", "))
+                if move.bodies.isEmpty {
+                    CarryPicker(carry: move.carry) { v in edit.update("Change What Follows") { $0.carry = v } }
+                }
             }
         }
+    }
+}
+
+/// What a moved or scaled sketch takes with it: everything made from it, or only what is made after the change.
+struct CarryPicker: View {
+    let carry: Bool
+    let set: (Bool) -> Void
+
+    var body: some View {
+        LabeledContent("Follows it") {
+            Picker("Follows it", selection: Binding(get: { carry }, set: set)) {
+                Text("Everything from this sketch").tag(true)
+                Text("Only later features").tag(false)
+            }
+            .labelsHidden()
+        }
+        Text(carry ? "Bodies and features made from this sketch, before or after this step, move with it."
+             : "Bodies made from this sketch before this step stay where they were; only later ones use the changed sketch.")
+            .font(.caption).foregroundStyle(.secondary)
     }
 }
 
@@ -1315,7 +1337,10 @@ struct ScaleInspector: View {
                 let names = scale.sketches.map { model.featureName($0) }
                 LabeledContent(names.count == 1 ? "Sketch" : "Sketches", value: names.joined(separator: ", "))
             }
-            Text(scale.bodies.isEmpty ? "Scales about each sketch's origin. Features after this one use the scaled sketch."
+            if !scale.sketches.isEmpty, scale.bodies.isEmpty {
+                CarryPicker(carry: scale.carry) { v in edit.update("Change What Follows") { $0.carry = v } }
+            }
+            Text(scale.bodies.isEmpty ? "Scales about each sketch's origin."
                  : "Bodies scale about the middle of them all, sketches about their own origins. Features after this one use the scaled shapes.")
                 .font(.caption).foregroundStyle(.secondary)
         }

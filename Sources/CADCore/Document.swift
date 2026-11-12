@@ -429,12 +429,15 @@ public struct MoveFeature: Codable, Hashable, Sendable {
     public var pivotX: String?
     public var pivotY: String?
     public var pivotZ: String?
+    /// For a move of sketches alone: the bodies and features made from those sketches anywhere in the timeline follow the
+    /// move (true, the default), or only what comes after it (false, as files from before this choice behave).
+    public var carry: Bool
     public init(bodies: [FeatureID], sketches: [FeatureID] = [], dx: String = "0 mm", dy: String = "0 mm",
                 dz: String = "0 mm", rx: String = "0 deg", ry: String = "0 deg", rz: String = "0 deg",
-                arrow: Axis3 = .x, rotating: Bool = false, pivot: [String]? = nil) {
+                arrow: Axis3 = .x, rotating: Bool = false, pivot: [String]? = nil, carry: Bool = true) {
         self.bodies = bodies; self.sketches = sketches; self.dx = dx; self.dy = dy; self.dz = dz
         self.rx = rx; self.ry = ry; self.rz = rz; self.arrow = arrow; self.rotating = rotating
-        self.pivot = pivot
+        self.carry = carry; self.pivot = pivot
     }
 
     /// The pivot point as three expressions, or nil for the middle of what moves.
@@ -443,7 +446,7 @@ public struct MoveFeature: Codable, Hashable, Sendable {
         set { pivotX = newValue?[0]; pivotY = newValue?[1]; pivotZ = newValue?[2] }
     }
 
-    private enum CodingKeys: String, CodingKey { case bodies, sketches, dx, dy, dz, rx, ry, rz, arrow, rotating, pivotX, pivotY, pivotZ }
+    private enum CodingKeys: String, CodingKey { case bodies, sketches, dx, dy, dz, rx, ry, rz, arrow, rotating, pivotX, pivotY, pivotZ, carry }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -460,6 +463,7 @@ public struct MoveFeature: Codable, Hashable, Sendable {
         pivotX = try c.decodeIfPresent(String.self, forKey: .pivotX)  // older files turn about the middle
         pivotY = try c.decodeIfPresent(String.self, forKey: .pivotY)
         pivotZ = try c.decodeIfPresent(String.self, forKey: .pivotZ)
+        carry = try c.decodeIfPresent(Bool.self, forKey: .carry) ?? false  // older files move the sketch only from here on
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -474,6 +478,7 @@ public struct MoveFeature: Codable, Hashable, Sendable {
         try c.encode(arrow, forKey: .arrow)
         if rotating { try c.encode(rotating, forKey: .rotating) }
         if let pivot { try c.encode(pivot[0], forKey: .pivotX); try c.encode(pivot[1], forKey: .pivotY); try c.encode(pivot[2], forKey: .pivotZ) }
+        try c.encode(carry, forKey: .carry)
     }
 
     /// The distance along an axis, or the turn about it, as stored.
@@ -654,17 +659,20 @@ public struct ScaleFeature: Codable, Hashable, Sendable {
     public var bodies: [FeatureID]
     /// Plain number, or an expression: "2", "width / 40".
     public var factor: String
-    public init(sketches: [FeatureID] = [], bodies: [FeatureID] = [], factor: String = "1") {
-        self.sketches = sketches; self.bodies = bodies; self.factor = factor
+    /// For a scale of sketches alone: what was made from them anywhere in the timeline follows (true), or only what comes after.
+    public var carry: Bool
+    public init(sketches: [FeatureID] = [], bodies: [FeatureID] = [], factor: String = "1", carry: Bool = true) {
+        self.sketches = sketches; self.bodies = bodies; self.factor = factor; self.carry = carry
     }
 
-    private enum CodingKeys: String, CodingKey { case sketches, bodies, factor }
+    private enum CodingKeys: String, CodingKey { case sketches, bodies, factor, carry }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sketches = try c.decode([FeatureID].self, forKey: .sketches)
         bodies = try c.decodeIfPresent([FeatureID].self, forKey: .bodies) ?? []  // older files scale sketches only
         factor = try c.decode(String.self, forKey: .factor)
+        carry = try c.decodeIfPresent(Bool.self, forKey: .carry) ?? false  // older files scale the sketch only from here on
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -672,6 +680,7 @@ public struct ScaleFeature: Codable, Hashable, Sendable {
         try c.encode(sketches, forKey: .sketches)
         if !bodies.isEmpty { try c.encode(bodies, forKey: .bodies) }
         try c.encode(factor, forKey: .factor)
+        try c.encode(carry, forKey: .carry)
     }
 }
 

@@ -234,28 +234,65 @@ public enum Regenerator {
             if let omitFrom, index >= omitFrom { return true }
             return false
         }
+        // Moves and scales of sketches alone that carry what was made from the sketch: they take effect as soon as the last
+        // sketch they hold exists, ahead of their place in the timeline, so bodies built from those sketches earlier follow.
+        // `carriedAfter[i]` are the ones that run right after feature i, in timeline order; `carriedEarly` are their own slots.
+        var carriedAfter: [Int: [Int]] = [:]
+        var carriedEarly = Set<Int>()
+        var lastAnchor: [FeatureID: Int] = [:]
+        for (j, f) in features.enumerated() where !f.suppressed {
+            let ids: [FeatureID]
+            switch f.kind {
+            case .move(let m): ids = m.carry && m.bodies.isEmpty ? m.sketches : []
+            case .scale(let s): ids = s.carry && s.bodies.isEmpty ? s.sketches : []
+            default: continue
+            }
+            let anchors = ids.compactMap { id in features.firstIndex { $0.id == id && !$0.suppressed } }
+            // Every sketch must be there before it; and two transforms of one sketch keep their order.
+            guard !ids.isEmpty, anchors.count == ids.count, let anchor = anchors.max(), anchor < j,
+                  ids.allSatisfy({ (lastAnchor[$0] ?? 0) <= anchor }) else { continue }
+            for id in ids { lastAnchor[id] = anchor }
+            carriedAfter[anchor, default: []].append(j)
+            carriedEarly.insert(j)
+        }
+        func featureHash(_ f: Feature) -> Int {
+            var own = Hasher()
+            own.combine(f)
+            return own.finalize()
+        }
+        /// What a feature's key takes from its parameters: the values of the ones it reads.
+        func combineParameters(of f: Feature, featureHash: Int, into h: inout Hasher) {
+            guard !parameterWords.isEmpty else { return }
+            let words = ParameterDependencies.shared.words(of: f, hash: featureHash)
+            for name in ParameterDependencies.closure(of: words, inputs: parameterWords) {
+                h.combine(name)
+                if let q = r.parameters.values[name] {
+                    h.combine(q.value.bitPattern); h.combine(q.length); h.combine(q.angle)
+                } else {
+                    h.combine(r.parameters.errors[name] ?? "")
+                }
+            }
+        }
         func makeKeys() -> [Int] {
             var keys: [Int] = []
             var previous = base
+            if !carriedEarly.isEmpty {  // what they do reaches back to the sketches: any change to them starts the rebuild over
+                var h = Hasher()
+                h.combine(base)
+                for j in carriedEarly.sorted() {
+                    let fh = featureHash(features[j])
+                    h.combine(fh)
+                    combineParameters(of: features[j], featureHash: fh, into: &h)
+                }
+                previous = h.finalize()
+            }
             for (index, f) in features.enumerated() {
-                var own = Hasher()
-                own.combine(f)
-                let featureHash = own.finalize()
+                let fh = featureHash(f)
                 var h = Hasher()
                 h.combine(previous)
-                h.combine(featureHash)
+                h.combine(fh)
                 if leftOut(index, f) { h.combine("draft") }
-                if !parameterWords.isEmpty {
-                    let words = ParameterDependencies.shared.words(of: f, hash: featureHash)
-                    for name in ParameterDependencies.closure(of: words, inputs: parameterWords) {
-                        h.combine(name)
-                        if let q = r.parameters.values[name] {
-                            h.combine(q.value.bitPattern); h.combine(q.length); h.combine(q.angle)
-                        } else {
-                            h.combine(r.parameters.errors[name] ?? "")
-                        }
-                    }
-                }
+                combineParameters(of: f, featureHash: fh, into: &h)
                 previous = h.finalize()
                 keys.append(previous)
             }
@@ -283,6 +320,22 @@ public enum Regenerator {
 
         for (index, feature) in features.enumerated() where index >= first {
             defer { if cache != nil { snapshots.append((keys[index], r)) } }
+            // The moves and scales that carry the sketches of this feature run when it is done (before its snapshot is taken).
+            defer {
+                for j in carriedAfter[index] ?? [] {
+                    let moved = features[j]
+                    do {
+                        switch moved.kind {
+                        case .move(let m): try move(m, moved, &r)
+                        case .scale(let s): try scale(s, moved, &r)
+                        default: break
+                        }
+                    } catch {
+                        r.errors[moved.id] = "\(error)"
+                    }
+                }
+            }
+            if carriedEarly.contains(index) { continue }  // already done, where its sketches were made
             guard !feature.suppressed else { continue }
             if leftOut(index, feature) { r.threadsLeftOut += 1; continue }
             progress?(index - first, features.count - first, feature)
