@@ -502,7 +502,13 @@ extension DocumentModel {
             return !faces.isEmpty && addThreads(on: faces)
         case .fillet, .chamfer:
             guard selectedEdgeCount + selection.filter(\.isFace).count > 0, !waiting else { return false }
-            addEdgeFeature(fillet: tool == .fillet)
+            // The picks must still name edges or faces that exist; if not, nothing is made and the tool keeps waiting,
+            // with its prompt in the Inspector, instead of looking as if it had worked.
+            guard addEdgeFeature(fillet: tool == .fillet) else {
+                selection = []
+                alert = AlertInfo(title: "Pick the edges again", message: "SimplMaker could not use the edges or faces that were selected. Click the ones to \(tool.rawValue.lowercased()), then press Return.")
+                return false
+            }
         case .move:
             // One manipulator slides and turns.
             var sketches: [FeatureID] = []

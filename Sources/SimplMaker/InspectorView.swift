@@ -103,6 +103,19 @@ struct InspectorView: View {
                 }
             }
             .formStyle(.grouped)
+        } else if let tool = model.pendingTool, tool != .measure, tool != .sectionAnalysis {
+            // A tool waiting for picks has no feature yet, so there is nothing to edit: say what it waits for, and how to finish.
+            Form {
+                Section(tool.rawValue) {
+                    Text(model.toolPrompt ?? "Pick what the tool needs in the viewport.").foregroundStyle(.secondary)
+                    HStack {
+                        Button("Cancel") { model.cancelTool() }
+                        Button("Create") { model.confirmTool() }
+                            .help("Make it with what is picked now (Return)")
+                    }
+                }
+            }
+            .formStyle(.grouped)
         } else {
             ContentUnavailableView("No Feature Selected", systemImage: "cursorarrow.click",
                                    description: Text("Select a feature in the timeline to edit it, or pick a tool in the toolbar to create one."))

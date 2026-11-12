@@ -1043,7 +1043,9 @@ final class DocumentModel {
     }
 
     /// Creates a fillet or chamfer on the selected edges, and all round the selected faces.
-    func addEdgeFeature(fillet: Bool) {
+    /// False, and nothing made, when the picks do not name an edge or face of a body that is there (the caller says so).
+    @discardableResult
+    func addEdgeFeature(fillet: Bool) -> Bool {
         let edges: [EdgeRef] = selection.compactMap { pick in
             guard pick.isEdge, pick.body < meshes.count else { return nil }
             let m = meshes[pick.body]
@@ -1051,7 +1053,7 @@ final class DocumentModel {
             return EdgeRef(body: m.id, edge: m.mesh.edgeNames[pick.element])
         }
         let faces = selection.compactMap { faceRef($0) }
-        guard !edges.isEmpty || !faces.isEmpty else { return }
+        guard !edges.isEmpty || !faces.isEmpty else { return false }
         let base = fillet ? "Fillet" : "Chamfer"
         var edgeFeature = EdgeFeature(edges: edges, faces: faces, size: fillet ? "2 mm" : "1 mm")
         if !fillet {
@@ -1059,6 +1061,7 @@ final class DocumentModel {
             if chamferMode == .twoDistances { edgeFeature.second = "2 mm" }  // a different start, so the two arrows tell apart
         }
         add(Feature(name: document.nextName(base), fillet ? .fillet(edgeFeature) : .chamfer(edgeFeature)))
+        return true
     }
 
     /// Puts a new feature in the document as one undo step: at the timeline marker, hiding the sketches it uses.
