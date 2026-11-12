@@ -217,8 +217,26 @@ private struct PadGlyphs: View {
             + SketchOverlayBuilder.patternGlyphs(session) + SketchOverlayBuilder.mirrorGlyphs(session)
         var frames: [CGRect] = []
         var out: [(ConstraintGlyph, CGPoint)] = []
-        for g in all {
-            guard let p = state.project(g.world) else { continue }
+        // Zoomed out, the symbols of neighbouring lines and points run into one another and only get in the way: a group of symbols
+        // (all those at one spot) stays only when its box is clear of the others'. Zooming in pulls them apart again. A selected
+        // symbol, one that conflicts, and the buttons of a pattern or mirror always stay.
+        let projected = all.compactMap { g in state.project(g.world).map { (g, $0) } }
+        func key(_ p: CGPoint) -> [Int] { [Int(p.x.rounded()), Int(p.y.rounded())] }
+        var groups: [[Int]: (frame: CGRect, keep: Bool)] = [:]
+        for (g, p) in projected where g.pattern == nil && g.mirror == nil {
+            let k = key(p)
+            let width = 28 + CGFloat(g.stack) * 30
+            var entry = groups[k] ?? (CGRect(x: p.x + 10, y: p.y + 8, width: 28, height: 28), false)
+            entry.frame.size.width = max(entry.frame.width, width)
+            entry.keep = entry.keep || g.selected || g.problem
+            groups[k] = entry
+        }
+        var crowded: Set<[Int]> = []
+        for (k, a) in groups where !a.keep {
+            if groups.contains(where: { $0.key != k && $0.value.frame.insetBy(dx: -4, dy: -4).intersects(a.frame) }) { crowded.insert(k) }
+        }
+        for (g, p) in projected {
+            if g.pattern == nil, g.mirror == nil, crowded.contains(key(p)) { continue }
             var frame = CGRect(x: p.x + 10 + CGFloat(g.stack) * 30, y: p.y + 8, width: 28, height: 28)
             for _ in 0..<10 {
                 guard let hit = frames.first(where: { $0.insetBy(dx: -1, dy: -1).intersects(frame) }) else { break }

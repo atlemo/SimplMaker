@@ -81,7 +81,7 @@ enum NameTagScript {
     static let outline = TutorialStep(
         id: "outline", chapter: .tagShape,
         title: "Draw the tag",
-        text: "The tag is a rounded rectangle, and the tool is ready. Tap the **origin**, the point in the middle of the grid. Boxes for the sizes appear: type `width`, `depth` and `depth / 4` in them, then tap **OK**.",
+        text: "The tag is a rounded rectangle, and the tool is ready. Tap the **origin**, the point in the middle of the grid. Three boxes appear. Tap the first and type `width`, use the arrow on the number pad to move to the next box for `depth`, then `depth / 4`, and tap **OK**.",
         kind: .task(done: { model in
             guard let base = TutorialFacts(model).baseSketch else { return false }
             return TutorialFacts.baseOutline(of: base.value.sketch) == .good
@@ -316,7 +316,7 @@ enum NameTagScript {
         if session.typed[.width] != nil, session.typed[.height] != nil {
             return .next("Tap **OK** on the number pad, then **OK** again at the bottom of the view to place the tag.")
         }
-        return .next("Type `width`, `depth` and `depth / 4` in the three boxes. On the number pad, **param** lists your parameters and the arrow goes to the next box.")
+        return .next("Tap a box and type `width`, then `depth` and `depth / 4` in the other two. On the number pad, **param** lists your parameters and the arrow goes to the next box. If the pad is gone, tap a box to bring it back.")
     }
 
     // MARK: doing it for the user

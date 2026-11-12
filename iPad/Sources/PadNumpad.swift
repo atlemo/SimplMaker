@@ -34,6 +34,8 @@ final class PadNumpad {
     var overlayFrame = CGRect.zero
 
     var isActive: Bool { field != nil && !usesSystemKeyboard }
+    /// The touch now on the viewport began while a size was being typed: it ends the typing and must not also draw or pick.
+    var touchFoundPadUp = false
 
     static let width: CGFloat = 300
     static let height: CGFloat = 352

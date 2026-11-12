@@ -43,6 +43,7 @@ final class PadMetalView: MTKView {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         if touches.count == 1, event?.allTouches?.count == 1, let t = touches.first {
+            PadNumpad.shared.touchFoundPadUp = PadNumpad.shared.isActive || PadNumpad.shared.usesSystemKeyboard  // this touch only puts it away
             if !isFirstResponder { _ = becomeFirstResponder() }  // taking hold of the view ends typing in a field
             usingPencil = t.type == .pencil
             onTouchDown?(t.location(in: self))
@@ -105,6 +106,8 @@ struct PadViewport: UIViewRepresentable {
         let navigation = Preferences.navigationConfig
         weak var view: MTKView?
         var touch = SketchTouch()
+        /// The touch in progress began while the number pad was up and only closed it.
+        var touchClosedPad = false
         var sketchCamera = SketchCameraMemory()
         var menuInteraction: UIEditMenuInteraction?
         /// A long press waits for the pick under it, then opens the menu for what it found.
@@ -297,6 +300,16 @@ struct PadViewport: UIViewRepresentable {
                 case .ended, .cancelled: continueViewDrag(at: location, in: view); endViewDrag(in: view)
                 default: break
                 }
+                return
+            }
+            // A touch that found the pad up only put it away, however short its drag.
+            if g.state == .began, PadNumpad.shared.touchFoundPadUp {
+                PadNumpad.shared.touchFoundPadUp = false
+                touchClosedPad = true
+                return
+            }
+            if touchClosedPad {  // the rest of that touch
+                if g.state == .ended || g.state == .cancelled || g.state == .failed { touchClosedPad = false }
                 return
             }
             switch g.state {
@@ -533,6 +546,12 @@ struct PadViewport: UIViewRepresentable {
         @objc func tap(_ g: UITapGestureRecognizer) {
             guard let view, let renderer, let model else { return }
             let p = g.location(in: view)
+            // A size is being typed: the first tap beside the pad only puts the pad away (touching the view ended the typing), as with a
+            // keyboard. Without this the tap placed the shape's next corner: the boxes vanished with whatever was typed so far.
+            if PadNumpad.shared.touchFoundPadUp {
+                PadNumpad.shared.touchFoundPadUp = false
+                return
+            }
             if model.sketchSession != nil {  // a click at that spot, then the finger is already up
                 let now = ProcessInfo.processInfo.systemUptime
                 if let last = lastTap, now - last.time < 0.35, hypot(p.x - last.point.x, p.y - last.point.y) < 24,
