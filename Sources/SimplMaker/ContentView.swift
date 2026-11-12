@@ -2610,7 +2610,7 @@ struct DimensionEditor: View {
             // A plain value can become a parameter in one click: the field then holds its name.
             if DocumentModel.parameterSeed(from: draft, fallback: draftUnit) != nil {
                 Button { addAsParameter() } label: { Label("Add as parameter", systemImage: "plus.circle") }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
                     .help("Make this value a parameter, named for you, and use it here. Rename it in the Parameters list.")
             }
         }
