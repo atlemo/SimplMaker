@@ -81,6 +81,9 @@ final class PadNumpad {
     /// The field is done: the pad goes (and its window, if it had one).
     func release() {
         field = nil
+        // The letters were for that field only. Left on, every later touch on the view looked like one that only puts the keyboard
+        // away, so taps and drags on the part did nothing at all until another number box was opened.
+        usesSystemKeyboard = false
         inOverlayWindow = false
         updateWindow()
     }

@@ -50,15 +50,17 @@ struct PadDocumentView: View {
     var body: some View {
         let model = model
         let guide = file.guide
+        // (The tutorial's card is drawn at the very end of this chain, so that nothing floats above it.)
         return DocumentPanels(model: model, guide: guide, viewport: viewport(model), chrome:
             // The bar is drawn here, under the side panels, so its shadow never falls on them (all the glass is at one level);
             // the empty inset below keeps the room it needs. Offset up by that room: this layer sits under the inset.
             ZStack {
-                PadToolBar(model: model, height: $toolBarHeight)
+                PadToolBar(model: model, height: $toolBarHeight, keepsOpen: guide.isActive)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .offset(y: -toolBarHeight)
                 PadTopGlass(frame: navButtonsFrame)
             })
+            .withoutTutorialCard()
             // The keyboard covers the bottom of the screen instead of squeezing the view above it: the fields that are typed in move up by themselves.
             .ignoresSafeArea(.keyboard)
             // The size fields and the OK / Cancel bar of a feature float above the panels, never under them.
@@ -130,6 +132,8 @@ struct PadDocumentView: View {
             .overlay(alignment: .top) {
                 PadTopBar(model: model, guide: guide, undoManager: undoManager, title: title, onClose: onClose, onRename: onRename, frame: $navButtonsFrame)
             }
+            // The tutorial's card is above everything else: the bars, the panel buttons, the number pad and the size fields.
+            .overlay { TutorialCardLayer(model: model, guide: guide).ignoresSafeArea(.keyboard) }
             .modifier(PadDialogs(model: model))
             .modifier(AccentScope(sketching: model.sketchSession != nil))
             .environment(\.completionModel, model)
@@ -309,7 +313,9 @@ struct PadToolBar: View {
     /// The user's own choice (nil: follow the tool). A tool that is being set up folds the bar away so the part is in view;
     /// when the tool ends, the bar comes back. Tapping the chevron or the pill overrides that until the next change.
     @State private var manualCollapse: Bool?
-    private var busy: Bool { model.sketchSession == nil && (model.newFeature != nil || model.pendingTool != nil) }
+    /// The tutorial keeps the bar open: its steps say "tap Extrude", and a bar that folds away and moves the part is one more thing to learn.
+    var keepsOpen = false
+    private var busy: Bool { !keepsOpen && model.sketchSession == nil && (model.newFeature != nil || model.pendingTool != nil) }
     private var collapsed: Bool { manualCollapse ?? busy }
 
     /// What the folded bar says: the tool that is running, or just "Tools".

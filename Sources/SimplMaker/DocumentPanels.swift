@@ -22,15 +22,38 @@ func shortcutHelp(_ text: String, _ command: ShortcutCommand) -> String {
     Shortcuts.label(command).map { "\(text) (\($0))" } ?? text
 }
 
+/// The tutorial's card, placed where it floats: the bottom middle on the Mac, the bottom left on the iPad (with a margin from the
+/// edge), clear of the side panels and above the status bar and the OK bar.
+struct TutorialCardLayer: View {
+    @Bindable var model: DocumentModel
+    let guide: TutorialGuide
+
+    private var alignment: Alignment { PanelTouch.panelToggleRoom == 0 ? .bottom : .bottomLeading }
+    private var inset: CGFloat { PanelTouch.panelToggleRoom == 0 ? 0 : Panel.inset + 4 }
+
+    var body: some View {
+        // The empty layer around the card takes no touches: they go through to the view.
+        Color.clear
+            .allowsHitTesting(false)
+            .overlay(alignment: alignment) {
+                TutorialCard(model: model, guide: guide)
+                    .padding(.leading, (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0) + inset)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
+                    .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
+                        + 2 * (DS.ControlHeight.large + Panel.inset) + Panel.inset)
+            }
+    }
+}
+
 struct DocumentPanels<Viewport: View, Chrome: View>: View {
     @Bindable var model: DocumentModel
     let guide: TutorialGuide
     let viewport: Viewport
     let chrome: Chrome
 
-    /// Where the tutorial's card floats: the bottom middle on the Mac, the bottom left on the iPad (with a margin from the edge).
-    private static var tutorialAlignment: Alignment { PanelTouch.panelToggleRoom == 0 ? .bottom : .bottomLeading }
-    private static var tutorialInset: CGFloat { PanelTouch.panelToggleRoom == 0 ? 0 : Panel.inset + 4 }
+    /// Whether the tutorial's card is drawn here (the Mac) or by the caller, above everything else (the iPad).
+    var cardHere = true
+    func withoutTutorialCard() -> Self { var copy = self; copy.cardHere = false; return copy }
 
     /// The room the iPad's show/hide button for the inspector (or the Render view's own buttons) takes at the top right
     /// when the inspector is closed: what floats there goes left of it. None on the Mac.
@@ -135,12 +158,9 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
         // stays clear of what is built at the middle of the view and of the size fields that appear beside it.
         // On the iPad it sits at the bottom left, not the middle: the part and the grid's origin are in the middle of the view, and
         // the number pad comes up there.
-        .overlay(alignment: Self.tutorialAlignment) {
-            TutorialCard(model: model, guide: guide)
-                .padding(.leading, (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0) + Self.tutorialInset)
-                .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
-                .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
-                    + 2 * (DS.ControlHeight.large + Panel.inset) + Panel.inset)
+        // (The iPad draws it itself, last of all, so that nothing floats above it: see `TutorialCardLayer`.)
+        .overlay {
+            if cardHere { TutorialCardLayer(model: model, guide: guide) }
         }
         // The status bar floats at the bottom, between the panels. The Render view is for looking at the part, so it goes there, unless
         // a tool or a sketch is waiting for something and the bar is where it says what.

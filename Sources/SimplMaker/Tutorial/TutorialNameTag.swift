@@ -122,6 +122,10 @@ enum NameTagScript {
             }
             // Sketch mode has no Extrude button: the sketch has to be finished first.
             if model.sketchSession != nil { return .next("Tap **Finish Sketch**, then choose Extrude.") }
+            // A profile tapped while Extrude was not waiting (a second tap on Extrude puts it away) is only selected.
+            if model.pendingTool == nil, !model.selectedProfiles.isEmpty {
+                return .next("The shape is selected. Now tap **Extrude** in the toolbar.")
+            }
             return model.pendingTool == .extrude
                 ? .next("Now tap inside the rounded rectangle.")
                 : .next("Tap **Extrude** in the toolbar.")
@@ -213,6 +217,9 @@ enum NameTagScript {
                 return .next("Type `relief` in the box beside the orange arrow, then tap **OK**.")
             }
             if model.sketchSession != nil { return .next("Tap **Finish Sketch**, then choose Extrude.") }
+            if model.pendingTool == nil, !model.selectedProfiles.isEmpty {
+                return .next("The letters are selected. Now tap **Extrude** in the toolbar.")
+            }
             return model.pendingTool == .extrude
                 ? .next("Now tap your name.")
                 : .next("Tap **Extrude** in the toolbar.")

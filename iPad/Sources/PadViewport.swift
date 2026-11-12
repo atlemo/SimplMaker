@@ -43,7 +43,8 @@ final class PadMetalView: MTKView {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         if touches.count == 1, event?.allTouches?.count == 1, let t = touches.first {
-            PadNumpad.shared.touchFoundPadUp = PadNumpad.shared.isActive || PadNumpad.shared.usesSystemKeyboard  // this touch only puts it away
+            // This touch only puts it away: only while a box is being typed in (a stale "letters" flag must not count).
+            PadNumpad.shared.touchFoundPadUp = PadNumpad.shared.field != nil
             if !isFirstResponder { _ = becomeFirstResponder() }  // taking hold of the view ends typing in a field
             usingPencil = t.type == .pencil
             onTouchDown?(t.location(in: self))
