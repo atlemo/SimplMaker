@@ -1038,6 +1038,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
     public var bodyMaterials: [FeatureID: BodyMaterial] = [:]
     /// How rough a plastic or metal body is, 0 (polished) to 1 (matte), by the id of the feature that made it; others have their material's own.
     public var bodyRoughness: [FeatureID: Double] = [:]
+    /// How much of a body shows in the normal view: 1 solid (the default, not stored), less lets what is behind it show through.
+    public var bodyOpacity: [FeatureID: Double] = [:]
     /// Folders the user made in the browser, with their sub-folders (a folder lists its parent).
     public var folders: [BrowserFolder] = []
     /// The folder each body, sketch, plane or canvas sits in, by the id of the feature that made it. Anything
@@ -1053,7 +1055,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, bodyRoughness, folders, folderOf, browserOrder, parameterFolders, parameterFolderOf, thumbnail }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, bodyRoughness, bodyOpacity, folders, folderOf, browserOrder, parameterFolders, parameterFolderOf, thumbnail }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -1067,6 +1069,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         bodyColors = try c.decodeIfPresent([FeatureID: BodyColor].self, forKey: .bodyColors) ?? [:]
         bodyMaterials = try c.decodeIfPresent([FeatureID: BodyMaterial].self, forKey: .bodyMaterials) ?? [:]
         bodyRoughness = try c.decodeIfPresent([FeatureID: Double].self, forKey: .bodyRoughness) ?? [:]
+        bodyOpacity = try c.decodeIfPresent([FeatureID: Double].self, forKey: .bodyOpacity) ?? [:]
         folders = try c.decodeIfPresent([BrowserFolder].self, forKey: .folders) ?? []
         folderOf = try c.decodeIfPresent([FeatureID: String].self, forKey: .folderOf) ?? [:]
         browserOrder = try c.decodeIfPresent([FeatureID].self, forKey: .browserOrder) ?? []
@@ -1086,6 +1089,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         if !bodyColors.isEmpty { try c.encode(bodyColors, forKey: .bodyColors) }
         if !bodyMaterials.isEmpty { try c.encode(bodyMaterials, forKey: .bodyMaterials) }
         if !bodyRoughness.isEmpty { try c.encode(bodyRoughness, forKey: .bodyRoughness) }
+        if !bodyOpacity.isEmpty { try c.encode(bodyOpacity, forKey: .bodyOpacity) }
         if !folders.isEmpty { try c.encode(folders, forKey: .folders) }
         if !folderOf.isEmpty { try c.encode(folderOf, forKey: .folderOf) }
         if !browserOrder.isEmpty { try c.encode(browserOrder, forKey: .browserOrder) }
@@ -1104,6 +1108,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         d.bodyColors = [:]
         d.bodyMaterials = [:]
         d.bodyRoughness = [:]
+        d.bodyOpacity = [:]
         d.folders = []
         d.folderOf = [:]
         d.browserOrder = []

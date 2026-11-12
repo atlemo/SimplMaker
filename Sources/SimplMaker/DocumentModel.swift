@@ -168,6 +168,8 @@ final class DocumentModel {
     private(set) var colorPreview: (bodies: [FeatureID], color: BodyColor)?
     /// A roughness being set with the slider, shown on bodies until it is let go (see previewBodyRoughness).
     private(set) var roughnessPreview: (bodies: [FeatureID], roughness: Double)?
+    /// An opacity being set with the slider: shown on those bodies until it is let go.
+    private(set) var opacityPreview: (bodies: [FeatureID], opacity: Double)?
     /// Orthographic projection (View menu), on by default: sizes and alignments read truer than in perspective.
     var orthographic = true
     /// How bodies are drawn: shaded or wireframe, with or without edges (View ▸ Visual Style).
@@ -858,6 +860,33 @@ final class DocumentModel {
         guard !ids.isEmpty else { return }
         mutate(roughness == nil ? "Reset Roughness" : "Change Roughness") { doc in
             for id in ids { doc.bodyRoughness[id] = roughness }
+        }
+    }
+
+    /// How much of a body shows in the normal view (1 solid, less is see-through): what is being set, else its own, else 1. A
+    /// piece of a split body has its parent's until given its own.
+    func displayOpacity(of id: FeatureID) -> Double {
+        if let p = opacityPreview, p.bodies.contains(id) { return p.opacity }
+        return document.bodyOpacity[id] ?? document.bodyOpacity[Regenerator.rootBody(id)] ?? 1
+    }
+
+    /// The least opacity the slider reaches: a body at zero would vanish and could not be picked.
+    static let minimumOpacity = 0.1
+
+    /// Shows an opacity on bodies while the slider is dragged, without changing the document.
+    func previewBodyOpacity(_ opacity: Double, of ids: [FeatureID]) {
+        opacityPreview = ids.isEmpty ? nil : (ids, min(max(opacity, Self.minimumOpacity), 1))
+        overlayRevision += 1
+    }
+
+    /// Makes bodies see-through (1 or nil goes back to solid), as one undo step. Needs no rebuild.
+    func setBodyOpacity(_ opacity: Double?, of ids: [FeatureID]) {
+        opacityPreview = nil
+        overlayRevision += 1
+        guard !ids.isEmpty else { return }
+        let value = opacity.map { min(max($0, Self.minimumOpacity), 1) }.flatMap { $0 >= 0.999 ? nil : $0 }
+        mutate(value == nil ? "Reset Opacity" : "Change Opacity") { doc in
+            for id in ids { doc.bodyOpacity[id] = value }
         }
     }
 

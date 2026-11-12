@@ -571,6 +571,8 @@ final class Renderer {
     var bodyMaterials: [UInt32] = []
     /// Each body's roughness (plastic and metal), in the same order; -1 = the material's own.
     var bodyRoughness: [Float] = []
+    /// Each body's opacity in the normal view (1 solid), in the same order. Less than 1 draws it blended over what is behind it.
+    var bodyOpacity: [Float] = []
     /// Where depth of field is sharp, in the world; nil = the middle of the part.
     var focusPoint: SIMD3<Float>?
     /// How long the GPU took over the last frame, in seconds (for timing tests).
@@ -1644,6 +1646,11 @@ final class Renderer {
         let tints = bodies.indices.map { Self.tint(bodyColors[safe: $0].flatMap { $0 }, palette: palette) }
         // Materials show in the Render view only, and not in the section analysis or print preview, which draw their own way.
         let materials: [UInt32] = bodies.indices.map { look != nil && !sectioning && !printing ? bodyMaterials[safe: $0] ?? 0 : 0 }
+        // See-through bodies (the Appearance panel's Opacity): only in the plain shaded view, not the Render view, the section
+        // analysis or the print preview, which draw their own way.
+        let seeThrough = look == nil && !sectioning && !printing && visualStyle.isShaded
+        let opacities: [Float] = bodies.indices.map { seeThrough ? min(max(bodyOpacity[safe: $0] ?? 1, 0.05), 1) : 1 }
+        let ghosting = opacities.contains { $0 < 0.999 }
         // The Render view's finer lighting and effects: the room, the occlusion and contact shadows (which read the depth the
         // camera sees), the glass, and whether the picture is made apart to be touched up.
         var cameraDepth = false, refractingGlass = false, postPath = false
@@ -1724,7 +1731,7 @@ final class Renderer {
             let bg = palette.background
             for (i, b) in bodies.enumerated() {
                 guard let faces = b.faces, let indices = b.indices else { continue }
-                let glass = materials[i] == 2
+                let glass = materials[i] == 2 || opacities[i] < 0.999  // see-through bodies take the glass passes
                 if glass ? !(glassOnly || withGlass) : glassOnly { continue }
                 if printing && !wireframe {
                     if b.printFaces == nil, b.printVertexCount == 0 { makePrintFaces(of: i) }
@@ -1745,6 +1752,7 @@ final class Renderer {
                     : DrawParams(color: t.face, hoverColor: t.faceHover, selectColor: t.faceSelected,
                                  thickness: 0, depthBias: 0, pickable: 1, style: (capsOnly ? DrawStyle.capsOnly : 0) | glassSide,
                                  material: materials[i], roughness: bodyRoughness[safe: i] ?? -1)
+                if opacities[i] < 0.999 { params.color.w = opacities[i] }  // the shader reads a see-through body's opacity from here
                 enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
                 enc.setVertexBuffer(faces, offset: 0, index: 0)
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
@@ -1827,6 +1835,17 @@ final class Renderer {
             let cutting = sectioning && style.isShaded
             let pipeline = printing ? (cutting ? sectionPrintPipeline : printFacePipeline) : (cutting ? sectionFacePipeline : facePipeline)
             drawFaces(pipeline, wireframe: !style.isShaded)
+            if ghosting && !cutting && !printing && style.isShaded {
+                // See-through bodies, after the solid ones: the far side first, then (still without writing depth, so what is
+                // behind stays visible to the edges drawn later) their ids for picking, then the near side.
+                enc.setDepthStencilState(noWriteDepthState)
+                enc.setDepthBias(Self.glassContactBias, slopeScale: 2, clamp: 0)
+                drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassBack)
+                enc.setDepthBias(0, slopeScale: 0, clamp: 0)
+                drawFaces(faceIDPipeline, wireframe: false, glassOnly: true)
+                drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassFront)
+                enc.setDepthStencilState(depthState)
+            }
             if cutting {
                 // The cut faces, after every body's other faces, so only those nothing nearer hides are marked.
                 // Looking into a body that touches another, the far wall the cut face sits on is also the neighbour's

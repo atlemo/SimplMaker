@@ -574,6 +574,8 @@ enum Shaders {
         }
         // The reflection in the floor: opaque only where the body meets the floor, and fading out with the height.
         if (u.renderParams.z > 0.5) o.color.a = opacity * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), world.z - u.floorCenter.z));
+        // A see-through body (the Appearance panel's Opacity, drawn in the glass passes with its opacity in the colour's alpha).
+        if (p.material != 2u && (p.style & 6144u) != 0u) o.color.a = p.color.a;
         o.id = packID(id);
         return o;
     }

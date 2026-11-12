@@ -95,6 +95,7 @@ struct AppearancePanel: View {
                     }
                 }
                 materialRow
+                opacityRow
             }
             .disabled(targets.isEmpty)
             Divider()
@@ -145,6 +146,28 @@ struct AppearancePanel: View {
         .padding(.top, DS.Spacing.space2)
         .help("From a glossy, polished surface to a matte one. Double-click to go back to the material's own")
         .simultaneousGesture(TapGesture(count: 2).onEnded { model.setBodyRoughness(nil, of: rough) })
+    }
+
+    /// How see-through the selected bodies are in the normal view, to look at what is inside or behind them. The view follows the
+    /// slider while it is dragged; letting go is one undo step. Double-click goes back to solid.
+    private var opacityRow: some View {
+        let shown = targets.first.map { model.displayOpacity(of: $0) } ?? 1
+        return VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            HStack(spacing: DS.Spacing.space4) {
+                Text("Opacity").font(.callout)
+                Slider(value: Binding(get: { shown }, set: { model.previewBodyOpacity($0, of: targets) }),
+                       in: DocumentModel.minimumOpacity...1) { editing in
+                    if !editing, let p = model.opacityPreview { model.setBodyOpacity(p.opacity, of: targets) }
+                }
+                .tint(accent)
+                Text("\(Int((shown * 100).rounded()))%")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
+            }
+            Text("Lower it to see through a body. Shown in the normal view; the Render view has Glass.").font(.caption).foregroundStyle(.tertiary)
+        }
+        .padding(.top, DS.Spacing.space2)
+        .help("Double-click to make the bodies solid again")
+        .simultaneousGesture(TapGesture(count: 2).onEnded { model.setBodyOpacity(nil, of: targets) })
     }
 
     /// Whether every selected body has this material (nil = plain).

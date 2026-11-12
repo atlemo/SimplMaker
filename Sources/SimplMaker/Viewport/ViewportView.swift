@@ -2512,6 +2512,7 @@ struct ViewportView: NSViewRepresentable {
         }
         renderer.focusPoint = model.renderFocusPoint.map { SIMD3(Float($0.x), Float($0.y), Float($0.z)) }
         renderer.bodyRoughness = model.visibleMeshes.map { m in model.displayRoughness(of: m.id).map { Float($0) } ?? -1 }
+        renderer.bodyOpacity = model.visibleMeshes.map { m in Float(model.displayOpacity(of: m.id)) }
         // A fit asked for while the part is empty (a new document, at launch) is used up here, so the first body
         // added later doesn't pull the camera to itself.
         if c.fitRevision != fitRevision {

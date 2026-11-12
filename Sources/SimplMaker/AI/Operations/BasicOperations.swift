@@ -210,7 +210,7 @@ struct DeleteFeatureOperation: AIOperation {
         let stillUsed = Set(doc.features.flatMap(\.sketchesUsed))
         for f in removed {
             for sketch in f.sketchesUsed where !stillUsed.contains(sketch) { doc.hidden.remove(sketch) }
-            doc.hidden.remove(f.id); doc.bodyNames[f.id] = nil; doc.bodyColors[f.id] = nil; doc.bodyMaterials[f.id] = nil; doc.bodyRoughness[f.id] = nil
+            doc.hidden.remove(f.id); doc.bodyNames[f.id] = nil; doc.bodyColors[f.id] = nil; doc.bodyMaterials[f.id] = nil; doc.bodyRoughness[f.id] = nil; doc.bodyOpacity[f.id] = nil
         }
         return OperationOutcome(message: "Deleted " + removed.map(\.name).joined(separator: ", ") + ".")
     }
