@@ -320,6 +320,28 @@ enum SketchTool: String, CaseIterable, Identifiable {
     }
 }
 
+/// What the Select tool picks in a sketch. A filter makes clicks, hover, drag-select and Select All consider one kind only: with
+/// Points a click reaches the end of a line that sits on top of it, and drag-select takes every point (the ends of curves too).
+enum SketchSelectionFilter: String, CaseIterable, Identifiable {
+    case all = "All", points = "Points", curves = "Curves"
+    var id: String { rawValue }
+    /// For the tool's label and the status bar.
+    var summary: String {
+        switch self {
+        case .all: return "Select"
+        case .points: return "Select: Points"
+        case .curves: return "Select: Curves"
+        }
+    }
+    var help: String {
+        switch self {
+        case .all: return "Pick points, curves and everything else"
+        case .points: return "Pick points only (the ends and centres of curves too), so a click or a box reaches them where lines lie over them"
+        case .curves: return "Pick lines, arcs, circles and splines only, not points"
+        }
+    }
+}
+
 /// A value the user can type while drawing, instead of placing the next point with the mouse.
 enum SketchInput: String, CaseIterable, Identifiable {
     case length = "Length", angle = "Angle", width = "Width", height = "Height"
@@ -540,6 +562,24 @@ final class SketchSession {
     }
     var selection: [EntityID] = [] {
         didSet { if selection.isEmpty { axisSelection = [] } }
+    }
+    /// What Select picks; changing it lets go of what the new filter does not take.
+    var selectionFilter: SketchSelectionFilter = .all {
+        didSet {
+            guard selectionFilter != oldValue else { return }
+            selection = selection.filter(allows)
+            axisSelection = axisSelection.filter(allows)
+            if let h = hover, !allows(h) { hover = nil }
+            dragEntity = nil
+        }
+    }
+    /// Whether the filter takes this point, curve or axis.
+    func allows(_ id: EntityID) -> Bool {
+        switch selectionFilter {
+        case .all: return true
+        case .points: return sketch.kind(of: id) == .point
+        case .curves: return SketchMirrorDef.isAxis(id) || (sketch.kind(of: id).map { $0 != .point } ?? true)
+        }
     }
     /// The sketch's axes picked along with the selection, to constrain against (see `SketchMirrorDef.xAxis`). Kept apart
     /// from `selection`, which every other command reads as drawn geometry; cleared with it.
@@ -800,12 +840,14 @@ final class SketchSession {
         var inCurve = Set<EntityID>()
         for c in sketch.curves {
             inCurve.formUnion(sketch.pointIDs(of: c))
-            guard !Sketch.isGenerated(c.id) else { continue }
+            guard !Sketch.isGenerated(c.id), selectionFilter != .points else { continue }
             let line = SketchOverlayBuilder.polyline(c, in: sketch, positions: positions)
             guard !line.isEmpty else { continue }
             if crossing ? touches(line) : line.allSatisfy(inside) { taken.append(c.id) }
         }
-        for p in sketch.points where !inCurve.contains(p.id) && !Sketch.isGenerated(p.id) && inside(p.position) {
+        // Loose points; with the Points filter every point (the ends and centres of curves too), but not the fixed origin.
+        for p in sketch.points where selectionFilter != .curves && (selectionFilter == .points ? p.id != "origin" : !inCurve.contains(p.id))
+            && !Sketch.isGenerated(p.id) && inside(p.position) {
             taken.append(p.id)
         }
         let had = Set(selection)
@@ -818,8 +860,11 @@ final class SketchSession {
     func selectEverything() {
         var inCurve = Set<EntityID>()
         for c in sketch.curves { inCurve.formUnion(sketch.pointIDs(of: c)) }
-        selection = sketch.curves.filter { !Sketch.isGenerated($0.id) }.map(\.id)
-            + sketch.points.filter { !Sketch.isGenerated($0.id) && !inCurve.contains($0.id) }.map(\.id)
+        let curves = selectionFilter == .points ? [] : sketch.curves.filter { !Sketch.isGenerated($0.id) }.map(\.id)
+        let points = selectionFilter == .curves ? [] : sketch.points.filter {
+            !Sketch.isGenerated($0.id) && (selectionFilter == .points ? $0.id != "origin" : !inCurve.contains($0.id))
+        }.map(\.id)
+        selection = curves + points
         dragEntity = nil
     }
 
@@ -937,6 +982,8 @@ final class SketchSession {
             // What's exactly under the cursor, or else the nearest point or curve within a few
             // pixels: sketch lines are thin, and picking shouldn't need pixel precision.
             hover = entity(for: m.pick) ?? m.uv.flatMap { m.snapping ? nearestEntity($0) : nil }
+            // The filter: what it does not take is not under the cursor, so the click reaches what lies beneath.
+            if tool == .select, let h = hover, !allows(h) { hover = m.uv.flatMap { m.snapping ? nearestEntity($0) : nil } }
             if let h = hover, Sketch.isGenerated(h), tool != .select { hover = nil }  // copies are only for picking their pattern
             hoverDimension = tool == .select && hover == nil ? m.uv.flatMap { dimensionLine(near: $0) ?? angleDimension(near: $0) } : nil
         }
@@ -2607,12 +2654,14 @@ final class SketchSession {
 
     /// The nearest sketch point within the pick tolerance, else the nearest curve.
     func nearestEntity(_ uv: SIMD2<Double>) -> EntityID? {
+        let filter = tool == .select ? selectionFilter : .all
         var best: (EntityID, Double)?
-        for p in sketch.points where tool == .select || !Sketch.isGenerated(p.id) {
+        for p in sketch.points where (tool == .select || !Sketch.isGenerated(p.id)) && filter != .curves {
             let d = simdLength(p.position - uv)
             if d <= tolerance, d < (best?.1 ?? .infinity) { best = (p.id, d) }
         }
         if let best { return best.0 }
+        guard filter != .points else { return nil }
         return nearestCurve(uv) ?? nearestAxis(uv)
     }
 
@@ -3430,7 +3479,7 @@ final class SketchSession {
            sketch.patterns.contains(where: { $0.id == pid }) {
             return "Click to change this pattern (counts, spacing, angle) · or delete it"
         }
-        var s = manipulating == nil ? tool.hint : "Drag an arrow, the square or the ring to move or turn \(selection.isEmpty ? "the sketch" : "the selection") · or type the values · Esc to stop"
+        var s = manipulating == nil ? (tool == .select && selectionFilter != .all ? "Selecting \(selectionFilter.rawValue.lowercased()) only (change it from the Select menu) · " : "") + tool.hint : "Drag an arrow, the square or the ring to move or turn \(selection.isEmpty ? "the sketch" : "the selection") · or type the values · Esc to stop"
         if let snap = lastSnap { s = "Snap: \(snap.kind.rawValue)\(snap.kind == .grid ? " \(gridStep.map { formatDimension($0, kind: .length) } ?? "")" : "") · " + s }
         if !inputFields.isEmpty, manipulating == nil {
             s = "Type a value, Tab for the next one, Return to place it · " + s

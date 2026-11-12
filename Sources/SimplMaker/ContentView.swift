@@ -2380,10 +2380,10 @@ struct SketchToolbar: View {
         Group {
             switch layout {
             case .single:
-                ToolsMenu(solo: tool(.select), groups: groups, trailing: finish)
+                ToolsMenu(solo: selectTool, groups: groups, trailing: finish)
             case .trimmed(let trim):
                 HStack(spacing: DS.Spacing.space1) {
-                    SoloTool(tool: tool(.select))
+                    SoloTool(tool: selectTool)
                     ForEach(groups) { group in
                         ToolDivider()
                         ToolGroup(group)
@@ -2402,6 +2402,20 @@ struct SketchToolbar: View {
 
     /// A sketch tool's button. Each way of drawing a shape is a tool of its own, listed in its group (the tool's key
     /// goes through them one after the other).
+    /// The Select button, with a menu for what it picks: everything, points only, or curves only.
+    private var selectTool: GroupTool {
+        let base = tool(.select)
+        let modes = SketchSelectionFilter.allCases.map { filter in
+            GroupTool(id: "Select \(filter.rawValue)", title: filter == .all ? "All" : filter.rawValue, icon: base.icon, help: filter.help,
+                      active: session.tool == .select && session.selectionFilter == filter) {
+                model.sketchCommand { $0.selectionFilter = filter; return nil }
+                model.setSketchTool(.select)
+            }
+        }
+        return GroupTool(id: base.id, title: session.selectionFilter.summary, icon: base.icon, help: base.help, shortcut: base.shortcut,
+                         active: base.active, enabled: base.enabled, modes: modes, modesAsMenu: true, action: base.action)
+    }
+
     private func tool(_ tool: SketchTool) -> GroupTool {
         GroupTool(id: tool.rawValue, title: tool.menuTitle, icon: tool.symbol, help: tool.help,
                   shortcut: tool.family[0] == tool ? tool.keyLabel : nil, badge: tool.isExperimental ? "Experimental" : nil,
