@@ -138,4 +138,28 @@ import Testing
         #expect(ids(session).isSuperset(of: Set(offsets)))
         try await settle(model)
     }
+
+    /// A 10 mm radius quarter arc (about 16 mm long) with six tangent and point constraints on it, beside a 100 mm line.
+    @Test func aCurveCrowdedWithSymbolsDropsThemWhenZoomedOutAndNeedsRoomForTheRow() async throws {
+        var s = Sketch()
+        let line = s.addLine(s.addPoint(0, 0), s.addPoint(100, 0))
+        let centre = s.addPoint(0, 10), start = s.addPoint(10, 10), end = s.addPoint(0, 20)
+        let arc = s.addArc(center: centre, start: start, end: end)
+        for _ in 0..<5 { s.constrain(.tangent(line, arc)) }
+        var d = CADDocument()
+        d.features = [Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .xy, sketch: s)))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        model.editSketch("sk")
+        let session = try #require(model.sketchSession)
+        func onArc() -> Int { SketchOverlayBuilder.glyphs(session).filter { $0.id.hasSuffix("#\(arc)") }.count }
+        session.setViewScale(mmPerPixel: 0.02)  // the arc is 800 px
+        #expect(onArc() == 5)
+        // 0.25 mm a pixel: the arc is 63 px, the five symbols side by side 85: they would hang out over the corner.
+        session.setViewScale(mmPerPixel: 0.25)
+        #expect(onArc() == 0)
+        // The line is 400 px, plenty for its five.
+        #expect(SketchOverlayBuilder.glyphs(session).filter { $0.id.hasSuffix("#\(line)") }.count == 5)
+        try await settle(model)
+    }
 }

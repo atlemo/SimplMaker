@@ -160,18 +160,32 @@ enum SketchOverlayBuilder {
             case .ellipse: return g.point(0)
             }
         }
+        /// How long a curve is, in mm, as far as a symbol on it is concerned (a line, an arc's run, a circle's diameter).
+        func span(_ e: EntityID) -> Double? {
+            guard let curve = lookup.curves[e], let g = s.geometry(of: curve, lookup.positions) else { return nil }
+            switch g {
+            case .line: return s.lineEnds(e).map { simdLength($0.1 - $0.0) }
+            case .circle, .ellipse: return simdLength(g.point(0.5) - g.point(0))
+            case .arc, .bezier: return simdLength(g.point(0.5) - g.point(0)) + simdLength(g.point(1) - g.point(0.5))
+            }
+        }
+        func symbolled(_ c: SketchConstraint) -> [EntityID] {
+            switch c.kind {
+            case .pointOnCurve(let p, _), .midpoint(let p, _): return [p]  // drawn at the point
+            default: return Sketch.references(c.kind)
+            }
+        }
+        // The symbols of one curve sit side by side, 17 px each: a curve that is not much longer than the row they make
+        // (a rounded corner with six tangents and points on it) only gets them spilling out over its neighbours.
+        var wanted: [EntityID: Int] = [:]
+        for c in s.constraints where symbol(c.kind) != nil { for e in symbolled(c) { wanted[e, default: 0] += 1 } }
         for c in s.constraints {
             guard let info = symbol(c.kind) else { continue }
-            var on = Sketch.references(c.kind)
-            switch c.kind {
-            case .pointOnCurve(let p, _), .midpoint(let p, _): on = [p]  // draw at the point
-            default: break
-            }
-            for e in on {
+            for e in symbolled(c) {
                 guard let a = anchor(e) else { continue }
-                // A symbol on a short line (as drawn on screen) is only in the way; a selected one stays.
+                // A symbol on a short curve (as drawn on screen) is only in the way; a selected one stays.
                 if !selected.contains(c.id), lookup.curves[e] != nil,
-                   !legible(span: s.lineEnds(e).map { simdLength($0.1 - $0.0) }, mmPerPixel: session.mmPerPixel, needing: 36) { continue }
+                   !legible(span: span(e), mmPerPixel: session.mmPerPixel, needing: 36 + 34 * Double(max(0, wanted[e, default: 1] - 1))) { continue }
                 let n = perEntity[e, default: 0]
                 perEntity[e] = n + 1
                 out.append(ConstraintGlyph(id: "\(c.id)#\(e)", constraint: c.id, world: world(session.frame, a), stack: n,
