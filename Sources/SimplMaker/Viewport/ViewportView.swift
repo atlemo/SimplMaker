@@ -178,6 +178,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     private var sketchKeyMonitor: Any?
+    private var pointerWasOverShortcuts = false
 
     /// Single-key sketch shortcuts (tool letters, Esc, ⌫) work wherever the keyboard focus happens to be: after a click in
     /// the browser, the Parameters list or a panel, the viewport is no longer the first responder and its own `keyDown`
@@ -191,7 +192,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let isTool = event.charactersIgnoringModifiers?.lowercased().first
             .flatMap { SketchTool.forKey($0, current: session.tool, lastMode: session.mode(of:)) } != nil
         let inList = window.firstResponder is NSTableView  // ⌫ there deletes the list's own row
-        guard isTool || (!inList && [53, 51, 117].contains(event.keyCode)) else { return false }
+        guard isTool || (!inList && [53, 51, 117].contains(event.keyCode)) || (event.keyCode == 49 && session.pendingText == nil) else { return false }
         window.makeFirstResponder(self)
         keyDown(with: event)
         return true
@@ -636,6 +637,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// Crosshair while drawing, hands over draggable geometry, arrow otherwise.
     private var currentCursor: NSCursor {
         guard let model else { return .arrow }
+        if model.pointerOverSketchShortcuts { return .arrow }  // a panel floats over the viewport here
         if model.pickingRenderFocus { return .crosshair }
         if manipulatorDrag != nil { return .closedHand }
         if manipulatorHover != nil { return .openHand }
@@ -801,6 +803,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     override func mouseMoved(with event: NSEvent) {
         let p = location(event)
         lastPoint = p
+        if let model, model.pointerOverSketchShortcuts != pointerWasOverShortcuts {  // moving onto or off the shortcut panel
+            pointerWasOverShortcuts = model.pointerOverSketchShortcuts
+            updateCursor()
+        }
         requestPick(at: p)
         updatePrompt()  // the prompt drops out once the pointer moves onto the toolbar
         if manipulatorDrag == nil {
@@ -1251,6 +1257,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         if let session = model.sketchSession, plainKey {
             switch event.keyCode {
             case 53: session.escape(); refreshOverlay(); return                                      // Esc
+            case 49 where session.pendingText == nil:                                                 // Space: the shortcut panel
+                if !event.isARepeat { model.showSketchShortcuts.toggle() }
+                return
             case 51, 117:                                                                             // ⌫ ⌦
                 if session.isPatterning { model.commitSketch(session.deletePattern()) }
                 else if session.isMirroring { model.commitSketch(session.deleteMirror()) }

@@ -135,6 +135,9 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
             if model.showPalette {
                 CommandPaletteView(model: model)
             }
+            if model.showSketchShortcuts, model.sketchSession != nil {
+                SketchShortcutPalette(model: model)
+            }
         }
         // An empty part says how to begin, in the middle of the free space.
         .overlay {

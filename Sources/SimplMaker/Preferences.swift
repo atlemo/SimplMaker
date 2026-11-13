@@ -9,6 +9,9 @@ enum Preferences {
     static let invertZoom = "invertZoom"
     static let navigation = "navigation"
     static let showGrid = "showGrid"
+    static let sketchShortcutX = "sketchShortcutX"  // where the Spacebar panel was dragged to, from where it opens
+    static let sketchShortcutY = "sketchShortcutY"
+    static let sketchShortcutTools = "sketchShortcutTools"  // the tools of the Spacebar panel while sketching (see SketchShortcutPalette)
     static let showAxes = "showAxes"
     static let showConstraints = "showConstraints"
     static let showShapeCentres = "showShapeCentres"

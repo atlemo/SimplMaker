@@ -178,6 +178,10 @@ final class DocumentModel {
     var visualStyle = VisualStyle.standard
     /// The command palette (⌘K) is open.
     var showPalette = false
+    /// The sketch shortcut panel (Spacebar while sketching) is open.
+    var showSketchShortcuts = false
+    /// The pointer is over that panel: the viewport beneath it keeps its hands off the cursor.
+    @ObservationIgnored var pointerOverSketchShortcuts = false
     /// Shaded bodies drawn like an FDM print, with layer lines (View ▸ FDM 3D Print Preview). Not saved.
     var printPreview = false
     /// The print preview's layer height and nozzle width, in mm, and whether its options panel is open.
