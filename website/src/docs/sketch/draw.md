@@ -31,6 +31,14 @@ Some tools share a button. The small arrow beside it picks the way to draw, and 
 Arc, Gear, Text, Patterns and References are in the Create group's list rather than on the toolbar by default. Click **Create** to see all of them, and pin the ones you want. See [The interface](doc:start/interface).
 :::
 
+## The shortcuts panel
+
+Press [[Space]] while you sketch and a small panel floats up with the tools you use most. Click one to pick it. The search field at the bottom finds any sketch tool, and [[Return]] picks the first match.
+
+- **Customize** shows every sketch tool: click a tool to add it to the panel or take it off, and **Reset to Default** puts the first set back.
+- Drag the panel wherever you like by its title or the gaps between the tools. It remembers where you left it.
+- [[Space]], [[Esc]] or a click outside closes it. In **Settings → Shortcuts** the key can be changed: it is *Sketch Shortcuts Panel*, under *While Sketching*.
+
 ## Type exact values
 
 You don't have to place every point with the mouse. After the first click, small fields appear next to the pointer for the values that make sense for the shape:

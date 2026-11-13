@@ -7,7 +7,7 @@ Colour makes a part easier to read, and helps tell bodies apart in an assembly. 
 
 ## Colour a body
 
-1. Press [[A]], or choose **View → Show Appearance**. The Appearance panel opens in the top-right corner.
+1. Press [[A]], or choose **View → Show Appearance**. The Appearance panel opens below the Inspector in the right-hand column. Drag the divider between them to give either more room.
 2. Select the **bodies** in the viewport (a face or edge counts for its body) or in the panel's list. [[⇧]]-click for more.
 3. Click a colour.
 

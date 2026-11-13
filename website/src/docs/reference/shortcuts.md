@@ -74,6 +74,7 @@ Other keys while sketching:
 
 | Key | Does |
 |---|---|
+| [[Space]] | Open the sketch shortcuts panel (see [Drawing tools](doc:sketch/draw)). Change the key in **Settings → Shortcuts**, under *Sketch Shortcuts Panel* |
 | [[Return]] | Finish the sketch, or place the shape you typed values for |
 | [[Esc]] | End a chain, cancel the tool, or clear the selection |
 | [[⌫]] | Delete the selection |
