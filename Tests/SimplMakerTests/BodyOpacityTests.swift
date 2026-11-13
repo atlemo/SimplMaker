@@ -30,7 +30,7 @@ import simd
     }
 
     /// The colour at the middle of the block's top, seen from above, with the slab's opacity as given.
-    private func blockColor(_ model: DocumentModel, slabOpacity: Float) async throws -> SIMD3<Float> {
+    private func blockColor(_ model: DocumentModel, slabOpacity: Float, grid: Bool = false, spread: UnsafeMutablePointer<Float>? = nil) async throws -> SIMD3<Float> {
         let view = ViewportMTKView(frame: NSRect(x: 0, y: 0, width: 600, height: 420), device: nil)
         let renderer = try #require(Renderer())
         view.device = renderer.device
@@ -42,9 +42,9 @@ import simd
         let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = view
         let meshes = model.visibleMeshes
-        let slab = try #require(meshes.firstIndex { $0.id == "slab" }), block = try #require(meshes.firstIndex { $0.id == "block" })
+        let slab = try #require(meshes.firstIndex { $0.id == "slab" }), block = meshes.firstIndex { $0.id == "block" } ?? -1
         renderer.setScene(meshes)
-        renderer.showGrid = false
+        renderer.showGrid = grid
         renderer.showAxes = false
         renderer.bodyColors = meshes.indices.map { $0 == block ? SIMD4(1, 0, 0, 1) : SIMD4(0.2, 0.2, 0.9, 1) }
         renderer.bodyOpacity = meshes.indices.map { $0 == slab ? slabOpacity : 1 }
@@ -67,6 +67,10 @@ import simd
             let scale = CGFloat(texture.width) / view.bounds.width
             let i = (Int(q.y * scale) * texture.width + Int(q.x * scale)) * 4
             color = SIMD3(Float(bytes[i + 2]), Float(bytes[i + 1]), Float(bytes[i])) / 255
+            if let spread {  // how much the picture varies along a short row through that point: the grid lines
+                let row = (-25...25).map { Float(bytes[i + $0 * 4 + 1]) / 255 }
+                spread.pointee = (row.max() ?? 0) - (row.min() ?? 0)
+            }
             if bytes == last && !ViewportSnapshot.isBlank(bytes) { break }
             last = bytes
         }
@@ -115,5 +119,30 @@ import simd
         #expect(model.document.bodyOpacity["slab"] == nil, "solid is the default and is not stored")
         undo.undo()
         #expect(model.document.bodyOpacity["slab"] == 0.4)
+    }
+
+    @Test func nothingIsOutlinedWhileTheSliderIsDragged() async throws {
+        let model = try await loaded()
+        model.selection = [PickID(body: 1, face: 0)]
+        #expect(!model.highlighted.isEmpty, "a selected body is outlined")
+        model.previewBodyOpacity(0.5, of: ["slab"])
+        #expect(model.highlighted.isEmpty, "the outline is hidden while the opacity is previewed")
+        model.setBodyOpacity(0.5, of: ["slab"])
+        #expect(!model.highlighted.isEmpty, "and comes back when the slider is let go")
+    }
+
+    /// The ground grid under a slab shows through by what the opacity leaves: a body at 97 % lets a little through, not all of it.
+    @Test func theGridShowsThroughByWhatTheOpacityLeaves() async throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "slab", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "60 mm", length: "60 mm", height: "4 mm")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        var solid: Float = 0, nearly: Float = 0, half: Float = 0
+        _ = try await blockColor(model, slabOpacity: 1, grid: true, spread: &solid)
+        _ = try await blockColor(model, slabOpacity: 0.97, grid: true, spread: &nearly)
+        _ = try await blockColor(model, slabOpacity: 0.5, grid: true, spread: &half)
+        #expect(half > nearly * 4, "half see-through shows far more of the grid than 97 %: \(half) vs \(nearly)")
+        #expect(nearly < half * 0.2 + 0.005, "97 % shows only a faint grid: \(nearly) vs half \(half)")
+        #expect(solid <= nearly + 0.003, "a solid slab hides the grid: \(solid)")
     }
 }

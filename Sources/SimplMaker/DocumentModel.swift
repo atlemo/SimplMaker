@@ -2009,6 +2009,8 @@ final class DocumentModel {
 
     /// Pick IDs to highlight as selected.
     var highlighted: [UInt32] {
+        // While the opacity slider is dragged nothing is outlined, so the see-through bodies can be judged as they are.
+        if opacityPreview != nil, sketchSession == nil { return [] }
         if selection.isEmpty, sketchSession == nil, !highlightPendingRebuild.isEmpty { return highlightPendingRebuild }
         if let session = sketchSession {
             return (session.selection + session.dimensionPicks).compactMap { session.pickID(for: $0)?.raw }

@@ -1752,7 +1752,10 @@ final class Renderer {
                     : DrawParams(color: t.face, hoverColor: t.faceHover, selectColor: t.faceSelected,
                                  thickness: 0, depthBias: 0, pickable: 1, style: (capsOnly ? DrawStyle.capsOnly : 0) | glassSide,
                                  material: materials[i], roughness: bodyRoughness[safe: i] ?? -1)
-                if opacities[i] < 0.999 { params.color.w = opacities[i] }  // the shader reads a see-through body's opacity from here
+                // The shader reads a see-through body's opacity from here. A solid is drawn in two layers (its far wall, then its near wall),
+                // each blended with this alpha, so each takes 1 - sqrt(1 - opacity): what lies behind then shows through by exactly
+                // 1 - opacity (a body at 97 % lets 3 % of the grid through, not 0.1 %).
+                if opacities[i] < 0.999 { params.color.w = 1 - (1 - opacities[i]).squareRoot() }
                 enc.setFragmentBytes(&params, length: MemoryLayout<DrawParams>.stride, index: 3)
                 enc.setVertexBuffer(faces, offset: 0, index: 0)
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: b.indexCount, indexType: .uint32,
@@ -1803,6 +1806,21 @@ final class Renderer {
                 enc.setDepthStencilState(depthState)
             }
         }
+        /// See-through bodies, after the solid ones: the far side first, then (still without writing depth, so what is
+        /// behind stays visible to the edges drawn later) their ids for picking, then the near side.
+        func drawGhosts() {
+            enc.setDepthStencilState(noWriteDepthState)
+            enc.setDepthBias(Self.glassContactBias, slopeScale: 2, clamp: 0)
+            drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassBack)
+            enc.setDepthBias(0, slopeScale: 0, clamp: 0)
+            drawFaces(faceIDPipeline, wireframe: false, glassOnly: true)
+            drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassFront)
+            enc.setDepthStencilState(depthState)
+        }
+        // The ground grid is drawn first when bodies are see-through, so they blend over it (it does not write depth, so drawn
+        // after them it would show through at full strength).
+        let gridBeforeGhosts = ghosting && !sectioning && !printing && visualStyle.isShaded && look == nil && sketchGrid == nil
+            && showGrid && matte == nil && worldGrid != nil
         if postPath, let look {
             // The picture apart: bodies, floor, reflection, glass. Then the glow made from it, and a new pass into the view
             // that lays it in, with blur, glow and darker corners, and draws the bodies' depth and IDs (no colour) for the
@@ -1835,17 +1853,7 @@ final class Renderer {
             let cutting = sectioning && style.isShaded
             let pipeline = printing ? (cutting ? sectionPrintPipeline : printFacePipeline) : (cutting ? sectionFacePipeline : facePipeline)
             drawFaces(pipeline, wireframe: !style.isShaded)
-            if ghosting && !cutting && !printing && style.isShaded {
-                // See-through bodies, after the solid ones: the far side first, then (still without writing depth, so what is
-                // behind stays visible to the edges drawn later) their ids for picking, then the near side.
-                enc.setDepthStencilState(noWriteDepthState)
-                enc.setDepthBias(Self.glassContactBias, slopeScale: 2, clamp: 0)
-                drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassBack)
-                enc.setDepthBias(0, slopeScale: 0, clamp: 0)
-                drawFaces(faceIDPipeline, wireframe: false, glassOnly: true)
-                drawFaces(glassPipeline, wireframe: false, glassOnly: true, glassSide: DrawStyle.glassFront)
-                enc.setDepthStencilState(depthState)
-            }
+            if ghosting && !cutting && !printing && style.isShaded && !gridBeforeGhosts { drawGhosts() }
             if cutting {
                 // The cut faces, after every body's other faces, so only those nothing nearer hides are marked.
                 // Looking into a body that touches another, the far wall the cut face sits on is also the neighbour's
@@ -1922,6 +1930,8 @@ final class Renderer {
             // Seen almost edge-on the lines pile up into moiré, so the grid fades to a faint one as the view flattens, and a line for the floor takes over. Blended
             // (fadePipeline) so the opacity shows; at full opacity it is the same as drawing it solid.
             let opacity = Self.groundGridOpacity(forward: camera.forward)
+            // Under see-through bodies the grid writes no depth: a body's bottom wall lies in the grid's plane and would lose to it.
+            if gridBeforeGhosts { enc.setDepthStencilState(noWriteDepthState) }
             func faded(_ c: SIMD4<Float>) -> SIMD4<Float> { SIMD4(c.x, c.y, c.z, c.w * opacity) }
             // The floor's line: through the point looked at, across the view, in the floor's plane. Seen edge-on, that is
             // where the floor is. One line at the depth of the target, so it is never clipped by the near or far plane.
@@ -1944,6 +1954,7 @@ final class Renderer {
                 segments(g.major, g.majorCount, DrawParams(color: faded(p.grid), hoverColor: faded(p.grid), selectColor: faded(p.grid),
                                                            thickness: 1 * scale, depthBias: 0, pickable: 0), pipeline: fadePipeline)
             }
+            if gridBeforeGhosts { drawGhosts() }
         }
         // Fills sit just in front of the faces they lie on, but behind every edge and sketch line.
         let fillBias = 0.0002 * biasScale
