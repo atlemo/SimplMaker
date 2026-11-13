@@ -1084,6 +1084,38 @@ gp_Dir planeNormal(const TopoDS_Face &f, const gp_Pln &plane) {
   return n;
 }
 
+/// The plane of a face that is flat. A true plane gives its own; a free-form (B-spline, Bezier...) surface, as a
+/// STEP file from another CAD program often has for faces that are in fact flat, counts when a grid of points over
+/// the face lies on one plane to within 1 µm. Round faces (cylinder, cone, sphere, torus) never count. `plane`'s
+/// X × Y is the surface normal, like a plane's own, so `planeNormal` applies to it unchanged.
+bool flatFacePlane(const TopoDS_Face &f, gp_Pln &plane) {
+  BRepAdaptor_Surface s(f);
+  switch (s.GetType()) {
+    case GeomAbs_Plane: plane = s.Plane(); return true;
+    case GeomAbs_Cylinder: case GeomAbs_Cone: case GeomAbs_Sphere: case GeomAbs_Torus: return false;
+    default: break;
+  }
+  double u0, u1, v0, v1;
+  BRepTools::UVBounds(f, u0, u1, v0, v1);
+  if (!(u1 > u0) || !(v1 > v0) || (u1 - u0) > 1e50 || (v1 - v0) > 1e50) return false;
+  const int n = 12;
+  gp_Pnt mid;
+  gp_Vec du, dv;
+  s.D1(0.5 * (u0 + u1), 0.5 * (v0 + v1), mid, du, dv);
+  const gp_Vec nv = du.Crossed(dv);
+  if (nv.Magnitude() < 1e-12) return false;
+  const gp_Dir nd(nv);
+  for (int i = 0; i <= n; ++i)
+    for (int j = 0; j <= n; ++j) {
+      const gp_Pnt p = s.Value(u0 + (u1 - u0) * i / n, v0 + (v1 - v0) * j / n);
+      if (std::fabs(gp_Vec(mid, p).Dot(gp_Vec(nd))) > 1e-3) return false;
+    }
+  gp_Dir x(du);
+  x = gp_Dir(gp_Vec(x) - gp_Vec(nd) * gp_Vec(x).Dot(gp_Vec(nd)));
+  plane = gp_Pln(gp_Ax3(mid, nd, x));
+  return true;
+}
+
 /// Names unnamed faces by where they face in `frame`: top/bottom (along the normal),
 /// right/left (x), back/front (y); curved or slanted faces are "side".
 void nameByDirection(const TopoDS_Shape &shape, const gp_Ax3 &frame, const std::string &feat, std::vector<Named> &names) {
@@ -4597,7 +4629,8 @@ SKHandle sk_body_face_profile(SKHandle body, const char *faceName) {
     return 0;
   }
   const TopoDS_Face &f = TopoDS::Face(b->faces(it->second + 1));
-  if (BRepAdaptor_Surface(f).GetType() != GeomAbs_Plane) {
+  gp_Pln flat;
+  if (!flatFacePlane(f, flat)) {
     setError(std::string("only flat faces can be extruded: ") + faceName);
     return 0;
   }
@@ -4668,13 +4701,13 @@ bool sk_body_face_frame(SKHandle body, const char *faceName, SKFrame *out) {
     return false;
   }
   const TopoDS_Face &f = TopoDS::Face(b->faces(it->second + 1));
-  BRepAdaptor_Surface s(f);
-  if (s.GetType() != GeomAbs_Plane) {
+  gp_Pln flat;
+  if (!flatFacePlane(f, flat)) {
     setError(std::string("face is not planar: ") + faceName);
     return false;
   }
-  gp_Ax3 pos = s.Plane().Position();
-  const gp_Dir n = planeNormal(f, s.Plane());
+  gp_Ax3 pos = flat.Position();
+  const gp_Dir n = planeNormal(f, flat);
   const gp_Pnt &o = pos.Location();
   const gp_Dir &x = pos.XDirection();
   *out = SKFrame{o.X(), o.Y(), o.Z(), n.X(), n.Y(), n.Z(), x.X(), x.Y(), x.Z()};
@@ -4726,7 +4759,7 @@ bool sk_body_face_tangent_frame(SKHandle body, const char *faceName, SKFrame *ou
     return false;
   }
   const TopoDS_Face &f = TopoDS::Face(b->faces(it->second + 1));
-  if (BRepAdaptor_Surface(f).GetType() == GeomAbs_Plane) return sk_body_face_frame(body, faceName, out);
+  { gp_Pln flat; if (flatFacePlane(f, flat)) return sk_body_face_frame(body, faceName, out); }
   gp_Pnt o; gp_Dir n, x;
   if (!curvedAnchor(f, o, n, x)) {
     setError(std::string("no surface normal on face: ") + faceName);
@@ -4778,7 +4811,8 @@ bool sk_body_hole_frame(SKHandle body, const char *faceName, double u, double v,
   }
   const TopoDS_Face &f = TopoDS::Face(b->faces(it->second + 1));
   *lift = 0;
-  if (BRepAdaptor_Surface(f).GetType() == GeomAbs_Plane) {
+  gp_Pln flatPlane;
+  if (flatFacePlane(f, flatPlane)) {
     SKFrame fr;
     if (!sk_body_face_frame(body, faceName, &fr)) return false;
     const gp_Vec xa(fr.xx, fr.xy, fr.xz), na(fr.nx, fr.ny, fr.nz), ya = na.Crossed(xa);
@@ -5079,10 +5113,13 @@ bool sk_measure_element(SKHandle body, bool isFace, const char *name, SKMeasure 
 
     BRepAdaptor_Surface s(f);
     const double v0 = s.FirstVParameter(), v1 = s.LastVParameter();
-    switch (s.GetType()) {
+    gp_Pln flat;
+    // A flat face from a free-form surface (STEP imports) is a plane here, so it can be extruded and sketched on.
+    const GeomAbs_SurfaceType kind = flatFacePlane(f, flat) ? GeomAbs_Plane : s.GetType();
+    switch (kind) {
       case GeomAbs_Plane: {
         out->geom = SK_GEOM_PLANE;
-        const gp_Dir n = planeNormal(f, s.Plane());
+        const gp_Dir n = planeNormal(f, flat);
         out->hasDirection = true;
         copyXYZ(out->direction, n);
         break;
