@@ -16,6 +16,20 @@ enum TutorialScript {
         Shortcuts.label(.tool(tool)).map { ", or press **\($0)**" } ?? ""
     }
 
+    /// What to say about an extrude that exists but is not sized yet. The orange arrow and its field are only there while the
+    /// feature is selected, and the Extrude tool has nothing left to pick (the profile is used up), so someone who clicked
+    /// away from it, or pressed Extrude again, finds nothing happening. The way back is the feature in the timeline.
+    static func sizeHint(_ model: DocumentModel, extrude id: FeatureID, size: String, touch: Bool = false) -> TutorialHint {
+        let field = touch ? "box" : "field", done = touch ? "tap **OK**" : "press **Return**"
+        if model.pendingTool != nil || model.selectedFeature != id {
+            let name = model.document.features.first { $0.id == id }?.name ?? "Extrude"
+            let away = model.pendingTool == nil ? "" : (touch ? "Tap **Extrude** again to put the tool away. " : "Press **Esc** to put the tool away. ")
+            let pick = touch ? "tap" : "click"
+            return .next("The extrude is made, but its arrow is gone. \(away)Now \(pick) **\(name)** in the timeline at the bottom of the window to bring it back, type `\(size)` in the \(field) beside it and \(done).")
+        }
+        return .next("Type `\(size)` in the \(field) beside the orange arrow, then \(done).")
+    }
+
     static let steps: [TutorialStep] = [
         welcome, look, parameters,
         sketchPlane, baseRectangle, finishBase, extrudeBase,
@@ -113,9 +127,7 @@ enum TutorialScript {
             return TutorialFacts.uses(size, "wall")
         }),
         hint: { model in
-            if TutorialFacts(model).baseExtrude != nil {
-                return .next("Type `wall` in the field beside the orange arrow, then press **Return**.")
-            }
+            if let ex = TutorialFacts(model).baseExtrude { return sizeHint(model, extrude: ex.id, size: "wall") }
             // Sketch mode has no Extrude button (and E is Extend there): the sketch has to be finished first.
             if model.sketchSession != nil { return .next("Press **Return** or click **Finish Sketch**, then choose Extrude.") }
             return model.pendingTool == .extrude
@@ -307,7 +319,7 @@ enum TutorialScript {
                 if ex.value.operation == .newBody {
                     return .problem("Set **Operation** to **Join** in the inspector, so the walls are one piece with the floor.")
                 }
-                return .next("Type `height` in the field beside the orange arrow, then press **Return**.")
+                return sizeHint(model, extrude: ex.id, size: "height")
             }
             if model.sketchSession != nil { return .next("Press **Return** or click **Finish Sketch**, then choose Extrude.") }
             return model.pendingTool == .extrude

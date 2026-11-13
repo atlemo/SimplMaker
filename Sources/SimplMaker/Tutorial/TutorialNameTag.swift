@@ -117,9 +117,7 @@ enum NameTagScript {
             return TutorialFacts.uses(size, "thick")
         }),
         hint: { model in
-            if TutorialFacts(model).baseExtrude != nil {
-                return .next("Type `thick` in the box beside the orange arrow, then tap **OK**.")
-            }
+            if let ex = TutorialFacts(model).baseExtrude { return TutorialScript.sizeHint(model, extrude: ex.id, size: "thick", touch: true) }
             // Sketch mode has no Extrude button: the sketch has to be finished first.
             if model.sketchSession != nil { return .next("Tap **Finish Sketch**, then choose Extrude.") }
             // A profile tapped while Extrude was not waiting (a second tap on Extrude puts it away) is only selected.
@@ -214,7 +212,7 @@ enum NameTagScript {
                 if ex.value.operation == .newBody {
                     return .problem("Tap **Join** in the bar at the bottom of the view, so the letters are one piece with the tag.")
                 }
-                return .next("Type `relief` in the box beside the orange arrow, then tap **OK**.")
+                return TutorialScript.sizeHint(model, extrude: ex.id, size: "relief", touch: true)
             }
             if model.sketchSession != nil { return .next("Tap **Finish Sketch**, then choose Extrude.") }
             if model.pendingTool == nil, !model.selectedProfiles.isEmpty {

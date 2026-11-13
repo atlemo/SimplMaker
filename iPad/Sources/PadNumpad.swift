@@ -106,13 +106,9 @@ final class PadNumpad {
             host.view.backgroundColor = .clear
             host.view.frame = layer.bounds
             host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            if let root = window.rootViewController {
-                root.addChild(host)
-                layer.addSubview(host.view)
-                host.didMove(toParent: root)
-            } else {
-                layer.addSubview(host.view)
-            }
+            // No child-controller link to the root: the layer sits on the window, not inside the root's view, and UIKit throws (while the
+            // layer moves into the window) when a child's view is not under its parent's view. The host is kept alive by `overlayHost`.
+            layer.addSubview(host.view)
             window.addSubview(layer)
             overlayLayer = layer
             overlayHost = host

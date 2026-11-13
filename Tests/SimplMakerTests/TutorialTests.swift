@@ -262,6 +262,32 @@ import simd
         #expect(guide.current(in: model)?.id == "extrude-base")
     }
 
+    @Test func anExtrudeWhoseArrowIsGoneSendsTheUserToTheTimeline() async throws {
+        let model = DocumentModel()
+        await settle(model)
+        let guide = TutorialGuide(active: true)
+        await run(guide, model, until: "extrude-base")
+        model.finishSketch()
+        await settle(model)
+        // The way the toolbar does it: Extrude, a click inside the rectangle.
+        model.run(.extrude)
+        let sketch = try #require(TutorialFacts(model).baseSketch)
+        model.click(try #require(TutorialActions.profilePick(of: sketch.id, model)), additive: false)
+        await settle(model)
+        let extrude = try #require(TutorialFacts(model).baseExtrude)
+        let step = try #require(guide.current(in: model))
+        #expect(step.id == "extrude-base" && model.selectedFeature == extrude.id)
+        #expect(step.hint(model)?.text.contains("beside the orange arrow") == true)
+        // The user clicks away: the arrow goes, and the Extrude tool has no profile left to pick.
+        model.selectedFeature = nil
+        model.clearSelection()
+        let lost = try #require(step.hint(model)?.text)
+        #expect(lost.contains("timeline") && lost.contains("\(model.document.features.first { $0.id == extrude.id }?.name ?? "?")"))
+        // Pressing Extrude again (nothing to pick) does not hide that way back.
+        model.run(.extrude)
+        #expect(step.hint(model)?.text.contains("timeline") == true)
+    }
+
     @Test func aSketchOnTheWrongPlaneIsCalledOut() async throws {
         let model = DocumentModel()
         await settle(model)

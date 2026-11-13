@@ -31,17 +31,32 @@ struct TutorialCardLayer: View {
     private var alignment: Alignment { PanelTouch.panelToggleRoom == 0 ? .bottom : .bottomLeading }
     private var inset: CGFloat { PanelTouch.panelToggleRoom == 0 ? 0 : Panel.inset + 4 }
 
+    /// The card's height as it lays out, to shrink it when the window is too short to hold it.
+    @State private var cardHeight: CGFloat = 0
+
+    private var bottomPadding: CGFloat {
+        (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
+            + 2 * (DS.ControlHeight.large + Panel.inset) + Panel.inset
+    }
+
     var body: some View {
         // The empty layer around the card takes no touches: they go through to the view.
-        Color.clear
-            .allowsHitTesting(false)
-            .overlay(alignment: alignment) {
-                TutorialCard(model: model, guide: guide)
-                    .padding(.leading, (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0) + inset)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
-                    .padding(.bottom, (model.showTimeline ? TimelineBar.height + 2 * Panel.inset : Panel.inset)
-                        + 2 * (DS.ControlHeight.large + Panel.inset) + Panel.inset)
-            }
+        // The layer stays inside the safe area, under the toolbar: a card taller than the room left shrinks to fit rather than
+        // running up under the toolbar (which the window draws above everything in it).
+        GeometryReader { geo in
+            let room = geo.size.height - bottomPadding - Panel.inset
+            let scale = cardHeight > 0 && room > 0 ? min(1, room / cardHeight) : 1
+            Color.clear
+                .allowsHitTesting(false)
+                .overlay(alignment: alignment) {
+                    TutorialCard(model: model, guide: guide)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 }
+                        .scaleEffect(scale, anchor: .bottom)
+                        .padding(.leading, (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0) + inset)
+                        .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
+                        .padding(.bottom, bottomPadding)
+                }
+        }
     }
 }
 
@@ -154,14 +169,6 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.regenProgress != nil)
         .animation(.easeOut(duration: DS.Duration.fast), value: model.importProgress != nil)
-        // The tutorial's card floats at the bottom of the free space, above the status bar and the OK bar, where it
-        // stays clear of what is built at the middle of the view and of the size fields that appear beside it.
-        // On the iPad it sits at the bottom left, not the middle: the part and the grid's origin are in the middle of the view, and
-        // the number pad comes up there.
-        // (The iPad draws it itself, last of all, so that nothing floats above it: see `TutorialCardLayer`.)
-        .overlay {
-            if cardHere { TutorialCardLayer(model: model, guide: guide) }
-        }
         // The status bar floats at the bottom, between the panels. The Render view is for looking at the part, so it goes there, unless
         // a tool or a sketch is waiting for something and the bar is where it says what.
         .overlay(alignment: .bottom) {
@@ -252,6 +259,13 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
         .animation(.easeOut(duration: DS.Duration.fast), value: model.explodeOn && model.showExplodeOptions)
         // The cursor's prompt goes above everything, panels included.
         .overlay { CursorPrompt(model: model) }
+        // The tutorial's card is the last layer of all, above the status bar, the OK bar and every panel, so that nothing floats over it.
+        // It sits at the bottom of the free space, clear of what is built at the middle of the view and of the size fields that appear
+        // beside it. On the iPad it sits at the bottom left, not the middle: the part and the grid's origin are in the middle of the view, and
+        // the number pad comes up there. (The iPad draws it itself, after its own bars: see `TutorialCardLayer`.)
+        .overlay {
+            if cardHere { TutorialCardLayer(model: model, guide: guide) }
+        }
 #if os(iOS)
         // The timeline and status bar sit as low as the Mac's: the panels' gap to the screen's bottom edge, not the safe area under it.
         .ignoresSafeArea(.container, edges: .bottom)
