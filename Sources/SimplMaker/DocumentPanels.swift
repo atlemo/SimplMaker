@@ -92,10 +92,7 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
                 }
                 Spacer(minLength: 0)  // empty: clicks go through to the viewport
                 if model.showInspector {
-                    InspectorView(model: model)
-                        .padding(.top, PanelTouch.panelToggleRoom)
-                        .floatingPanel(width: Panel.inspectorWidth)
-                        .tutorialSpot("inspector", cornerRadius: DS.Radius.window, outset: 0, filled: false)
+                    InspectorColumn(model: model)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
@@ -181,18 +178,8 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
             }
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.renderView)
-        // The Appearance panel floats at the top, beside the inspector (and above the status bar, so its list can be reached; on the iPad
-        // it keeps clear of the inspector's show/hide button, which floats at the corner while the inspector is closed).
-        .overlay(alignment: .topTrailing) {
-            if model.showAppearance, model.sketchSession == nil {
-                AppearancePanel(model: model)
-                    .padding(.top, Panel.inset)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset + toggleRoom)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: DS.Duration.fast), value: model.showAppearance)
-        // The Measure tool's readout floats in the same corner.
+        // The Measure tool's readout floats at the top right, beside the inspector (on the iPad it keeps clear of the inspector's
+        // show/hide button, which floats at the corner while the inspector is closed).
         .overlay(alignment: .topTrailing) {
             if model.pendingTool == .measure, model.sketchSession == nil {
                 MeasurePanel(model: model)

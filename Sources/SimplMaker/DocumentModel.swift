@@ -162,7 +162,9 @@ final class DocumentModel {
     /// The browser panel and the parameters panel are each open or folded up to their header.
     var browserOpen = true
     var parametersOpen = true
-    /// The Appearance panel, for giving bodies colours (A, or View ▸ Show Appearance).
+    /// The inspector and the Appearance panel (right column) are each open or folded up to their header.
+    var inspectorOpen = true
+    /// The Appearance panel is open, for giving bodies colours (A, or View ▸ Show Appearance). Closed, it is folded to its header.
     var showAppearance = false
     /// A colour shown on bodies while it is being picked, before it is kept (see previewBodyColor).
     private(set) var colorPreview: (bodies: [FeatureID], color: BodyColor)?
@@ -922,6 +924,7 @@ final class DocumentModel {
         guard sketchSession == nil else { return }
         if !showAppearance, pendingTool != nil { cancelTool() }  // clicks now pick bodies to colour
         showAppearance.toggle()
+        if showAppearance { showInspector = true }  // the panel is in the inspector's column
     }
 
     /// "Appearance…" on a body: selects it whole and opens the panel for it.
@@ -929,6 +932,7 @@ final class DocumentModel {
         if pendingTool != nil { cancelTool() }
         if !appearanceTargets.contains(body) { selectBody(body) }
         showAppearance = true
+        showInspector = true
     }
 
     /// "Appearance…" on several bodies at once: selects them all whole and opens the panel for them.
@@ -936,6 +940,7 @@ final class DocumentModel {
         if pendingTool != nil { cancelTool() }
         if Set(appearanceTargets) != Set(ids) { selectBodies(ids, replacing: []) }
         showAppearance = true
+        showInspector = true
     }
 
     func removeParameter(_ name: String) {

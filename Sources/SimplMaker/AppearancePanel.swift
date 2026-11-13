@@ -56,7 +56,6 @@ struct AppearancePanel: View {
         var bodies: [FeatureID]
     }
 
-    static let width: CGFloat = 244
     private var columns: [GridItem] { Array(repeating: GridItem(.flexible(), spacing: DS.Spacing.space2), count: 6) }
 
     private var targets: [FeatureID] { model.appearanceTargets }
@@ -68,17 +67,14 @@ struct AppearancePanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space5) {
-            HStack {
-                Text("Appearance").font(.headline)
-                Spacer()
-                HeaderIconButton(systemImage: "xmark", help: "Close the Appearance panel (A)") { close() }
-            }
+        // A sidebar list, as the Parameters panel is, so that it opens and folds the same way: each part is a row.
+        List {
             Text(targetText)
                 .font(.callout)
                 .foregroundStyle(targets.isEmpty ? .secondary : .primary)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
+                .panelRow()
             Group {
                 LazyVGrid(columns: columns, spacing: DS.Spacing.space2) {
                     ColorSwatch(color: defaultColor, name: "Default", current: isCurrent(nil), isDefault: true) { apply(nil) }
@@ -86,6 +82,7 @@ struct AppearancePanel: View {
                         ColorSwatch(color: p.color.color, name: p.name, current: isCurrent(p.color)) { apply(p.color) }
                     }
                 }
+                .panelRow()
                 HStack {
                     ColorPicker("Custom Colour", selection: customColor, supportsOpacity: false)
                         .help("Pick any colour for the selected bodies")
@@ -94,16 +91,15 @@ struct AppearancePanel: View {
                         Text(c.hex).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                 }
-                materialRow
-                opacityRow
+                .panelRow()
+                materialRow.panelRow()
+                opacityRow.panelRow()
             }
             .disabled(targets.isEmpty)
-            Divider()
-            bodyList
+            bodyList.panelRow()
         }
-        .padding(DS.Spacing.space6)
-        .frame(width: Self.width)
-        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
+        .listStyle(.sidebar)
+        .panelListTop()
         .task(id: pending) {
             guard let p = pending else { return }
             try? await Task.sleep(for: .milliseconds(400))
@@ -111,6 +107,7 @@ struct AppearancePanel: View {
             commit(p)
         }
         .onDisappear { if let p = pending { commit(p) } }
+        .onChange(of: model.showAppearance) { _, open in if !open, let p = pending { commit(p) } }  // folded: keep what is picked
     }
 
     /// Plain, metal, glass or wood for the selected bodies. Materials show in the Render view.
@@ -182,19 +179,15 @@ struct AppearancePanel: View {
             if model.bodies.isEmpty {
                 Text("No bodies yet").font(.callout).foregroundStyle(.tertiary)
             }
-            ScrollView {
-                VStack(spacing: DS.Spacing.space1) {
-                    ForEach(model.bodies) { b in
-                        AppearanceBodyRow(name: b.name, color: model.displayColor(of: b.id)?.color ?? defaultColor,
-                                          selected: targets.contains(b.id), hidden: model.isHidden(b.id), action: {
-                            let flags = NSEvent.modifierFlags
-                            model.selectBody(b.id, additive: flags.contains(.shift) || flags.contains(.command))
-                        }, toggleHidden: { model.setHidden([b.id], !model.isHidden(b.id)) })
-                    }
+            VStack(spacing: DS.Spacing.space1) {
+                ForEach(model.bodies) { b in
+                    AppearanceBodyRow(name: b.name, color: model.displayColor(of: b.id)?.color ?? defaultColor,
+                                      selected: targets.contains(b.id), hidden: model.isHidden(b.id), action: {
+                        let flags = NSEvent.modifierFlags
+                        model.selectBody(b.id, additive: flags.contains(.shift) || flags.contains(.command))
+                    }, toggleHidden: { model.setHidden([b.id], !model.isHidden(b.id)) })
                 }
             }
-            // As tall as the rows, up to about eight of them; then it scrolls.
-            .frame(height: min(CGFloat(model.bodies.count) * (DS.ControlHeight.sidebarRow + DS.Spacing.space1), 240))
         }
     }
 
@@ -233,11 +226,6 @@ struct AppearancePanel: View {
     private func commit(_ p: PendingColor) {
         pending = nil
         model.setBodyColor(p.color, of: p.bodies)
-    }
-
-    private func close() {
-        if let p = pending { commit(p) }
-        model.showAppearance = false
     }
 }
 
@@ -423,5 +411,14 @@ struct AppearanceBodyRow: View {
                     in: RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous))
         .onHover { hovering = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private extension View {
+    /// One part of the Appearance list: no row background or separator, the list's own inset.
+    func panelRow() -> some View {
+        listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .panelRowInsets()
     }
 }

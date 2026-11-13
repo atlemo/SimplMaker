@@ -231,7 +231,6 @@ extension DocumentModel {
         }
         pendingTool = nil
         if !tool.acceptsWholeBody { selection.removeAll(where: \.isWholeBody) }  // a body from the browser isn't a face
-        if tool == .measure { showAppearance = false }  // both float in the same corner
         if perform(tool) { return }
         pendingTool = tool
         if tool.showsPlanes { sketchPlaneSize = OriginPlane.displaySize(for: sceneBounds) }

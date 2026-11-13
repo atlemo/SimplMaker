@@ -597,11 +597,9 @@ struct Sidebar: View {
     @Bindable var model: DocumentModel
     /// The share of the room the browser gets while both panels are open; dragging the gap between them changes it.
     @State private var split: CGFloat = 0.5
-    /// The browser's height when the current drag began.
-    @State private var dragStart: CGFloat?
 
     /// The least a panel can be dragged down to: its header and a few rows.
-    private static let minimumHeight = SidebarPanel<EmptyView, EmptyView>.headerHeight + 80
+    static let minimumHeight = SidebarPanel<EmptyView, EmptyView>.headerHeight + 80
 
     /// A panel's height: the header alone when it is closed, else the share `split` gives it when both are open,
     /// or everything the closed one leaves.
@@ -623,7 +621,7 @@ struct Sidebar: View {
         GeometryReader { geo in
             let h = Self.heights(total: geo.size.height, browserOpen: model.browserOpen, parametersOpen: model.parametersOpen, split: split)
             VStack(spacing: 0) {
-                SidebarPanel(title: "Browser", open: $model.browserOpen, headerLeading: PanelTouch.panelToggleRoom - 8, accessory: {
+                SidebarPanel(title: "Browser", open: $model.browserOpen, headerLeading: max(0, PanelTouch.panelToggleRoom - 8), accessory: {
                     HeaderIconButton(systemImage: "folder.badge.plus", help: "Add a folder") {
                         model.browserOpen = true
                         model.pendingFolderRename = model.newFolder()
@@ -661,22 +659,72 @@ struct Sidebar: View {
 
     /// The gap between the panels, which drags to give one panel more room than the other (double-click to even them out).
     private func divider(room: CGFloat, browserHeight: CGFloat) -> some View {
-        let resizable = model.browserOpen && model.parametersOpen
-        return Color.clear
+        PanelDivider(split: $split, resizable: model.browserOpen && model.parametersOpen, room: room, firstHeight: browserHeight)
+    }
+}
+
+/// The gap between two stacked panels, which drags to give the first more or less of the room (double-click to even them out).
+struct PanelDivider: View {
+    @Binding var split: CGFloat
+    let resizable: Bool
+    /// The room both panels share, and the first panel's height now.
+    let room: CGFloat
+    let firstHeight: CGFloat
+    /// The first panel's height when the current drag began.
+    @State private var dragStart: CGFloat?
+
+    var body: some View {
+        Color.clear
             .frame(height: Panel.inset)
             .contentShape(Rectangle())
             .platformRowResizePointer(resizable)
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { drag in
                     guard resizable else { return }
-                    let start = dragStart ?? browserHeight
+                    let start = dragStart ?? firstHeight
                     dragStart = start
-                    let least = min(Self.minimumHeight, room / 2)  // stay inside the range, so the drag can turn back at once
+                    let least = min(Sidebar.minimumHeight, room / 2)  // stay inside the range, so the drag can turn back at once
                     split = min(max(start + drag.translation.height, least), room - least) / room
                 }
                 .onEnded { _ in dragStart = nil })
             .onTapGesture(count: 2) { if resizable { withAnimation(.easeInOut(duration: DS.Duration.base)) { split = 0.5 } } }
             .accessibilityHidden(true)
+    }
+}
+
+/// The right column: the inspector and the Appearance panel, two glass panels that each fold up to their header, like the
+/// browser and the parameters on the left. Sketching has no use for Appearance, so the inspector then has the column alone.
+struct InspectorColumn: View {
+    @Bindable var model: DocumentModel
+    @State private var split: CGFloat = 0.6
+
+    var body: some View {
+        GeometryReader { geo in
+            let withAppearance = model.sketchSession == nil
+            let h = Sidebar.heights(total: geo.size.height, browserOpen: model.inspectorOpen || !withAppearance,
+                                    parametersOpen: model.showAppearance, split: split)
+            VStack(spacing: 0) {
+                SidebarPanel(title: "Inspector", open: withAppearance ? $model.inspectorOpen : .constant(true),
+                             headerTrailing: PanelTouch.panelToggleRoom, accessory: { EmptyView() }) {
+                    InspectorView(model: model)
+                }
+                .frame(height: withAppearance ? h.browser : max(geo.size.height - Panel.inset, 0))
+                .tutorialSpot("inspector", cornerRadius: DS.Radius.window, outset: 0, filled: false)
+                if withAppearance {
+                    PanelDivider(split: $split, resizable: model.inspectorOpen && model.showAppearance,
+                                 room: max(geo.size.height - Panel.inset, 1), firstHeight: h.browser)
+                    SidebarPanel(title: "Appearance", open: $model.showAppearance, accessory: { EmptyView() }) {
+                        AppearancePanel(model: model)
+                    }
+                    .frame(height: h.parameters)
+                    Spacer(minLength: 0)
+                }
+            }
+            .animation(.easeInOut(duration: DS.Duration.base), value: model.inspectorOpen)
+            .animation(.easeInOut(duration: DS.Duration.base), value: model.showAppearance)
+        }
+        .frame(width: Panel.inspectorWidth)
+        .frame(maxHeight: .infinity)
     }
 }
 
@@ -687,6 +735,8 @@ struct SidebarPanel<Accessory: View, Content: View>: View {
     @Binding var open: Bool
     /// Room kept at the title's leading side (the panel's show/hide button sits there on iPad).
     var headerLeading: CGFloat = 0
+    /// Room kept at the header's trailing side (the inspector's show/hide button floats there on iPad).
+    var headerTrailing: CGFloat = 0
     @ViewBuilder let accessory: () -> Accessory
     @ViewBuilder let content: () -> Content
 
@@ -712,7 +762,7 @@ struct SidebarPanel<Accessory: View, Content: View>: View {
                 }
             }
             .padding(.leading, PanelTouch.contentLeading + headerLeading)
-            .padding(.trailing, DS.Spacing.space4)
+            .padding(.trailing, DS.Spacing.space4 + headerTrailing)
             .frame(height: Self.headerHeight)
             content()
                 .scrollContentBackground(.hidden)
@@ -1460,6 +1510,8 @@ struct HeaderIconButton: View {
 
     var body: some View {
         Button(action: action) {
+            // The arrow turns with whatever animation its panel is opening or folding with: an animation of its own here
+            // made it run ahead of the title.
             Image(systemName: systemImage)
                 .font(.system(size: PanelTouch.headerIcon, weight: .semibold))
                 .rotationEffect(.degrees(rotation))
@@ -1467,12 +1519,11 @@ struct HeaderIconButton: View {
                 .foregroundStyle(hovering ? Color.primary : Color.secondary)
                 .background(hovering ? Color.primary.opacity(0.1) : .clear,
                             in: RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
+                .animation(.easeOut(duration: 0.12), value: hovering)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
-        .animation(.easeOut(duration: 0.15), value: rotation)
         .help(help)
         .accessibilityLabel(help)
     }
