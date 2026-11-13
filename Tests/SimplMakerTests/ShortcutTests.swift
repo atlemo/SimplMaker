@@ -110,4 +110,20 @@ import Testing
         #expect(ShortcutCommand.sketch(.rectangle).title == "Rectangle")
         #expect(!ShortcutCommand.all.contains(.sketch(.centerRectangle)))
     }
+
+    @Test func theSketchPanelOpensWithSpaceUntilChanged() {
+        let (store, defaults) = makeStore()
+        #expect(ShortcutCommand.sketchPanel.defaultChord == KeyChord(" "))
+        #expect(Shortcuts.chord(.sketchPanel, defaults: defaults)?.label == "Space")
+        #expect(KeyChord(stored: KeyChord(" ").stored) == KeyChord(" "))
+        // Moving it to a tool's key takes the key from the tool, as for any other shortcut in the sketch.
+        let displaced = store.assign(KeyChord("l"), to: .sketchPanel)
+        #expect(displaced == .sketch(.line))
+        #expect(Shortcuts.chord(.sketchPanel, defaults: defaults) == KeyChord("l"))
+        // And Space is free for a tool once the panel has left it.
+        #expect(store.assign(KeyChord(" "), to: .sketch(.line)) == nil)
+        store.reset(.sketchPanel)
+        #expect(Shortcuts.chord(.sketchPanel, defaults: defaults) == KeyChord(" "))
+        #expect(Shortcuts.chord(.sketch(.line), defaults: defaults) == nil)
+    }
 }

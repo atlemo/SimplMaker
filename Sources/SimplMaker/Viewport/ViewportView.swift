@@ -192,7 +192,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let isTool = event.charactersIgnoringModifiers?.lowercased().first
             .flatMap { SketchTool.forKey($0, current: session.tool, lastMode: session.mode(of:)) } != nil
         let inList = window.firstResponder is NSTableView  // ⌫ there deletes the list's own row
-        guard isTool || (!inList && [53, 51, 117].contains(event.keyCode)) || (event.keyCode == 49 && session.pendingText == nil) else { return false }
+        guard isTool || (!inList && [53, 51, 117].contains(event.keyCode)) || (session.pendingText == nil && Shortcuts.matches(.sketchPanel, event)) else { return false }
         window.makeFirstResponder(self)
         keyDown(with: event)
         return true
@@ -1255,11 +1255,12 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         guard let model else { return super.keyDown(with: event) }
         let plainKey = event.modifierFlags.intersection([.command, .control, .option]).isEmpty
         if let session = model.sketchSession, plainKey {
-            switch event.keyCode {
-            case 53: session.escape(); refreshOverlay(); return                                      // Esc
-            case 49 where session.pendingText == nil:                                                 // Space: the shortcut panel
+            if session.pendingText == nil, Shortcuts.matches(.sketchPanel, event) {                      // the shortcut panel's key (Space)
                 if !event.isARepeat { model.showSketchShortcuts.toggle() }
                 return
+            }
+            switch event.keyCode {
+            case 53: session.escape(); refreshOverlay(); return                                      // Esc
             case 51, 117:                                                                             // ⌫ ⌦
                 if session.isPatterning { model.commitSketch(session.deletePattern()) }
                 else if session.isMirroring { model.commitSketch(session.deleteMirror()) }

@@ -43,11 +43,11 @@ struct KeyChord: Hashable, Sendable {
     }
 
     #if os(macOS)
-    /// The chord of a key press; nil for keys that are not a plain character (arrows, F-keys, Return, Esc...).
+    /// The chord of a key press; nil for keys that are not a plain character (arrows, F-keys, Return, Esc...). Space counts.
     init?(event: NSEvent) {
         guard event.type == .keyDown, event.specialKey == nil,
               let char = event.characters(byApplyingModifiers: [])?.first,
-              let scalar = char.unicodeScalars.first, scalar.value > 0x20, scalar.value != 0x7F,
+              let scalar = char.unicodeScalars.first, scalar.value >= 0x20, scalar.value != 0x7F,
               !(0xF700...0xF8FF).contains(scalar.value)
         else { return nil }
         var m: Modifiers = []
@@ -62,7 +62,7 @@ struct KeyChord: Hashable, Sendable {
     /// The chord of a hardware key press; nil for keys that are not a plain character (arrows, F-keys, Return, Esc...).
     @MainActor init?(key: UIKey) {
         guard let char = key.charactersIgnoringModifiers.first, key.charactersIgnoringModifiers.count == 1,
-              let scalar = char.unicodeScalars.first, scalar.value > 0x20, scalar.value != 0x7F,
+              let scalar = char.unicodeScalars.first, scalar.value >= 0x20, scalar.value != 0x7F,
               !(0xF700...0xF8FF).contains(scalar.value)
         else { return nil }
         var m: Modifiers = []
@@ -103,7 +103,7 @@ struct KeyChord: Hashable, Sendable {
             default: return "⌘"
             }
         }
-        return symbols.joined() + String(key).uppercased()
+        return symbols.joined() + (key == " " ? "Space" : String(key).uppercased())
     }
 
     var keyboardShortcut: KeyboardShortcut { KeyboardShortcut(KeyEquivalent(key), modifiers: modifiers.eventModifiers) }
@@ -121,10 +121,17 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
     case fitAll, orthographic, showGrid, showAxes, snapToGrid
     case appearance, browser, timeline, inspector, hideUI
     case rebuild, importSTEP, welcome, exampleParts, palette
+    /// The floating panel of sketch tools (Space by default); read by the viewport while sketching, like the tool keys.
+    case sketchPanel
 
     /// Menu shortcuts work anywhere in the app; sketch shortcuts are single keys the viewport reads while sketching.
     enum Scope: Sendable { case app, sketch }
-    var scope: Scope { if case .sketch = self { return .sketch } else { return .app } }
+    var scope: Scope {
+        switch self {
+        case .sketch, .sketchPanel: return .sketch
+        default: return .app
+        }
+    }
 
     var id: String {
         switch self {
@@ -146,6 +153,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .welcome: return "welcome"
         case .exampleParts: return "exampleParts"
         case .palette: return "palette"
+        case .sketchPanel: return "sketchPanel"
         }
     }
 
@@ -169,6 +177,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .welcome: return "Welcome Window"
         case .exampleParts: return "Open Example Part"
         case .palette: return "Command Palette"
+        case .sketchPanel: return "Sketch Shortcuts Panel"
         }
     }
 
@@ -198,6 +207,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .welcome: return KeyChord("1", [.command, .shift])
         case .exampleParts: return KeyChord("n", [.command, .option])
         case .palette: return KeyChord("k", .command)
+        case .sketchPanel: return KeyChord(" ")
         }
     }
 
@@ -215,7 +225,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         Section(title: "View", commands: StandardView.allCases.map { .view($0) } + [
             .fitAll, .orthographic, .showGrid, .showAxes, .snapToGrid, .appearance, .browser, .timeline, .inspector, .hideUI]),
         Section(title: "Model", commands: [.palette, .rebuild, .importSTEP, .welcome, .exampleParts]),
-        Section(title: "While Sketching", commands: SketchTool.allCases.filter { $0.family[0] == $0 }.map { .sketch($0) }),
+        Section(title: "While Sketching", commands: [.sketchPanel] + SketchTool.allCases.filter { $0.family[0] == $0 }.map { .sketch($0) }),
     ]
 
     static let all: [ShortcutCommand] = sections.flatMap(\.commands)

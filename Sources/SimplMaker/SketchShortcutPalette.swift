@@ -177,9 +177,10 @@ struct SketchShortcutPalette: View {
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .onSubmit { if let first = results.first { choose(first) } }
-                .onKeyPress(.space) {
-                    // Spacebar opened the panel, so it closes it too, until a word is being typed.
-                    guard query.isEmpty else { return .ignored }
+                .onKeyPress { press in
+                    // The key that opened the panel (Space unless changed in Settings) closes it too, until a word is being typed.
+                    guard query.isEmpty, press.modifiers.isEmpty,
+                          Shortcuts.chord(.sketchPanel)?.key == press.characters.lowercased().first else { return .ignored }
                     close()
                     return .handled
                 }
