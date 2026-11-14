@@ -170,6 +170,12 @@ final class DocumentModel {
     private(set) var colorPreview: (bodies: [FeatureID], color: BodyColor)?
     /// A roughness being set with the slider, shown on bodies until it is let go (see previewBodyRoughness).
     private(set) var roughnessPreview: (bodies: [FeatureID], roughness: Double)?
+    /// What the Appearance panel changes: whole bodies, or single faces of them.
+    enum AppearanceMode: String, Hashable { case bodies, faces }
+    var appearanceMode = AppearanceMode.bodies
+    /// A colour or roughness shown on faces while it is being set, before it is kept (see previewFaceColor).
+    private(set) var faceColorPreview: (faces: [FaceRef], color: BodyColor)?
+    private(set) var faceRoughnessPreview: (faces: [FaceRef], roughness: Double)?
     /// An opacity being set with the slider: shown on those bodies until it is let go.
     private(set) var opacityPreview: (bodies: [FeatureID], opacity: Double)?
     /// Orthographic projection (View menu), on by default: sizes and alignments read truer than in perspective.
@@ -911,6 +917,146 @@ final class DocumentModel {
                 doc.bodyRoughness[id] = nil
                 if let fallback, doc.bodyColors[id] == nil, doc.bodyColors[Regenerator.rootBody(id)] == nil { doc.bodyColors[id] = fallback }
             }
+        }
+    }
+
+
+    // MARK: appearance of single faces
+
+    /// The faces the Appearance panel changes in its Faces mode: those selected one by one, not whole bodies.
+    var appearanceFaces: [FaceRef] {
+        var seen = Set<FaceRef>(), out: [FaceRef] = []
+        for pick in selection where pick.isFace && !pick.isWholeBody {
+            if let ref = faceRef(pick), seen.insert(ref).inserted { out.append(ref) }
+        }
+        return out
+    }
+
+    /// What a face has of its own (nil = it looks like its body).
+    func ownLook(of face: FaceRef) -> FaceAppearance? { document.faceAppearance[face.body]?[face.face] }
+
+    /// The colour a face is drawn in: the one being picked, else its own, else its body's.
+    func displayColor(of face: FaceRef) -> BodyColor? {
+        if let p = faceColorPreview, p.faces.contains(face) { return p.color }
+        return ownLook(of: face)?.color ?? displayColor(of: face.body)
+    }
+
+    func displayMaterial(of face: FaceRef) -> BodyMaterial? {
+        if let own = ownLook(of: face) {
+            if own.plain == true { return nil }
+            if let m = own.material { return m }
+        }
+        return displayMaterial(of: face.body)
+    }
+
+    func displayRoughness(of face: FaceRef) -> Double? {
+        guard let material = displayMaterial(of: face), material.hasRoughness else { return nil }
+        if let p = faceRoughnessPreview, p.faces.contains(face) { return p.roughness }
+        if let r = ownLook(of: face)?.roughness { return r }
+        // Another material than the body's has its own start, not the body's roughness.
+        if ownLook(of: face)?.material != nil { return material.defaultRoughness }
+        return displayRoughness(of: face.body) ?? material.defaultRoughness
+    }
+
+    /// Changes what faces have of their own, as one undo step. A face left with nothing of its own looks like its body again.
+    private func changeFaces(_ faces: [FaceRef], _ name: String, _ change: (inout FaceAppearance, FaceRef) -> Void) {
+        guard !faces.isEmpty else { return }
+        mutate(name) { doc in
+            for f in faces {
+                var look = doc.faceAppearance[f.body]?[f.face] ?? FaceAppearance()
+                change(&look, f)
+                if look.isEmpty {
+                    doc.faceAppearance[f.body]?[f.face] = nil
+                    if doc.faceAppearance[f.body]?.isEmpty == true { doc.faceAppearance[f.body] = nil }
+                } else {
+                    doc.faceAppearance[f.body, default: [:]][f.face] = look
+                }
+            }
+        }
+    }
+
+    /// Colours faces (nil goes back to their body's colour).
+    func setFaceColor(_ color: BodyColor?, of faces: [FaceRef]) {
+        faceColorPreview = nil
+        overlayRevision += 1
+        changeFaces(faces, color == nil ? "Reset Face Colour" : "Change Face Colour") { look, _ in look.color = color }
+    }
+
+    func previewFaceColor(_ color: BodyColor, of faces: [FaceRef]) {
+        faceColorPreview = faces.isEmpty ? nil : (faces, color)
+        overlayRevision += 1
+    }
+
+    /// Makes faces of a material, or (nil) plain. As for bodies, a face without a colour gets one that suits the material.
+    func setFaceMaterial(_ material: BodyMaterial?, of faces: [FaceRef]) {
+        faceColorPreview = nil
+        faceRoughnessPreview = nil
+        let fallback: BodyColor? = material.flatMap { BodyColor(hex: Self.materialColors[$0] ?? "") }
+        changeFaces(faces, faces.count == 1 ? "Change Face Material" : "Change Face Materials") { look, f in
+            look.roughness = nil
+            if let material {
+                look.material = material
+                look.plain = nil
+                // The colour that came with the body's own material is no choice of the user's: the face gets one that suits its material.
+                let bodyColor = displayColor(of: f.body)
+                let fromBodyMaterial = bodyColor != nil && displayMaterial(of: f.body).flatMap { BodyColor(hex: Self.materialColors[$0] ?? "") } == bodyColor
+                if let fallback, look.color == nil, bodyColor == nil || fromBodyMaterial { look.color = fallback }
+            } else {
+                look.material = nil
+                look.plain = displayMaterial(of: f.body) != nil ? true : nil
+            }
+        }
+    }
+
+    func previewFaceRoughness(_ roughness: Double, of faces: [FaceRef]) {
+        faceRoughnessPreview = faces.isEmpty ? nil : (faces, roughness)
+        overlayRevision += 1
+    }
+
+    func setFaceRoughness(_ roughness: Double?, of faces: [FaceRef]) {
+        faceRoughnessPreview = nil
+        overlayRevision += 1
+        changeFaces(faces, roughness == nil ? "Reset Face Roughness" : "Change Face Roughness") { look, _ in look.roughness = roughness }
+    }
+
+    /// Takes everything faces have of their own away: they look like their body again.
+    func resetFaces(_ faces: [FaceRef]) {
+        faceColorPreview = nil
+        faceRoughnessPreview = nil
+        overlayRevision += 1
+        changeFaces(faces, faces.count == 1 ? "Reset Face" : "Reset Faces") { look, _ in look = FaceAppearance() }
+    }
+
+    /// How many faces of the part have a look of their own.
+    var facesWithOwnLook: [FaceRef] {
+        document.faceAppearance.flatMap { body, faces in faces.keys.map { FaceRef(body: body, face: $0) } }
+            .filter { ref in meshes.contains { $0.id == ref.body && $0.mesh.faceNames.contains(ref.face) } }
+    }
+
+    /// What the renderer draws each face of these bodies in, where it differs from the body: per body (in this order), by the
+    /// face's index in its mesh. Colour, material and roughness are settled here, the body's own filling in what the face lacks.
+    func faceLooks(for visible: [BodyMesh]) -> [[Int: Renderer.FaceLook]] {
+        let previewing = faceColorPreview != nil || faceRoughnessPreview != nil
+        guard !document.faceAppearance.isEmpty || previewing else { return [] }
+        return visible.map { m in
+            var names = Set(document.faceAppearance[m.id]?.keys.map { $0 } ?? [])
+            for p in [faceColorPreview?.faces, faceRoughnessPreview?.faces].compactMap({ $0 }) {
+                for f in p where f.body == m.id { names.insert(f.face) }
+            }
+            guard !names.isEmpty else { return [:] }
+            let indexOf = Dictionary(m.mesh.faceNames.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+            var out: [Int: Renderer.FaceLook] = [:]
+            for name in names {
+                guard let index = indexOf[name] else { continue }
+                let ref = FaceRef(body: m.id, face: name)
+                let color = displayColor(of: ref).map { c -> SIMD4<Float> in
+                    let (r, g, b) = c.components
+                    return SIMD4(Float(r), Float(g), Float(b), 1)
+                }
+                out[index] = Renderer.FaceLook(color: color, material: Renderer.materialCode(displayMaterial(of: ref)),
+                                               roughness: displayRoughness(of: ref).map { Float($0) } ?? -1)
+            }
+            return out
         }
     }
 

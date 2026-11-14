@@ -1002,6 +1002,21 @@ public enum BodyMaterial: String, Codable, CaseIterable, Hashable, Sendable {
     }
 }
 
+/// What one face looks like when it differs from its body: any part left nil is the body's own. Faces are named by
+/// the persistent names of the kernel ("plate.end"), so a look stays on its face through rebuilds.
+public struct FaceAppearance: Codable, Hashable, Sendable {
+    public var color: BodyColor?
+    public var material: BodyMaterial?
+    public var roughness: Double?
+    /// True when the face is plain though its body has a material (a nil `material` follows the body).
+    public var plain: Bool?
+    public init(color: BodyColor? = nil, material: BodyMaterial? = nil, roughness: Double? = nil, plain: Bool? = nil) {
+        self.color = color; self.material = material; self.roughness = roughness; self.plain = plain
+    }
+    /// Nothing of its own: the face looks like its body.
+    public var isEmpty: Bool { color == nil && material == nil && roughness == nil && plain != true }
+}
+
 /// A folder in the browser. Folders hold bodies, sketches, planes and canvases, and other folders.
 public struct BrowserFolder: Codable, Hashable, Sendable, Identifiable {
     public var id: String
@@ -1040,6 +1055,8 @@ public struct CADDocument: Codable, Hashable, Sendable {
     public var bodyRoughness: [FeatureID: Double] = [:]
     /// How much of a body shows in the normal view: 1 solid (the default, not stored), less lets what is behind it show through.
     public var bodyOpacity: [FeatureID: Double] = [:]
+    /// Faces with a colour, material or roughness of their own, by the id of their body and then the face's persistent name.
+    public var faceAppearance: [FeatureID: [String: FaceAppearance]] = [:]
     /// Folders the user made in the browser, with their sub-folders (a folder lists its parent).
     public var folders: [BrowserFolder] = []
     /// The folder each body, sketch, plane or canvas sits in, by the id of the feature that made it. Anything
@@ -1055,7 +1072,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, bodyRoughness, bodyOpacity, folders, folderOf, browserOrder, parameterFolders, parameterFolderOf, thumbnail }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, bodyRoughness, bodyOpacity, faceAppearance, folders, folderOf, browserOrder, parameterFolders, parameterFolderOf, thumbnail }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -1070,6 +1087,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         bodyMaterials = try c.decodeIfPresent([FeatureID: BodyMaterial].self, forKey: .bodyMaterials) ?? [:]
         bodyRoughness = try c.decodeIfPresent([FeatureID: Double].self, forKey: .bodyRoughness) ?? [:]
         bodyOpacity = try c.decodeIfPresent([FeatureID: Double].self, forKey: .bodyOpacity) ?? [:]
+        faceAppearance = try c.decodeIfPresent([FeatureID: [String: FaceAppearance]].self, forKey: .faceAppearance) ?? [:]
         folders = try c.decodeIfPresent([BrowserFolder].self, forKey: .folders) ?? []
         folderOf = try c.decodeIfPresent([FeatureID: String].self, forKey: .folderOf) ?? [:]
         browserOrder = try c.decodeIfPresent([FeatureID].self, forKey: .browserOrder) ?? []
@@ -1090,6 +1108,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         if !bodyMaterials.isEmpty { try c.encode(bodyMaterials, forKey: .bodyMaterials) }
         if !bodyRoughness.isEmpty { try c.encode(bodyRoughness, forKey: .bodyRoughness) }
         if !bodyOpacity.isEmpty { try c.encode(bodyOpacity, forKey: .bodyOpacity) }
+        if !faceAppearance.isEmpty { try c.encode(faceAppearance, forKey: .faceAppearance) }
         if !folders.isEmpty { try c.encode(folders, forKey: .folders) }
         if !folderOf.isEmpty { try c.encode(folderOf, forKey: .folderOf) }
         if !browserOrder.isEmpty { try c.encode(browserOrder, forKey: .browserOrder) }
@@ -1109,6 +1128,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         d.bodyMaterials = [:]
         d.bodyRoughness = [:]
         d.bodyOpacity = [:]
+        d.faceAppearance = [:]
         d.folders = []
         d.folderOf = [:]
         d.browserOrder = []

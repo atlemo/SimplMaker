@@ -572,6 +572,8 @@ enum Shaders {
                 opacity = 0.35;
             }
         }
+        // A see-through body shows as faintly in the floor's reflection (its colour's alpha is the share each of its two layers takes).
+        if (p.material != 2u) opacity *= 1.0 - (1.0 - p.color.a) * (1.0 - p.color.a);
         // The reflection in the floor: opaque only where the body meets the floor, and fading out with the height.
         if (u.renderParams.z > 0.5) o.color.a = opacity * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), world.z - u.floorCenter.z));
         // A see-through body (the Appearance panel's Opacity, drawn in the glass passes with its opacity in the colour's alpha).
@@ -627,7 +629,8 @@ enum Shaders {
         if (u.clipOn != 0 && dot(in.world, u.clipPlane.xyz) - u.clipPlane.w > 1e-4) discard_fragment();
         float lit = shadowVisibility(in.world, facing(in.normal, in.world, u), u, shadowMap);
         float3 color = shadeFace(in.normal, in.world, in.id, false, 1e9, u, sel, p, lit).color.rgb;
-        float a = (p.material == 2u ? 0.35 : 1.0) * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), in.world.z - u.floorCenter.z));
+        float seen = p.material == 2u ? 0.35 : 1.0 - (1.0 - p.color.a) * (1.0 - p.color.a);
+        float a = seen * u.renderParams.w * (1.0 - smoothstep(0.0, max(u.shadowExtent.w, 1.0), in.world.z - u.floorCenter.z));
         return float4(color * a, a);
     }
 
@@ -868,6 +871,15 @@ enum Shaders {
         return o;
     }
 
+    // A see-through body's shadow: a share of the shadow map's texels (the body's opacity, ordered by a 4x4 pattern) take part, so
+    // the soft shadow the lookups average over them is as dark as the body is opaque.
+    fragment void shadowGhostFragment(ShadowOut in [[stage_in]],
+                                      constant float& opacity [[buffer(3)]]) {
+        const float bayer[16] = {0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0};
+        uint2 q = uint2(in.position.xy) & 3u;
+        if ((bayer[q.y * 4u + q.x] + 0.5) / 16.0 >= opacity) discard_fragment();
+    }
+
     fragment FragOut faceFragment(FaceOut in [[stage_in]],
                                   constant Uniforms& u [[buffer(1)]],
                                   constant uint* sel [[buffer(2)]],
@@ -885,11 +897,12 @@ enum Shaders {
         // Occlusion and contact shadows read the depth the camera sees, so they are left out of the mirrored view (the reflection).
         if (render && u.renderParams.z < 0.5 && u.evenLight == 0) {
             float2 uv = in.position.xy / u.viewport;
-            if (p.material != 2u) {
+            // Glass and see-through bodies (drawn in the glass passes) are left out of what the occlusion and contact shadows read.
+            if (p.material != 2u && (p.style & 6144u) == 0u) {
                 constexpr sampler nearestSampler(coord::normalized, filter::nearest, address::clamp_to_edge);
                 if (u.look2.x > 0.0) occlusion = occlusionMap.sample(nearestSampler, uv).r;
                 lit = min(lit, contactShadow(in.world, fn, in.position.xy, u, viewDepth));
-            } else if (u.look1.x > 0.5 && u.look3.z > 0.0 && (p.style & 4096u) != 0u) {
+            } else if (p.material == 2u && u.look1.x > 0.5 && u.look3.z > 0.0 && (p.style & 4096u) != 0u) {
                 refraction = glassRefraction(in.world, fn, toViewer(in.world, u), uv, p.color.rgb, u, shadowMap, viewDepth, glassBack);
             }
         }

@@ -41,7 +41,7 @@ import simd
 
     private func render(_ model: DocumentModel, name: String, settings: RenderSettings?, grid: Bool = true,
                         yaw: Float = -.pi / 3, pitch: Float = 0.55, orthographic: Bool = true,
-                        distance: Float = 260, materials: [UInt32] = [], colors: [SIMD4<Float>?] = [], roughness: [Float] = [], focus: SIMD3<Float>? = nil, selected: [UInt32] = [],
+                        distance: Float = 260, materials: [UInt32] = [], colors: [SIMD4<Float>?] = [], roughness: [Float] = [], focus: SIMD3<Float>? = nil, selected: [UInt32] = [], faceLooks: [[Int: Renderer.FaceLook]] = [], opacity: [Float] = [],
                         target: SIMD3<Float> = SIMD3(45, 20, 15)) async throws -> (Picture, Renderer, ViewportMTKView) {
         let view = ViewportMTKView(frame: NSRect(x: 0, y: 0, width: 800, height: 560), device: nil)
         let renderer = try #require(Renderer())
@@ -62,6 +62,8 @@ import simd
         renderer.focusPoint = focus
         renderer.selected = selected
         renderer.bodyColors = colors
+        renderer.faceLooks = faceLooks
+        renderer.bodyOpacity = opacity
         renderer.sceneBounds = model.sceneBounds
         renderer.camera.orthographic = orthographic
         renderer.camera.target = target
@@ -512,8 +514,16 @@ import simd
         let model = try await loaded()
         model.selectBody("a")
         model.setBodyMaterial(.wood, of: ["a"])
+        let top = try topFace(of: model, "a")
+        for faces in [false, true] {
+        if faces {
+            model.appearanceMode = .faces
+            model.setFaceMaterial(.metal, of: [top.ref])
+            model.selection = [PickID(body: model.meshes.firstIndex { $0.id == "a" }!, face: top.index)]
+        }
         for scheme in [(ColorScheme.light, NSAppearance.Name.aqua), (.dark, .darkAqua)] {
             let content = AppearancePanel(model: model)
+                .frame(width: 300, height: 640)
                 .padding(30)
                 .background(Color(white: scheme.0 == .dark ? 0.16 : 0.9))
                 .environment(\.colorScheme, scheme.0)
@@ -526,8 +536,9 @@ import simd
             host.layoutSubtreeIfNeeded()
             let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: rep)
-            try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: dir + "/appearance-\(scheme.0 == .dark ? "dark" : "light").png"))
+            try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: dir + "/appearance-\(faces ? "faces-" : "")\(scheme.0 == .dark ? "dark" : "light").png"))
             withExtendedLifetime(window) {}
+        }
         }
     }
 
@@ -1155,6 +1166,178 @@ import simd
         #expect(simd_distance(a.color(q.x, q.y), b.color(q.x, q.y)) > 0.015,
                 "refraction changes what the glass shows: \(a.color(q.x, q.y)) vs \(b.color(q.x, q.y))")
     }
+
+    // MARK: faces with a look of their own
+
+    /// The persistent name and index of a body's top face, found by its normal.
+    private func topFace(of model: DocumentModel, _ id: FeatureID) throws -> (ref: FaceRef, index: Int) {
+        let m = try #require(model.meshes.first { $0.id == id })
+        for t in 0..<m.mesh.triangleFace.count {
+            let v = Int(m.mesh.indices[t * 3]) * 3
+            if m.mesh.normals[v + 2] > 0.99 {
+                let index = Int(m.mesh.triangleFace[t])
+                return (FaceRef(body: id, face: m.mesh.faceNames[index]), index)
+            }
+        }
+        throw TestFailure("no top face")
+    }
+    struct TestFailure: Error { var message: String; init(_ m: String) { message = m } }
+
+    @Test func aFaceHasALookOfItsOwnAndTheRestOfTheBodyKeepsItsOwn() async throws {
+        let model = try await loaded()
+        let top = try topFace(of: model, "a").ref
+        let red = try #require(BodyColor(hex: "#D23B30"))
+        model.setBodyColor(BodyColor(hex: "#112233"), of: ["a"])
+        model.setFaceColor(red, of: [top])
+        #expect(model.displayColor(of: top) == red)
+        #expect(model.displayColor(of: "a") == BodyColor(hex: "#112233"), "the body is left as it was")
+        #expect(model.displayColor(of: FaceRef(body: "a", face: "nothing")) == BodyColor(hex: "#112233"), "another face follows the body")
+        #expect(!model.isRegenerating, "a face's colour rebuilds nothing")
+        let back = try JSONDecoder().decode(CADDocument.self, from: JSONEncoder().encode(model.document))
+        #expect(back.faceAppearance == ["a": [top.face: FaceAppearance(color: red)]])
+        let looks = model.faceLooks(for: model.visibleMeshes)
+        let index = try topFace(of: model, "a").index
+        #expect(looks.count == 2 && looks[0][index] != nil && looks[0].count == 1 && looks[1].isEmpty)
+        model.resetFaces([top])
+        #expect(model.document.faceAppearance.isEmpty, "a face with nothing of its own is not kept")
+        #expect(model.displayColor(of: top) == BodyColor(hex: "#112233"))
+    }
+
+    @Test func aFaceMaterialIsOneUndoStepAndFollowsTheBodyUntilGivenOne() async throws {
+        let model = try await loaded()
+        let undo = UndoManager()
+        undo.groupsByEvent = false  // no run loop turns in a test: each change is its own step
+        model.undoManager = undo
+        let top = try topFace(of: model, "a").ref
+        func step(_ change: () -> Void) { undo.beginUndoGrouping(); change(); undo.endUndoGrouping() }
+        step { model.setBodyMaterial(.metal, of: ["a"]) }
+        #expect(model.displayMaterial(of: top) == .metal, "a face has its body's material until given its own")
+        step { model.setFaceMaterial(.wood, of: [top]) }
+        #expect(model.displayMaterial(of: top) == .wood && model.displayMaterial(of: "a") == .metal)
+        #expect(model.displayColor(of: top) != nil)
+        step { model.setFaceMaterial(nil, of: [top]) }
+        #expect(model.displayMaterial(of: top) == nil, "plain on a metal body")
+        undo.undo()
+        #expect(model.displayMaterial(of: top) == .wood)
+        undo.undo()
+        #expect(model.displayMaterial(of: top) == .metal)
+    }
+
+    @Test func aFaceCanHaveItsOwnRoughness() async throws {
+        let model = try await loaded()
+        let top = try topFace(of: model, "a").ref
+        #expect(model.displayRoughness(of: top) == nil, "a plain face has none")
+        model.setFaceMaterial(.metal, of: [top])
+        #expect(model.displayRoughness(of: top) == BodyMaterial.metal.defaultRoughness)
+        model.setFaceRoughness(0.9, of: [top])
+        #expect(model.displayRoughness(of: top) == 0.9)
+        #expect(model.displayRoughness(of: "a") == nil)
+    }
+
+    @Test func aColouredFaceIsDrawnInItsColourAndTheOthersAreNot() async throws {
+        let model = try await loaded()
+        let top = try topFace(of: model, "a")
+        let red = try #require(BodyColor(hex: "#D23B30"))
+        model.setFaceColor(red, of: [top.ref])
+        func shot(_ faces: Bool) async throws -> (Picture, Renderer, ViewportMTKView) {
+            let r = try await render(model, name: faces ? "face-colour" : "face-colour-off", settings: nil, grid: false)
+            return r
+        }
+        // The same view with and without the face's look.
+        let renderedWith = try await renderWithFaceLooks(model, looks: model.faceLooks(for: model.visibleMeshes))
+        let renderedWithout = try await renderWithFaceLooks(model, looks: [])
+        // The middle of the top face, and of a side face: from the mesh, whatever the box's origin.
+        let mesh = try #require(model.meshes.first { $0.id == "a" }).mesh
+        var lo = SIMD3<Float>(repeating: .infinity), hi = SIMD3<Float>(repeating: -.infinity)
+        for v in 0..<(mesh.positions.count / 3) {
+            let q = SIMD3(mesh.positions[v * 3], mesh.positions[v * 3 + 1], mesh.positions[v * 3 + 2])
+            lo = simd_min(lo, q); hi = simd_max(hi, q)
+        }
+        let p = SIMD3<Float>((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, hi.z), side = SIMD3<Float>((lo.x + hi.x) / 2, lo.y, (lo.z + hi.z) / 2)
+        let a = pixel(of: p, renderedWith.0, renderedWith.1, renderedWith.2), b = pixel(of: p, renderedWithout.0, renderedWithout.1, renderedWithout.2)
+        let with = renderedWith.0.color(a.x, a.y), without = renderedWithout.0.color(b.x, b.y)
+        #expect(with.x > with.z + 0.2, "the top face is red: \(with) at \(a)")
+        #expect(abs(without.x - without.z) < 0.1, "without the look it is grey")
+        let c = pixel(of: side, renderedWith.0, renderedWith.1, renderedWith.2), d = pixel(of: side, renderedWithout.0, renderedWithout.1, renderedWithout.2)
+        #expect(simd_length(renderedWith.0.color(c.x, c.y) - renderedWithout.0.color(d.x, d.y)) < 0.02, "the side is as it was")
+        _ = try await shot(true)
+    }
+
+    /// In the Render view a face of wood on a metal body is drawn as wood (grained) while the rest of the body stays metal.
+    @Test func aWoodenFaceOnAMetalBodyIsGrainedInTheRenderView() async throws {
+        let model = try await loaded()
+        let top = try topFace(of: model, "a")
+        model.setBodyMaterial(.metal, of: ["a"])
+        model.setFaceMaterial(.wood, of: [top.ref])
+        var settings = RenderSettings.quiet
+        settings.reflection = 0
+        let looks = model.faceLooks(for: model.visibleMeshes)
+        #expect(looks[0][top.index]?.material == 3)
+        let colors: [SIMD4<Float>?] = [SIMD4(0.79, 0.8, 0.82, 1), nil]
+        let shot = try await render(model, name: "face-wood", settings: settings, yaw: -.pi / 5, pitch: 0.5, orthographic: false,
+                                    distance: 260, materials: [1, 0], colors: colors, faceLooks: looks)
+        let mesh = try #require(model.meshes.first { $0.id == "a" }).mesh
+        var lo = SIMD3<Float>(repeating: .infinity), hi = SIMD3<Float>(repeating: -.infinity)
+        for v in 0..<(mesh.positions.count / 3) {
+            let q = SIMD3(mesh.positions[v * 3], mesh.positions[v * 3 + 1], mesh.positions[v * 3 + 2])
+            lo = simd_min(lo, q); hi = simd_max(hi, q)
+        }
+        let mid = (lo + hi) / 2
+        var woodLum: [Float] = [], x = lo.x + 4
+        while x < hi.x - 4 {
+            let q = pixel(of: SIMD3(x, mid.y, hi.z), shot.0, shot.1, shot.2)
+            let c = shot.0.color(q.x, q.y)
+            woodLum.append(0.3 * c.x + 0.59 * c.y + 0.11 * c.z)
+            x += 2
+        }
+        let spread = (woodLum.max() ?? 0) - (woodLum.min() ?? 0)
+        let c = shot.0.color(pixel(of: SIMD3(mid.x, mid.y, hi.z), shot.0, shot.1, shot.2).x, pixel(of: SIMD3(mid.x, mid.y, hi.z), shot.0, shot.1, shot.2).y)
+        let tan = SIMD3<Float>(0.71, 0.51, 0.31)
+        #expect(c.x > c.z + 0.05 || spread > 0.02, "the top is wood-coloured or grained: \(c), spread \(spread), tan \(tan)")
+    }
+
+    /// In the Render view a body with opacity below 100 % lets the floor and what stands behind it show through, casts a fainter
+    /// shadow, and shows fainter in the floor's reflection, a more see-through one more so.
+    @Test func aSeeThroughBodyShowsWhatIsBehindItAndCastsAFainterShadowInTheRenderView() async throws {
+        let model = try await loaded()
+        let lo = try #require(model.sceneBounds).min
+        var settings = RenderSettings.quiet
+        settings.direction = 0
+        settings.height = 40
+        settings.softness = 0.1
+        settings.reflection = 1
+        func shot(_ opacity: Float, name: String) async throws -> (Picture, Renderer, ViewportMTKView) {
+            try await render(model, name: name, settings: settings, yaw: -.pi / 3, pitch: 0.7, opacity: [opacity, 1])
+        }
+        let solid = try await shot(1, name: "opaque"), faint = try await shot(0.3, name: "see-through-30"), fainter = try await shot(0.1, name: "see-through-10")
+        func lum(_ s: (Picture, Renderer, ViewportMTKView), _ p: SIMD3<Float>) -> Float {
+            let q = pixel(of: p, s.0, s.1, s.2)
+            let c = s.0.color(q.x, q.y)
+            return 0.3 * c.x + 0.59 * c.y + 0.11 * c.z
+        }
+        let mesh = try #require(model.meshes.first { $0.id == "a" }).mesh
+        var hi = SIMD3<Float>(repeating: -.infinity)
+        for v in 0..<(mesh.positions.count / 3) { hi = simd_max(hi, SIMD3(mesh.positions[v * 3], mesh.positions[v * 3 + 1], mesh.positions[v * 3 + 2])) }
+        let centre = SIMD3<Float>((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, 0)
+        let top = SIMD3<Float>(centre.x, centre.y, hi.z)
+        // The shadow beside the box, away from the light, and the floor in the open.
+        let inShadow = SIMD3<Float>(lo.x - 12, lo.y + 20, 0), open = SIMD3<Float>(lo.x + 30, lo.y + 120, 0)
+        let shadowSolid = lum(solid, open) - lum(solid, inShadow), shadowFaint = lum(faint, open) - lum(faint, inShadow)
+        let shadowFainter = lum(fainter, open) - lum(fainter, inShadow)
+        #expect(shadowSolid > 0.1, "an opaque body casts a shadow: \(shadowSolid)")
+        #expect(shadowFaint < shadowSolid - 0.03 && shadowFaint > 0.01, "a body at 30 % casts a fainter one: \(shadowFaint) vs \(shadowSolid)")
+        #expect(shadowFainter < shadowFaint, "and at 10 % a fainter still: \(shadowFainter) vs \(shadowFaint)")
+        // Seen through: the top of the box is much nearer the floor's brightness than when opaque.
+        let floorTone = lum(solid, open)
+        #expect(abs(lum(faint, top) - floorTone) < abs(lum(solid, top) - floorTone) - 0.05,
+                "the top is see-through: \(lum(faint, top)) vs opaque \(lum(solid, top)), floor \(floorTone)")
+        _ = centre
+    }
+
+    /// Draws the loaded part in the plain view with these faces' looks.
+    private func renderWithFaceLooks(_ model: DocumentModel, looks: [[Int: Renderer.FaceLook]]) async throws -> (Picture, Renderer, ViewportMTKView) {
+        try await render(model, name: looks.isEmpty ? "faces-off" : "faces-on", settings: nil, grid: false, orthographic: false, faceLooks: looks)
+    }
 }
 
 private extension RenderSettings {
@@ -1164,4 +1347,5 @@ private extension RenderSettings {
         s.noise = 0
         return s
     }
+
 }

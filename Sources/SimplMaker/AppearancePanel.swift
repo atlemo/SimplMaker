@@ -1,4 +1,4 @@
-// The Appearance panel: gives bodies colours and materials. Opens with A, or View ▸ Show Appearance.
+// The Appearance panel: gives bodies, or single faces of them, colours and materials. Opens with A, or View ▸ Show Appearance.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
 #if os(macOS)
@@ -54,11 +54,17 @@ struct AppearancePanel: View {
     struct PendingColor: Equatable {
         var color: BodyColor
         var bodies: [FeatureID]
+        /// Set when the colour is for faces (the panel's Faces mode), and `bodies` is empty.
+        var faces: [FaceRef] = []
     }
 
     private var columns: [GridItem] { Array(repeating: GridItem(.flexible(), spacing: DS.Spacing.space2), count: 6) }
 
     private var targets: [FeatureID] { model.appearanceTargets }
+    private var faceTargets: [FaceRef] { model.appearanceFaces }
+    /// The panel is changing single faces, not whole bodies.
+    private var isFaces: Bool { model.appearanceMode == .faces }
+    private var hasTargets: Bool { isFaces ? !faceTargets.isEmpty : !targets.isEmpty }
 
     /// The viewport's own body colour, for the Default swatch.
     private var defaultColor: Color {
@@ -69,34 +75,50 @@ struct AppearancePanel: View {
     var body: some View {
         // A sidebar list, as the Parameters panel is, so that it opens and folds the same way: each part is a row.
         List {
+            SegmentedPicker(selection: Binding(get: { model.appearanceMode }, set: { switchMode(to: $0) }),
+                            options: [.bodies, .faces]) { $0 == .bodies ? "Bodies" : "Faces" }
+                .help("Colour and material for whole bodies, or for single faces of them")
+                .panelRow()
             Text(targetText)
                 .font(.callout)
-                .foregroundStyle(targets.isEmpty ? .secondary : .primary)
+                .foregroundStyle(hasTargets ? .primary : .secondary)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .panelRow()
             Group {
                 LazyVGrid(columns: columns, spacing: DS.Spacing.space2) {
-                    ColorSwatch(color: defaultColor, name: "Default", current: isCurrent(nil), isDefault: true) { apply(nil) }
+                    ColorSwatch(color: isFaces ? (faceTargets.first.flatMap { model.displayColor(of: $0.body)?.color } ?? defaultColor) : defaultColor,
+                                name: isFaces ? "Same as body" : "Default", current: isCurrent(nil), isDefault: true) { apply(nil) }
                     ForEach(ColorPreset.all) { p in
                         ColorSwatch(color: p.color.color, name: p.name, current: isCurrent(p.color)) { apply(p.color) }
                     }
                 }
                 .panelRow()
-                HStack {
-                    ColorPicker("Custom Colour", selection: customColor, supportsOpacity: false)
-                        .help("Pick any colour for the selected bodies")
+                HStack(alignment: .center) {
+                    // The label is our own text, so it and the colour well share one centre line (the picker's own label sits on a baseline).
+                    Text("Custom Colour")
                     Spacer()
+                    ColorPicker("Custom Colour", selection: customColor, supportsOpacity: false)
+                        .labelsHidden()
+                        .help(isFaces ? "Pick any colour for the selected faces" : "Pick any colour for the selected bodies")
                     if let c = sharedColor {
                         Text(c.hex).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                 }
                 .panelRow()
                 materialRow.panelRow()
-                opacityRow.panelRow()
+                if isFaces {
+                    if faceTargets.contains(where: { model.ownLook(of: $0) != nil }) {
+                        Button("Same as Body") { model.resetFaces(faceTargets) }
+                            .help("Take the colour and material of the selected faces away: they look like their body again")
+                            .panelRow()
+                    }
+                } else {
+                    opacityRow.panelRow()
+                }
             }
-            .disabled(targets.isEmpty)
-            bodyList.panelRow()
+            .disabled(!hasTargets)
+            if isFaces { faceSummary.panelRow() } else { bodyList.panelRow() }
         }
         .listStyle(.sidebar)
         .panelListTop()
@@ -115,12 +137,13 @@ struct AppearancePanel: View {
         VStack(alignment: .leading, spacing: DS.Spacing.space2) {
             Text("Material").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
             HStack(spacing: DS.Spacing.space2) {
-                MaterialTile(material: nil, baseColor: sharedColor?.color ?? defaultColor, current: isCurrentMaterial(nil)) { model.setBodyMaterial(nil, of: targets) }
+                MaterialTile(material: nil, baseColor: sharedColor?.color ?? defaultColor, current: isCurrentMaterial(nil)) { setMaterial(nil) }
                 ForEach(BodyMaterial.allCases, id: \.self) { m in
-                    MaterialTile(material: m, baseColor: sharedColor?.color ?? defaultColor, current: isCurrentMaterial(m)) { model.setBodyMaterial(m, of: targets) }
+                    MaterialTile(material: m, baseColor: sharedColor?.color ?? defaultColor, current: isCurrentMaterial(m)) { setMaterial(m) }
                 }
             }
-            if targets.contains(where: { model.displayMaterial(of: $0)?.hasRoughness == true }) {
+            if isFaces ? faceTargets.contains(where: { model.displayRoughness(of: $0) != nil })
+                       : targets.contains(where: { model.displayMaterial(of: $0)?.hasRoughness == true }) {
                 roughnessRow
             }
             Text("Materials show in the Render view.").font(.caption).foregroundStyle(.tertiary)
@@ -130,11 +153,19 @@ struct AppearancePanel: View {
     /// How rough the selected plastic or metal bodies are. The Render view follows the slider while it is dragged; letting go is one undo step.
     private var roughnessRow: some View {
         let rough = targets.filter { model.displayMaterial(of: $0)?.hasRoughness == true }
-        let shown = rough.first.flatMap { model.displayRoughness(of: $0) } ?? 0.35
+        let roughFaces = faceTargets.filter { model.displayRoughness(of: $0) != nil }
+        let shown = (isFaces ? roughFaces.first.flatMap { model.displayRoughness(of: $0) } : rough.first.flatMap { model.displayRoughness(of: $0) }) ?? 0.35
         return HStack(spacing: DS.Spacing.space4) {
             Text("Roughness").font(.callout)
-            Slider(value: Binding(get: { shown }, set: { model.previewBodyRoughness($0, of: rough) }), in: 0...1) { editing in
-                if !editing, let p = model.roughnessPreview { model.setBodyRoughness(p.roughness, of: rough) }
+            Slider(value: Binding(get: { shown }, set: { value in
+                if isFaces { model.previewFaceRoughness(value, of: roughFaces) } else { model.previewBodyRoughness(value, of: rough) }
+            }), in: 0...1) { editing in
+                guard !editing else { return }
+                if isFaces {
+                    if let p = model.faceRoughnessPreview { model.setFaceRoughness(p.roughness, of: roughFaces) }
+                } else if let p = model.roughnessPreview {
+                    model.setBodyRoughness(p.roughness, of: rough)
+                }
             }
             .tint(accent)
             Text(shown < 0.25 ? "Glossy" : shown < 0.65 ? "Satin" : "Matte")
@@ -142,7 +173,9 @@ struct AppearancePanel: View {
         }
         .padding(.top, DS.Spacing.space2)
         .help("From a glossy, polished surface to a matte one. Double-click to go back to the material's own")
-        .simultaneousGesture(TapGesture(count: 2).onEnded { model.setBodyRoughness(nil, of: rough) })
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
+            if isFaces { model.setFaceRoughness(nil, of: roughFaces) } else { model.setBodyRoughness(nil, of: rough) }
+        })
     }
 
     /// How see-through the selected bodies are in the normal view, to look at what is inside or behind them. The view follows the
@@ -160,7 +193,7 @@ struct AppearancePanel: View {
                 Text("\(Int((shown * 100).rounded()))%")
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
             }
-            Text("Lower it to see through a body. Shown in the normal view; the Render view has Glass.").font(.caption).foregroundStyle(.tertiary)
+            Text("Lower it to see through a body, in the normal view and the Render view. For clear, tinted glass pick the Glass material.").font(.caption).foregroundStyle(.tertiary)
         }
         .padding(.top, DS.Spacing.space2)
         .help("Double-click to make the bodies solid again")
@@ -169,7 +202,37 @@ struct AppearancePanel: View {
 
     /// Whether every selected body has this material (nil = plain).
     private func isCurrentMaterial(_ material: BodyMaterial?) -> Bool {
-        !targets.isEmpty && targets.allSatisfy { model.displayMaterial(of: $0) == material }
+        if isFaces { return !faceTargets.isEmpty && faceTargets.allSatisfy { model.displayMaterial(of: $0) == material } }
+        return !targets.isEmpty && targets.allSatisfy { model.displayMaterial(of: $0) == material }
+    }
+
+    private func setMaterial(_ material: BodyMaterial?) {
+        if isFaces { model.setFaceMaterial(material, of: faceTargets) } else { model.setBodyMaterial(material, of: targets) }
+    }
+
+    /// Changes between bodies and faces; a colour still being picked is kept for what it was picked for first.
+    private func switchMode(to mode: DocumentModel.AppearanceMode) {
+        if let p = pending { commit(p) }
+        model.appearanceMode = mode
+    }
+
+    /// Faces mode's list: what to do, and the faces that already have a look of their own.
+    private var faceSummary: some View {
+        let painted = model.facesWithOwnLook
+        return VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            Text("Faces").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            Text("Click a face in the view. ⇧- or ⌘-click adds more faces.").font(.callout).foregroundStyle(.tertiary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            if !painted.isEmpty {
+                HStack {
+                    Text(painted.count == 1 ? "1 face has its own look" : "\(painted.count) faces have their own look").font(.callout)
+                    Spacer()
+                    Button("Reset All") { model.resetFaces(painted) }
+                        .help("Every face looks like its body again")
+                }
+            }
+        }
     }
 
     /// Every body, to select from without hunting for it in the view. ⇧- or ⌘-click adds to the selection.
@@ -192,6 +255,12 @@ struct AppearancePanel: View {
     }
 
     private var targetText: String {
+        if isFaces {
+            guard !faceTargets.isEmpty else { return "Select faces in the view, then pick a colour or a material." }
+            let bodyNames = model.bodies.filter { b in faceTargets.contains { $0.body == b.id } }.map(\.name)
+            let count = faceTargets.count == 1 ? "1 face" : "\(faceTargets.count) faces"
+            return "Colour of " + count + " on " + ListFormatter.localizedString(byJoining: bodyNames)
+        }
         guard !targets.isEmpty else { return "Select bodies in the view or in the list below, then pick a colour." }
         let names = model.bodies.filter { targets.contains($0.id) }.map(\.name)
         return "Colour of " + ListFormatter.localizedString(byJoining: names)
@@ -199,20 +268,37 @@ struct AppearancePanel: View {
 
     /// The colour every selected body has (nil if they differ or have none).
     private var sharedColor: BodyColor? {
+        if isFaces {
+            guard let first = faceTargets.first.flatMap({ model.displayColor(of: $0) }) else { return nil }
+            return isCurrent(first) ? first : nil
+        }
         guard let first = targets.first.flatMap({ model.displayColor(of: $0) }) else { return nil }
         return isCurrent(first) ? first : nil
     }
 
     /// Whether every selected body has this colour (nil = the default).
     private func isCurrent(_ color: BodyColor?) -> Bool {
-        !targets.isEmpty && targets.allSatisfy { model.displayColor(of: $0) == color }
+        if isFaces {
+            // The first swatch stands for "like the body": a face with no colour of its own.
+            if color == nil { return !faceTargets.isEmpty && faceTargets.allSatisfy { model.ownLook(of: $0)?.color == nil } }
+            return !faceTargets.isEmpty && faceTargets.allSatisfy { model.displayColor(of: $0) == color }
+        }
+        return !targets.isEmpty && targets.allSatisfy { model.displayColor(of: $0) == color }
     }
 
     private var customColor: Binding<Color> {
         Binding(get: { sharedColor?.color ?? defaultColor },
                 set: { new in
+                    guard let c = BodyColor(new) else { return }
+                    if isFaces {
+                        let faces = faceTargets
+                        guard !faces.isEmpty else { return }
+                        model.previewFaceColor(c, of: faces)
+                        pending = PendingColor(color: c, bodies: [], faces: faces)
+                        return
+                    }
                     let ids = targets
-                    guard let c = BodyColor(new), !ids.isEmpty else { return }
+                    guard !ids.isEmpty else { return }
                     model.previewBodyColor(c, of: ids)
                     pending = PendingColor(color: c, bodies: ids)
                 })
@@ -220,12 +306,12 @@ struct AppearancePanel: View {
 
     private func apply(_ color: BodyColor?) {
         if let p = pending { commit(p) }
-        model.setBodyColor(color, of: targets)
+        if isFaces { model.setFaceColor(color, of: faceTargets) } else { model.setBodyColor(color, of: targets) }
     }
 
     private func commit(_ p: PendingColor) {
         pending = nil
-        model.setBodyColor(p.color, of: p.bodies)
+        if p.faces.isEmpty { model.setBodyColor(p.color, of: p.bodies) } else { model.setFaceColor(p.color, of: p.faces) }
     }
 }
 
@@ -264,8 +350,8 @@ struct ColorSwatch: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: DS.Duration.instant), value: hovering)
-        .help(isDefault ? "Default colour" : name)
-        .accessibilityLabel(isDefault ? "Default colour" : name)
+        .help(isDefault && name == "Default" ? "Default colour" : name)
+        .accessibilityLabel(isDefault && name == "Default" ? "Default colour" : name)
         .accessibilityAddTraits(current ? .isSelected : [])
     }
 }

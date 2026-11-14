@@ -696,7 +696,7 @@ struct PanelDivider: View {
 /// browser and the parameters on the left. Sketching has no use for Appearance, so the inspector then has the column alone.
 struct InspectorColumn: View {
     @Bindable var model: DocumentModel
-    @State private var split: CGFloat = 0.6
+    @State private var split: CGFloat = 0.5
 
     var body: some View {
         GeometryReader { geo in

@@ -165,6 +165,7 @@ enum ViewportSnapshot {
                 return SIMD4(Float(r), Float(g), Float(b), 1)
             }
         }
+        renderer.faceLooks = model.faceLooks(for: meshes)
         var camera = Camera()
         camera.orthographic = !options.perspective
         let angles = direction.angles
