@@ -62,7 +62,7 @@ extension CADService {
         var n = 2
         while fm.fileExists(atPath: url.path) { url = directory.appendingPathComponent("\(base) \(n).\(format)"); n += 1 }  // never over an existing file
         let kernelBodies = chosen.map(\.body)
-        let named = chosen.map { (name: $0.name, body: $0.body, color: model.document.bodyColors[$0.id]) }
+        let named = chosen.map { (name: $0.name, body: $0.body, color: model.document.bodyColors[$0.id], faceColors: model.faceColors(of: $0.id)) }
         let target = url
         do {
             try await Task.detached(priority: .userInitiated) {

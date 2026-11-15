@@ -32,7 +32,7 @@ import Testing
         let body = try block()
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("threemf-\(UUID().uuidString).3mf")
         defer { try? FileManager.default.removeItem(at: url) }
-        try ThreeMF.write([(name: "Base & <lid>", body: body, color: BodyColor(hex: "#FF8000"))], to: url)
+        try ThreeMF.write([(name: "Base & <lid>", body: body, color: BodyColor(hex: "#FF8000"), faceColors: [:])], to: url)
 
         func unzip(_ args: [String]) throws -> (Int32, String) {
             let p = Process()
@@ -55,6 +55,21 @@ import Testing
         #expect(model.contains("pid=\"1\" pindex=\"0\""), "the object points at its colour")
         #expect(model.components(separatedBy: "<triangle ").count - 1 == 12)
         #expect(model.contains("<item objectid=\"2\"/>"))
+    }
+
+    @Test func aFaceWithAColourOfItsOwnIsColouredTriangleByTriangle() throws {
+        let mesh = try block().tessellate(linearDeflection: 0.02)
+        let face = try #require(mesh.faceNames.first)
+        let faceTriangles = mesh.triangleFace.filter { $0 == 0 }.count
+        let xml = ThreeMF.modelXML([ThreeMF.Object(name: "Block", mesh: mesh, color: BodyColor(hex: "#FF8000"),
+                                                   faceColors: [face: BodyColor(hex: "#0000FF")!])])
+        #expect(xml.contains("<m:color color=\"#FF8000FF\"/>") && xml.contains("<m:color color=\"#0000FFFF\"/>"))
+        #expect(xml.components(separatedBy: " p1=\"1\"").count - 1 == faceTriangles, "only the triangles of that face")
+        #expect(xml.components(separatedBy: "<triangle ").count - 1 == 12)
+        // A body without a colour but with a coloured face: the colour group is there, other triangles stay plain.
+        let plain = ThreeMF.modelXML([ThreeMF.Object(name: "Block", mesh: mesh, faceColors: [face: BodyColor(hex: "#0000FF")!])])
+        #expect(plain.contains("<m:color color=\"#0000FFFF\"/>") && !plain.contains("pindex"))
+        #expect(plain.components(separatedBy: " p1=\"0\"").count - 1 == faceTriangles)
     }
 
     @Test func nothingToWriteIsAnError() {

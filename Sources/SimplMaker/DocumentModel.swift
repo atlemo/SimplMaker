@@ -1060,6 +1060,15 @@ final class DocumentModel {
         }
     }
 
+    /// The colours faces of a body have of their own, by face name (for the 3MF export, which has colours but no materials).
+    func faceColors(of body: FeatureID) -> [String: BodyColor] {
+        var out: [String: BodyColor] = [:]
+        for name in document.faceAppearance[body]?.keys.map({ $0 }) ?? [] {
+            if let color = displayColor(of: FaceRef(body: body, face: name)) { out[name] = color }
+        }
+        return out
+    }
+
     /// The colour a body gets with a material when it has none of its own.
     static let materialColors: [BodyMaterial: String] = [.plastic: "#E6E4DE", .metal: "#C9CDD2", .glass: "#BFDDEA", .wood: "#B5834F"]
 
@@ -3619,7 +3628,7 @@ final class DocumentModel {
             case .stl: try KBody.exportSTL(kernel, to: url)
             case .step: try KBody.exportSTEP(kernel, to: url)
             case .threeMF:
-                try ThreeMF.write(bodies.map { (name: $0.name, body: $0.body, color: document.bodyColors[$0.id]) }, to: url)
+                try ThreeMF.write(bodies.map { (name: $0.name, body: $0.body, color: document.bodyColors[$0.id], faceColors: faceColors(of: $0.id)) }, to: url)
             }
             return true
         } catch {

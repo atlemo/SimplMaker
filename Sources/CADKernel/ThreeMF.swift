@@ -11,11 +11,14 @@ public enum ThreeMF {
         public var name: String
         public var mesh: Mesh
         public var color: BodyColor?
+        /// Faces that are not the body's colour, by face name (the names in `mesh.faceNames`).
+        public var faceColors: [String: BodyColor]
 
-        public init(name: String, mesh: Mesh, color: BodyColor? = nil) {
+        public init(name: String, mesh: Mesh, color: BodyColor? = nil, faceColors: [String: BodyColor] = [:]) {
             self.name = name
             self.mesh = mesh
             self.color = color
+            self.faceColors = faceColors
         }
     }
 
@@ -36,9 +39,10 @@ public enum ThreeMF {
     }
 
     /// Tessellates the bodies and writes them as one 3MF file. `deflection` is the chord error in mm.
-    public static func write(_ bodies: [(name: String, body: KBody, color: BodyColor?)], to url: URL, deflection: Double = 0.02) throws {
+    public static func write(_ bodies: [(name: String, body: KBody, color: BodyColor?, faceColors: [String: BodyColor])], to url: URL,
+                             deflection: Double = 0.02) throws {
         let objects = try bodies.map {
-            Object(name: $0.name, mesh: try $0.body.tessellate(linearDeflection: deflection), color: $0.color)
+            Object(name: $0.name, mesh: try $0.body.tessellate(linearDeflection: deflection), color: $0.color, faceColors: $0.faceColors)
         }
         try write(objects, to: url)
     }
@@ -69,9 +73,14 @@ public enum ThreeMF {
         // (Bambu Studio, OrcaSlicer) read these and ignore the core spec's base materials.
         var colors: [BodyColor] = []
         var colorIndex: [BodyColor: Int] = [:]
-        for color in objects.compactMap(\.color) where colorIndex[color] == nil {
+        func register(_ color: BodyColor) {
+            guard colorIndex[color] == nil else { return }
             colorIndex[color] = colors.count
             colors.append(color)
+        }
+        for object in objects {
+            if let color = object.color { register(color) }
+            for name in object.faceColors.keys.sorted() { register(object.faceColors[name]!) }
         }
         if !colors.isEmpty {
             xml += "<m:colorgroup id=\"1\">\n"
@@ -84,11 +93,21 @@ public enum ThreeMF {
             var attributes = "id=\"\(id)\" name=\"\(escape(object.name))\" type=\"model\""
             if let color = object.color, let index = colorIndex[color] { attributes += " pid=\"1\" pindex=\"\(index)\"" }
             xml += "<object \(attributes)>\n<mesh>\n"
-            let (vertices, triangles) = welded(object.mesh)
+            let (vertices, triangles, sources) = weldedWithSources(object.mesh)
+            // A face with a colour of its own names it on each of its triangles; the others follow the object's.
+            let triangleColor: [Int?] = sources.map { source in
+                let face = source < object.mesh.triangleFace.count ? Int(object.mesh.triangleFace[source]) : -1
+                guard face >= 0, face < object.mesh.faceNames.count, let c = object.faceColors[object.mesh.faceNames[face]] else { return nil }
+                return colorIndex[c]
+            }
             xml += "<vertices>\n"
             for v in vertices { xml += "<vertex x=\"\(number(v.x))\" y=\"\(number(v.y))\" z=\"\(number(v.z))\"/>\n" }
             xml += "</vertices>\n<triangles>\n"
-            for t in triangles { xml += "<triangle v1=\"\(t.0)\" v2=\"\(t.1)\" v3=\"\(t.2)\"/>\n" }
+            for (n, t) in triangles.enumerated() {
+                var extra = ""
+                if let index = triangleColor[n] { extra = " pid=\"1\" p1=\"\(index)\"" }
+                xml += "<triangle v1=\"\(t.0)\" v2=\"\(t.1)\" v3=\"\(t.2)\"\(extra)/>\n"
+            }
             xml += "</triangles>\n</mesh>\n</object>\n"
         }
         xml += "</resources>\n<build>\n"
@@ -100,6 +119,12 @@ public enum ThreeMF {
     /// The mesh with equal corner points merged, which is what a slicer needs to see a closed surface, and without
     /// the triangles that collapsed to a line or a point when merged.
     static func welded(_ mesh: Mesh) -> (vertices: [SIMD3<Float>], triangles: [(UInt32, UInt32, UInt32)]) {
+        let w = weldedWithSources(mesh)
+        return (w.vertices, w.triangles)
+    }
+
+    /// As `welded`, also giving each kept triangle's number in the original mesh (to find its face).
+    static func weldedWithSources(_ mesh: Mesh) -> (vertices: [SIMD3<Float>], triangles: [(UInt32, UInt32, UInt32)], sources: [Int]) {
         struct Key: Hashable { var x: UInt32, y: UInt32, z: UInt32 }
         let count = mesh.positions.count / 3
         var remap = [UInt32](repeating: 0, count: count)
@@ -116,6 +141,7 @@ public enum ThreeMF {
             vertices.append(p)
         }
         var triangles: [(UInt32, UInt32, UInt32)] = []
+        var sources: [Int] = []
         triangles.reserveCapacity(mesh.indices.count / 3)
         var t = 0
         while t + 2 < mesh.indices.count {
@@ -123,9 +149,9 @@ public enum ThreeMF {
             t += 3
             guard i0 < count, i1 < count, i2 < count else { continue }
             let a = remap[i0], b = remap[i1], c = remap[i2]
-            if a != b && b != c && a != c { triangles.append((a, b, c)) }
+            if a != b && b != c && a != c { triangles.append((a, b, c)); sources.append(t / 3 - 1) }
         }
-        return (vertices, triangles)
+        return (vertices, triangles, sources)
     }
 
     private static func number(_ v: Float) -> String {
