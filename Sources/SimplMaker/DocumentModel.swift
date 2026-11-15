@@ -164,8 +164,8 @@ final class DocumentModel {
     var parametersOpen = true
     /// The inspector and the Appearance panel (right column) are each open or folded up to their header.
     var inspectorOpen = true
-    /// The Appearance panel is open, for giving bodies colours (A, or View ▸ Show Appearance). Closed, it is folded to its header.
-    var showAppearance = false
+    /// The Appearance panel is open, for giving bodies colours (A, or View ▸ Show Appearance). Closed, it is folded to its header. Open by default, like the other three panels.
+    var showAppearance = true
     /// A colour shown on bodies while it is being picked, before it is kept (see previewBodyColor).
     private(set) var colorPreview: (bodies: [FeatureID], color: BodyColor)?
     /// A roughness being set with the slider, shown on bodies until it is let go (see previewBodyRoughness).

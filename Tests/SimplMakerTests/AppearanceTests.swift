@@ -44,6 +44,7 @@ import Testing
     @Test func openingThePanelCancelsAWaitingTool() async throws {
         let model = DocumentModel(document: twoBoxes())
         try await settle(model)
+        model.showAppearance = false
         model.run(.shell)
         #expect(model.pendingTool == .shell)
         model.toggleAppearance()
@@ -64,6 +65,7 @@ import Testing
     @Test func theAKeyTogglesThePanelOutsideSketchMode() async throws {
         let model = DocumentModel(document: twoBoxes())
         try await settle(model)
+        model.showAppearance = false
         model.toggleAppearance()
         #expect(model.showAppearance)
         model.toggleAppearance()
