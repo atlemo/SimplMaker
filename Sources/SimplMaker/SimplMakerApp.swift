@@ -115,6 +115,7 @@ struct SimplMakerCommands: Commands {
             Button(guide?.canResume == true ? "Resume Tutorial: Desk Organizer" : "Tutorial: Make a Desk Organizer") { startTutorial() }
             Divider()
             Button("SimplMaker Docs") { NSWorkspace.shared.open(URL(string: "https://simplmaker.com/docs/")!) }
+            Button("Video Tutorials on YouTube") { NSWorkspace.shared.open(URL(string: "https://www.youtube.com/@SimplMaker")!) }
         }
         CommandGroup(before: .saveItem) {
             Menu("Open Example Parts") {

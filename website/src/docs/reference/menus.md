@@ -82,6 +82,8 @@ Standard window commands, including **Move Tab to New Window** and **Merge All W
 
 **Tutorial: Make a Desk Organizer**, or **Resume Tutorial** if you closed it.
 
+**SimplMaker Docs** opens these pages in your browser. **Video Tutorials on YouTube** opens the SimplMaker channel.
+
 ---
 
 Every tool's menu item shows its key, so the menus are also a quick way to learn the shortcuts. See [Keyboard shortcuts](doc:reference/shortcuts).
