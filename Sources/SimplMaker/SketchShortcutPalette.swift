@@ -58,14 +58,14 @@ struct SketchShortcutPalette: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.001)  // a click outside the panel closes it
-                .ignoresSafeArea()
-                .onTapGesture { close() }
+            // No backdrop: one would swallow the scroll, pinch and drag that pan and zoom the sketch behind the panel.
+            // A click on the viewport closes the panel instead (ViewportView.mouseDown).
             panel
                 .offset(clamped(offset))
                 .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
                 .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)  // as big as the window (for clamping), yet empty space still lets events through
         .onDisappear { model.pointerOverSketchShortcuts = false }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { windowSize = $0 }
         .onAppear {

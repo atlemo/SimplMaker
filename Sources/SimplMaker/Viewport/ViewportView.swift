@@ -841,6 +841,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let p = location(event)
         windowDrag = isOnToolbar(p)
         if windowDrag { return }  // the window follows the mouse; the view must not react to it as well
+        if let model, model.showSketchShortcuts {
+            // A click outside the shortcut panel only closes it. The panel has no backdrop of its own, so that scrolling,
+            // pinching and right/middle-drag still pan, zoom and orbit the sketch while it is open.
+            model.showSketchShortcuts = false
+            windowDrag = true  // swallows the rest of this press (drag and release) like a click that closed something
+            return
+        }
         let additive = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.command)
         if let model, let layout = manipulatorLayout, let part = layout.hit(p), let start = model.manipulatorDragStart,
            let drag = ManipulatorDrag(part: part, at: p, layout: layout, start: start) {
