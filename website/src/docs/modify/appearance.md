@@ -33,10 +33,21 @@ Under the colours, the **Material** row makes the selected bodies **Plastic**, *
 
 Materials show in the [Render view](doc:modify/render) only. In the everyday view a body is drawn in its colour, as before. A body with no colour of its own gets one that suits the material (an off-white for plastic, a wood brown, a light blue for glass, aluminium for metal) when you pick it. A colour you chose is kept.
 
+## Colour single faces
+
+Want a red button on a grey box? At the top of the panel, switch **Bodies / Faces** to **Faces**. Select one or more faces in the viewport and give them a colour, a material and a roughness of their own. The rest of the body keeps its look.
+
+- **Same as Body** hands a face back to its body's look. **Reset All** does that for every face of the selected bodies.
+- Face looks are saved in the file, can be undone, and need no rebuild. They follow the face when the model is edited, as long as the face itself survives.
+
+## Opacity
+
+The Opacity slider also works in the [Render view](doc:modify/render): see-through bodies show the floor and the bodies behind them, cast a fainter shadow and a fainter reflection.
+
 ## Good to know
 
 - Colours and materials are **saved in the file**.
 - They can be **undone**.
 - They need **no rebuild**, so changing a colour or material is instant.
 - While you sketch, the key belongs to the sketch tools ([[A]] draws an arc), so the Appearance menu item is off.
-- Colours don't go into an STL file. They are only for looking at the model.
+- Colours don't go into an STL file. They are only for looking at the model. A [3MF file](doc:print/export) keeps them.
