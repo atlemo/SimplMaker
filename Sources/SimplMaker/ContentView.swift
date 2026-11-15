@@ -1927,6 +1927,17 @@ struct ParameterRow: View {
         }
     }
 
+    /// Whether the expression is just a number, in the unit this row shows, so its value would only repeat it.
+    private var isPlainValue: Bool {
+        guard var expr = try? Expressions.parse(parameter.expression) else { return false }
+        if case .neg(let inner) = expr { expr = inner }
+        switch expr {
+        case .number: return true
+        case .unit(.number, let unit): return unit == (parameter.unit == .length ? "mm" : parameter.unit == .angle ? "deg" : "")
+        default: return false
+        }
+    }
+
     private func beginScrub() {
         let q = model.result?.parameters.values[parameter.name]?.value ?? 0
         scrub = Scrub(value: parameter.unit == .angle ? q * 180 / .pi : q, unit: parameter.unit)
@@ -1977,7 +1988,8 @@ struct ParameterRow: View {
                 if renaming { Spacer() }
                 if let error = model.result?.parameters.errors[parameter.name] {
                     Text(error).foregroundStyle(.red).font(.caption).lineLimit(1)
-                } else if let q = model.result?.parameters.values[parameter.name] {
+                } else if let q = model.result?.parameters.values[parameter.name], !isPlainValue {
+                    // Only a formula or another unit gets its result shown; a plain number is already in the field below.
                     Text(parameter.unit.format(q.value)).foregroundStyle(.secondary).font(.caption)
                 }
                 // Length, angle or plain number. The label is drawn here, and a nearly invisible menu over it takes
