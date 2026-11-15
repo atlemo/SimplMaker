@@ -1758,7 +1758,8 @@ final class DocumentModel {
             doc.insertAtMarker(feature)  // like every new feature: at the timeline marker, inside the model that is shown
             doc.hidden.remove(feature.id)
         }
-        lookAt(frame)
+        // Face on, with the whole part in view (a new sketch has nothing drawn yet to frame); an empty part has nothing to show.
+        if let extent = sceneExtent(in: frame) { lookAtFitting(frame, extent: extent) } else { lookAt(frame) }
         startSketchSlice(frame)
     }
 
@@ -1809,8 +1810,57 @@ final class DocumentModel {
         selection = []
         selectedFeature = id
         regenerate()
-        lookAt(frame)
+        if let built = result?.sketches[id], let extent = Self.sketchExtent(built) {
+            lookAtFitting(frame, extent: extent)  // all of the sketch in view, wherever it lies and however big
+        } else {
+            lookAt(frame)
+        }
         startSketchSlice(frame)
+    }
+
+    /// The extent, in sketch coordinates, of everything a built sketch draws (curves, profiles and loose points, but not
+    /// the origin marker). Nil for an empty sketch.
+    static func sketchExtent(_ built: SketchResult) -> (min: SIMD2<Double>, max: SIMD2<Double>)? {
+        var points: [SIMD2<Double>] = []
+        for c in built.solved.curves { points += SketchOverlayBuilder.polyline(c, in: built.solved) }
+        points += built.solved.points.filter { $0.id != "origin" }.map { SIMD2($0.x, $0.y) }
+        if let b = built.bounds {
+            for w in [b.min, b.max] {
+                let d = w - built.frame.origin
+                points.append(SIMD2(simd_dot(d, built.frame.xAxis), simd_dot(d, built.frame.yAxis)))
+            }
+        }
+        points = points.filter { $0.x.isFinite && $0.y.isFinite }
+        guard let first = points.first else { return nil }
+        return points.reduce((first, first)) { (simd_min($0.0, $1), simd_max($0.1, $1)) }
+    }
+
+    /// The extent, in a frame's coordinates, of the shown part as seen straight at that plane. Nil for an empty part.
+    private func sceneExtent(in frame: Frame) -> (min: SIMD2<Double>, max: SIMD2<Double>)? {
+        guard let b = explodedSceneBounds else { return nil }
+        let corners = (0..<8).map { i in
+            SIMD3<Double>(Double(i & 1 == 0 ? b.min.x : b.max.x), Double(i & 2 == 0 ? b.min.y : b.max.y), Double(i & 4 == 0 ? b.min.z : b.max.z))
+        }
+        let uv = corners.map { c -> SIMD2<Double> in
+            let d = c - frame.origin
+            return SIMD2(simd_dot(d, frame.xAxis), simd_dot(d, frame.yAxis))
+        }
+        return uv.dropFirst().reduce((uv[0], uv[0])) { (simd_min($0.0, $1), simd_max($0.1, $1)) }
+    }
+
+    /// Looks straight at the sketch plane with this extent (in the frame's coordinates) filling the view. Something
+    /// smaller than a few millimetres is framed as if it were that big, so it isn't zoomed to a speck's size.
+    private func lookAtFitting(_ frame: Frame, extent: (min: SIMD2<Double>, max: SIMD2<Double>)) {
+        var lo = extent.min, hi = extent.max
+        let mid = (lo + hi) / 2
+        if simd_length(hi - lo) < 10 { lo = mid - SIMD2(repeating: 5); hi = mid + SIMD2(repeating: 5) }
+        let corners = [lo, hi].map { p -> SIMD3<Float> in
+            let w = frame.point(p.x, p.y)
+            return SIMD3(Float(w.x), Float(w.y), Float(w.z))
+        }
+        let n = frame.normal
+        send(.lookFit(min: simd_min(corners[0], corners[1]), max: simd_max(corners[0], corners[1]),
+                      normal: SIMD3(Float(n.x), Float(n.y), Float(n.z))))
     }
 
     /// Body edges and corners that lie in the sketch plane, for the sketch to snap to, and every straight body
