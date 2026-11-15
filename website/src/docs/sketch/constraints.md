@@ -5,6 +5,8 @@ description: Tell a sketch how its shapes relate: parallel, equal, tangent and m
 
 A **constraint** is a rule between shapes: this line is horizontal, those two are equal, this circle touches that line. Constraints make a sketch hold its shape when you change a dimension or drag a point.
 
+![Every constraint, before and after: coincident, point on curve, horizontal, vertical, parallel, perpendicular, tangent, equal, midpoint, concentric, symmetric and fix.](shot:constraints-overview)
+
 ## Add a constraint
 
 1. Select the items with the Select tool ([[S]]). [[⇧]]-click adds more.
@@ -71,6 +73,12 @@ The **degrees of freedom** (DOF) count how many ways the sketch can still move o
 ## When it can't solve
 
 If constraints and dimensions disagree, the sketch is **over-constrained**. The inspector says so, and the sketch reports a conflict. To fix it, remove the constraint or dimension you added last, or change a value so they agree.
+
+## Try them
+
+**File → Open Example Parts → Constraints Sampler** opens a sketch with one small cell for each constraint above. Each cell holds its constraint and nothing else, so everything else in it is free: drag any point and watch what the constraint keeps in place. Then select two items in a cell, delete their symbol, and add it back with **Constrain**.
+
+You can also [download the sampler](/docs/examples/constraints-sampler.simplmaker) and open it from **File → Open**.
 
 ## Next
 

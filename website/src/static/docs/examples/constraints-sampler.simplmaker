@@ -1,0 +1,612 @@
+{
+  "features" : [
+    {
+      "id" : "sampler",
+      "kind" : {
+        "sketch" : {
+          "_0" : {
+            "plane" : {
+              "xz" : {
+
+              }
+            },
+            "sketch" : {
+              "constraints" : [
+                {
+                  "id" : "10cb1048",
+                  "kind" : {
+                    "coincident" : {
+                      "_0" : "coincident-one.b",
+                      "_1" : "coincident-two.a"
+                    }
+                  }
+                },
+                {
+                  "id" : "31dea4c0",
+                  "kind" : {
+                    "pointOnCurve" : {
+                      "curve" : "on-curve-circle",
+                      "point" : "on-curve-line.a"
+                    }
+                  }
+                },
+                {
+                  "id" : "dca1855e",
+                  "kind" : {
+                    "horizontal" : {
+                      "_0" : "horizontal-line"
+                    }
+                  }
+                },
+                {
+                  "id" : "2dbbe28a",
+                  "kind" : {
+                    "vertical" : {
+                      "_0" : "vertical-line"
+                    }
+                  }
+                },
+                {
+                  "id" : "0a7fee68",
+                  "kind" : {
+                    "parallel" : {
+                      "_0" : "parallel-one",
+                      "_1" : "parallel-two"
+                    }
+                  }
+                },
+                {
+                  "id" : "9d653ccb",
+                  "kind" : {
+                    "perpendicular" : {
+                      "_0" : "perpendicular-one",
+                      "_1" : "perpendicular-two"
+                    }
+                  }
+                },
+                {
+                  "id" : "8bd1931e",
+                  "kind" : {
+                    "tangent" : {
+                      "_0" : "tangent-line",
+                      "_1" : "tangent-circle"
+                    }
+                  }
+                },
+                {
+                  "id" : "d907e3df",
+                  "kind" : {
+                    "equal" : {
+                      "_0" : "equal-one",
+                      "_1" : "equal-two"
+                    }
+                  }
+                },
+                {
+                  "id" : "ce65b715",
+                  "kind" : {
+                    "midpoint" : {
+                      "line" : "midpoint-line",
+                      "point" : "midpoint-middle"
+                    }
+                  }
+                },
+                {
+                  "id" : "3a3e28cf",
+                  "kind" : {
+                    "coincident" : {
+                      "_0" : "concentric-centre-one",
+                      "_1" : "concentric-centre-two"
+                    }
+                  }
+                },
+                {
+                  "id" : "771209be",
+                  "kind" : {
+                    "vertical" : {
+                      "_0" : "symmetric-axis"
+                    }
+                  }
+                },
+                {
+                  "id" : "fe084a28",
+                  "kind" : {
+                    "symmetric" : {
+                      "_0" : "symmetric-left",
+                      "_1" : "symmetric-right",
+                      "line" : "symmetric-axis"
+                    }
+                  }
+                },
+                {
+                  "id" : "d5666c6c",
+                  "kind" : {
+                    "fix" : {
+                      "_0" : "fix-line.a",
+                      "x" : 220,
+                      "y" : -110
+                    }
+                  }
+                }
+              ],
+              "curves" : [
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "coincident-one.b",
+                      "start" : "coincident-one.a"
+                    }
+                  },
+                  "id" : "coincident-one"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "coincident-two.b",
+                      "start" : "coincident-two.a"
+                    }
+                  },
+                  "id" : "coincident-two"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "circle" : {
+                      "center" : "on-curve-centre",
+                      "radius" : 17
+                    }
+                  },
+                  "id" : "on-curve-circle"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "on-curve-line.b",
+                      "start" : "on-curve-line.a"
+                    }
+                  },
+                  "id" : "on-curve-line"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "horizontal-line.b",
+                      "start" : "horizontal-line.a"
+                    }
+                  },
+                  "id" : "horizontal-line"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "vertical-line.b",
+                      "start" : "vertical-line.a"
+                    }
+                  },
+                  "id" : "vertical-line"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "parallel-one.b",
+                      "start" : "parallel-one.a"
+                    }
+                  },
+                  "id" : "parallel-one"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "parallel-two.b",
+                      "start" : "parallel-two.a"
+                    }
+                  },
+                  "id" : "parallel-two"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "perpendicular-one.b",
+                      "start" : "perpendicular-one.a"
+                    }
+                  },
+                  "id" : "perpendicular-one"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "perpendicular-two.b",
+                      "start" : "perpendicular-two.a"
+                    }
+                  },
+                  "id" : "perpendicular-two"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "circle" : {
+                      "center" : "tangent-centre",
+                      "radius" : 14
+                    }
+                  },
+                  "id" : "tangent-circle"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "tangent-line.b",
+                      "start" : "tangent-line.a"
+                    }
+                  },
+                  "id" : "tangent-line"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "equal-one.b",
+                      "start" : "equal-one.a"
+                    }
+                  },
+                  "id" : "equal-one"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "equal-two.b",
+                      "start" : "equal-two.a"
+                    }
+                  },
+                  "id" : "equal-two"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "midpoint-line.b",
+                      "start" : "midpoint-line.a"
+                    }
+                  },
+                  "id" : "midpoint-line"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "midpoint-stem.end",
+                      "start" : "midpoint-middle"
+                    }
+                  },
+                  "id" : "midpoint-stem"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "circle" : {
+                      "center" : "concentric-centre-one",
+                      "radius" : 20
+                    }
+                  },
+                  "id" : "concentric-outer"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "circle" : {
+                      "center" : "concentric-centre-two",
+                      "radius" : 9
+                    }
+                  },
+                  "id" : "concentric-inner"
+                },
+                {
+                  "construction" : true,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "symmetric-axis.b",
+                      "start" : "symmetric-axis.a"
+                    }
+                  },
+                  "id" : "symmetric-axis"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "symmetric-left",
+                      "start" : "symmetric-apex"
+                    }
+                  },
+                  "id" : "symmetric-side-left"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "symmetric-right",
+                      "start" : "symmetric-apex"
+                    }
+                  },
+                  "id" : "symmetric-side-right"
+                },
+                {
+                  "construction" : false,
+                  "geometry" : {
+                    "line" : {
+                      "end" : "fix-line.b",
+                      "start" : "fix-line.a"
+                    }
+                  },
+                  "id" : "fix-line"
+                }
+              ],
+              "dimensions" : [
+
+              ],
+              "points" : [
+                {
+                  "fixed" : true,
+                  "id" : "origin",
+                  "x" : 0,
+                  "y" : 0
+                },
+                {
+                  "fixed" : false,
+                  "id" : "coincident-one.a",
+                  "x" : 5,
+                  "y" : 10
+                },
+                {
+                  "fixed" : false,
+                  "id" : "coincident-one.b",
+                  "x" : 28,
+                  "y" : 32
+                },
+                {
+                  "fixed" : false,
+                  "id" : "coincident-two.a",
+                  "x" : 28,
+                  "y" : 32
+                },
+                {
+                  "fixed" : false,
+                  "id" : "coincident-two.b",
+                  "x" : 52,
+                  "y" : 14
+                },
+                {
+                  "fixed" : false,
+                  "id" : "on-curve-centre",
+                  "x" : 94,
+                  "y" : 24
+                },
+                {
+                  "fixed" : false,
+                  "id" : "on-curve-line.a",
+                  "x" : 106.0208152801713,
+                  "y" : 36.020815280171306
+                },
+                {
+                  "fixed" : false,
+                  "id" : "on-curve-line.b",
+                  "x" : 126,
+                  "y" : 46
+                },
+                {
+                  "fixed" : false,
+                  "id" : "horizontal-line.a",
+                  "x" : 145,
+                  "y" : 20
+                },
+                {
+                  "fixed" : false,
+                  "id" : "horizontal-line.b",
+                  "x" : 195,
+                  "y" : 20
+                },
+                {
+                  "fixed" : false,
+                  "id" : "vertical-line.a",
+                  "x" : 240,
+                  "y" : 3
+                },
+                {
+                  "fixed" : false,
+                  "id" : "vertical-line.b",
+                  "x" : 240,
+                  "y" : 47
+                },
+                {
+                  "fixed" : false,
+                  "id" : "parallel-one.a",
+                  "x" : 5,
+                  "y" : -52
+                },
+                {
+                  "fixed" : false,
+                  "id" : "parallel-one.b",
+                  "x" : 45,
+                  "y" : -37
+                },
+                {
+                  "fixed" : false,
+                  "id" : "parallel-two.a",
+                  "x" : 12,
+                  "y" : -32
+                },
+                {
+                  "fixed" : false,
+                  "id" : "parallel-two.b",
+                  "x" : 52,
+                  "y" : -17
+                },
+                {
+                  "fixed" : false,
+                  "id" : "perpendicular-one.a",
+                  "x" : 78,
+                  "y" : -48
+                },
+                {
+                  "fixed" : false,
+                  "id" : "perpendicular-one.b",
+                  "x" : 108,
+                  "y" : -28
+                },
+                {
+                  "fixed" : false,
+                  "id" : "perpendicular-two.a",
+                  "x" : 110,
+                  "y" : -48
+                },
+                {
+                  "fixed" : false,
+                  "id" : "perpendicular-two.b",
+                  "x" : 90,
+                  "y" : -18
+                },
+                {
+                  "fixed" : false,
+                  "id" : "tangent-centre",
+                  "x" : 162,
+                  "y" : -35
+                },
+                {
+                  "fixed" : false,
+                  "id" : "tangent-line.a",
+                  "x" : 183.12435565298216,
+                  "y" : -43.588457268119896
+                },
+                {
+                  "fixed" : false,
+                  "id" : "tangent-line.b",
+                  "x" : 165.12435565298216,
+                  "y" : -12.411542731880104
+                },
+                {
+                  "fixed" : false,
+                  "id" : "equal-one.a",
+                  "x" : 215,
+                  "y" : -50
+                },
+                {
+                  "fixed" : false,
+                  "id" : "equal-one.b",
+                  "x" : 245,
+                  "y" : -50
+                },
+                {
+                  "fixed" : false,
+                  "id" : "equal-two.a",
+                  "x" : 225,
+                  "y" : -38
+                },
+                {
+                  "fixed" : false,
+                  "id" : "equal-two.b",
+                  "x" : 243,
+                  "y" : -14
+                },
+                {
+                  "fixed" : false,
+                  "id" : "midpoint-line.a",
+                  "x" : 5,
+                  "y" : -102
+                },
+                {
+                  "fixed" : false,
+                  "id" : "midpoint-line.b",
+                  "x" : 55,
+                  "y" : -92
+                },
+                {
+                  "fixed" : false,
+                  "id" : "midpoint-middle",
+                  "x" : 30,
+                  "y" : -97
+                },
+                {
+                  "fixed" : false,
+                  "id" : "midpoint-stem.end",
+                  "x" : 30,
+                  "y" : -74
+                },
+                {
+                  "fixed" : false,
+                  "id" : "concentric-centre-one",
+                  "x" : 98,
+                  "y" : -95
+                },
+                {
+                  "fixed" : false,
+                  "id" : "concentric-centre-two",
+                  "x" : 98,
+                  "y" : -95
+                },
+                {
+                  "fixed" : false,
+                  "id" : "symmetric-axis.a",
+                  "x" : 170,
+                  "y" : -118
+                },
+                {
+                  "fixed" : false,
+                  "id" : "symmetric-axis.b",
+                  "x" : 170,
+                  "y" : -72
+                },
+                {
+                  "fixed" : false,
+                  "id" : "symmetric-apex",
+                  "x" : 170,
+                  "y" : -114
+                },
+                {
+                  "fixed" : false,
+                  "id" : "symmetric-left",
+                  "x" : 152,
+                  "y" : -84
+                },
+                {
+                  "fixed" : false,
+                  "id" : "symmetric-right",
+                  "x" : 188,
+                  "y" : -84
+                },
+                {
+                  "fixed" : false,
+                  "id" : "fix-line.a",
+                  "x" : 220,
+                  "y" : -110
+                },
+                {
+                  "fixed" : false,
+                  "id" : "fix-line.b",
+                  "x" : 258,
+                  "y" : -86
+                }
+              ]
+            },
+            "uprightAxes" : true
+          }
+        }
+      },
+      "name" : "Constraints Sampler",
+      "suppressed" : false
+    }
+  ],
+  "parameters" : [
+
+  ],
+  "version" : 1
+}

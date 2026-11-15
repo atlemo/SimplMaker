@@ -121,6 +121,7 @@ struct SimplMakerCommands: Commands {
                 Button("Plate with Holes, Fillets and a Chamfer") { newDocument { CADFile(document: .demo()) } }
                     .shortcut(.exampleParts)
                 Button("Bracket Profile (try the sketch solver)") { newDocument { CADFile(document: .bracketProfileDemo()) } }
+                Button("Constraints Sampler (drag the points)") { newDocument { CADFile(document: .constraintsSamplerDemo()) } }
                 Button("Bracket with Ribs") { newDocument { CADFile(document: .ribDemo()) } }
                 Button("Flanged Pipe on a Manifold (advanced)") { newDocument { CADFile(document: .manifoldDemo()) } }
             }

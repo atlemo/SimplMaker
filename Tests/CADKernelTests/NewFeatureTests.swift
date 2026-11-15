@@ -405,6 +405,13 @@ import Testing
     }
 }
 
+@Suite struct ConstraintsSamplerKernelTests {
+    @Test func theConstraintsSamplerRebuildsWithoutErrors() {
+        let r = Regenerator.regenerate(CADDocument.constraintsSamplerDemo())
+        #expect(r.errors.isEmpty, "\(r.errors)")
+    }
+}
+
 @Suite struct ManifoldDemoTests {
     @Test func theManifoldExampleIsFiveColouredBodiesAndANestOfBolts() throws {
         let doc = CADDocument.manifoldDemo()
