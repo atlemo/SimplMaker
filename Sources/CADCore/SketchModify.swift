@@ -363,6 +363,26 @@ extension Sketch {
     /// offset (an approximation, so they carry no dimension). Returns the new curve ids.
     @discardableResult
     public mutating func offset(_ ids: [EntityID], distance: Double, expression: String) -> [EntityID] {
+        offset(ids, distance: distance, expression: expression, liveExpression: nil)
+    }
+
+    /// `offset`, where the offsets of splines and ellipses are kept alive: they are generated again from their
+    /// originals at every change (see SketchOffset.swift), by `liveExpression` (the signed distance as the user wrote
+    /// it; nil: the distance and `expression` as they are).
+    @discardableResult
+    public mutating func offset(_ ids: [EntityID], distance: Double, expression: String, liveExpression: String?) -> [EntityID] {
+        var (live, rest) = liveOffsetSources(ids)
+        var created: [EntityID] = []
+        if !live.isEmpty {
+            let def = SketchOffsetDef(sources: live, expression: liveExpression ?? (distance < 0 ? "-(\(expression))" : expression))
+            let made = appendLiveOffset(def, distance: distance)
+            if !made.isEmpty { offsets.append(def); created += made } else { rest += live; live = [] }
+        }
+        created += offsetFixed(rest, distance: distance, expression: expression)
+        return created
+    }
+
+    mutating func offsetFixed(_ ids: [EntityID], distance: Double, expression: String) -> [EntityID] {
         var created: [EntityID] = []
         let chainable = ids.filter { id in
             switch curve(id)?.geometry {

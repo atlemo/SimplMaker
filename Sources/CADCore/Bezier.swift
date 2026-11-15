@@ -41,10 +41,10 @@ public enum Bezier {
 
     /// Cubic pieces that follow the curve at distance `d` to the left of its travel direction (a cubic's
     /// offset is not itself a cubic, so this is an approximation): each piece is fitted to the offset's
-    /// own end points and end directions, and a piece is split until its middle strays less than `tolerance`.
+    /// own end points and end directions, and a piece is split until it strays less than `tolerance` (5 hundredths of a mm: far below what a printer resolves) from it.
     /// The pieces join end to end. Nil when the offset folds over itself (`d` is more than the curve's
     /// radius of curvature somewhere on the inner side).
-    public static func offset(_ p: [SIMD2<Double>], by d: Double, tolerance: Double = 2e-2) -> [[SIMD2<Double>]]? {
+    public static func offset(_ p: [SIMD2<Double>], by d: Double, tolerance: Double = 5e-2) -> [[SIMD2<Double>]]? {
         guard p.count == 4 else { return nil }
         /// The offset point at t, and the offset's velocity there (the curve's, scaled by 1 − d·curvature).
         func at(_ t: Double) -> (point: SIMD2<Double>, velocity: SIMD2<Double>, scale: Double)? {
@@ -59,17 +59,68 @@ public enum Bezier {
         for i in 0...64 {
             guard let o = at(Double(i) / 64), o.scale > 0.02 else { return nil }
         }
+        /// How far a polyline stays from the points `samples` (the largest of their distances to it).
+        func stray(_ samples: [SIMD2<Double>], from line: [SIMD2<Double>]) -> Double {
+            var worst = 0.0
+            for q in samples {
+                var best = Double.infinity
+                for i in 1..<line.count {
+                    let a = line[i - 1], ab = line[i] - a, l2 = vdot(ab, ab)
+                    let t = l2 > 1e-18 ? min(max(vdot(q - a, ab) / l2, 0), 1) : 0
+                    best = min(best, vlen(a + ab * t - q))
+                }
+                worst = max(worst, best)
+            }
+            return worst
+        }
         func fit(_ t0: Double, _ t1: Double, depth: Int) -> [[SIMD2<Double>]]? {
             guard let a = at(t0), let b = at(t1) else { return nil }
-            let h = (t1 - t0) / 3
-            let piece = [a.point, a.point + a.velocity * h, b.point - b.velocity * h, b.point]
-            var worst = 0.0
-            for k in 1..<8 {
-                let u = Double(k) / 8
-                guard let truth = at(t0 + (t1 - t0) * u) else { return nil }
-                worst = max(worst, vlen(point(piece, u) - truth.point))
+            // The true offset between the ends.
+            let n = 40
+            var truth: [SIMD2<Double>] = []
+            for k in 0...n {
+                guard let o = at(t0 + (t1 - t0) * Double(k) / Double(n)) else { return nil }
+                truth.append(o.point)
             }
-            if worst <= tolerance || depth >= 8 { return [piece] }
+            // Candidate 1: handles a third of the parameter span along the offset's velocity.
+            let h = (t1 - t0) / 3
+            var best = [a.point, a.point + a.velocity * h, b.point - b.velocity * h, b.point]
+            // Candidate 2: the handle lengths along the end directions that fit the samples best (least squares, the
+            // samples spaced by their distance along the curve). It needs far fewer pieces where the offset is smooth.
+            let t0u = vlen(a.velocity) > 1e-12 ? a.velocity / vlen(a.velocity) : nil
+            let t3u = vlen(b.velocity) > 1e-12 ? b.velocity / vlen(b.velocity) : nil
+            if let d0 = t0u, let d3 = t3u {
+                var along = [0.0]
+                for k in 1...n { along.append(along[k - 1] + vlen(truth[k] - truth[k - 1])) }
+                let total = along[n]
+                if total > 1e-9 {
+                    var a11 = 0.0, a12 = 0.0, a22 = 0.0, c1 = 0.0, c2 = 0.0
+                    for k in 1..<n {
+                        let u = along[k] / total, w = 1 - u
+                        let b0 = w * w * w, b1 = 3 * u * w * w, b2 = 3 * u * u * w, b3 = u * u * u
+                        let r = truth[k] - (a.point * (b0 + b1) + b.point * (b2 + b3))
+                        a11 += b1 * b1; a12 -= b1 * b2 * vdot(d0, d3); a22 += b2 * b2
+                        c1 += b1 * vdot(d0, r); c2 -= b2 * vdot(d3, r)
+                    }
+                    let det = a11 * a22 - a12 * a12
+                    if abs(det) > 1e-12 {
+                        let l1 = (c1 * a22 - c2 * a12) / det, l2 = (a11 * c2 - a12 * c1) / det
+                        let chord = vlen(b.point - a.point)
+                        // Sensible handles only: forward, and not far longer than the span.
+                        if l1 > 0, l2 > 0, l1 < 2 * chord + 1e-9, l2 < 2 * chord + 1e-9 {
+                            let fitted = [a.point, a.point + d0 * l1, b.point - d3 * l2, b.point]
+                            func err(_ c: [SIMD2<Double>]) -> Double {
+                                let line = (0...60).map { point(c, Double($0) / 60) }
+                                return max(stray(truth, from: line), stray(line, from: truth))
+                            }
+                            if err(fitted) < err(best) { best = fitted }
+                        }
+                    }
+                }
+            }
+            let line = (0...60).map { point(best, Double($0) / 60) }
+            let worst = max(stray(truth, from: line), stray(line, from: truth))
+            if worst <= tolerance || depth >= 8 { return [best] }
             let mid = (t0 + t1) / 2
             guard let left = fit(t0, mid, depth: depth + 1), let right = fit(mid, t1, depth: depth + 1) else { return nil }
             return left + right

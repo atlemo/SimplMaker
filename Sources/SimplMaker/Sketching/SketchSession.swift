@@ -753,7 +753,7 @@ final class SketchSession {
 
     /// Makes the pattern copies again after the originals changed.
     private func refreshCopies() {
-        if !sketch.patterns.isEmpty || !sketch.gears.isEmpty || !sketch.mirrors.isEmpty { sketch.refreshGenerated(parameters) }
+        if !sketch.patterns.isEmpty || !sketch.gears.isEmpty || !sketch.mirrors.isEmpty || !sketch.offsets.isEmpty { sketch.refreshGenerated(parameters) }
     }
 
     private func resetToolState() {
@@ -2564,7 +2564,7 @@ final class SketchSession {
         // Dimensions take the magnitude; the side comes from the sign.
         let text = expression.trimmingCharacters(in: .whitespaces)
         let magnitude = text.hasPrefix("-") ? String(text.dropFirst()) : expression
-        let created = trial.offset(curves, distance: distance, expression: magnitude)
+        let created = trial.offset(curves, distance: distance, expression: magnitude, liveExpression: expression)
         guard !created.isEmpty else {
             let bends = curves.contains { base.kind(of: $0) == .bezier || base.kind(of: $0) == .arc }
             return (base, [], bends ? "Nothing to offset: that far from the curve, the offset folds over itself" : "Nothing to offset in the selection")
@@ -3011,9 +3011,11 @@ final class SketchSession {
         // The selected image of a mirror: deleting it takes the mirror away. Copies of a pattern go with their pattern's own Delete.
         let images = Set(selection.compactMap { Sketch.isGenerated($0) ? Sketch.pattern(ofGenerated: $0) : nil })
         let removedMirrors = sketch.mirrors.filter { images.contains($0.id) }.map(\.id)
+        let removedOffsets = sketch.offsets.filter { images.contains($0.id) }.map(\.id)  // an offset that follows its curves goes the same way
         let drawn = selection.filter { !Sketch.isGenerated($0) }
-        guard !removedMirrors.isEmpty || !drawn.isEmpty else { return nil }
+        guard !removedMirrors.isEmpty || !removedOffsets.isEmpty || !drawn.isEmpty else { return nil }
         sketch.mirrors.removeAll { removedMirrors.contains($0.id) }
+        sketch.offsets.removeAll { removedOffsets.contains($0.id) }
         sketch.delete(Set(drawn))
         sketch.refreshGenerated(parameters)
         selection = []

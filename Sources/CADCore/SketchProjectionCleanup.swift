@@ -23,6 +23,7 @@ extension Sketch {
         }
         for d in dimensions where Sketch.references(d.kind).contains(where: own.contains) { return true }
         if patterns.contains(where: { $0.sources.contains(where: own.contains) }) { return true }
+        if offsets.contains(where: { $0.sources.contains(where: own.contains) }) { return true }
         if mirrors.contains(where: { own.contains($0.line) || $0.sources.contains(where: own.contains) }) { return true }
         return false
     }

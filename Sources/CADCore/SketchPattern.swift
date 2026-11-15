@@ -178,7 +178,7 @@ extension Sketch {
     @discardableResult
     public mutating func refreshGenerated(_ parameters: ParameterValues) -> [EntityID: String] {
         _ = takeGenerated()
-        guard !patterns.isEmpty || !gears.isEmpty || !mirrors.isEmpty else { return [:] }
+        guard !patterns.isEmpty || !gears.isEmpty || !mirrors.isEmpty || !offsets.isEmpty else { return [:] }
         for i in patterns.indices { patterns[i].sources = patterns[i].sources.filter { point($0) != nil || curve($0) != nil } }
         patterns.removeAll { $0.sources.isEmpty }
         var problems: [EntityID: String] = [:]
@@ -192,6 +192,7 @@ extension Sketch {
             }
         }
         for (id, problem) in refreshGears(parameters) { problems[id] = problem }
+        for (id, problem) in refreshOffsets(parameters) { problems[id] = problem }
         for (id, problem) in refreshMirrors() { problems[id] = problem }
         return problems
     }

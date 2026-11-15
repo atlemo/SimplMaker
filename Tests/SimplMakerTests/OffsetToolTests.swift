@@ -166,6 +166,30 @@ import Testing
         #expect(bezierCount(s) > 2 && !session.isOffsetting)
     }
 
+    @Test func aSplineOffsetFollowsTheSplineWhenItIsEdited() async throws {
+        let (model, session, _, spline) = try await editing()
+        session.selection = spline
+        model.beginSketchOffset()
+        model.commitSketchTyped()
+        let kept = try #require(committed(model))
+        #expect(kept.offsets.count == 1 && Set(kept.offsets[0].sources) == Set(spline), "a spline's offset is kept as a definition")
+        func offsetEnds() -> [SIMD2<Double>] {
+            session.sketch.curves.filter { Sketch.isGenerated($0.id) }.compactMap { c -> SIMD2<Double>? in
+                guard case .bezier(let p)? = session.sketch.geometry(of: c.id) else { return nil }
+                return p[0]
+            }
+        }
+        let before = offsetEnds()
+        #expect(!before.isEmpty)
+        // Pull the spline's middle joint (20, 20) up with the mouse, and the offset comes with it.
+        session.selection = []
+        _ = session.handle(SketchMouse(phase: .moved, uv: SIMD2(20, 20), pick: nil, tolerance: 0.5))
+        _ = session.handle(SketchMouse(phase: .down, uv: SIMD2(20, 20), pick: nil, tolerance: 0.5))
+        _ = session.handle(SketchMouse(phase: .dragged, uv: SIMD2(20, 26), pick: nil, tolerance: 0.5))
+        _ = session.handle(SketchMouse(phase: .up, uv: SIMD2(20, 26), pick: nil, tolerance: 0.5))
+        #expect(offsetEnds() != before, "the offset moved with the spline")
+    }
+
     @Test func noSelectionSaysSo() async throws {
         let (model, session, _, _) = try await editing()
         model.beginSketchOffset()

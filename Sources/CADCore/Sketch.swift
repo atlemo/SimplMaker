@@ -215,8 +215,10 @@ public struct Sketch: Codable, Hashable, Sendable {
     public var gears: [SketchGearDef] = []
     /// Mirror images of the sketch's own geometry across a line; the images are generated (see SketchMirror.swift).
     public var mirrors: [SketchMirrorDef] = []
+    /// Offsets of splines and ellipses that follow their originals; their curves are generated (see SketchOffset.swift).
+    public var offsets: [SketchOffsetDef] = []
 
-    private enum CodingKeys: String, CodingKey { case points, curves, constraints, dimensions, texts, projections, patterns, gears, mirrors }
+    private enum CodingKeys: String, CodingKey { case points, curves, constraints, dimensions, texts, projections, patterns, gears, mirrors, offsets }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -229,6 +231,7 @@ public struct Sketch: Codable, Hashable, Sendable {
         patterns = try c.decodeIfPresent([SketchPatternDef].self, forKey: .patterns) ?? []
         gears = try c.decodeIfPresent([SketchGearDef].self, forKey: .gears) ?? []
         mirrors = try c.decodeIfPresent([SketchMirrorDef].self, forKey: .mirrors) ?? []
+        offsets = try c.decodeIfPresent([SketchOffsetDef].self, forKey: .offsets) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -242,6 +245,7 @@ public struct Sketch: Codable, Hashable, Sendable {
         if !patterns.isEmpty { try c.encode(patterns, forKey: .patterns) }
         if !gears.isEmpty { try c.encode(gears, forKey: .gears) }
         if !mirrors.isEmpty { try c.encode(mirrors, forKey: .mirrors) }
+        if !offsets.isEmpty { try c.encode(offsets, forKey: .offsets) }
     }
 
     /// Every sketch starts with a fixed origin point, id "origin".

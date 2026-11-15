@@ -636,6 +636,8 @@ extension Sketch {
         dropBrokenProjections()
         for i in patterns.indices { patterns[i].sources.removeAll { gone.contains($0) } }
         patterns.removeAll { $0.sources.isEmpty }
+        for i in offsets.indices { offsets[i].sources.removeAll { gone.contains($0) } }
+        offsets.removeAll { $0.sources.isEmpty }
         for i in mirrors.indices { mirrors[i].sources.removeAll { gone.contains($0) } }
         mirrors.removeAll { $0.sources.isEmpty || gone.contains($0.line) }
         constraints.removeAll { gone.contains($0.id) || Sketch.references($0.kind).contains(where: gone.contains) }
