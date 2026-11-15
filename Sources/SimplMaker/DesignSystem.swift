@@ -31,6 +31,8 @@ enum DS {
         static let space8: CGFloat = 24
         static let space9: CGFloat = 32
         static let space10: CGFloat = 40
+        /// Every step of the scale: gaps and padding in views are one of these (GridLayoutTests checks).
+        static let scale: [CGFloat] = [space0, space1, space2, space3, space4, space5, space6, space7, space8, space9, space10]
 
         /// Window content margin.
         static let windowMargin: CGFloat = 20

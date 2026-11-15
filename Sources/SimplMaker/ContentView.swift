@@ -191,7 +191,7 @@ struct DocumentWindow: View {
             ToolbarItem(placement: .navigation) {
                 PanelToggle(title: "Browser", systemImage: "sidebar.left", ink: panelToggleInk,
                             help: helpWithShortcut("Show or hide the browser", .browser)) { model.showSidebar.toggle() }
-                    .toolbarGlass(plain: sketchTint)
+                    .toolbarGlass(ink: panelToggleInk)
             }
             .sharedBackgroundHidden(true)
             ToolbarItem(placement: .primaryAction) {
@@ -204,7 +204,7 @@ struct DocumentWindow: View {
                 PanelToggle(title: "Inspector", systemImage: "sidebar.right", ink: panelToggleInk,
                             help: helpWithShortcut("Show or hide the inspector", .inspector)) { model.showInspector.toggle() }
               }
-              .toolbarGlass(plain: sketchTint)
+              .toolbarGlass(ink: panelToggleInk)
             }
             .sharedBackgroundHidden(true)
         }
@@ -743,7 +743,7 @@ struct SidebarPanel<Accessory: View, Content: View>: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous)
         VStack(spacing: 0) {
-            HStack(spacing: DS.Spacing.space1) {
+            HStack(spacing: PanelTouch.buttonSpacing) {
                 Button { open.toggle() } label: {
                     HStack(spacing: DS.Spacing.space1) {
                         Text(title)
@@ -762,7 +762,7 @@ struct SidebarPanel<Accessory: View, Content: View>: View {
                 }
             }
             .padding(.leading, PanelTouch.contentLeading + headerLeading)
-            .padding(.trailing, DS.Spacing.space4 + headerTrailing)
+            .padding(.trailing, PanelTouch.panelTrailing + headerTrailing)
             .frame(height: Self.headerHeight)
             content()
                 .scrollContentBackground(.hidden)
@@ -1441,12 +1441,10 @@ struct BrowserFolderNode: View {
                 Spacer(minLength: DS.Spacing.labelGap)
                 let lockable = inside.filter(model.isLockable)
                 let allLocked = !lockable.isEmpty && lockable.allSatisfy { model.isLocked($0) }
-                HStack(spacing: 0) {
-                    LockButton(locked: allLocked) { model.setLocked(lockable, !allLocked) }
-                        .disabled(lockable.isEmpty)
-                    EyeButton(hidden: allHidden) { model.setHidden(inside, !allHidden) }
-                        .disabled(inside.isEmpty)
-                }
+                RowEndButtons(locked: allLocked, lockEnabled: !lockable.isEmpty,
+                              toggleLock: { model.setLocked(lockable, !allLocked) },
+                              hidden: allHidden, eyeEnabled: !inside.isEmpty,
+                              toggleHidden: { model.setHidden(inside, !allHidden) })
             }
             .foregroundStyle(allHidden ? .secondary : .primary)
             .draggable(BrowserDrag(folder: folder.id))
@@ -1460,17 +1458,22 @@ struct BrowserFolderNode: View {
     }
 }
 
-/// A toolbar button that shows or hides a panel. With an `ink` (on the tinted sketch toolbar) it draws its own symbol in that
-/// colour over a soft round fill of it; without, it is the system's glass button.
 extension View {
-    /// A toolbar button group on the same glass as the floating panels (none on the tinted sketch toolbar).
-    @ViewBuilder func toolbarGlass(plain: Bool) -> some View {
-        if plain { self } else {
-            self.padding(.horizontal, 4).frame(minHeight: 34).panelGlass(in: Capsule())
+    /// A toolbar button group as one pill. In Design it is on the same glass as the floating panels; on the tinted
+    /// sketch toolbar (`ink` set) it is a soft pill of the contrast ink instead, since the system's glass would pick
+    /// its own brightness there. Either way the group has the same size and shape.
+    @ViewBuilder func toolbarGlass(ink: Color?) -> some View {
+        if let ink {
+            self.padding(.horizontal, DS.Spacing.space2).frame(minHeight: 34)
+                .background(ink.opacity(0.16), in: Capsule())
+        } else {
+            self.padding(.horizontal, DS.Spacing.space2).frame(minHeight: 34).panelGlass(in: Capsule())
         }
     }
 }
 
+/// A toolbar button that shows or hides a panel. With an `ink` (on the tinted sketch toolbar) it draws its own symbol in
+/// that colour, lit softly under the pointer; without, it is the system's button. Group them with `toolbarGlass(ink:)`.
 struct PanelToggle: View {
     let title: String
     let systemImage: String
@@ -1486,7 +1489,7 @@ struct PanelToggle: View {
                     .font(.system(size: 15, weight: .regular))
                     .foregroundStyle(ink)
                     .frame(width: 34, height: 34)
-                    .background(ink.opacity(hovering ? 0.28 : 0.16), in: Circle())
+                    .background(ink.opacity(hovering ? 0.16 : 0), in: Circle())  // the group's pill is the fill
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -1550,10 +1553,7 @@ struct BrowserRow<Icon: View>: View {
                 Text(name)
             }
             Spacer(minLength: DS.Spacing.labelGap)
-            HStack(spacing: 0) {
-                if let locked, let toggleLock { LockButton(locked: locked, toggle: toggleLock) }
-                EyeButton(hidden: hidden, toggle: toggle)
-            }
+            RowEndButtons(locked: locked, toggleLock: toggleLock, hidden: hidden, toggleHidden: toggle)
         }
         .foregroundStyle(hidden ? .secondary : .primary)
     }
@@ -1824,12 +1824,31 @@ struct FolderRow: View {
             Image(systemName: "folder").frame(minWidth: 18)
             Text(title)
             Spacer(minLength: DS.Spacing.labelGap)
-            HStack(spacing: 0) {
-                if lockable { LockButton(locked: allLocked) { model.setLocked(lockIDs, !allLocked) }.disabled(lockIDs.isEmpty) }
-                EyeButton(hidden: allHidden) { model.setHidden(ids, !allHidden) }
-                    .disabled(ids.isEmpty)
-            }
+            RowEndButtons(locked: lockable ? allLocked : nil, lockEnabled: !lockIDs.isEmpty,
+                          toggleLock: { model.setLocked(lockIDs, !allLocked) },
+                          hidden: allHidden, eyeEnabled: !ids.isEmpty,
+                          toggleHidden: { model.setHidden(ids, !allHidden) })
         }
+    }
+}
+
+/// The padlock and eye at the end of a Browser row (or just the eye when the row can't be locked). The one place
+/// that lays them out: in the header's button columns (`PanelTouch.rowButtonWidth`, `buttonSpacing`).
+struct RowEndButtons: View {
+    /// nil: the row has no padlock.
+    var locked: Bool?
+    var lockEnabled = true
+    var toggleLock: (() -> Void)?
+    let hidden: Bool
+    var eyeEnabled = true
+    let toggleHidden: () -> Void
+
+    var body: some View {
+        HStack(spacing: PanelTouch.buttonSpacing) {
+            if let locked, let toggleLock { LockButton(locked: locked, toggle: toggleLock).disabled(!lockEnabled) }
+            EyeButton(hidden: hidden, toggle: toggleHidden).disabled(!eyeEnabled)
+        }
+        .padding(.trailing, -PanelTouch.rowTrailingBleed)
     }
 }
 

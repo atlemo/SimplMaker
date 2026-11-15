@@ -84,8 +84,17 @@ enum PanelTouch {
     static let headerButton: CGFloat = 20
     static let headerIcon: CGFloat = 11
     static let headerHeight: CGFloat = 40
-    static let rowButtonWidth: CGFloat = 18
+    /// A row's padlock and eye sit in the same 20 pt cells as the panel header's buttons (add, collapse), so the
+    /// eye is under the collapse arrow and the padlock under the add button, in every panel.
+    static let rowButtonWidth: CGFloat? = headerButton
     static let rowButtonHeight: CGFloat? = nil
+    /// Between neighbouring cells, in the header and in the rows.
+    static let buttonSpacing: CGFloat = DS.Spacing.space1
+    /// How far the list's own right inset (measured, system-drawn) falls short of the header's, which the rows' end
+    /// buttons make up for; GridLayoutTests checks the columns line up.
+    static let rowTrailingBleed: CGFloat = 8
+    /// The header's inset from the panel's trailing edge (the cells' columns are counted from it).
+    static let panelTrailing: CGFloat = DS.Spacing.space4
     static let contentLeading: CGFloat = 12
     static let panelToggleRoom: CGFloat = 0
     /// The gap between a browser row's icon and its name.
@@ -94,8 +103,10 @@ enum PanelTouch {
     static let headerButton: CGFloat = 44
     static let headerIcon: CGFloat = 18
     static let headerHeight: CGFloat = 52
-    static let rowButtonWidth: CGFloat = 44
+    static let rowButtonWidth: CGFloat? = 44
     static let rowButtonHeight: CGFloat? = 44
+    static let buttonSpacing: CGFloat = DS.Spacing.space1
+    static let rowTrailingBleed: CGFloat = 0
     static let contentLeading: CGFloat = 10
     /// The room a panel keeps at its top corner for its show/hide button (iPad).
     static let panelToggleRoom: CGFloat = 44

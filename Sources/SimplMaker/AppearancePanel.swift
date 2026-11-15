@@ -482,7 +482,7 @@ struct AppearanceBodyRow: View {
                 Button(action: toggleHidden) {
                     Image(systemName: hidden ? "eye.slash" : "eye")
                         .foregroundStyle(.secondary)
-                        .frame(width: 24, height: DS.ControlHeight.sidebarRow)
+                        .frame(width: PanelTouch.rowButtonWidth, height: DS.ControlHeight.sidebarRow)  // the header's button column
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -495,6 +495,9 @@ struct AppearanceBodyRow: View {
         .frame(height: DS.ControlHeight.sidebarRow)
         .background(selected ? accent.opacity(0.18) : hovering ? Color.primary.opacity(0.07) : .clear,
                     in: RoundedRectangle(cornerRadius: DS.Radius.sidebarItem, style: .continuous))
+        // The eye is in the same column as the Browser's, under the header's collapse arrow: the row reaches as far as
+        // the header's own inset, and the pill a little beyond the eye (the padding above).
+        .padding(.trailing, -(PanelTouch.rowTrailingBleed + DS.Spacing.space2))
         .onHover { hovering = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
