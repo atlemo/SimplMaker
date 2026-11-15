@@ -1,6 +1,6 @@
 ---
 title: Editing curves
-description: Select and drag, round corners, trim, extend and offset curves in a sketch.
+description: Select (with a box or a filter) and drag, round corners, trim, extend and offset curves in a sketch.
 ---
 
 ## Select and move
@@ -11,10 +11,24 @@ Press [[S]] for the **Select** tool.
 |---|---|
 | **Click** a point, a curve or a dimension | Select it. [[⇧]]-click adds more. |
 | **Double-click** a curve | Select all the curves joined to it |
+| **Drag** across empty space | Select with a box. Dragging left to right takes what lies wholly inside it. Dragging right to left takes everything it touches. |
+| [[⌘A]] | Select everything in the sketch |
 | **Drag** a point, a line or a circle's rim | Move it. The geometry follows as far as the constraints allow. |
 | [[⌫]] | Delete the selection |
 
 How far things can move depends on the [constraints](doc:sketch/constraints). A free sketch moves freely. A fully constrained one stays put.
+
+### What Select picks
+
+When lines lie over each other, or a box would take too much, tell Select what you want. Click the small arrow beside **Select** and choose:
+
+| Choice | Select takes |
+|---|---|
+| **All** | Points, curves and everything else. This is the usual setting. |
+| **Points** | Points only, including the ends and centres of curves. A click reaches the end of a line that lies over it, and a box takes every point in it. The origin is left out. |
+| **Curves** | Lines, arcs, circles and splines only. Points are left alone. |
+
+The filter works for clicks, hovering, box selection and [[⌘A]]. A click on something the filter skips reaches what lies beneath it. Changing the filter lets go of anything it no longer takes. The Select button and the status bar say what is being picked, for example *Select: Points*.
 
 ## Round Corner
 

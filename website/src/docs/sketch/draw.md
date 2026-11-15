@@ -3,7 +3,14 @@ title: Drawing tools
 description: Line, rectangle, slot, circle, polygon, arc, tangent arc, ellipse, spline, gear, point and project edge, with every way to draw each. How to draw them, type exact values and snap.
 ---
 
-The **Create** group holds the shapes. The key in brackets picks the tool while you sketch.
+The **Create** group holds the shapes. Its buttons are named for what they draw, and each opens a list of ways to draw it:
+
+- **Lines**, **Point**, **Rectangles**, **Circles** and **Arcs** (Arc, 3-Point Arc and Tangent Arc)
+- **Other Geometry**: Ellipse, Polygons, Slots, Splines and Gear
+- **Text**, **Patterns** and **References** (Project Edge, Intersect, Project Again)
+- **Sketch Dimension**: [Dimension and Distance](doc:sketch/dimensions)
+
+The table below goes tool by tool. The key in brackets picks the tool while you sketch.
 
 ![The sketch toolbar.](shot:toolbar-sketch)
 
@@ -28,7 +35,7 @@ The **Create** group holds the shapes. The key in brackets picks the tool while 
 Some tools share a button. The small arrow beside it picks the way to draw, and the button then keeps using it. In the list under **Create**, rest the pointer on a name such as **Rectangles** and its ways to draw open beside it. The pin beside a name, or beside a single way, puts that button on the toolbar.
 
 :::note
-Arc, Gear, Text, Patterns and References are in the Create group's list rather than on the toolbar by default. Click **Create** to see all of them, and pin the ones you want. See [The interface](doc:start/interface).
+The toolbar starts with Lines, Point, Rectangles, Circles, Arcs and Sketch Dimension. Other Geometry, Text, Patterns and References are in the Create group's list. Click **Create** to see all of them, and pin the ones you want. See [The interface](doc:start/interface).
 :::
 
 ## The shortcuts panel
