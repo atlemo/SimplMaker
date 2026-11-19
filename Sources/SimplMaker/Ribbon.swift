@@ -192,10 +192,20 @@ struct WindowDragArea: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) {}
 
     final class DragView: NSView {
+        // AppKit drags the window itself from a view that says so; calling `performDrag` as well made it log "Window move completed
+        // without beginning". A double click zooms, as on a titlebar.
         override var mouseDownCanMoveWindow: Bool { true }
-        override func mouseDown(with event: NSEvent) {
-            if event.clickCount == 2 { window?.performZoom(nil) } else { window?.performDrag(with: event) }
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            let doubleClick = NSClickGestureRecognizer(target: self, action: #selector(zoom))
+            doubleClick.numberOfClicksRequired = 2
+            addGestureRecognizer(doubleClick)
         }
+
+        required init?(coder: NSCoder) { nil }
+
+        @objc private func zoom() { window?.performZoom(nil) }
     }
 }
 
