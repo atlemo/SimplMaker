@@ -65,7 +65,7 @@ struct DocumentWindow: View {
     /// The widest layout that fits between the window's edges: every pinned tool, then one fewer in each group at a
     /// time, down to one in each group, and past that one menu of everything.
     private var toolbarLayout: ToolbarLayout {
-        let room = windowWidth - RibbonBar<EmptyView>.chrome - DS.Spacing.space4
+        let room = windowWidth - 2 * RibbonBar<EmptyView>.sideRoom - DS.Spacing.space4  // centred: the same room at both sides
         var trim = 0
         while let width = toolRowWidths[.trimmed(trim)] {
             if room >= width { return .trimmed(trim) }

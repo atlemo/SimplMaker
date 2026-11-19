@@ -226,22 +226,20 @@ struct RibbonBar<Tools: View>: View {
 
     /// The room the traffic lights take at the left.
     static var windowControls: CGFloat { 72 + WindowControls.inset }
-    /// What the ribbon takes besides the tool row: the window controls, the workspace button, its divider, undo and redo, the gaps
-    /// between them and the padding.
-    static var chrome: CGFloat {
-        windowControls + WorkspaceButton.width + 1 + 2 * UndoRedoButtons.buttonWidth + 5 * DS.Spacing.space3 + 2 * DS.Spacing.space3
-    }
+    /// What the ribbon keeps clear at each side of the tool row: the tools are centred in the window, so each side has to be as wide as the
+    /// wider cluster, which is the left one (the window controls and the workspace button; undo and redo are narrower), with the padding and a gap.
+    static var sideRoom: CGFloat { windowControls + WorkspaceButton.width + 3 * DS.Spacing.space3 }
 
     var body: some View {
-        HStack(spacing: DS.Spacing.space3) {
-            Color.clear.frame(width: Self.windowControls, height: 1)
-            WorkspaceButton(model: model, ink: ink, open: $listOpen)
-            if model.workspace.hasTools {
-                RibbonDivider()
-                tools
+        ZStack {
+            HStack(spacing: DS.Spacing.space3) {
+                Color.clear.frame(width: Self.windowControls, height: 1)
+                WorkspaceButton(model: model, ink: ink, open: $listOpen)
+                Spacer(minLength: 0)
+                UndoRedoButtons(model: model, ink: ink)
             }
-            Spacer(minLength: 0)
-            UndoRedoButtons(model: model, ink: ink)
+            // The tools sit in the middle of the window, not next to the workspace button.
+            if model.workspace.hasTools { tools }
         }
         .padding(.horizontal, DS.Spacing.space3)
         .padding(.vertical, DS.Spacing.space3)
