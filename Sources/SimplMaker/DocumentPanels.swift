@@ -92,7 +92,10 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
             HStack(alignment: .top, spacing: 0) {
                 if model.showSidebar {
                     #if os(macOS)
-                    if model.workspace == .mold {
+                    if model.workspace == .split {
+                        SplitSidebar(model: model)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    } else if model.workspace == .mold {
                         MoldSidebar(model: model)
                             .transition(.move(edge: .leading).combined(with: .opacity))
                     } else {
@@ -107,7 +110,10 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
                 Spacer(minLength: 0)  // empty: clicks go through to the viewport
                 if model.showInspector {
                     #if os(macOS)
-                    if model.workspace == .mold {
+                    if model.workspace == .split {
+                        SplitInspectorColumn(model: model)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    } else if model.workspace == .mold {
                         MoldInspectorColumn(model: model)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
                     } else {

@@ -17,6 +17,15 @@ struct ContentView: View {
 
     var body: some View {
         DocumentWindow(model: file.model, guide: file.guide, fileURL: fileURL)
+            // Every open (and the first save) draws a new picture of the part for the recent parts list.
+            .onAppear { captureThumbnail() }
+            .onChange(of: fileURL) { captureThumbnail() }
+    }
+
+    /// Tells the document which file it is shown from and has it draw a new picture of the part.
+    private func captureThumbnail() {
+        file.fileURL = fileURL
+        if fileURL != nil { file.captureThumbnailOnOpen() }
     }
 }
 
@@ -76,6 +85,8 @@ struct DocumentWindow: View {
     @ViewBuilder private func toolRow(_ layout: ToolbarLayout) -> some View {
         Group {
             switch model.workspace {
+            case .split:
+                SplitToolbar(model: model)
             case .mold:
                 MoldToolbar(model: model)
             case .design:
@@ -448,7 +459,7 @@ struct StatusBar: View {
                 .lineLimit(1)
                 .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
             Group {
-                if !model.selection.isEmpty, model.workspace != .mold { Text("\(model.selection.count) selected") }
+                if !model.selection.isEmpty, model.workspace != .mold, model.workspace != .split { Text("\(model.selection.count) selected") }
                 if let ai = model.aiActivity { Label("AI is editing the model · \(ai)", systemImage: "sparkles").foregroundStyle(.tint) }
                 if model.isImporting { Text(model.importProgress?.title ?? "Reading the file…").foregroundStyle(.secondary) }
                 if let step = model.regenProgress {
@@ -456,6 +467,8 @@ struct StatusBar: View {
                 }
                 if model.isRegenerating || model.isImporting {
                     ProgressView().controlSize(.small)
+                } else if model.workspace == .split {
+                    if model.splitBuilding { ProgressView().controlSize(.small) }
                 } else if model.workspace == .mold {
                     if model.moldBuilding { ProgressView().controlSize(.small) }
                 } else if let r = model.result {
@@ -482,7 +495,9 @@ struct StatusBar: View {
     }
 
     @ViewBuilder private var message: some View {
-        if model.workspace == .mold {
+        if model.workspace == .split {
+            Text(model.splitStatusText).foregroundStyle(.secondary)
+        } else if model.workspace == .mold {
             Text(model.moldStatusText).foregroundStyle(.secondary)
         } else if let session = model.sketchSession {
             hintText(session.statusText)

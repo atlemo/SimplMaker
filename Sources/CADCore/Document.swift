@@ -1069,12 +1069,14 @@ public struct CADDocument: Codable, Hashable, Sendable {
     public var parameterFolderOf: [String: String] = [:]
     /// The molds made around bodies in the Mold workspace. Not features: they live beside the timeline and follow their body.
     public var molds: [MoldSetup] = []
+    /// The splits made in the Split workspace: a body cut into pieces that fit a printer, with connectors. Not features either.
+    public var printSplits: [PrintSplit] = []
 
     public init(parameters: [Parameter] = [], features: [Feature] = []) {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, bodyRoughness, bodyOpacity, faceAppearance, folders, folderOf, browserOrder, parameterFolders, parameterFolderOf, molds, thumbnail }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, bodyRoughness, bodyOpacity, faceAppearance, folders, folderOf, browserOrder, parameterFolders, parameterFolderOf, molds, printSplits, thumbnail }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -1096,6 +1098,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         parameterFolders = try c.decodeIfPresent([BrowserFolder].self, forKey: .parameterFolders) ?? []
         parameterFolderOf = try c.decodeIfPresent([String: String].self, forKey: .parameterFolderOf) ?? [:]
         molds = try c.decodeIfPresent([MoldSetup].self, forKey: .molds) ?? []
+        printSplits = try c.decodeIfPresent([PrintSplit].self, forKey: .printSplits) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -1118,6 +1121,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         if !parameterFolders.isEmpty { try c.encode(parameterFolders, forKey: .parameterFolders) }
         if !parameterFolderOf.isEmpty { try c.encode(parameterFolderOf, forKey: .parameterFolderOf) }
         if !molds.isEmpty { try c.encode(molds, forKey: .molds) }
+        if !printSplits.isEmpty { try c.encode(printSplits, forKey: .printSplits) }
         // A picture of the part for Finder's Quick Look; given when saving, never part of the design itself.
         if let png = encoder.userInfo[.cadThumbnail] as? Data { try c.encode(png, forKey: .thumbnail) }
     }
@@ -1139,6 +1143,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         d.parameterFolders = []
         d.parameterFolderOf = [:]
         d.molds = []  // a mold is worked out from the finished model, after it: changing one rebuilds no feature
+        d.printSplits = []  // and so is a split
         for i in d.features.indices {
             d.features[i].name = ""
             if case .image(var f) = d.features[i].kind { f.opacity = 1; d.features[i].kind = .image(f) }

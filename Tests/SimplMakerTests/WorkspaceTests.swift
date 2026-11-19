@@ -18,11 +18,11 @@ import Testing
     }
 
     @Test func everyWorkspaceIsOffered() {
-        #expect(Workspace.available == [.start, .design, .mold, .render])
+        #expect(Workspace.available == [.start, .design, .split, .mold, .render])
     }
 
-    @Test func onlyDesignAndMoldHaveToolRows() {
-        #expect(Workspace.allCases.filter(\.hasTools) == [.design, .mold])
+    @Test func onlyDesignSplitAndMoldHaveToolRows() {
+        #expect(Workspace.allCases.filter(\.hasTools) == [.design, .split, .mold])
     }
 
     @Test func switchingFinishesTheSketchBeingEdited() {

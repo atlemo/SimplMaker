@@ -104,6 +104,7 @@ extension DocumentModel {
         }
         add("Show or Hide UI", "View", keywords: "panels toolbar clean", shortcut: .hideUI, detail: state(uiHidden)) { self.toggleUIHidden() }
         add("Render", "View", keywords: "shadows reflection picture", detail: state(renderView)) { self.setRenderView(!self.renderView) }
+        add("Split to Print…", "View", keywords: "cut pieces printer build volume too big large connectors dowel pin dovetail magnet") { self.startSplit() }
         add("Make a Mold…", "View", keywords: "cast silicone resin two part halves") { self.startMold() }
         add("Section Analysis", "View", keywords: "cut slice", detail: state(sectionActive)) { self.setSectionAnalysis(!self.sectionActive) }
         add("Exploded View", "View", keywords: "assembly separate", detail: state(explodeOn)) { self.setExplodedView(!self.explodeOn) }

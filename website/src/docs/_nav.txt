@@ -62,6 +62,7 @@ modify/render
 ## For 3D printing
 print/export
 print/print-preview
+print/split-to-print
 print/design-tips
 
 ## Work with AI

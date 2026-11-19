@@ -1,6 +1,7 @@
 // The window's workspaces: the part of the app the tools and panels belong to. Design is the modelling the app
 // began with (sketches, features, the timeline); Mold is the studio for making a printable mold of a body. A
-// workspace is a way of working with the same document, not a feature: it is not saved and has no undo step.
+// workspace is a way of working with the same document, not a feature: it is not saved and has no undo step. Split sits between them: it cuts a
+// body that is too big for the printer into pieces with connectors, and the pieces can then go on to be a mold or be printed.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
 import CADCore
@@ -13,6 +14,7 @@ extension Preferences {
 enum Workspace: String, CaseIterable, Identifiable, Sendable {
     case start = "Start"
     case design = "Design"
+    case split = "Split"
     case mold = "Mold"
     case render = "Render"
 
@@ -22,12 +24,13 @@ enum Workspace: String, CaseIterable, Identifiable, Sendable {
     static var available: [Workspace] { allCases }
 
     /// Whether the workspace has a row of tool islands under the toolbar. Start is a page of its own, and Render is for looking.
-    var hasTools: Bool { self == .design || self == .mold }
+    var hasTools: Bool { self == .design || self == .split || self == .mold }
 
     var help: String {
         switch self {
         case .start: "The start page: new and recent parts, and the ways to begin"
         case .design: "Model the part: sketches, features and the timeline"
+        case .split: "Cut a part that is too big into pieces that fit your printer, with connectors to put them back together"
         case .mold: "Make a printable mold of a body, to cast copies of it"
         case .render: "Show the part on a floor with a light you set, for presentation"
         }
@@ -56,6 +59,7 @@ extension DocumentModel {
         let previous = workspace
         workspace = next
         if next == .mold || previous == .mold { moldWorkspaceChanged(entering: next == .mold) }
+        if next == .split || previous == .split { splitWorkspaceChanged(entering: next == .split) }
     }
 
     /// A design tool is about to run (from a key, a menu or a button of the start page): the window goes to Design first.

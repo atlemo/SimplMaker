@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
+import CryptoKit
 import SwiftUI
 
 /// The recent parts, as a list to open them from (the Start page's). Drawn here rather than
@@ -202,17 +203,42 @@ struct RecentCard: View {
     }
 }
 
-/// The pictures stored in the recent parts' files, read once per version of the file.
+/// The pictures of the recent parts. Every time a part is opened (or saved for the first time) a new picture is drawn and kept here, in
+/// the caches folder, one PNG per file: the picture inside the file is only as new as its last save, and a file saved by an older version
+/// has none. The list shows the kept picture unless the file is newer and has a picture of its own.
 @MainActor enum RecentPictures {
     private static let cache = NSCache<NSString, NSImage>()
 
+    /// Keeps the new picture of the part at `url`; with none (an empty part) the old one is dropped.
+    static func store(_ png: Data?, for url: URL) {
+        guard let kept = keptFile(for: url) else { return }
+        if let png { try? png.write(to: kept, options: .atomic) } else { try? FileManager.default.removeItem(at: kept) }
+    }
+
+    private static func keptFile(for url: URL) -> URL? {
+        guard let caches = try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return nil }
+        let folder = caches.appendingPathComponent("RecentPictures", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = SHA256.hash(data: Data(url.standardizedFileURL.path.utf8)).map { String(format: "%02x", $0) }.joined()
+        return folder.appendingPathComponent(name + ".png")
+    }
+
+    private static func modified(_ url: URL) -> Date? {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+
     static func image(for url: URL) async -> NSImage? {
-        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate?.timeIntervalSince1970 ?? 0
-        let key = "\(url.path)|\(modified)" as NSString
+        let kept = keptFile(for: url)
+        let fileDate = modified(url)
+        let keptDate = kept.flatMap(modified)
+        let key = "\(url.path)|\(fileDate?.timeIntervalSince1970 ?? 0)|\(keptDate?.timeIntervalSince1970 ?? 0)" as NSString
         if let hit = cache.object(forKey: key) { return hit }
         let png = await Task.detached(priority: .utility) { () -> Data? in
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return CADDocument.thumbnail(in: data)
+            let own = (try? Data(contentsOf: url)).flatMap { CADDocument.thumbnail(in: $0) }
+            let drawn = kept.flatMap { try? Data(contentsOf: $0) }
+            // The picture drawn at the last open wins, unless the file was saved after it with a picture of its own.
+            if let drawn, own == nil || (keptDate ?? .distantPast) >= (fileDate ?? .distantPast) { return drawn }
+            return own ?? drawn
         }.value
         guard let png, let image = NSImage(data: png) else { return nil }
         cache.setObject(image, forKey: key)

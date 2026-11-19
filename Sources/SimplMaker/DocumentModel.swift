@@ -130,6 +130,23 @@ final class DocumentModel {
     @ObservationIgnored var moldGeneration = 0
     /// The timeline was open when the Mold workspace hid it (it has none).
     @ObservationIgnored var timelineHiddenByMold = false
+    // The Split workspace's state (see SplitStudio.swift). Nothing here is saved: the splits themselves are `document.printSplits`.
+    /// What each split built to, by the split's id, and the meshes the viewport draws for it (its pieces).
+    var splitResults: [String: PrintSplitResult] = [:]
+    var splitMeshSets: [String: [BodyMesh]] = [:]
+    /// The split being worked on.
+    var activeSplitID: String?
+    /// A split is being worked out (a heavy body takes a few seconds).
+    var splitBuilding = false
+    /// How far the pieces are drawn apart, 0 (together) to 1.
+    var splitOpenAmount = 0.0
+    /// Something the last Split action found worth saying, shown in the status bar until the next change.
+    var splitNote: String?
+    /// The pieces are out of date: the body or a setting changed while another workspace was showing.
+    @ObservationIgnored var splitsStale = true
+    @ObservationIgnored var splitGeneration = 0
+    /// The timeline was open when the Split workspace hid it (it has none).
+    @ObservationIgnored var timelineHiddenBySplit = false
     /// The sketch being edited, if any.
     private(set) var sketchSession: SketchSession?
     /// A new sketch is waiting for the user to click an origin plane or a flat face.
@@ -458,6 +475,7 @@ final class DocumentModel {
             sceneRevision += 1
             overlayRevision += 1
             if doc.molds != old.molds { moldSettingsChanged() }
+            if doc.printSplits != old.printSplits { splitSettingsChanged() }
         } else {
             regenerate()
         }
@@ -642,6 +660,7 @@ final class DocumentModel {
     /// Bodies the viewport draws.
     var visibleMeshes: [BodyMesh] {
         if workspace == .mold { return moldShownMeshes }  // the Mold workspace shows its own scene: the body ghosted in its halves
+        if workspace == .split { return splitShownMeshes }  // and the Split workspace its own: the pieces
         return meshes.filter { !document.hidden.contains($0.id) }
     }
 
@@ -866,6 +885,7 @@ final class DocumentModel {
     func displayColor(of id: FeatureID) -> BodyColor? {
         if let p = colorPreview, p.bodies.contains(id) { return p.color }
         if workspace == .mold, let tint = moldTint(of: id) { return tint }
+        if workspace == .split, let tint = splitTint(of: id) { return tint }
         // A piece of a split body looks like the body it came from until it is given a colour of its own.
         return document.bodyColors[id] ?? document.bodyColors[Regenerator.rootBody(id)]
     }
@@ -1547,7 +1567,7 @@ final class DocumentModel {
         previewInvalid = false
         handleProblem = nil
         result = r
-        if final, previewFeature == nil { moldBodyChanged() }  // the molds follow their bodies
+        if final, previewFeature == nil { moldBodyChanged(); splitBodyChanged() }  // the molds and splits follow their bodies
         roundNeighbors = [:]
         self.meshes = meshes
         selection = selection.filter { pick in

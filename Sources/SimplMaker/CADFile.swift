@@ -32,6 +32,8 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     /// then the latest drawn. Readable from any thread, like `latest`.
     private let thumbnail = OSAllocatedUnfairLock<Data?>(initialState: nil)
     @MainActor private var thumbnailTask: Task<Void, Never>?
+    /// The file this document is shown from (nil until it is saved), where the Start page's recent parts keep the latest picture (see `RecentPictures`).
+    @MainActor var fileURL: URL?
 
     init(document: CADDocument = CADDocument(), tutorial: Bool = false, startsInDesign: Bool = false) {
         initial = document
@@ -87,11 +89,15 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     /// A picture of the part drawn by the platform's own viewport (the iPad's), to be stored in the file the next time it is saved.
     func updateThumbnail(_ png: Data?) { thumbnail.withLock { $0 = png } }
 
+    /// Draws a new picture of the part now that its window is up (opened, or saved for the first time): the picture in an opened file is
+    /// as old as its last save, and a file from an older version has none. The recent parts list shows this one.
+    @MainActor func captureThumbnailOnOpen() { scheduleThumbnail(after: .milliseconds(400)) }
+
     /// Draws a new thumbnail once the part has been left alone for a moment (drawing is not free, and every edit changes it).
-    @MainActor private func scheduleThumbnail() {
+    @MainActor private func scheduleThumbnail(after delay: Duration = .seconds(1)) {
         thumbnailTask?.cancel()
         thumbnailTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: delay)
             guard !Task.isCancelled, let self, let model = modelStorage else { return }
             await model.rebuilt()
             guard !Task.isCancelled else { return }
@@ -99,6 +105,7 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
             let image = try? await ViewportSnapshot.render(model, direction: .iso, width: 512, height: 512, axes: false)
             guard !Task.isCancelled else { return }
             thumbnail.withLock { $0 = image?.png }  // nothing to show (an empty part) means no picture
+            if let fileURL { RecentPictures.store(image?.png, for: fileURL) }
             #endif
         }
     }

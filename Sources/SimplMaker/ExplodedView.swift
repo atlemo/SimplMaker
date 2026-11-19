@@ -90,6 +90,7 @@ extension DocumentModel {
     /// at work: their handles and previews are drawn where the bodies really are.
     var explodeOffsets: [SIMD3<Float>] {
         if workspace == .mold { return moldOpenOffsets }
+        if workspace == .split { return splitOpenOffsets }
         guard explodeOn, sketchSession == nil, pendingTool == nil else { return [] }
         return ExplodedView.offsets(boxes: bodyBoxes, amount: explodeAmount, direction: explodeDirection)
     }

@@ -731,7 +731,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private func applyPick(_ result: UInt32) {
         var raw = hoveredPlaneLabel?.pickID.raw ?? result
         if raw != 0, model?.isLockedPick(PickID(raw: raw)) == true { raw = 0 }  // a locked body or sketch is not there to hover
-        if model?.workspace == .mold { raw = 0 }  // the Mold workspace's scene is not the part's: nothing in it is picked
+        if model?.workspace == .mold || model?.workspace == .split { raw = 0 }  // the Mold workspace's scene is not the part's: nothing in it is picked
         guard let renderer, renderer.hovered != raw else { return }
         renderer.hovered = raw
         model?.hover(raw == 0 ? nil : PickID(raw: raw))
@@ -1073,6 +1073,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         // A double-click's second release isn't a click: the double-click already did its job.
         guard !dragged, event.clickCount < 2, let renderer, let model, model.sketchSession == nil else { return }
         let p = location(event)
+        if model.workspace == .split { return }  // the pieces are looked at here, not picked
         if model.workspace == .mold {  // a vent or the gate waits for its spot on the body; otherwise a click does nothing here
             if model.moldPicking != nil {
                 let ray = renderer.camera.ray(at: p, viewSize: bounds.size)

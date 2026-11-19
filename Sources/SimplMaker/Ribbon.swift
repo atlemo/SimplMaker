@@ -16,6 +16,7 @@ extension Workspace {
         switch self {
         case .start: "house"
         case .design: "pen-tool"
+        case .split: "puzzle"
         case .mold: "split-body"
         case .render: "camera"
         }
@@ -26,6 +27,7 @@ extension Workspace {
         switch self {
         case .start: "New and recent parts, and the ways to begin"
         case .design: "Sketch, model and change the part, step by step"
+        case .split: "Cut a big part into pieces that fit your printer, with connectors"
         case .mold: "Make a printable mold of a body, to cast copies of it"
         case .render: "Show the part on a floor with a light you set"
         }
@@ -36,6 +38,7 @@ extension Workspace {
         switch self {
         case .start: "New Part · Open · Tutorial · Recent parts"
         case .design: "Sketch · Create · Shapes · Modify · Construct · Inspect"
+        case .split: "Printer · Cuts · Connectors · Fit · Export"
         case .mold: "Parting · Gate and vents · Keys · Export"
         case .render: "Floor · Light · Materials · Export image"
         }
@@ -46,6 +49,7 @@ extension Workspace {
         switch self {
         case .start: DS.brand
         case .design: Color(red: 0.22, green: 0.47, blue: 0.93)
+        case .split: Color(red: 0.88, green: 0.52, blue: 0.10)
         case .mold: Color(red: 0.09, green: 0.60, blue: 0.55)
         case .render: Color(red: 0.80, green: 0.27, blue: 0.55)
         }
