@@ -143,6 +143,15 @@ extension Preferences {
             case .thick: .thickMaterial
             }
         }
+        /// On Liquid Glass the same thickness is a frosted layer behind the glass (none for thin), so the panel keeps its glass edge and
+        /// highlights: the material, how much of it shows, and how much white is laid over it in light mode.
+        var glassFrost: (material: Material, opacity: Double, whiteInLight: Double)? {
+            switch self {
+            case .thin: nil
+            case .regular: (.regularMaterial, 0.5, 0.3)
+            case .thick: (.thickMaterial, 0.85, 0.55)
+            }
+        }
         /// How much white is laid over the material in light mode.
         var whiteInLight: Double {
             switch self {
@@ -153,23 +162,48 @@ extension Preferences {
         }
     }
     static let panelMaterial = "panelMaterial"
+
+    /// What the panels are made of: the system's blur, or Liquid Glass (macOS 26 and later).
+    enum PanelStyle: String, CaseIterable, Identifiable {
+        case blur, glass
+        var id: String { rawValue }
+        var title: String { self == .blur ? "System blur" : "Liquid Glass" }
+        /// Liquid Glass needs macOS 26 or iOS 26; before that only the blur is offered.
+        static var choices: [PanelStyle] {
+            if #available(macOS 26.0, iOS 26.0, *) { return allCases }
+            return [.blur]
+        }
+    }
+    static let panelStyle = "panelStyle"
 }
 
-/// Draws a panel's background on the material the user chose in Settings (thick unless they picked another), with a hairline edge.
+/// Draws a panel's background in the style the user chose in Settings (the system's blur unless they picked Liquid Glass, which
+/// older systems don't have) and the thickness they chose (thick unless they picked another).
 struct PanelMaterialBackground<S: Shape>: ViewModifier {
     let shape: S
     @AppStorage(Preferences.panelMaterial) private var thickness = Preferences.PanelMaterial.thick
-
+    @AppStorage(Preferences.panelStyle) private var style = Preferences.PanelStyle.blur
     @Environment(\.colorScheme) private var colorScheme
 
-    func body(content: Content) -> some View {
-        content
-            .background {
-                shape.fill(thickness.material)
-                // In light mode the system materials come out grey over the grey viewport: white over them brings the panel to white.
-                if colorScheme == .light { shape.fill(Color.white.opacity(thickness.whiteInLight)) }
-            }
-            .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5).allowsHitTesting(false))
+    @ViewBuilder func body(content: Content) -> some View {
+        if style == .glass, #available(macOS 26.0, iOS 26.0, *) {
+            content
+                .background {
+                    if let frost = thickness.glassFrost {
+                        shape.fill(frost.material).opacity(frost.opacity)
+                        if colorScheme == .light { shape.fill(Color.white.opacity(frost.whiteInLight)) }
+                    }
+                }
+                .glassEffect(.regular, in: shape)
+        } else {
+            content
+                .background {
+                    shape.fill(thickness.material)
+                    // In light mode the system materials come out grey over the grey viewport: white over them brings the panel to white.
+                    if colorScheme == .light { shape.fill(Color.white.opacity(thickness.whiteInLight)) }
+                }
+                .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5).allowsHitTesting(false))
+        }
     }
 }
 

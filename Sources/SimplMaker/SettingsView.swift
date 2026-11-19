@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
     @AppStorage(Preferences.antialiasing) private var antialiasing = 4
     @AppStorage(Preferences.accentSource) private var accentSource = Preferences.AccentSource.simplMaker
+    @AppStorage(Preferences.panelStyle) private var panelStyle = Preferences.PanelStyle.blur
     @AppStorage(Preferences.panelMaterial) private var panelMaterial = Preferences.PanelMaterial.thick
     @AppStorage(Preferences.sendUsageStatistics) private var sendUsageStatistics = true
 #if os(macOS)
@@ -104,11 +105,24 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if Preferences.PanelStyle.choices.count > 1 {
+                Picker("Panel style", selection: $panelStyle) {
+                    ForEach(Preferences.PanelStyle.choices) { Text($0.title).tag($0) }
+                }
+            }
             VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
                 Picker("Panel material", selection: $panelMaterial) {
                     ForEach(Preferences.PanelMaterial.allCases) { Text($0.title).tag($0) }
                 }
-                Text("How much the toolbar and the panels blur what is behind them. Thin lets the most through, thick the least.")
+                Text("How frosted the toolbar and the panels are. Thin lets the most of what is behind them through, thick the least.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                Picker("Sketch background", selection: $sketchPaper) {
+                    ForEach(Preferences.SketchPaper.allCases) { Text($0.title).tag($0) }
+                }
+                Text("While a sketch is open the background is tinted like drafting paper, so it's clear you're in sketch mode.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -241,14 +255,6 @@ struct SettingsView: View {
                     }
                 }
                 Text("The size of one square of the sketch grid, which \"Snap to Grid\" snaps to. Automatic picks a round size that follows the zoom; a fixed size is thinned out only when zoomed far out.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
-                Picker("Sketch background", selection: $sketchPaper) {
-                    ForEach(Preferences.SketchPaper.allCases) { Text($0.title).tag($0) }
-                }
-                Text("While a sketch is open the background is tinted like drafting paper, so it's clear you're in sketch mode.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

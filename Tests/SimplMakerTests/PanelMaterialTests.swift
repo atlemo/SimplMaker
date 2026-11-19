@@ -15,3 +15,11 @@ import Testing
         #expect(Preferences.PanelMaterial(rawValue: "thick") == .thick)
     }
 }
+
+@Suite struct PanelStyleTests {
+    @Test func offersTheBlurAndLiquidGlassByTheirStoredNames() {
+        #expect(Preferences.PanelStyle.allCases.map(\.rawValue) == ["blur", "glass"])
+        #expect(Preferences.PanelStyle.allCases.map(\.title) == ["System blur", "Liquid Glass"])
+        #expect(Preferences.PanelStyle.choices.contains(.blur), "the blur is offered on every system")
+    }
+}
