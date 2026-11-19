@@ -143,6 +143,14 @@ extension Preferences {
             case .thick: .thickMaterial
             }
         }
+        /// How much white is laid over the material in light mode.
+        var whiteInLight: Double {
+            switch self {
+            case .thin: 0.5
+            case .regular: 0.7
+            case .thick: 0.88
+            }
+        }
     }
     static let panelMaterial = "panelMaterial"
 }
@@ -152,9 +160,15 @@ struct PanelMaterialBackground<S: Shape>: ViewModifier {
     let shape: S
     @AppStorage(Preferences.panelMaterial) private var thickness = Preferences.PanelMaterial.thick
 
+    @Environment(\.colorScheme) private var colorScheme
+
     func body(content: Content) -> some View {
         content
-            .background(thickness.material, in: shape)
+            .background {
+                shape.fill(thickness.material)
+                // In light mode the system materials come out grey over the grey viewport: white over them brings the panel to white.
+                if colorScheme == .light { shape.fill(Color.white.opacity(thickness.whiteInLight)) }
+            }
             .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5).allowsHitTesting(false))
     }
 }
