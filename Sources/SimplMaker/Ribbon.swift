@@ -215,7 +215,7 @@ struct RibbonBar<Tools: View>: View {
     @ViewBuilder let tools: Tools
 
     /// The room the traffic lights take at the left.
-    static var windowControls: CGFloat { 72 }
+    static var windowControls: CGFloat { 72 + WindowControls.inset }
     /// What the ribbon takes besides the tool row: the window controls, the workspace button, its divider, undo and redo, the gaps
     /// between them and the padding.
     static var chrome: CGFloat {
@@ -239,7 +239,6 @@ struct RibbonBar<Tools: View>: View {
         .environment(\.toolsInk, ink ?? .white)
         .frame(maxWidth: .infinity)
         .background { WindowDragArea() }
-        .background { if ink == nil { Rectangle().fill(.bar) } }
     }
 }
 

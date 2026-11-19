@@ -218,10 +218,11 @@ struct DocumentWindow: View {
                         // The tabs come with a second part.
                         if tabs.tabs.count > 1 {
                             WindowTabStrip(tabs: tabs, ink: panelToggleInk)
-                                .padding(.horizontal, Panel.inset)
-                                .padding(.top, Panel.inset)  // as far below the ribbon as it is above the panels
+                                .padding(Panel.inset)  // the same room above and below it, and at its sides
                         }
                     }
+                    // The ribbon and the tab row are one bar (in Sketch mode the tinted band is behind it instead).
+                    .background { if panelToggleInk == nil { Rectangle().fill(.bar) } }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
                 }
                 .ignoresSafeArea(.container, edges: .top)
@@ -244,7 +245,7 @@ struct DocumentWindow: View {
         .animation(.easeOut(duration: DS.Duration.fast), value: workspaceListOpen)
         .onChange(of: model.workspace) { workspaceListOpen = false }
         // The lights follow the ribbon: its middle with it, the titlebar's place without it (Start, or the UI hidden).
-        .onChange(of: showsRibbon) { tabs.setRibbonHeight(showsRibbon ? ribbonHeight : 0) }
+        .onChange(of: showsRibbon, initial: true) { tabs.setRibbonHeight(showsRibbon ? ribbonHeight : 0) }
     }
 }
 #endif

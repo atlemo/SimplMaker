@@ -225,6 +225,10 @@ struct TitlebarAppearance: NSViewRepresentable {
 /// `RibbonMetrics.defaultAxis`.
 @MainActor enum WindowControls {
     private static var axes: [Int: CGFloat] = [:]
+    /// Where AppKit puts each window's three buttons (their x), noted before they are first moved.
+    private static var standardX: [Int: [CGFloat]] = [:]
+    /// How far in from AppKit's own place the lights sit: where Finder and other windows with a toolbar have them.
+    static let inset: CGFloat = 7
     /// Where a titlebar has the lights: the middle of its 28 pt.
     static let titlebarAxis: CGFloat = 14
     private static var placing = false
@@ -248,9 +252,13 @@ struct TitlebarAppearance: NSViewRepresentable {
         let frame = NSRect(x: 0, y: frameView.bounds.height - height, width: frameView.bounds.width, height: height)
         if container.frame != frame { container.frame = frame }
         if bar.frame != container.bounds { bar.frame = container.bounds }
-        for button in [close, miniaturize, zoom] {
-            let y = ((height - button.frame.height) / 2).rounded()
-            if button.frame.origin.y != y { button.setFrameOrigin(NSPoint(x: button.frame.origin.x, y: y)) }
+        let buttons = [close, miniaturize, zoom]
+        // AppKit's own x is noted the first time and kept: a placement made now is not mistaken for AppKit's later.
+        if standardX[window.windowNumber] == nil { standardX[window.windowNumber] = buttons.map(\.frame.origin.x) }
+        let xs = standardX[window.windowNumber] ?? buttons.map(\.frame.origin.x)
+        for (button, x) in zip(buttons, xs) {
+            let origin = NSPoint(x: x + inset, y: ((height - button.frame.height) / 2).rounded())
+            if button.frame.origin != origin { button.setFrameOrigin(origin) }
         }
     }
 
