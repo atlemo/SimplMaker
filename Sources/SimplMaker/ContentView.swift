@@ -46,6 +46,8 @@ struct DocumentWindow: View {
     @State private var barHeight: CGFloat = 68
     /// The window's tabs, which the toolbar draws.
     @State private var tabs = WindowTabs()
+    /// The ribbon's own height (without the tab row), which the traffic lights are centred on.
+    @State private var ribbonHeight: CGFloat = 0
     /// The list of workspaces under the ribbon is open.
     @State private var workspaceListOpen = false
     /// Bumped when a preference changes, so the pins are read again.
@@ -107,7 +109,13 @@ struct DocumentWindow: View {
 
     @Environment(\.controlActiveState) private var activeState
     /// Sketch mode tints the band behind the toolbar's islands while the window is active.
-    private var sketchTint: Bool { model.sketchSession != nil && activeState != .inactive }
+    private var sketchTint: Bool {
+        #if DEBUG
+        // SIMPLMAKER_FORCE_TINT=1 tints a sketching window that is not the active one too, to look at it in a test copy.
+        if ProcessInfo.processInfo.environment["SIMPLMAKER_FORCE_TINT"] == "1" { return model.sketchSession != nil }
+        #endif
+        return model.sketchSession != nil && activeState != .inactive
+    }
     /// Files are being dragged over the window.
     @State private var fileDropTargeted = false
     /// How much the window's (transparent) titlebar covers at the top, where the content's safe area starts.
@@ -206,6 +214,7 @@ struct DocumentWindow: View {
                                 .accessibilityElement(children: .contain)
                                 .accessibilityLabel("Tools")
                         }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { ribbonHeight = $0; tabs.setRibbonHeight($0) }
                         // The tabs come with a second part.
                         if tabs.tabs.count > 1 {
                             WindowTabStrip(tabs: tabs, ink: panelToggleInk)
@@ -234,6 +243,8 @@ struct DocumentWindow: View {
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: workspaceListOpen)
         .onChange(of: model.workspace) { workspaceListOpen = false }
+        // The lights follow the ribbon: its middle with it, the titlebar's place without it (Start, or the UI hidden).
+        .onChange(of: showsRibbon) { tabs.setRibbonHeight(showsRibbon ? ribbonHeight : 0) }
     }
 }
 #endif

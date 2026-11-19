@@ -37,6 +37,8 @@ extension Notification.Name {
     private(set) var tabs: [Tab] = []
     /// This window's part is only a Start page (see `StartPageWindows`); kept here until the window is known.
     @ObservationIgnored private var isStartPage = false
+    /// The ribbon's height as last reported (0: none), kept until the window is known.
+    @ObservationIgnored private var ribbonHeight: CGFloat = 0
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var watches: [NSKeyValueObservation] = []
@@ -46,6 +48,7 @@ extension Notification.Name {
         guard self.window !== window else { return refresh() }
         self.window = window
         StartPageWindows.set(window.windowNumber, isStartPage)
+        if ribbonHeight > 0 { WindowControls.setAxis(ribbonHeight / 2, for: window) }
         observers.forEach(NotificationCenter.default.removeObserver)
         // The group changes when a window joins or leaves it, and a window's tab group is a different object after that.
         observers = [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification, NSWindow.willCloseNotification, .startPagesChanged].map {
@@ -76,6 +79,13 @@ extension Notification.Name {
         }
         for w in windows { watches.append(w.observe(\.title) { [weak self] _, _ in Task { @MainActor in self?.refresh() } }) }
         SystemTabBar.hideSoon()
+    }
+
+    /// The ribbon's height: the traffic lights are centred on its middle, the same line as undo and redo.
+    /// With no ribbon (the Start page, or the UI hidden) the lights are where a titlebar has them.
+    func setRibbonHeight(_ height: CGFloat) {
+        ribbonHeight = height
+        if let window { WindowControls.setAxis(height > 0 ? height / 2 : WindowControls.titlebarAxis, for: window) }
     }
 
     /// This window's part is only a Start page, or is not any more.

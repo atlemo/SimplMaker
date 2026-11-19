@@ -201,8 +201,8 @@ struct WindowDragArea: NSViewRepresentable {
 
 /// Measures of the ribbon that other code needs (a generic type cannot hold them).
 enum RibbonMetrics {
-    /// How far below the top of the window the tool icons' middle is: the traffic lights are centred on the same line.
-    static let iconAxis: CGFloat = 31
+    /// How far below the top of the window the middle of the ribbon is before it has been measured: the line the traffic lights follow.
+    static let defaultAxis: CGFloat = 37
 }
 
 /// The ribbon: the window's controls' room, the workspace button and, where the workspace has tools, the tool row (which the window
