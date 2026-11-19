@@ -130,18 +130,39 @@ struct AccentScope: ViewModifier {
     }
 }
 
-extension View {
-    /// Liquid Glass on macOS 26; on older systems the system's thin material with a hairline edge,
-    /// which is the nearest look the older SDK offers.
-    @ViewBuilder
-    func panelGlass<S: Shape>(in shape: S) -> some View {
-        if #available(macOS 26.0, iOS 26.0, *) {
-            self.glassEffect(.regular, in: shape)
-        } else {
-            self
-                .background(.regularMaterial, in: shape)
-                .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+extension Preferences {
+    /// How thick the material behind the floating panels is: how much of what is behind them shows through and how much it is blurred.
+    enum PanelMaterial: String, CaseIterable, Identifiable {
+        case thin, regular, thick
+        var id: String { rawValue }
+        var title: String { rawValue.capitalized }
+        var material: Material {
+            switch self {
+            case .thin: .thinMaterial
+            case .regular: .regularMaterial
+            case .thick: .thickMaterial
+            }
         }
+    }
+    static let panelMaterial = "panelMaterial"
+}
+
+/// Draws a panel's background on the material the user chose in Settings (thick unless they picked another), with a hairline edge.
+struct PanelMaterialBackground<S: Shape>: ViewModifier {
+    let shape: S
+    @AppStorage(Preferences.panelMaterial) private var thickness = Preferences.PanelMaterial.thick
+
+    func body(content: Content) -> some View {
+        content
+            .background(thickness.material, in: shape)
+            .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5).allowsHitTesting(false))
+    }
+}
+
+extension View {
+    /// The background of a floating panel: the system material the user chose (Settings > General), in `shape`.
+    func panelMaterial<S: Shape>(in shape: S) -> some View {
+        modifier(PanelMaterialBackground(shape: shape))
     }
 }
 

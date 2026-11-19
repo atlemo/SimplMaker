@@ -72,7 +72,7 @@ struct TutorialCard: View {
         }
         .padding(DS.Spacing.space6)
         .frame(width: Self.width)
-        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
+        .panelMaterial(in: .rect(cornerRadius: DS.Radius.window))
         .modifier(CardOffset(guide: guide))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tutorial, step \(position.index + 1) of \(position.count)")

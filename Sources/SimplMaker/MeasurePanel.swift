@@ -62,6 +62,6 @@ struct MeasurePanel: View {
         }
         .padding(DS.Spacing.space6)
         .frame(width: Self.width)
-        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
+        .panelMaterial(in: .rect(cornerRadius: DS.Radius.window))
     }
 }

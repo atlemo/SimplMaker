@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
     @AppStorage(Preferences.antialiasing) private var antialiasing = 4
     @AppStorage(Preferences.accentSource) private var accentSource = Preferences.AccentSource.simplMaker
+    @AppStorage(Preferences.panelMaterial) private var panelMaterial = Preferences.PanelMaterial.thick
     @AppStorage(Preferences.sendUsageStatistics) private var sendUsageStatistics = true
 #if os(macOS)
     @ObservedObject private var updater = Updater.shared
@@ -100,6 +101,14 @@ struct SettingsView: View {
                     ForEach(Preferences.AccentSource.allCases) { Text($0.title).tag($0) }
                 }
                 Text("The highlight color of tools and selections. While you sketch, the system's color is always used, since the sketch paper is tinted to match it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
+                Picker("Panel material", selection: $panelMaterial) {
+                    ForEach(Preferences.PanelMaterial.allCases) { Text($0.title).tag($0) }
+                }
+                Text("How much the toolbar and the panels blur what is behind them. Thin lets the most through, thick the least.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

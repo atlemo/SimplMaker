@@ -29,8 +29,6 @@ extension Notification.Name {
 @MainActor @Observable final class WindowChrome {
     /// This window's part is only a Start page (see `StartPageWindows`); kept here until the window is known.
     @ObservationIgnored private var isStartPage = false
-    /// The ribbon's height as last reported (0: none), kept until the window is known.
-    @ObservationIgnored private var ribbonHeight: CGFloat = 0
     @ObservationIgnored private weak var window: NSWindow?
 
     func attach(to window: NSWindow) {
@@ -44,14 +42,6 @@ extension Notification.Name {
                 if let window, !window.styleMask.contains(.fullScreen) { WindowControls.centre(window) }
             }
         }
-        if ribbonHeight > 0 { WindowControls.setAxis(ribbonHeight / 2, for: window) }
-    }
-
-    /// The ribbon's height: the traffic lights are centred on its middle, the same line as undo and redo.
-    /// With no ribbon (the Start page, or the UI hidden) the lights are where a titlebar has them.
-    func setRibbonHeight(_ height: CGFloat) {
-        ribbonHeight = height
-        if let window { WindowControls.setAxis(height > 0 ? height / 2 : WindowControls.titlebarAxis, for: window) }
     }
 
     /// This window's part is only a Start page, or is not any more.

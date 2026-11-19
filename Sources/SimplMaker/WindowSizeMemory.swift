@@ -47,30 +47,7 @@ struct WindowSizeMemory: NSViewRepresentable {
             }
             // Every part has a window of its own: no tabs.
             window.tabbingMode = .disallowed
-            window.titleVisibility = .hidden
-            // The ribbon is the window's top bar, drawn under a transparent titlebar that keeps only the traffic lights.
-            window.titlebarAppearsTransparent = true
-            window.styleMask.insert(.fullSizeContentView)
-            // The traffic lights sit on the same line as the ribbon's icons. AppKit puts them back when the window resizes, is
-            // activated or leaves full screen, so they are placed again then.
-            for delay in [0.0, 0.1, 0.4] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak window] in
-                    if let window { WindowControls.place(in: window) }
-                }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak window] in
-                if let window { WindowControls.watch(window) }
-            }
-            // didUpdate too: AppKit moved the zoom button back to its own place on its own once (after a save, when the document's title and
-            // edited state change), without a resize or an activation to hear about. A window update is the one thing that comes after
-            // every such change, and placing is cheap when nothing has moved (see `WindowControls.place`).
-            for name in [NSWindow.didResizeNotification, NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
-                         NSWindow.didExitFullScreenNotification, NSWindow.didChangeScreenNotification, NSWindow.didUpdateNotification] {
-                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { note in
-                    guard let window = note.object as? NSWindow else { return }
-                    MainActor.assumeIsolated { WindowControls.place(in: window) }
-                }
-            }
+            // A standard title bar: the traffic lights and the document's title are the system's. The ribbon floats in the content below.
             NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
                                                    name: NSWindow.didEndLiveResizeNotification, object: window)
         }
@@ -132,76 +109,11 @@ struct TitlebarAppearance: NSViewRepresentable {
     }
 }
 
-/// Places a window's traffic lights. The ribbon is the window's top bar and taller than a titlebar, so the lights are moved down to sit
-/// centred on the line through the middle of the ribbon, which is the line through undo and redo: the titlebar view is made twice that
-/// far tall and the three buttons are centred in it. The ribbon reports its height (`setAxis`); until it does the lights use
-/// `RibbonMetrics.defaultAxis`.
 @MainActor enum WindowControls {
-    private static var axes: [Int: CGFloat] = [:]
-    /// Where AppKit puts each window's three buttons (their x), noted before they are first moved.
-    private static var standardX: [Int: [CGFloat]] = [:]
-    /// How far in from AppKit's own place the lights sit: where Finder and other windows with a toolbar have them.
-    static let inset: CGFloat = 7
-    /// Where a titlebar has the lights: the middle of its 28 pt.
-    static let titlebarAxis: CGFloat = 14
-    private static var placing = false
-
     /// Puts the window in the exact middle of its screen's usable area (NSWindow.center() sits a little above the middle).
     static func centre(_ window: NSWindow) {
         guard let area = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
         let origin = NSPoint(x: (area.midX - window.frame.width / 2).rounded(), y: (area.midY - window.frame.height / 2).rounded())
         if window.frame.origin != origin { window.setFrameOrigin(origin) }
-    }
-
-    /// The line the lights are centred on, in points below the top of the window, for this window.
-    static func setAxis(_ axis: CGFloat, for window: NSWindow) {
-        guard axes[window.windowNumber] != axis else { return }
-        axes[window.windowNumber] = axis
-        place(in: window)
-    }
-
-    static func place(in window: NSWindow) {
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["SIMPLMAKER_NO_LIGHTS"] == "1" { return }  // an experiment: leave the lights where AppKit has them
-        #endif
-        guard !placing, !window.styleMask.contains(.fullScreen),
-              let close = window.standardWindowButton(.closeButton),
-              let miniaturize = window.standardWindowButton(.miniaturizeButton),
-              let zoom = window.standardWindowButton(.zoomButton),
-              let bar = close.superview, let container = bar.superview, let frameView = container.superview else { return }
-        placing = true
-        defer { placing = false }
-        let height = (axes[window.windowNumber] ?? RibbonMetrics.defaultAxis) * 2
-        // Already in place (the usual case on a window update): nothing to do.
-        if let xs = standardX[window.windowNumber], container.frame.height == height, bar.frame == container.bounds,
-           zip([close, miniaturize, zoom], xs).allSatisfy({ button, x in
-               button.frame.origin == NSPoint(x: x + inset, y: ((height - button.frame.height) / 2).rounded()) }) { return }
-        let frame = NSRect(x: 0, y: frameView.bounds.height - height, width: frameView.bounds.width, height: height)
-        if container.frame != frame { container.frame = frame }
-        if bar.frame != container.bounds { bar.frame = container.bounds }
-        let buttons = [close, miniaturize, zoom]
-        // AppKit's own x is noted the first time and kept: a placement made now is not mistaken for AppKit's later.
-        if standardX[window.windowNumber] == nil { standardX[window.windowNumber] = buttons.map(\.frame.origin.x) }
-        let xs = standardX[window.windowNumber] ?? buttons.map(\.frame.origin.x)
-        for (button, x) in zip(buttons, xs) {
-            let origin = NSPoint(x: x + inset, y: ((height - button.frame.height) / 2).rounded())
-            if button.frame.origin != origin { button.setFrameOrigin(origin) }
-        }
-    }
-
-    /// Places them again whenever AppKit moves them: it does when the window's appearance changes (Sketch mode flips it), as well as on
-    /// resizes and activation.
-    static func watch(_ window: NSWindow) {
-        guard let close = window.standardWindowButton(.closeButton),
-              let miniaturize = window.standardWindowButton(.miniaturizeButton),
-              let zoom = window.standardWindowButton(.zoomButton),
-              let bar = close.superview, let container = bar.superview else { return }
-        for view in [close, miniaturize, zoom, bar, container] {
-            view.postsFrameChangedNotifications = true
-            NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: view, queue: .main) { [weak window] _ in
-                guard let window else { return }
-                MainActor.assumeIsolated { place(in: window) }
-            }
-        }
     }
 }

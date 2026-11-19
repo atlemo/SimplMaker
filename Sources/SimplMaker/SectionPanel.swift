@@ -58,7 +58,7 @@ struct SectionPanel: View {
         }
         .padding(DS.Spacing.space6)
         .frame(width: Self.width)
-        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
+        .panelMaterial(in: .rect(cornerRadius: DS.Radius.window))
         .onAppear { offsetText = model.sectionOffsetText }
         .onChange(of: model.sectionOffsetText) { _, text in if !editing { offsetText = text } }
         .onChange(of: editing) { _, now in if !now { offsetText = model.sectionOffsetText } }

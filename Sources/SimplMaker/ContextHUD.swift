@@ -44,7 +44,7 @@ struct FeatureHUD: View {
             }
             .touchControls()
             .padding(DS.Spacing.space3)
-            .panelGlass(in: .rect(cornerRadius: DS.Radius.xl2))
+            .panelMaterial(in: .rect(cornerRadius: DS.Radius.xl2))
             .fixedSize()
         }
     }
@@ -130,7 +130,7 @@ struct SketchPatternHUD: View {
             }
             .touchControls()
             .padding(DS.Spacing.space3)
-            .panelGlass(in: .rect(cornerRadius: DS.Radius.xl2))
+            .panelMaterial(in: .rect(cornerRadius: DS.Radius.xl2))
             .fixedSize()
         } else if let session = model.sketchSession, let setup = session.patternSetup {
             VStack(alignment: .leading, spacing: DS.Spacing.space2) {
@@ -161,7 +161,7 @@ struct SketchPatternHUD: View {
             }
             .touchControls()
             .padding(DS.Spacing.space3)
-            .panelGlass(in: .rect(cornerRadius: DS.Radius.xl2))
+            .panelMaterial(in: .rect(cornerRadius: DS.Radius.xl2))
             .fixedSize()
         }
     }
@@ -201,7 +201,7 @@ struct SketchMirrorBar: View {
             .touchControls()
             .padding(.horizontal, DS.Spacing.space4)
             .padding(.vertical, DS.Spacing.space2)
-            .panelGlass(in: Capsule())
+            .panelMaterial(in: Capsule())
             .fixedSize()
             .transition(.opacity)
         }
@@ -247,7 +247,7 @@ struct FeatureDoneBar: View {
             .touchControls()
             .padding(.horizontal, DS.Spacing.space4)
             .padding(.vertical, DS.Spacing.space2)
-            .panelGlass(in: .capsule)
+            .panelMaterial(in: .capsule)
             .fixedSize()
             .transition(.opacity)
         }

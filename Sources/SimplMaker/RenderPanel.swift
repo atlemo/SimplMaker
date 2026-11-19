@@ -58,7 +58,7 @@ struct RenderPanel: View {
         }
         .frame(width: Self.width)
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))  // what scrolls ends at the panel's edge
-        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
+        .panelMaterial(in: .rect(cornerRadius: DS.Radius.window))
     }
 
     @ViewBuilder private var tabContent: some View {

@@ -44,10 +44,8 @@ struct DocumentWindow: View {
     @State private var toolRowWidths: [ToolbarLayout: CGFloat] = [:]
     /// How tall the island bar is, so the panels start under it and the camera centres on what it leaves free.
     @State private var barHeight: CGFloat = 68
-    /// What this window tells the system: whether it is a Start page, and where the ribbon's middle is.
+    /// What this window tells the system: whether it is a Start page.
     @State private var chrome = WindowChrome()
-    /// The ribbon's own height (without the tab row), which the traffic lights are centred on.
-    @State private var ribbonHeight: CGFloat = 0
     /// The list of workspaces under the ribbon is open.
     @State private var workspaceListOpen = false
     /// Bumped when a preference changes, so the pins are read again.
@@ -126,13 +124,8 @@ struct DocumentWindow: View {
 
     var body: some View {
         documentContent
-        // The window has no toolbar of its own: the ribbon is the top bar, and the titlebar over it is transparent (it keeps only the
-        // traffic lights).
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .toolbar(removing: .title)
         .background(HideUIKeyMonitor { model.toggleUIHidden() })
         .background(WindowChromeAttach(chrome: chrome))
-        .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .task(id: toolRowSignature) { toolRowWidths = measureToolRows() }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in defaultsTick += 1 }
@@ -172,7 +165,8 @@ struct DocumentWindow: View {
     /// The ribbon is in every workspace but Start, which is a page of its own: a way out is on the page itself (and Window → Start brings it back).
     private var showsRibbon: Bool { !model.uiHidden && model.workspace != .start }
     /// How far the ribbon (and the tab row) reach down from the top of the window.
-    private var ribbonBottom: CGFloat { showsRibbon ? barHeight : 0 }
+    /// The ribbon sits in the safe area, under the title bar, so its bottom is the title bar's height further down.
+    private var ribbonBottom: CGFloat { showsRibbon ? barHeight + safeTop : 0 }
     /// How far they reach below the top of the safe area, which is where the panels start.
     private var chromeTop: CGFloat { max(0, ribbonBottom - safeTop) }
 
@@ -206,21 +200,12 @@ struct DocumentWindow: View {
         // fills the band behind it.
         .overlay(alignment: .top) {
             if showsRibbon {
-                ZStack(alignment: .top) {
-                    ToolbarFade(tint: sketchPaper.toolbarTint, height: barHeight, visible: sketchTint, material: false)
-                    VStack(spacing: 0) {
-                        RibbonBar(model: model, ink: panelToggleInk, listOpen: $workspaceListOpen) {
-                            toolRow(toolbarLayout)
-                                .accessibilityElement(children: .contain)
-                                .accessibilityLabel("Tools")
-                        }
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { ribbonHeight = $0; chrome.setRibbonHeight($0) }
-                    }
-                    // The ribbon is the bar (in Sketch mode the tinted band is behind it instead).
-                    .background { if panelToggleInk == nil { Rectangle().fill(.bar) } }
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
+                RibbonBar(model: model, ink: panelToggleInk, tint: sketchPaper.toolbarTint, listOpen: $workspaceListOpen) {
+                    toolRow(toolbarLayout)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Tools")
                 }
-                .ignoresSafeArea(.container, edges: .top)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
             }
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.workspace == .start)
@@ -239,8 +224,6 @@ struct DocumentWindow: View {
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: workspaceListOpen)
         .onChange(of: model.workspace) { workspaceListOpen = false }
-        // The lights follow the ribbon: its middle with it, the titlebar's place without it (Start, or the UI hidden).
-        .onChange(of: showsRibbon, initial: true) { chrome.setRibbonHeight(showsRibbon ? ribbonHeight : 0) }
     }
 }
 #endif
@@ -382,7 +365,7 @@ struct StartCard: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(DS.Spacing.space8)
-        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
+        .panelMaterial(in: .rect(cornerRadius: DS.Radius.window))
     }
 }
 
@@ -421,7 +404,7 @@ struct LoadingCard: View {
                 .frame(width: 240)
         }
         .padding(DS.Spacing.space8)
-        .panelGlass(in: .rect(cornerRadius: DS.Radius.window))
+        .panelMaterial(in: .rect(cornerRadius: DS.Radius.window))
         .accessibilityElement(children: .combine)
     }
 }
@@ -450,7 +433,7 @@ extension View {
             .frame(width: width)
             .frame(maxHeight: .infinity)
             .clipShape(shape)
-            .background { Color.clear.panelGlass(in: shape) }
+            .background { Color.clear.panelMaterial(in: shape) }
     }
 }
 
@@ -730,7 +713,7 @@ struct SidebarPanel<Accessory: View, Content: View>: View {
         .clipShape(shape)
         // The glass is a layer of its own behind the content: on the content itself it went with a row that was lifted
         // for its long-press menu, leaving the panel without a background while the menu was open.
-        .background { Color.clear.panelGlass(in: shape) }
+        .background { Color.clear.panelMaterial(in: shape) }
     }
 }
 
@@ -1422,7 +1405,7 @@ extension View {
             self.padding(.horizontal, DS.Spacing.space2).frame(minHeight: 34)
                 .background(ink.opacity(0.16), in: Capsule())
         } else {
-            self.padding(.horizontal, DS.Spacing.space2).frame(minHeight: 34).panelGlass(in: Capsule())
+            self.padding(.horizontal, DS.Spacing.space2).frame(minHeight: 34).panelMaterial(in: Capsule())
         }
     }
 }

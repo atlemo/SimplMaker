@@ -115,7 +115,7 @@ struct WorkspaceList: View {
         }
         .frame(width: 400)
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))
-        .panelGlass(in: RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))
+        .panelMaterial(in: RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))
     }
 }
 
@@ -208,31 +208,24 @@ struct WindowDragArea: NSViewRepresentable {
     }
 }
 
-/// Measures of the ribbon that other code needs (a generic type cannot hold them).
-enum RibbonMetrics {
-    /// How far below the top of the window the middle of the ribbon is before it has been measured: the line the traffic lights follow.
-    static let defaultAxis: CGFloat = 37
-}
-
-/// The ribbon: the window's controls' room, the workspace button and, where the workspace has tools, the tool row (which the window
-/// builds, so it can measure it for the room it has), then undo and redo at the far right. `ink` is the contrast ink on the tinted
-/// sketch band, nil on the plain view.
+/// The ribbon: one floating glass capsule under the window's title bar, like the panels. The workspace button, then (where the workspace has
+/// tools) the tool row, which the window builds so it can measure it for the room it has, then undo and redo at the far right. `ink` is the
+/// contrast ink on Sketch mode's tint, nil on the plain glass.
 struct RibbonBar<Tools: View>: View {
     @Bindable var model: DocumentModel
     let ink: Color?
+    let tint: Color
     @Binding var listOpen: Bool
     @ViewBuilder let tools: Tools
 
-    /// The room the traffic lights take at the left.
-    static var windowControls: CGFloat { 72 + WindowControls.inset }
     /// What the ribbon keeps clear at each side of the tool row: the tools are centred in the window, so each side has to be as wide as the
-    /// wider cluster, which is the left one (the window controls and the workspace button; undo and redo are narrower), with the padding and a gap.
-    static var sideRoom: CGFloat { windowControls + WorkspaceButton.width + 3 * DS.Spacing.space3 }
+    /// wider cluster, which is the left one (the workspace button; undo and redo are narrower), with the padding and a gap.
+    static var sideRoom: CGFloat { Panel.inset + WorkspaceButton.width + 3 * DS.Spacing.space3 }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous)
         ZStack {
             HStack(spacing: DS.Spacing.space3) {
-                Color.clear.frame(width: Self.windowControls, height: 1)
                 WorkspaceButton(model: model, ink: ink, open: $listOpen)
                 Spacer(minLength: 0)
                 UndoRedoButtons(model: model, ink: ink)
@@ -245,7 +238,15 @@ struct RibbonBar<Tools: View>: View {
         .environment(\.toolsOnTint, ink != nil)
         .environment(\.toolsInk, ink ?? .white)
         .frame(maxWidth: .infinity)
-        .background { WindowDragArea() }
+        .background {
+            ZStack {
+                Color.clear.panelMaterial(in: shape)
+                shape.fill(tint).opacity(ink != nil ? 1 : 0)
+            }
+            .animation(.easeInOut(duration: DS.Duration.base), value: ink != nil)
+        }
+        .padding(.horizontal, Panel.inset)
+        .padding(.top, Panel.inset)
     }
 }
 
