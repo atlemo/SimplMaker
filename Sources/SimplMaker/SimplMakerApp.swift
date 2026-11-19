@@ -20,6 +20,9 @@ struct SimplMakerApp: App {
         // Lets `swift run SimplMaker` show a normal, focusable app without an .app bundle.
         // (Use scripts/bundle-app.sh or Xcode for the full document experience.)
         NSApplication.shared.setActivationPolicy(.regular)
+        // A document app that starts with no window to restore shows the system's Open panel (with a New Document button) instead of an
+        // empty part, on launch and when the Dock icon is clicked with no window open. The Start page is the way in, so an empty part opens.
+        UserDefaults.standard.register(defaults: ["NSShowAppCentricOpenPanelInsteadOfUntitledFile": false])
         _ = ParameterCompleter.shared  // starts listening to the number fields
     }
 
@@ -67,6 +70,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         if AIFeature.isAvailable { AIConnection.shared.stop() }  // closes the connections and marks the connection file as not running
     }
+
+    /// An empty part at launch, which opens on the Start page.
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { true }
+
+    /// Clicking the Dock icon with no windows open makes an empty part, the same.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool { true }
 }
 
 /// Menu commands. They act on the frontmost document window through a focused value.

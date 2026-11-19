@@ -181,14 +181,17 @@ private struct TabButton: View {
                 .font(.system(size: 13, weight: tab.selected ? .semibold : .regular))
                 .lineLimit(1)
                 .truncationMode(.middle)
-            if hovering && count > 1 || tab.selected && count > 1 {
-                Button { tabs.close(tab.id) } label: {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).frame(width: 16, height: 16).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Close this part")
-                .accessibilityLabel("Close \(tab.title)")
+            // The close button always has its room (only its look changes), so the tab keeps its size as the pointer comes and goes.
+            let showsClose = count > 1 && (hovering || tab.selected)
+            Button { tabs.close(tab.id) } label: {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).frame(width: 16, height: 16).contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .opacity(showsClose ? 1 : 0)
+            .allowsHitTesting(showsClose)
+            .help("Close this part")
+            .accessibilityLabel("Close \(tab.title)")
+            .accessibilityHidden(!showsClose)
         }
         .foregroundStyle(text)
         .padding(.horizontal, DS.Spacing.space5)

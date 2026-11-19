@@ -29,7 +29,7 @@ struct StartPage: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, wide ? DS.Spacing.space10 : DS.Spacing.space6)
             .padding(.top, wide ? (short ? DS.Spacing.space6 : DS.Spacing.space10) : DS.Spacing.space6)
-            .padding(.bottom, DS.Spacing.space8)
+            .padding(.bottom, DS.Spacing.space10)
         }
         .background { StartBackground() }
         .accessibilityElement(children: .contain)
@@ -107,19 +107,21 @@ struct StartPage: View {
 
     // MARK: Panel
 
-    /// Two panels with 6 pt between them: the ways to begin on plain white, the recent parts on the same glass as the app's panels.
+    /// One block, rounded at its outside corners only: the ways to begin on white, the recent parts on white at 30 %, so the two read as
+    /// parts of the same thing.
     private func panel(wide: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous)
-        let white = begin.frame(maxWidth: wide ? 380 : .infinity, maxHeight: .infinity).background(DS.windowBackground, in: shape)
-        let glass = recents.frame(maxWidth: .infinity, maxHeight: .infinity).clipShape(shape).panelGlass(in: shape)
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.window + DS.Spacing.space5, style: .continuous)
+        let white = begin.frame(maxWidth: wide ? 380 : .infinity, maxHeight: .infinity).background(DS.windowBackground)
+        let faded = recents.frame(maxWidth: .infinity, maxHeight: .infinity).background(DS.windowBackground.opacity(0.3))
         return Group {
             if wide {
-                HStack(spacing: DS.Spacing.space3) { white; glass }
+                HStack(spacing: 0) { white; faded }
             } else {
-                VStack(spacing: DS.Spacing.space3) { white; glass }
+                VStack(spacing: 0) { white; faded }
             }
         }
         .frame(maxHeight: .infinity)
+        .clipShape(shape)
     }
 
     /// The ways to begin this part (or to go on with it).
