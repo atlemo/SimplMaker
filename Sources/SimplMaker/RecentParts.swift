@@ -96,7 +96,7 @@ struct RecentPartsList: View {
         Task {
             defer { opening = nil }
             do {
-                try await openDocument(at: url)
+                try await PartWindows.openAsync { try await openDocument(at: url) }
             } catch {
                 self.error = error.localizedDescription
             }

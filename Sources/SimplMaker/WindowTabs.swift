@@ -69,20 +69,48 @@ import SwiftUI
 
     func moveToNewWindow(_ id: Int) { window(id)?.moveTabToNewWindow(nil) }
 
-    /// A new part, as a tab beside these. It is made the way File → New makes one; if the new window did not join this tab group by
-    /// itself (the system only does that for a window it sees come to the front), it is added to it here.
+    /// A new part, as a tab beside these (made the way File → New makes one).
     func newTab() {
-        guard let current = window else { return NSDocumentController.shared.newDocument(nil) }
+        PartWindows.open(from: window) { NSDocumentController.shared.newDocument(nil) }
+    }
+}
+
+/// Opens part windows as tabs. A part opened from a button or a menu through SwiftUI's `newDocument` or `openDocument` comes as a
+/// window of its own: only File → New (the system's own) joins the front window's tabs. So the window that comes up is joined to
+/// the tab group of the window the part was opened from. (The new window is not known to the caller, so it is the one that
+/// appears while `create` runs and a moment after.)
+@MainActor enum PartWindows {
+    /// Runs `create`, which opens a part's window, and joins that window to `anchor`'s tabs (the front part window by default).
+    static func open(from anchor: NSWindow? = nil, _ create: () -> Void) {
+        let anchor = anchor ?? frontPartWindow()
         let before = Set(NSApp.windows.map(\.windowNumber))
-        NSDocumentController.shared.newDocument(nil)
+        create()
+        join(after: before, to: anchor)
+    }
+
+    /// The same for something that opens the window asynchronously (opening a file).
+    static func openAsync(from anchor: NSWindow? = nil, _ create: () async throws -> Void) async rethrows {
+        let anchor = anchor ?? frontPartWindow()
+        let before = Set(NSApp.windows.map(\.windowNumber))
+        try await create()
+        join(after: before, to: anchor)
+    }
+
+    /// The front window that is one of the parts' (the Settings window and panels are not).
+    private static func frontPartWindow() -> NSWindow? {
+        [NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 }.first {
+            $0.styleMask.contains(.titled) && $0.tabbingMode == .preferred && $0.tabGroup != nil
+        }
+    }
+
+    private static func join(after before: Set<Int>, to anchor: NSWindow?) {
+        guard let anchor else { return }
         Task { @MainActor in
-            for _ in 0..<20 {
+            for _ in 0..<40 {
                 try? await Task.sleep(for: .milliseconds(50))
-                guard let new = NSApp.windows.first(where: { !before.contains($0.windowNumber) && $0.styleMask.contains(.titled) }) else { continue }
-                if new.tabGroup !== current.tabGroup, new.tabbingMode != .disallowed {
-                    current.addTabbedWindow(new, ordered: .above)
-                    new.makeKeyAndOrderFront(nil)
-                }
+                guard let new = NSApp.windows.first(where: { !before.contains($0.windowNumber) && $0.styleMask.contains(.titled) && $0.tabbingMode != .disallowed }) else { continue }
+                if new.tabGroup !== anchor.tabGroup { anchor.addTabbedWindow(new, ordered: .above) }
+                new.makeKeyAndOrderFront(nil)
                 return
             }
         }

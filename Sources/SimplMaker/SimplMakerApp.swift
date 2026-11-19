@@ -111,12 +111,12 @@ struct SimplMakerCommands: Commands {
         }
         CommandGroup(before: .saveItem) {
             Menu("Open Example Parts") {
-                Button("Plate with Holes, Fillets and a Chamfer") { newDocument { CADFile(document: .demo()) } }
+                Button("Plate with Holes, Fillets and a Chamfer") { PartWindows.open { newDocument { CADFile(document: .demo()) } } }
                     .shortcut(.exampleParts)
-                Button("Bracket Profile (try the sketch solver)") { newDocument { CADFile(document: .bracketProfileDemo()) } }
-                Button("Constraints Sampler (drag the points)") { newDocument { CADFile(document: .constraintsSamplerDemo()) } }
-                Button("Bracket with Ribs") { newDocument { CADFile(document: .ribDemo()) } }
-                Button("Flanged Pipe on a Manifold (advanced)") { newDocument { CADFile(document: .manifoldDemo()) } }
+                Button("Bracket Profile (try the sketch solver)") { PartWindows.open { newDocument { CADFile(document: .bracketProfileDemo()) } } }
+                Button("Constraints Sampler (drag the points)") { PartWindows.open { newDocument { CADFile(document: .constraintsSamplerDemo()) } } }
+                Button("Bracket with Ribs") { PartWindows.open { newDocument { CADFile(document: .ribDemo()) } } }
+                Button("Flanged Pipe on a Manifold (advanced)") { PartWindows.open { newDocument { CADFile(document: .manifoldDemo()) } } }
             }
             Divider()
         }
@@ -279,7 +279,7 @@ struct SimplMakerCommands: Commands {
                 return
             }
         }
-        newDocument { CADFile(tutorial: true) }
+        PartWindows.open { newDocument { CADFile(tutorial: true) } }
     }
 
     /// A Create or Modify tool, with its shortcut (by default a single letter: E for Extrude, F for Fillet...).

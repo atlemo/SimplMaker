@@ -89,7 +89,7 @@ struct StartPage: View {
     private var actions: some View {
         VStack(spacing: DS.Spacing.space5) {
             VStack(spacing: DS.Spacing.space5) {
-                Button { newDocument { CADFile() } } label: { Label("New Part", systemImage: "plus").frame(maxWidth: .infinity) }
+                Button { PartWindows.open { newDocument { CADFile() } } } label: { Label("New Part", systemImage: "plus").frame(maxWidth: .infinity) }
                     .buttonStyle(.borderedProminent)
                 Button { NSDocumentController.shared.openDocument(nil) } label: { Label("Open…", systemImage: "folder").frame(maxWidth: .infinity) }
                     .buttonStyle(.bordered)
@@ -148,7 +148,7 @@ struct StartPage: View {
                 model.run(.cylinder)
             }
             StartAction(title: "Open the demo part", subtitle: "A plate with a hole, fillets and a chamfer.", systemImage: "cube.transparent") {
-                newDocument { CADFile(document: .demo()) }
+                PartWindows.open { newDocument { CADFile(document: .demo()) } }
             }
             Spacer(minLength: 0)
         }
@@ -171,7 +171,7 @@ struct StartPage: View {
             model.setWorkspace(.design)
             guide.start()
         } else {
-            newDocument { CADFile(tutorial: true) }
+            PartWindows.open { newDocument { CADFile(tutorial: true) } }
         }
     }
 }
