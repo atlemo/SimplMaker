@@ -21,22 +21,13 @@ import Testing
 
     private func args(_ pairs: [String: JSONValue]) -> AIArguments { AIArguments(.object(pairs)) }
 
-    private func withMoldEnabled(_ body: () async throws -> Void) async throws {
-        try await Workspace.$moldOverride.withValue(true) {
-            try await body()
-        }
-    }
+    private func withMoldEnabled(_ body: () async throws -> Void) async throws { try await body() }
 
-    @Test func theToolsAreOfferedOnlyWithTheWorkspace() async throws {
+    @Test func theMoldToolsAndGuideAreOffered() async throws {
         let t = try await open()
-        let off = Workspace.$moldOverride.withValue(false) { AITools.make(service: t.service).map(\.name) }
-        #expect(!off.contains("create_mold") && !off.contains("get_mold") && !off.contains("export_mold"))
-        try await withMoldEnabled {
-            let on = AITools.make(service: t.service).map(\.name)
-            #expect(on.contains("create_mold") && on.contains("get_mold") && on.contains("export_mold"))
-            #expect(AIDesignGuide.topic("make_a_mold") != nil)
-        }
-        Workspace.$moldOverride.withValue(false) { #expect(AIDesignGuide.topic("make_a_mold") == nil) }
+        let names = AITools.make(service: t.service).map(\.name)
+        #expect(names.contains("create_mold") && names.contains("get_mold") && names.contains("export_mold"))
+        #expect(AIDesignGuide.topic("make_a_mold") != nil)
     }
 
     @Test func aMoldIsMadeReadAndChanged() async throws {

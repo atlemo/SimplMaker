@@ -7,14 +7,8 @@ import Testing
 
 /// The window's workspaces (Design and the Mold studio): which are offered, and what switching does to what is open.
 @Suite(.serialized) @MainActor struct WorkspaceTests {
-    /// Runs `body` with the Mold workspace switched on or off, and puts the preference back as it was.
-    private func withMold(_ on: Bool, _ body: () throws -> Void) rethrows {
-        let defaults = UserDefaults.standard
-        let before = defaults.object(forKey: Preferences.moldWorkspace)
-        defaults.set(on, forKey: Preferences.moldWorkspace)
-        defer { if let before { defaults.set(before, forKey: Preferences.moldWorkspace) } else { defaults.removeObject(forKey: Preferences.moldWorkspace) } }
-        try body()
-    }
+    /// Runs `body`: Mold is in every build, so there is nothing to switch on.
+    private func withMold(_ body: () throws -> Void) rethrows { try body() }
 
     @Test func anEmptyPartOpensOnTheStartPageAndOneWithFeaturesInDesign() {
         #expect(DocumentModel(document: CADDocument()).workspace == .start)
@@ -23,26 +17,16 @@ import Testing
         #expect(DocumentModel(document: d).workspace == .design)
     }
 
-    @Test func moldIsOfferedOnlyWhenSwitchedOn() {
-        withMold(false) { #expect(Workspace.available == [.start, .design, .render]) }
-        withMold(true) { #expect(Workspace.available == [.start, .design, .mold, .render]) }
+    @Test func everyWorkspaceIsOffered() {
+        #expect(Workspace.available == [.start, .design, .mold, .render])
     }
 
     @Test func onlyDesignAndMoldHaveToolRows() {
         #expect(Workspace.allCases.filter(\.hasTools) == [.design, .mold])
     }
 
-    @Test func aWorkspaceThatIsNotOfferedCannotBeEntered() {
-        withMold(false) {
-            let model = DocumentModel(document: CADDocument())
-            model.setWorkspace(.design)
-            model.setWorkspace(.mold)
-            #expect(model.workspace == .design)
-        }
-    }
-
     @Test func switchingFinishesTheSketchBeingEdited() {
-        withMold(true) {
+        withMold {
             let model = DocumentModel(document: CADDocument())
             model.beginSketch(on: .xy)
             #expect(model.workspace == .design)
@@ -54,7 +38,7 @@ import Testing
     }
 
     @Test func switchingDropsAToolWaitingForPicksAndAPlanePick() {
-        withMold(true) {
+        withMold {
             let model = DocumentModel(document: CADDocument())
             model.startSketch()
             #expect(model.isPickingSketchPlane)
@@ -70,7 +54,7 @@ import Testing
     }
 
     @Test func switchingBackLeavesTheDocumentAlone() {
-        withMold(true) {
+        withMold {
             let model = DocumentModel(document: CADDocument())
             let before = model.document
             model.setWorkspace(.mold)

@@ -86,9 +86,7 @@ extension DocumentModel {
                 self.run(.combine)
             },
         ]
-        if Workspace.moldEnabled {
-            items.append(.action("Make a Mold…", symbol: "square.split.2x1") { self.makeMold(of: ref.body) })
-        }
+        items.append(.action("Make a Mold…", symbol: "square.split.2x1") { self.makeMold(of: ref.body) })
         items += ownerItems(featureMaking(face: ref.face), body: ref.body)
         return items
     }

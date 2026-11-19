@@ -8,7 +8,7 @@ import SwiftUI
 /// The recent parts, as a list to open them from (the Start page's). Drawn here rather than
 /// with List: a List shows its selection in grey until it has keyboard focus, and its table doesn't take the click that brings the
 /// window forward, so a double-click could select without opening. Here a click selects at once, the second click of a
-/// double-click opens, and ↑ ↓ Return work as in a list.
+/// double-click opens, and the arrow keys and Return work as in a list. Each part is a card with its picture.
 struct RecentPartsList: View {
     /// The list has the keyboard from the start (for ↑ ↓ Return), not the first button.
     var takesFocus = false
@@ -19,6 +19,15 @@ struct RecentPartsList: View {
     @State private var opening: URL?
     @FocusState private var listFocused: Bool
     @State private var error: String?
+    /// The list's width, to know how many cards fit in a row (for ↑ ↓).
+    @State private var width: CGFloat = 0
+
+    private static let cardWidth: CGFloat = 150
+    private static let gap: CGFloat = DS.Spacing.space5
+
+    private var columns: Int {
+        max(1, Int(((width - 2 * DS.Spacing.space5 + Self.gap) / (Self.cardWidth + Self.gap)).rounded(.down)))
+    }
 
     var body: some View {
         list
@@ -40,9 +49,10 @@ struct RecentPartsList: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVStack(spacing: 2) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cardWidth, maximum: Self.cardWidth + 60), spacing: Self.gap, alignment: .top)],
+                          spacing: Self.gap) {
                     ForEach(recents, id: \.self) { url in
-                        RecentRow(url: url, selected: selected == url, opening: opening == url)
+                        RecentCard(url: url, selected: selected == url, opening: opening == url)
                             .onTapGesture { click(url) }
                             .contextMenu {
                                 Button("Open") { open(url) }
@@ -56,14 +66,17 @@ struct RecentPartsList: View {
                             .accessibilityAction { open(url) }
                     }
                 }
-                .padding(DS.Spacing.space3)
+                .padding(DS.Spacing.space5)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .focusable()
             .focusEffectDisabled()
             .focused($listFocused)
             .onAppear { listFocused = takesFocus }
-            .onKeyPress(.upArrow) { step(-1) }
-            .onKeyPress(.downArrow) { step(1) }
+            .onKeyPress(.leftArrow) { step(-1) }
+            .onKeyPress(.rightArrow) { step(1) }
+            .onKeyPress(.upArrow) { step(-columns) }
+            .onKeyPress(.downArrow) { step(columns) }
             .onKeyPress(.return) {
                 guard let selected else { return .ignored }
                 open(selected)
@@ -137,36 +150,48 @@ struct StartAction: View {
     }
 }
 
-/// A recent part: file icon, name, and where it lives; blue when selected, as in a source list.
-struct RecentRow: View {
+/// A recent part: the picture stored in the file (the file's icon when it has none), the name and where it lives; the picture's frame is
+/// blue when selected, as in a source list.
+struct RecentCard: View {
     @Environment(\.accent) private var accent
     let url: URL
     let selected: Bool
     let opening: Bool
     @State private var hovering = false
+    @State private var picture: NSImage?
+    @State private var loaded = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                .resizable()
-                .frame(width: 32, height: 32)
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            let shape = RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous)
+            // The pictures stored in the files are square: the frame is too, and takes the width the grid gives it whatever is inside.
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay {
+                    if let picture {
+                        Image(nsImage: picture).resizable().interpolation(.high).scaledToFill()
+                    } else if loaded {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().scaledToFit().frame(width: 56, height: 56)
+                    }
+                }
+                .overlay { if opening { ProgressView().controlSize(.small) } }
+                .background(DS.windowBackground)
+                .clipShape(shape)
+                .overlay { shape.strokeBorder(selected ? accent : hovering ? Color.primary.opacity(0.18) : Color.primary.opacity(0.08), lineWidth: selected ? 3 : 1) }
             VStack(alignment: .leading, spacing: 1) {
                 Text(url.deletingPathExtension().lastPathComponent).font(.headline).lineLimit(1)
-                Text(Self.abbreviated(url.deletingLastPathComponent())).font(.callout)
-                    .foregroundStyle(selected ? Color.white.opacity(0.8) : Color.secondary)
+                Text(Self.abbreviated(url.deletingLastPathComponent())).font(.caption).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
             }
-            Spacer(minLength: 0)
-            if opening { ProgressView().controlSize(.small).tint(selected ? .white : nil) }
+            .padding(.horizontal, DS.Spacing.space1)
         }
-        .foregroundStyle(selected ? Color.white : Color.primary)
-        .padding(.horizontal, DS.Spacing.space3)
-        .padding(.vertical, 5)
-        .background(selected ? accent : hovering ? Color.primary.opacity(0.06) : .clear,
-                    in: RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .help(url.path)
+        .task(id: url) {
+            picture = await RecentPictures.image(for: url)
+            loaded = true
+        }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
@@ -174,6 +199,24 @@ struct RecentRow: View {
     /// "~/Desktop" rather than "/Users/name/Desktop".
     static func abbreviated(_ folder: URL) -> String {
         (folder.path as NSString).abbreviatingWithTildeInPath
+    }
+}
+
+/// The pictures stored in the recent parts' files, read once per version of the file.
+@MainActor enum RecentPictures {
+    private static let cache = NSCache<NSString, NSImage>()
+
+    static func image(for url: URL) async -> NSImage? {
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate?.timeIntervalSince1970 ?? 0
+        let key = "\(url.path)|\(modified)" as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+        let png = await Task.detached(priority: .utility) { () -> Data? in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return CADDocument.thumbnail(in: data)
+        }.value
+        guard let png, let image = NSImage(data: png) else { return nil }
+        cache.setObject(image, forKey: key)
+        return image
     }
 }
 

@@ -23,18 +23,16 @@ import Testing
     /// the process exits crashes it).
     private static var made: [DocumentModel] = []
 
-    /// The workspace is only on offer while it is being built: these tests switch it on and put it back.
+    /// Runs `body`, then lets every model it made finish what it started.
     private func withMoldEnabled(_ body: () async throws -> Void) async throws {
-        try await Workspace.$moldOverride.withValue(true) {
-            try await body()
-            for model in Self.made {
-                try await Task.sleep(for: .milliseconds(5))
-                for _ in 0..<2000 where model.moldBuilding || model.isRegenerating { try await Task.sleep(for: .milliseconds(5)) }
-            }
-            Self.made = []
-            // The build's thread is still letting go of its bodies when the model says it is done: give it the moment it needs.
-            try await Task.sleep(for: .milliseconds(150))
+        try await body()
+        for model in Self.made {
+            try await Task.sleep(for: .milliseconds(5))
+            for _ in 0..<2000 where model.moldBuilding || model.isRegenerating { try await Task.sleep(for: .milliseconds(5)) }
         }
+        Self.made = []
+        // The build's thread is still letting go of its bodies when the model says it is done: give it the moment it needs.
+        try await Task.sleep(for: .milliseconds(150))
     }
 
     private func part() async throws -> DocumentModel {

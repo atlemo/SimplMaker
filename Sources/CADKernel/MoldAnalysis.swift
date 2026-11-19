@@ -131,7 +131,7 @@ public enum MoldVents {
         // as prominent as the drop from it to where they met.
         let order = (0..<n).sorted { height[$0] > height[$1] }
         var parent = Array(0..<n)
-        var peak = Array(0..<n)  // the highest vertex of a region, kept at its root
+        let peak = Array(0..<n)  // the highest vertex of a region, kept at its root
         var seen = [Bool](repeating: false, count: n)
         var found: [(vertex: Int, prominence: Double)] = []
         func root(_ x: Int) -> Int {

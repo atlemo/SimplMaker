@@ -3,7 +3,7 @@ title: The interface
 description: Where everything is: the toolbar, browser, parameters, viewport, inspector and timeline.
 ---
 
-Each part opens as a tab. The tabs show in the toolbar beside the mode selector as soon as you have a second part open (⌘N, **File → New**, or **New Part** on the Start page); until then the toolbar has no tab bar. The **+** opens another part, and a right-click on a tab offers **Close Other Tabs** and **Move Tab to New Window**. The window has five areas.
+Each part opens in a window of its own (⌘N, **File → New**, or **New Part** on the Start page); there are no tabs. The window has five areas.
 
 ![The SimplMaker window: toolbar on top, browser on the left, viewport in the middle, inspector on the right, timeline along the bottom.](shot:interface-overview)
 
@@ -25,14 +25,14 @@ The toolbar is one bar, the **ribbon**, at the very top of the window and as wid
 
 The big button at the left of the ribbon shows where you are: its picture, its name and the word **Workspace**. Click it for the list of workspaces, each with a picture, a line on what it is for and what is in it. It is there in every workspace except Start, which is a page of its own: pick Sketch, Box, Cylinder or New Part there to move on to Design, or choose **Window → Start** ([[⇧⌘1]]) to come back.
 
-- **Start** is a page as big as the window: new and recent parts, and the ways to begin this part (a sketch, a box, a cylinder, the tutorial). The first part of a launch opens on it. A part you make yourself (**New Part**, ⌘N, a new tab) opens in Design. The page makes way for Design as soon as you start something. **Window → Start** ([[⇧⌘1]]) comes back to it.
+- **Start** is a page as big as the window: new and recent parts, and the ways to begin this part (a sketch, a box, a cylinder, the tutorial). The first part of a launch opens on it. A part you make yourself (**New Part**, ⌘N, a new window) opens in Design. The page makes way for Design as soon as you start something. **Window → Start** ([[⇧⌘1]]) comes back to it.
 - **Design** is where you model. Its tools are below.
 - **Render** shows the part on a floor with a light you set. See [Render view](doc:modify/render).
-- **Mold** is being built, and shows only when it is switched on.
+- **Mold** makes a printable two-part mold around a body, to cast copies of it. It is still being built.
 
 Switching finishes a sketch you were drawing. Every workspace works on the same part and its history; only the tools and panels change.
 
-Each part opens as a tab. The tabs show in a row under the ribbon as soon as you have a second part open (⌘N, **File → New**, or **New Part** on the Start page); until then there is no tab bar, and the Start page never has one. The **+** opens another part, and a right-click on a tab offers **Close Other Tabs** and **Move Tab to New Window**.
+Each part opens in a window of its own, so two parts can sit side by side on the screen. Use **Window** in the menu bar to switch between them.
 
 ### Design mode
 

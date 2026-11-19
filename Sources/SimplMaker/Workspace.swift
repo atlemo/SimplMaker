@@ -8,7 +8,6 @@ import Foundation
 
 extension Preferences {
     /// Shows the Mold workspace in the window's mode selector while it is being built (Settings has no switch for it yet).
-    static let moldWorkspace = "moldWorkspace"
 }
 
 enum Workspace: String, CaseIterable, Identifiable, Sendable {
@@ -19,25 +18,8 @@ enum Workspace: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    /// The workspaces the mode selector offers. Mold is unfinished and comes only when it is switched on.
-    static var available: [Workspace] {
-        allCases.filter { $0 != .mold || moldEnabled }
-    }
-
-    /// Tests switch Mold on or off for the code they run (and the tasks it starts), without touching the preference that other
-    /// tests, running at the same time, would see: `Workspace.$moldOverride.withValue(true) { … }`.
-    @TaskLocal static var moldOverride: Bool?
-
-    /// Mold is unfinished: it shows in a build made with `scripts/bundle-app.sh --with-mold`, with `defaults write <app id> moldWorkspace -bool YES`,
-    /// or in a debug run with SIMPLMAKER_MOLD=1.
-    static var moldEnabled: Bool {
-        if let forced = moldOverride { return forced }
-        if Bundle.main.object(forInfoDictionaryKey: "SCMoldEnabled") as? Bool == true { return true }  // a build made with --with-mold
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["SIMPLMAKER_MOLD"] == "1" { return true }
-        #endif
-        return UserDefaults.standard.bool(forKey: Preferences.moldWorkspace)
-    }
+    /// The workspaces the mode selector offers.
+    static var available: [Workspace] { allCases }
 
     /// Whether the workspace has a row of tool islands under the toolbar. Start is a page of its own, and Render is for looking.
     var hasTools: Bool { self == .design || self == .mold }

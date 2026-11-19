@@ -5,9 +5,7 @@ description: How parts are saved, autosave and versions, opening and importing f
 
 ## Parts are documents
 
-SimplMaker is a normal Mac document app. Each part opens as a **tab** in the same window, and the tab bar shows even when only one part is open. The part's name is in its tab. Use **New** ([[⌘N]]), **Open** ([[⌘O]]), **Open Recent**, **Save** ([[⌘S]]), **Duplicate** and **Revert To** as in any Mac app. The **+** at the right end of the tab bar starts a new part.
-
-To give a part a window of its own, drag its tab out of the tab bar, or choose **Window → Move Tab to New Window**. **Window → Merge All Windows** brings separate windows back together as tabs.
+SimplMaker is a normal Mac document app. Each part opens in a window of its own. Use **New** ([[⌘N]]), **Open** ([[⌘O]]), **Open Recent**, **Save** ([[⌘S]]), **Duplicate** and **Revert To** as in any Mac app.
 
 Parts are saved as `.simplmaker` files.
 

@@ -81,7 +81,7 @@ enum AITools {
     ]
 
     static func make(service: CADService) -> [MCPTool] {
-        base(service: service) + (Workspace.moldEnabled ? moldTools(service: service) : [])  // the mold tools come with the Mold workspace
+        base(service: service) + moldTools(service: service)
     }
 
     private static func moldTools(service: CADService) -> [MCPTool] {

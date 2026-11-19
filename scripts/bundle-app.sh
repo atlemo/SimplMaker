@@ -5,8 +5,6 @@
 #   scripts/bundle-app.sh --release release build signed with a Developer ID (see below), ready to notarize
 #   add --official for the build the project publishes: it alone checks the project's update feed and sends anonymous
 #   usage statistics (see Updates below). scripts/release.sh passes it; a build you make yourself should not.
-#   add --with-mold to switch the (unfinished) Mold workspace on in this build: it writes the Info.plist key SCMoldEnabled, which
-#   Workspace.moldEnabled reads. Without it the workspace comes only with `defaults write com.simplmaker.SimplMaker moldWorkspace -bool YES`.
 #   add --open to launch it afterwards
 #   add --without-ai to leave the AI mode out. Every build has it by default (the AI interface: a local MCP server, Settings > AI,
 #   the stdio relay in Contents/Helpers); it is off until the user turns it on. The Info.plist key SCAIEnabled, which this script
@@ -37,13 +35,11 @@ OPEN=0
 RELEASE=0
 WITHOUT_AI="${WITHOUT_AI:-0}"
 OFFICIAL=0
-WITH_MOLD=0
 for arg in "$@"; do
   case "$arg" in
     --debug) CONFIG=debug ;;
     --release) RELEASE=1 ;;
     --official) OFFICIAL=1 ;;
-    --with-mold) WITH_MOLD=1 ;;
     --open) OPEN=1 ;;
     --without-ai) WITHOUT_AI=1 ;;
     *) echo "unknown option $arg" >&2; exit 2 ;;
@@ -89,12 +85,8 @@ else
   echo "note: this build has no AI mode (--without-ai)"
 fi
 
-# The Mold workspace (a real boolean, which the app reads as such).
+# (The Mold workspace is in every build; an Info.plist key from an older build of this script is not carried over.)
 /usr/libexec/PlistBuddy -c "Delete :SCMoldEnabled" "$PLIST" 2>/dev/null || true
-if [ "$WITH_MOLD" = 1 ]; then
-  /usr/libexec/PlistBuddy -c "Add :SCMoldEnabled bool true" "$PLIST"
-  echo "note: the Mold workspace is switched on in this build (--with-mold)"
-fi
 
 # Official builds (see the header): the updater and the statistics. A real boolean, which the app reads as such.
 /usr/libexec/PlistBuddy -c "Delete :SCOfficialBuild" "$PLIST" 2>/dev/null || true

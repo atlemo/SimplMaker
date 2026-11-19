@@ -139,7 +139,7 @@ struct StartPage: View {
     /// The ways to begin this part (or to go on with it).
     private var begin: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space3) {
-            Text(isEmpty ? "Begin this part" : "This part")
+            Text(isEmpty ? "Make something new" : "This part")
                 .font(.headline)
                 .padding(.horizontal, DS.Spacing.space4)
                 .padding(.bottom, DS.Spacing.space2)
@@ -175,7 +175,7 @@ struct StartPage: View {
         }
     }
 
-    /// New Part: this part itself, when it is only a Start page (the page is not a tab, so it does not stay behind), otherwise a new tab.
+    /// New Part: this part itself, when it is only a Start page (a launcher does not stay behind), otherwise a new window.
     private func newPart() {
         if isEmpty {
             model.setWorkspace(.design)

@@ -44,8 +44,8 @@ struct DocumentWindow: View {
     @State private var toolRowWidths: [ToolbarLayout: CGFloat] = [:]
     /// How tall the island bar is, so the panels start under it and the camera centres on what it leaves free.
     @State private var barHeight: CGFloat = 68
-    /// The window's tabs, which the toolbar draws.
-    @State private var tabs = WindowTabs()
+    /// What this window tells the system: whether it is a Start page, and where the ribbon's middle is.
+    @State private var chrome = WindowChrome()
     /// The ribbon's own height (without the tab row), which the traffic lights are centred on.
     @State private var ribbonHeight: CGFloat = 0
     /// The list of workspaces under the ribbon is open.
@@ -131,7 +131,7 @@ struct DocumentWindow: View {
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .toolbar(removing: .title)
         .background(HideUIKeyMonitor { model.toggleUIHidden() })
-        .background(WindowTabsAttach(tabs: tabs))
+        .background(WindowChromeAttach(chrome: chrome))
         .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .task(id: toolRowSignature) { toolRowWidths = measureToolRows() }
@@ -151,8 +151,8 @@ struct DocumentWindow: View {
             if guide.isActive, model.workspace == .start { model.setWorkspace(.design) }  // a part opened to its tutorial
         }
         .onChange(of: undoManager) { model.undoManager = undoManager }
-        // A part that is only a Start page is not a tab (see `StartPageWindows`).
-        .onChange(of: model.workspace == .start && model.document.features.isEmpty, initial: true) { tabs.setStartPage($1) }
+        // A part that is only a Start page is a launcher, not a part (see `StartPageWindows`).
+        .onChange(of: model.workspace == .start && model.document.features.isEmpty, initial: true) { chrome.setStartPage($1) }
         // The start page makes way when the part gets something in it (an import, or an AI client building) or the tutorial begins.
         .onChange(of: model.document.features.isEmpty) { if !model.document.features.isEmpty, model.workspace == .start { model.setWorkspace(.design) } }
         .onChange(of: guide.isActive) { if guide.isActive, model.workspace == .start { model.setWorkspace(.design) } }
@@ -214,14 +214,9 @@ struct DocumentWindow: View {
                                 .accessibilityElement(children: .contain)
                                 .accessibilityLabel("Tools")
                         }
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { ribbonHeight = $0; tabs.setRibbonHeight($0) }
-                        // The tabs come with a second part.
-                        if tabs.tabs.count > 1 {
-                            WindowTabStrip(tabs: tabs, ink: panelToggleInk)
-                                .padding(Panel.inset)  // the same room above and below it, and at its sides
-                        }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { ribbonHeight = $0; chrome.setRibbonHeight($0) }
                     }
-                    // The ribbon and the tab row are one bar (in Sketch mode the tinted band is behind it instead).
+                    // The ribbon is the bar (in Sketch mode the tinted band is behind it instead).
                     .background { if panelToggleInk == nil { Rectangle().fill(.bar) } }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
                 }
@@ -245,7 +240,7 @@ struct DocumentWindow: View {
         .animation(.easeOut(duration: DS.Duration.fast), value: workspaceListOpen)
         .onChange(of: model.workspace) { workspaceListOpen = false }
         // The lights follow the ribbon: its middle with it, the titlebar's place without it (Start, or the UI hidden).
-        .onChange(of: showsRibbon, initial: true) { tabs.setRibbonHeight(showsRibbon ? ribbonHeight : 0) }
+        .onChange(of: showsRibbon, initial: true) { chrome.setRibbonHeight(showsRibbon ? ribbonHeight : 0) }
     }
 }
 #endif

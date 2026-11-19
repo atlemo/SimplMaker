@@ -16,7 +16,7 @@ struct DesignTopic: Sendable {
 enum AIDesignGuide {
     static func topic(_ id: String) -> DesignTopic? { topics.first { $0.id == id.lowercased() } }
 
-    static var topics: [DesignTopic] { baseTopics + (Workspace.moldEnabled ? [makeAMold] : []) }  // the mold topic comes with the Mold workspace
+    static var topics: [DesignTopic] { baseTopics + [makeAMold] }
 
     private static let baseTopics: [DesignTopic] = [workflow, parameters, printBasics, snapFitLid, roundedBox, nameTag, screwPostCase, hingesAndPrintInPlace,
                                         multiPartPrint, scanToPart, holesAndFasteners, threads, featureOrder, facesAndEdges, textAndLabels, photoToPart, fixingErrors]

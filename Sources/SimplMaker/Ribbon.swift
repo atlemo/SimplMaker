@@ -1,8 +1,7 @@
 // The window's top bar: the ribbon, at the very top of the window and as wide as it. The window's controls (the traffic lights) are at
 // its left, then the big workspace button, which opens the list of workspaces, then the workspace's tool groups, divided by thin
 // lines, each with its name under its tools, and at the far right undo and redo. There is no system toolbar: the window's titlebar
-// is transparent and the ribbon is drawn under it. With more than one part open the tabs make a row of their own under the ribbon. In
-// Sketch mode the ribbon sits on the tinted band (see ToolbarFade) and draws in the contrast ink.
+// is transparent and the ribbon is drawn under it. In Sketch mode the ribbon sits on the tinted band (see ToolbarFade) and draws in the contrast ink.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
 #if os(macOS)

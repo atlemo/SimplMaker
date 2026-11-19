@@ -45,14 +45,12 @@ struct WindowSizeMemory: NSViewRepresentable {
                 OpenParts.closed()
                 MainActor.assumeIsolated { StartPageWindows.set(number, false) }
             }
-            // Parts open as tabs of one window. The system's tab bar would take a row of its own, so it is hidden: the toolbar
-            // draws the tabs (see WindowTabs.swift). The document's name is in its tab rather than the toolbar.
-            window.tabbingMode = .preferred
+            // Every part has a window of its own: no tabs.
+            window.tabbingMode = .disallowed
             window.titleVisibility = .hidden
             // The ribbon is the window's top bar, drawn under a transparent titlebar that keeps only the traffic lights.
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
-            SystemTabBar.hideSoon()
             // The traffic lights sit on the same line as the ribbon's icons. AppKit puts them back when the window resizes, is
             // activated or leaves full screen, so they are placed again then.
             for delay in [0.0, 0.1, 0.4] {
@@ -87,56 +85,19 @@ struct WindowSizeMemory: NSViewRepresentable {
 /// Put in a document window's content: while the toolbar is filled with `tint` (Sketch mode's colour),
 /// the titlebar (the document title and the toolbar buttons) draws in whichever appearance contrasts
 /// with it, white symbols on a deep tint and black on a pale one. The content below keeps the system
-/// appearance. The window's tab bar takes the same tint; nil leaves both as the system draws them.
+/// appearance; nil leaves both as the system draws them.
 struct TitlebarAppearance: NSViewRepresentable {
     var tint: NSColor?
-
-    /// Re-applies the tab tint when the window's tabs come and go or it becomes the front tab, since
-    /// the system builds the tab bar's views anew then.
-    @MainActor final class Coordinator {
-        var observations: [NSObjectProtocol] = []
-        var tabObservation: NSKeyValueObservation?
-        var window: NSWindow?
-        var tint: NSColor?
-
-        func attach(to window: NSWindow) {
-            guard self.window !== window else { return }
-            self.window = window
-            observations.forEach(NotificationCenter.default.removeObserver)
-            observations = [NSWindow.didBecomeKeyNotification, NSWindow.didChangeScreenNotification].map {
-                NotificationCenter.default.addObserver(forName: $0, object: window, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.reapply() } }
-            }
-            tabObservation = window.tabGroup?.observe(\.windows) { [weak self] _, _ in
-                Task { @MainActor in self?.reapply() }
-            }
-        }
-
-        func reapply() {
-            guard let window else { return }
-            TitlebarAppearance.applyTabTint(tint, in: window)
-            // The tab bar's views can appear a moment after the tabs change.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                guard let self, let window = self.window else { return }
-                TitlebarAppearance.applyTabTint(self.tint, in: window)
-            }
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ view: NSView, context: Context) {
-        let coordinator = context.coordinator
         let tint = tint
         // The window isn't known until the view is in it, so apply on the next turn of the run loop.
         DispatchQueue.main.async { [weak view] in
             guard let window = view?.window else { return }
             // The tint is judged as the content draws it (the system appearance), since that is what fills the toolbar.
             let system = NSApp.effectiveAppearance
-            coordinator.tint = tint
-            coordinator.attach(to: window)
-            coordinator.reapply()
             window.appearance = tint.flatMap { ContrastColor.appearance(for: $0, in: system) }
             window.contentView?.appearance = tint == nil ? nil : system
             // The title and subtitle labels keep their own colour whatever the appearance, so set it.
@@ -147,57 +108,6 @@ struct TitlebarAppearance: NSViewRepresentable {
                 if let titlebar { Self.recolorTitles(in: titlebar, on: tint, appearance: system) }
             }
         }
-    }
-
-    private static let tabTintID = NSUserInterfaceItemIdentifier("simplmaker.tabTint")
-
-    /// Colours the window's tab bar: the selected tab's glass takes the tint, and a wash of it goes
-    /// under the tabs on the track. The tab bar is the system's, so this goes by its view classes and
-    /// does nothing if they aren't there.
-    static func applyTabTint(_ tint: NSColor?, in window: NSWindow) {
-        guard let frame = window.contentView?.superview else { return }
-        recolorSelectedTabTitle(in: frame, window: window, tint: tint)
-        for view in allSubviews(of: frame) {
-            if #available(macOS 26.0, *), let glass = view as? NSGlassEffectView, glass.className == "NSGlassEffectView", isInTabBar(glass) {
-                glass.tintColor = tint
-            } else if view.className == "NSTabBarScrollView", let host = view.superview {
-                let wash = host.subviews.first { $0.identifier == tabTintID }
-                guard let tint else { wash?.removeFromSuperview(); continue }
-                let layerView = wash ?? NSView()
-                if wash == nil {
-                    layerView.identifier = tabTintID
-                    layerView.wantsLayer = true
-                    layerView.autoresizingMask = [.width, .height]
-                    layerView.frame = host.bounds
-                    host.addSubview(layerView, positioned: .below, relativeTo: view)
-                }
-                layerView.layer?.backgroundColor = tint.withAlphaComponent(0.55).cgColor
-                layerView.layer?.cornerRadius = host.bounds.height / 2
-            }
-        }
-    }
-
-    /// The selected tab's title is drawn in the system's own text colour, which can be hard to read
-    /// on the tint. Whichever of white and black contrasts more with the tint wins: that tab draws
-    /// in the dark or the light appearance to get it, and the others keep the system's.
-    private static func recolorSelectedTabTitle(in frame: NSView, window: NSWindow, tint: NSColor?) {
-        guard let bar = allSubviews(of: frame).first(where: { $0.className == "NSTabBar" }) else { return }
-        let buttons = allSubviews(of: bar).filter { $0.className == "NSTabButton" }.sorted { $0.frame.minX < $1.frame.minX }
-        let tabs = window.tabGroup?.windows ?? []
-        let selected = window.tabGroup?.selectedWindow.flatMap { tabs.firstIndex(of: $0) }
-        let appearance = tint.flatMap { ContrastColor.appearance(for: $0) }
-        for (i, button) in buttons.enumerated() {
-            button.appearance = i == selected ? appearance ?? nil : nil
-        }
-    }
-
-    private static func isInTabBar(_ view: NSView) -> Bool {
-        var v: NSView? = view.superview
-        while let current = v {
-            if current.className == "NSTabBar" { return true }
-            v = current.superview
-        }
-        return false
     }
 
     /// Colours the title and subtitle for `tint` behind them: whichever of black and white contrasts, the
@@ -235,6 +145,13 @@ struct TitlebarAppearance: NSViewRepresentable {
     /// Where a titlebar has the lights: the middle of its 28 pt.
     static let titlebarAxis: CGFloat = 14
     private static var placing = false
+
+    /// Puts the window in the exact middle of its screen's usable area (NSWindow.center() sits a little above the middle).
+    static func centre(_ window: NSWindow) {
+        guard let area = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        let origin = NSPoint(x: (area.midX - window.frame.width / 2).rounded(), y: (area.midY - window.frame.height / 2).rounded())
+        if window.frame.origin != origin { window.setFrameOrigin(origin) }
+    }
 
     /// The line the lights are centred on, in points below the top of the window, for this window.
     static func setAxis(_ axis: CGFloat, for window: NSWindow) {
