@@ -14,8 +14,8 @@ struct SettingsView: View {
     @AppStorage(Preferences.sketchPaper) private var sketchPaper = Preferences.SketchPaper.blue
     @AppStorage(Preferences.antialiasing) private var antialiasing = 4
     @AppStorage(Preferences.accentSource) private var accentSource = Preferences.AccentSource.simplMaker
-    @AppStorage(Preferences.panelStyle) private var panelStyle = Preferences.PanelStyle.blur
-    @AppStorage(Preferences.panelMaterial) private var panelMaterial = Preferences.PanelMaterial.thick
+    @AppStorage(Preferences.panelStyle) private var panelStyle = Preferences.defaultPanelStyle
+    @AppStorage(Preferences.panelMaterial) private var panelMaterial = Preferences.defaultPanelMaterial
     @AppStorage(Preferences.sendUsageStatistics) private var sendUsageStatistics = true
 #if os(macOS)
     @ObservedObject private var updater = Updater.shared

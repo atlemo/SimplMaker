@@ -23,3 +23,10 @@ import Testing
         #expect(Preferences.PanelStyle.choices.contains(.blur), "the blur is offered on every system")
     }
 }
+
+@Suite struct PanelDefaultsTests {
+    @Test func panelsStartAsRegularLiquidGlass() {
+        #expect(Preferences.defaultPanelStyle == .glass)
+        #expect(Preferences.defaultPanelMaterial == .regular)
+    }
+}

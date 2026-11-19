@@ -163,6 +163,8 @@ extension Preferences {
         }
     }
     static let panelMaterial = "panelMaterial"
+    /// What a panel is made of until the user picks otherwise: regular Liquid Glass (systems without it fall back to the blur).
+    static let defaultPanelMaterial = PanelMaterial.regular
 
     /// What the panels are made of: the system's blur, or Liquid Glass (macOS 26 and later).
     enum PanelStyle: String, CaseIterable, Identifiable {
@@ -176,14 +178,15 @@ extension Preferences {
         }
     }
     static let panelStyle = "panelStyle"
+    static let defaultPanelStyle = PanelStyle.glass
 }
 
-/// Draws a panel's background in the style the user chose in Settings (the system's blur unless they picked Liquid Glass, which
-/// older systems don't have) and the thickness they chose (thick unless they picked another).
+/// Draws a panel's background in the style the user chose in Settings (Liquid Glass unless they picked the system's blur, which
+/// is also what older systems get) and the thickness they chose (regular unless they picked another).
 struct PanelMaterialBackground<S: Shape>: ViewModifier {
     let shape: S
-    @AppStorage(Preferences.panelMaterial) private var thickness = Preferences.PanelMaterial.thick
-    @AppStorage(Preferences.panelStyle) private var style = Preferences.PanelStyle.blur
+    @AppStorage(Preferences.panelMaterial) private var thickness = Preferences.defaultPanelMaterial
+    @AppStorage(Preferences.panelStyle) private var style = Preferences.defaultPanelStyle
     @Environment(\.colorScheme) private var colorScheme
 
     @ViewBuilder func body(content: Content) -> some View {
