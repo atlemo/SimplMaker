@@ -131,18 +131,26 @@ struct DocumentWindow: View {
         // is given, so they are drawn in the contrast ink on the tint, with no glass of the system's. Their glass is drawn here,
         // with the panels' own, rather than by the toolbar: the system's toolbar glass sits a level above the floating panels.
         .toolbar {
-            ToolbarItem(placement: .navigation) { ToolbarBrowserPill(model: model, ink: panelToggleInk) }
+            // The pills are items of their own, each followed by a 6 pt gap (the toolbar puts none between its items).
+            ToolbarItem(placement: .navigation) { ToolbarBrowserPill(model: model, ink: panelToggleInk).padding(.trailing, DS.Spacing.space3) }
                 .sharedBackgroundHidden(true)
-            ToolbarItem(placement: .navigation) { ToolbarUndoRedoPill(model: model, ink: panelToggleInk) }
+            ToolbarItem(placement: .navigation) { ToolbarUndoRedoPill(model: model, ink: panelToggleInk).padding(.trailing, DS.Spacing.space3) }
                 .sharedBackgroundHidden(true)
             if Workspace.available.count > 1 {
-                ToolbarItem(placement: .navigation) { WorkspaceSwitcher(model: model, ink: panelToggleInk) }
+                ToolbarItem(placement: .navigation) { WorkspaceSwitcher(model: model, ink: panelToggleInk).padding(.trailing, DS.Spacing.space3) }
                     .sharedBackgroundHidden(true)
             }
-            // The tabs fill the middle, so the trailing pill stays at the far right (the system's own tab bar is kept hidden).
-            ToolbarItem(placement: .principal) { WindowTabStrip(tabs: tabs, ink: panelToggleInk, windowWidth: windowWidth) }
-                .sharedBackgroundHidden(true)
-            ToolbarItem(placement: .primaryAction) { ToolbarTrailingPills(model: model, ink: panelToggleInk) }
+            // The tabs fill the middle once there is more than one part, so the trailing pill stays at the far right. With one part
+            // the middle is empty: the tabs come with the second (⌘N, File → New, New Part), and a 1 pt item keeps the layout.
+            ToolbarItem(placement: .principal) {
+                if tabs.tabs.count > 1 {
+                    WindowTabStrip(tabs: tabs, ink: panelToggleInk, windowWidth: windowWidth).padding(.trailing, DS.Spacing.space3)
+                } else {
+                    Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+                }
+            }
+            .sharedBackgroundHidden(true)
+            ToolbarItem(placement: .primaryAction) { ToolbarTrailingPills(model: model, ink: panelToggleInk).padding(.trailing, DS.Spacing.space3) }
                 .sharedBackgroundHidden(true)
         }
         .modifier(AccentScope(sketching: model.sketchSession != nil))
@@ -2368,7 +2376,7 @@ struct SketchToolbar: View {
             case .single:
                 ToolsMenu(solo: selectTool, groups: groups, trailing: finish).island()
             case .trimmed(let trim):
-                HStack(spacing: DS.Spacing.space4) {
+                HStack(spacing: DS.Spacing.space3) {
                     SoloTool(tool: selectTool).island()
                     ForEach(groups) { group in
                         ToolGroup(group).island()
@@ -2530,7 +2538,7 @@ struct DesignToolbar: View {
             case .single:
                 ToolsMenu(solo: solo, groups: groups).island()
             case .trimmed(let trim):
-                HStack(spacing: DS.Spacing.space4) {
+                HStack(spacing: DS.Spacing.space3) {
                     SoloTool(tool: solo).island()
                     ForEach(groups) { group in
                         ToolGroup(group).island()

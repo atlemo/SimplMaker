@@ -143,7 +143,7 @@ struct WindowTabStrip: View {
     /// reads as a bar of its own and not as a few tabs floating in the middle. (The toolbar sizes a middle item to its content.)
     let windowWidth: CGFloat
     /// What the toolbar's other items and their gaps take: the traffic lights, the browser, undo and redo, the selector, and the trailing pill.
-    static let reserved: CGFloat = 660
+    static let reserved: CGFloat = 625
     @Environment(\.accent) private var accent
 
     var body: some View {

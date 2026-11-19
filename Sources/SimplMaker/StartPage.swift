@@ -107,27 +107,19 @@ struct StartPage: View {
 
     // MARK: Panel
 
+    /// Two panels with 6 pt between them: the ways to begin on plain white, the recent parts on the same glass as the app's panels.
     private func panel(wide: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: DS.Radius.window + DS.Spacing.space5, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous)
+        let white = begin.frame(maxWidth: wide ? 380 : .infinity, maxHeight: .infinity).background(DS.windowBackground, in: shape)
+        let glass = recents.frame(maxWidth: .infinity, maxHeight: .infinity).clipShape(shape).panelGlass(in: shape)
         return Group {
             if wide {
-                HStack(spacing: 0) {
-                    begin.frame(width: 380)
-                    Divider()
-                    recents
-                }
+                HStack(spacing: DS.Spacing.space3) { white; glass }
             } else {
-                VStack(spacing: 0) {
-                    begin
-                    Divider()
-                    recents
-                }
+                VStack(spacing: DS.Spacing.space3) { white; glass }
             }
         }
         .frame(maxHeight: .infinity)
-        .background(.regularMaterial, in: shape)
-        .overlay(shape.strokeBorder(Color.primary.opacity(0.08)))
-        .clipShape(shape)
     }
 
     /// The ways to begin this part (or to go on with it).
