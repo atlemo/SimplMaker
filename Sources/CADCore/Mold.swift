@@ -44,6 +44,12 @@ public struct MoldPoint: Codable, Hashable, Sendable {
     public var vector: SIMD3<Double> { SIMD3(x, y, z) }
 }
 
+/// What is cast in the mold. Silicone is flexible: it is peeled out of mild undercuts, so they only warn. A rigid resin is not: an
+/// undercut makes the mold impossible, and a face with no draft is warned about.
+public enum MoldCasting: String, Codable, CaseIterable, Sendable {
+    case silicone, resin
+}
+
 /// Where the mold splits into its two halves.
 public enum MoldParting: Codable, Hashable, Sendable {
     /// The plane across an axis, through the middle of the body's bounding box.
@@ -77,19 +83,21 @@ public struct MoldSetup: Codable, Hashable, Sendable, Identifiable {
     public var keyDiameter: String
     /// How much bigger the sockets are than the keys, all round.
     public var keyClearance: String
+    /// What is cast: decides whether an undercut is a warning or a refusal.
+    public var casting: MoldCasting
 
     public init(id: String = UUID().uuidString, name: String, body: FeatureID, parting: MoldParting = .middle(.z),
                 partingOffset: String = "0 mm", up: MoldDirection = .plusZ, wall: String = "10 mm", gateDiameter: String = "8 mm",
                 gatePoint: MoldPoint? = nil, ventDiameter: String = "2 mm", vents: [MoldPoint] = [], keys: Bool = true,
-                keyDiameter: String = "5 mm", keyClearance: String = "0.3 mm") {
+                keyDiameter: String = "5 mm", keyClearance: String = "0.3 mm", casting: MoldCasting = .silicone) {
         self.id = id; self.name = name; self.body = body; self.parting = parting; self.partingOffset = partingOffset
         self.up = up; self.wall = wall; self.gateDiameter = gateDiameter; self.gatePoint = gatePoint
         self.ventDiameter = ventDiameter; self.vents = vents; self.keys = keys; self.keyDiameter = keyDiameter
-        self.keyClearance = keyClearance
+        self.keyClearance = keyClearance; self.casting = casting
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, body, parting, partingOffset, up, wall, gateDiameter, gatePoint, ventDiameter, vents, keys, keyDiameter, keyClearance
+        case id, name, body, parting, partingOffset, up, wall, gateDiameter, gatePoint, ventDiameter, vents, keys, keyDiameter, keyClearance, casting
     }
 
     /// Every setting is optional in a file, so a later version can add one and an older file still opens.
@@ -110,6 +118,7 @@ public struct MoldSetup: Codable, Hashable, Sendable, Identifiable {
         keys = try c.decodeIfPresent(Bool.self, forKey: .keys) ?? true
         keyDiameter = try c.decodeIfPresent(String.self, forKey: .keyDiameter) ?? d.keyDiameter
         keyClearance = try c.decodeIfPresent(String.self, forKey: .keyClearance) ?? d.keyClearance
+        casting = try c.decodeIfPresent(MoldCasting.self, forKey: .casting) ?? d.casting
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -128,6 +137,7 @@ public struct MoldSetup: Codable, Hashable, Sendable, Identifiable {
         try c.encode(keys, forKey: .keys)
         try c.encode(keyDiameter, forKey: .keyDiameter)
         try c.encode(keyClearance, forKey: .keyClearance)
+        if casting != .silicone { try c.encode(casting, forKey: .casting) }
     }
 
     /// The ids the two halves have as bodies (the way a split names its pieces): behind the parting plane and in front of it.

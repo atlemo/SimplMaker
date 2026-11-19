@@ -86,6 +86,9 @@ struct MoldToolbar: View {
                     ToolButton(title: "Vent", icon: "circle-dot", active: model.moldPicking == .vent,
                                help: model.moldPicking == .vent ? "Click on the body to add a vent; Esc when done"
                                    : "Add an air vent by clicking on the body, at the top of a pocket that air would be trapped in") { model.toggleMoldPick(.vent) }
+                    ToolButton(title: "Auto Vents", icon: "waypoints",
+                               help: "Add a vent at the top of every lobe of the body that the gate does not reach: where air would be trapped") { model.addAutomaticVents() }
+                        .disabled(!built)
                     ToolButton(title: "Clear Vents", icon: "circle-x", help: "Take away every vent") {
                         model.updateMold(mold.id, "Clear Vents") { $0.vents = [] }
                     }
@@ -97,6 +100,12 @@ struct MoldToolbar: View {
                                help: "Cone keys on the seam make the halves go together one way only") {
                         model.updateMold(mold.id, mold.keys ? "Remove Keys" : "Add Keys") { $0.keys.toggle() }
                     }
+                }
+                RibbonDivider()
+                MoldGroup(title: "Check") {
+                    ToolButton(title: "Release", icon: "scan", active: model.moldCheckView,
+                               help: "Colour the body by whether the halves can let go of it when they are pulled apart: red is an undercut") { model.toggleMoldCheck() }
+                        .disabled(model.activeMoldResult?.analysis == nil)
                 }
                 RibbonDivider()
                 MoldGroup(title: "View") {
@@ -260,7 +269,13 @@ private struct MoldInspector: View {
                     LabeledContent("Body", value: model.bodies.first { $0.id == mold.body }?.name ?? "missing")
                 }
                 Section("Result") { MoldResultRows(model: model, mold: mold, result: result) }
+                if let analysis = result?.analysis { Section("Check") { MoldCheckRows(model: model, analysis: analysis) } }
                 Section("Parting") {
+                    Picker("Casting", selection: Binding(get: { mold.casting }, set: { c in model.updateMold(mold.id, "Change Casting") { $0.casting = c } })) {
+                        Text("Silicone").tag(MoldCasting.silicone)
+                        Text("Rigid resin").tag(MoldCasting.resin)
+                    }
+                    .help("Silicone is peeled out of a mild undercut, so it only warns; a rigid resin is stuck in one, so the mold is refused")
                     Picker("Plane", selection: Binding(get: { partingTag(mold.parting) }, set: { tag in
                         if let choice = model.moldPartingChoices.first(where: { partingTag($0.parting) == tag }) {
                             model.updateMold(mold.id, "Change Parting") { $0.parting = choice.parting }
@@ -342,6 +357,38 @@ private struct MoldInspector: View {
         case .plane(.yz): "plane-yz"
         case .plane(.plane(let id)): "plane-\(id)"
         case .plane(.face(let ref)): "face-\(ref.body)-\(ref.face)"
+        }
+    }
+}
+
+/// Whether the halves can let go of the body: the undercut and no-draft shares, and what the colours of the Check view mean.
+private struct MoldCheckRows: View {
+    let model: DocumentModel
+    let analysis: MoldAnalysis
+
+    var body: some View {
+        LabeledContent("Undercuts") {
+            Text(analysis.hasUndercuts ? String(format: "%d face%@, %.0f%%", analysis.undercutFaces.count, analysis.undercutFaces.count == 1 ? "" : "s", analysis.undercutShare * 100) : "None")
+                .foregroundStyle(analysis.hasUndercuts ? Color.red : Color.secondary)
+        }
+        LabeledContent("No draft", value: String(format: "%.0f%% of the surface", analysis.noDraftShare * 100))
+        if model.moldCheckView {
+            HStack(spacing: DS.Spacing.space5) {
+                legend("Lets go", MoldAnalysis.Release.free)
+                legend("No draft", .noDraft)
+                legend("Undercut", .undercut)
+            }
+            .font(.caption)
+        }
+        Button(model.moldCheckView ? "Back to the mold" : "Show on the body") { model.toggleMoldCheck() }
+            .controlSize(.small)
+    }
+
+    private func legend(_ title: String, _ release: MoldAnalysis.Release) -> some View {
+        let c = DocumentModel.releaseColor(release)
+        return HStack(spacing: DS.Spacing.space1) {
+            Circle().fill(Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z))).frame(width: 9, height: 9)
+            Text(title).foregroundStyle(.secondary)
         }
     }
 }

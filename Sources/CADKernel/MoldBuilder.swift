@@ -32,6 +32,12 @@ public struct MoldResult: Sendable {
     public var bodyVolume = 0.0
     public var cavityVolume = 0.0
     public var seconds = 0.0
+    /// The gate's and the vents' diameters (mm), for placing vents later.
+    public var gateDiameter = 0.0
+    public var ventDiameter = 0.0
+    /// Which faces of the body the halves can let go of (nil when the body could not be read). Kept when the build is refused for an
+    /// undercut, so the Check view can still show where it is.
+    public var analysis: MoldAnalysis?
 
     public init(setup: MoldSetup, error: String? = nil) { self.setup = setup; self.error = error }
 
@@ -132,6 +138,29 @@ public enum MoldBuilder {
             throw MoldError(message: "The parting plane does not cut through the body.")
         }
         out.partingNormal = normal
+        out.gateDiameter = gateDiameter
+        out.ventDiameter = ventDiameter
+
+        // The body's mesh: where the gate goes in, and which faces the halves can release.
+        let diagonal = simd_length(ext)
+        let mesh = try? part.tessellate(linearDeflection: max(0.05, diagonal * 0.002))
+        if let mesh {
+            let analysis = MoldAnalysis.analyse(mesh, partingPoint: point, normal: normal)
+            out.analysis = analysis
+            let pct = String(format: "%.0f%%", analysis.undercutShare * 100)
+            if analysis.hasUndercuts {
+                let faces = "\(analysis.undercutFaces.count) face\(analysis.undercutFaces.count == 1 ? "" : "s") (\(pct) of the surface)"
+                switch setup.casting {
+                case .resin:
+                    throw MoldError(message: "\(faces) of the body can not be released across this parting plane: a rigid cast would be stuck in the mold. Part it another way (X, Y, Z or another plane), or turn the body so that nothing hangs back against the pull. The Check view shows where.")
+                case .silicone:
+                    out.warnings.append("\(faces) lean back against the pull (undercuts). Silicone can be peeled out of a mild one, but a deep one will tear it: the Check view shows where, and another parting plane may avoid it.")
+                }
+            }
+            if setup.casting == .resin, analysis.noDraftShare > 0.25 {
+                out.warnings.append("\(String(format: "%.0f%%", analysis.noDraftShare * 100)) of the surface is parallel to the pull, with no draft: a rigid cast sticks. Lean those faces 1° to 2° with Draft.")
+            }
+        }
 
         // Pour direction and the block.
         let up = setup.up.vector
@@ -142,12 +171,20 @@ public enum MoldBuilder {
         let block = try makeBlock(centre: centre, size: size)
 
         // Where the gate goes in: the body's highest point along "up", or the point the setup names.
-        let top = highestPoint(of: part, along: up, bounds: bounds, ext: ext)
+        let top = highestPoint(of: part, mesh: mesh, along: up, bounds: bounds, ext: ext)
         var gate = setup.gatePoint?.vector ?? top
         if setup.gatePoint != nil { gate += up * (simd_dot(top - gate, up)) }  // a hand-placed gate: its place across "up", the height of the top
         // A gate beside a vertical parting plane lies on the plane, so the split makes two half-channels.
         let upAxis = setup.up.axis
         if upAxis != MoldResult.axis(of: normal), setup.gatePoint == nil { gate[axisIndex] = planeCoordinate }
+        // The highest point of a round body is often where its own axis runs out (the pole of a sphere), and a gate exactly on that axis
+        // makes the kernel's subtraction drop the cavity without saying so (a sphere at (13.7, -8.2) did). A hundredth of a millimetre to
+        // the side is the same gate to the eye and to the printer, and the kernel copes.
+        if setup.gatePoint == nil {
+            for (axis, shift) in zip(MoldAxis.allCases.filter { $0 != upAxis }, [0.0137, 0.0071]) where !(upAxis != MoldResult.axis(of: normal) && axis.index == axisIndex) {
+                gate[axis.index] += shift
+            }
+        }
         out.gatePoint = gate
 
         func channel(_ p: SIMD3<Double>, diameter: Double, id: String) throws -> KBody {
@@ -189,13 +226,35 @@ public enum MoldBuilder {
             return p
         }()
 
-        // One try at the split, keys and the body cut out; repeated with the plane nudged when the halves come out invalid.
-        func attempt(shift: Double) throws -> (behind: KBody, front: KBody, pegs: Double, sockets: Double)? {
+        // How much the body's subtraction has to take out of the halves, at least. The kernel sometimes answers a subtraction with a
+        // valid solid that has no cavity in it (found with a sphere at (13.7, -8.2): one half came back whole, no error), so what was
+        // taken out is measured. The channels were cut first, so the part of the body they already took is not taken again: for the gate
+        // at the highest point that is a thin cap, otherwise it is measured.
+        let overlap: Double
+        if setup.gatePoint == nil, setup.vents.isEmpty {
+            overlap = Double.pi * (gateDiameter / 2) * (gateDiameter / 2) * gateDepth * 1.5
+        } else {
+            overlap = (try? channels.boolean(part, SK_COMMON))?.volume ?? channels.volume
+        }
+        let minimumRemoved = max(part.volume - overlap - part.volume * 0.002, part.volume * 0.5)
+
+        // One try at the split, keys and the body cut out. The usual order cuts the body out of the halves last (cheap on a heavy body);
+        // `partFirst` cuts it out of the block before the split instead.
+        func attempt(shift: Double, partFirst: Bool) throws -> (behind: KBody, front: KBody, pegs: Double, sockets: Double)? {
             let p = point + normal * shift
             let drilled = channels.isEmpty ? block : try block.boolean(channels, SK_CUT)
-            let halves = try drilled.split(planeThrough: p, normal: normal, featureID: "mold")
-            guard halves.count == 2 else { return nil }
-            var behind = halves[0], front = halves[1]
+            var behind: KBody, front: KBody
+            if partFirst {
+                let cavity = try drilled.boolean(part, SK_CUT)
+                guard drilled.volume - cavity.volume >= minimumRemoved else { return nil }
+                let halves = try cavity.split(planeThrough: p, normal: normal, featureID: "mold")
+                guard halves.count == 2, abs(halves[0].volume + halves[1].volume - cavity.volume) < cavity.volume * 0.002 else { return nil }
+                (behind, front) = (halves[0], halves[1])
+            } else {
+                let halves = try drilled.split(planeThrough: p, normal: normal, featureID: "mold")
+                guard halves.count == 2 else { return nil }
+                (behind, front) = (halves[0], halves[1])
+            }
             var pegVolume = 0.0, socketVolume = 0.0
             if setup.keys, keyRadius > 0 {
                 var pegs: KBody?, sockets: KBody?
@@ -217,16 +276,24 @@ public enum MoldBuilder {
                     behind = try behind.boolean(sockets, SK_CUT)
                 }
             }
-            behind = try behind.boolean(part, SK_CUT)
-            front = try front.boolean(part, SK_CUT)
+            if !partFirst {
+                let before = behind.volume + front.volume
+                behind = try behind.boolean(part, SK_CUT)
+                front = try front.boolean(part, SK_CUT)
+                guard before - behind.volume - front.volume >= minimumRemoved else { return nil }
+            }
             guard behind.isValid, front.isValid, !behind.isEmpty, !front.isEmpty else { return nil }
             return (behind, front, pegVolume, socketVolume)
         }
 
+        // The usual order first, then the other one, each at the plane and then nudged (a plane exactly through a seam or a pole of a
+        // round face is what upsets the kernel).
         var built: (behind: KBody, front: KBody, pegs: Double, sockets: Double)?
         var used = 0.0
-        for shift in [0.0] + nudges {
-            if let b = try attempt(shift: shift) { built = b; used = shift; break }
+        search: for shift in [0.0] + nudges {
+            for partFirst in [false, true] {
+                if let b = try attempt(shift: shift, partFirst: partFirst) { built = b; used = shift; break search }
+            }
         }
         guard let built else {
             throw MoldError(message: "The halves could not be made at this parting plane. Move the plane a little, or pick another.")
@@ -272,10 +339,10 @@ public enum MoldBuilder {
     }
 
     /// The highest point of the body along `up`; where a flat top is, its middle.
-    static func highestPoint(of part: KBody, along up: SIMD3<Double>, bounds: (min: SIMD3<Double>, max: SIMD3<Double>), ext: SIMD3<Double>) -> SIMD3<Double> {
+    static func highestPoint(of part: KBody, mesh: Mesh?, along up: SIMD3<Double>, bounds: (min: SIMD3<Double>, max: SIMD3<Double>), ext: SIMD3<Double>) -> SIMD3<Double> {
         let diagonal = simd_length(ext)
         let fallback = (bounds.min + bounds.max) / 2 + up * (simd_dot(ext, abs(up)) / 2)
-        guard let mesh = try? part.tessellate(linearDeflection: max(0.05, diagonal * 0.002)), !mesh.positions.isEmpty else { return fallback }
+        guard let mesh, !mesh.positions.isEmpty else { return fallback }
         let p = mesh.positions
         var best = -Double.infinity
         for i in stride(from: 0, to: p.count - 2, by: 3) {

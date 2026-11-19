@@ -24,10 +24,17 @@ struct MoldInfo: Encodable, Equatable {
     var keys: Bool
     var keySize: String
     var keyClearance: String
+    /// "silicone" or "resin".
+    var casting: String
     /// "built" or "failed".
     var status: String
     var error: String?
     var warnings: [String]
+    /// Faces of the body the halves cannot let go of (they lean back against the pull), and the shares of the body's surface that are
+    /// undercut and that have no draft (parallel to the pull), in percent. Present even when a rigid cast was refused for an undercut.
+    var undercutFaces: [String]?
+    var undercutPercent: Double?
+    var noDraftPercent: Double?
     /// What the cavity holds (the body, the gate and the vents), in millilitres: the silicone to mix.
     var siliconeMl: Double?
     var blockMm: [Double]?
@@ -69,10 +76,15 @@ extension CADService {
         var info = MoldInfo(id: m.id, name: m.name, body: m.body, parting: parting, partingOffset: m.partingOffset, pour: m.up.rawValue,
                             wall: m.wall, gateDiameter: m.gateDiameter, gatePoint: m.gatePoint.map { [$0.x, $0.y, $0.z] },
                             ventDiameter: m.ventDiameter, vents: m.vents.map { [$0.x, $0.y, $0.z] }, keys: m.keys, keySize: m.keyDiameter,
-                            keyClearance: m.keyClearance, status: "failed", warnings: [])
+                            keyClearance: m.keyClearance, casting: m.casting.rawValue, status: "failed", warnings: [])
         guard let r else { info.error = "Not built yet."; return info }
         info.error = r.error
         info.warnings = r.warnings
+        if let a = r.analysis {
+            info.undercutFaces = a.undercutFaces.sorted()
+            info.undercutPercent = (a.undercutShare * 1000).rounded() / 10
+            info.noDraftPercent = (a.noDraftShare * 1000).rounded() / 10
+        }
         if r.isBuilt {
             info.status = "built"
             info.siliconeMl = (r.cavityVolume / 1000 * 10).rounded() / 10
@@ -133,10 +145,11 @@ extension CADService {
                 throw AIError(.featureNotFound, "There is no body with the id \(bodyID).", reason: ids.isEmpty ? "The part has no bodies yet." : "The bodies are: \(ids).")
             }
             let name = try a.string("name") ?? "\(model.bodies.first { $0.id == bodyID }?.name ?? "Body") mold"
-            setup = MoldSetup(name: name, body: bodyID, parting: Self.defaultParting(of: model.result?.body(bodyID)))
+            setup = MoldSetup(name: name, body: bodyID, parting: Self.defaultParting(of: model.result?.body(bodyID), mesh: model.meshes.first { $0.id == bodyID }?.mesh))
             creating = true
         }
         try Self.apply(a, to: &setup, in: model)
+        let wantsAutoVents = try a.bool("auto_vents") == true
 
         model.aiActivity = creating ? "Making a mold" : "Changing a mold"
         defer { model.aiActivity = nil }
@@ -146,6 +159,12 @@ extension CADService {
         }
         model.activeMoldID = setup.id
         try await buildMolds(model)
+        if wantsAutoVents {
+            // After the first build: the vents go where the body's own peaks are, away from the gate it has found.
+            model.addAutomaticVents()
+            try await buildMolds(model)
+        }
+        setup = model.document.molds.first { $0.id == setup.id } ?? setup
         let info = Self.moldInfo(setup, model.moldResults[setup.id])
         let message: String
         if info.status == "built" {
@@ -157,9 +176,10 @@ extension CADService {
         return MoldChangeResult(documentId: id, revision: model.documentRevision, message: message, mold: info)
     }
 
-    /// The parting plane a new mold starts with: across the body's shortest side, as in the Mold workspace.
-    private static func defaultParting(of body: KBody?) -> MoldParting {
+    /// The parting plane a new mold starts with: the axis with the least undercut, as in the Mold workspace.
+    private static func defaultParting(of body: KBody?, mesh: Mesh?) -> MoldParting {
         let ext = body?.bounds.map { $0.max - $0.min } ?? SIMD3(1, 1, 1)
+        if let mesh, let bounds = body?.bounds { return .middle(MoldAnalysis.bestAxis(mesh, bounds: bounds)) }
         return .middle(ext.x <= ext.y && ext.x <= ext.z ? .x : ext.y <= ext.z ? .y : .z)
     }
 
@@ -173,7 +193,7 @@ extension CADService {
 
     private static func apply(_ a: AIArguments, to m: inout MoldSetup, in model: DocumentModel) throws {
         try a.rejectUnknown(["document_id", "expected_revision", "mold_id", "delete", "body_id", "name", "parting", "parting_offset", "pour", "wall",
-                             "gate_diameter", "gate_point", "reset_gate", "vent_diameter", "vents", "keys", "key_size", "key_clearance"], in: "create_mold")
+                             "gate_diameter", "gate_point", "reset_gate", "vent_diameter", "vents", "auto_vents", "keys", "key_size", "key_clearance", "casting"], in: "create_mold")
         if let name = try a.string("name"), !name.isEmpty { m.name = name }
         if let parting = try a.string("parting") {
             switch parting.lowercased() {
@@ -202,6 +222,13 @@ extension CADService {
         if let v = try a.quantity("key_size", kind: .length) { m.keyDiameter = v }
         if let v = try a.quantity("key_clearance", kind: .length) { m.keyClearance = v }
         if let v = try a.bool("keys") { m.keys = v }
+        if let c = try a.string("casting") {
+            guard let casting = MoldCasting(rawValue: c.lowercased()) else {
+                throw AIError(.invalidArguments, "casting \"\(c)\" is not \"silicone\" or \"resin\".",
+                              reason: "Silicone is peeled out of a mild undercut, so an undercut only warns. A rigid resin is stuck in one, so the mold is refused.")
+            }
+            m.casting = casting
+        }
         if let p = a.json["gate_point"], p != .null { m.gatePoint = try point(p, "gate_point") }
         if try a.bool("reset_gate") == true { m.gatePoint = nil }
         if let list = try a.array("vents") {

@@ -101,7 +101,9 @@ enum AITools {
                 10: the mold's thickness all round; keys need about 9 or more); gate_diameter (default 8); gate_point [x, y, z] (a hand-placed \
                 gate) or reset_gate: true; vents: [[x, y, z], …] replaces the air vents (each runs straight up from its point), vent_diameter \
                 (default 2); keys (default true: cone keys on the seam, one bigger so the halves go together one way only), key_size (default 5), \
-                key_clearance (default 0.3); expected_revision (optional). Sizes are numbers (mm) or expressions that can use parameters.
+                key_clearance (default 0.3); casting ("silicone" default, or "resin": a rigid cast is stuck in an undercut, so the mold is refused \
+                and the faces are listed; silicone only warns); auto_vents: true (adds a vent at the top of every lobe of the body that the gate does \
+                not reach: where air would be trapped); expected_revision (optional). Sizes are numbers (mm) or expressions that can use parameters.
 
                 Changes the document (one undo step "AI: Make Mold" / "AI: Change Mold"). Waits for the halves to be built and returns \
                 {success, document_id, revision, message, mold} where mold is what get_mold returns for it. A mold that cannot be built is still \
@@ -126,6 +128,8 @@ enum AITools {
                     "keys": ["type": "boolean", "description": "Cone keys on the seam (default true)."],
                     "key_size": quantity("The keys' diameter (default 5 mm)."),
                     "key_clearance": quantity("How much bigger the sockets are than the keys (default 0.3 mm)."),
+                    "casting": ["type": "string", "enum": ["silicone", "resin"], "description": "What is cast: a rigid resin refuses an undercut (default silicone)."],
+                    "auto_vents": ["type": "boolean", "description": "Add vents at the peaks of the body the gate does not reach."],
                     "expected_revision": expectedRevision,
                 ], ["document_id"]),
                 readOnly: false, destructive: false, idempotent: false,
@@ -142,7 +146,8 @@ enum AITools {
 
                 Arguments: document_id (optional). Returns {document_id, revision, molds: [{id, name, body, parting, parting_offset, pour, wall, \
                 gate_diameter, gate_point, vent_diameter, vents, keys, key_size, key_clearance, status ("built" or "failed"), error, warnings, \
-                silicone_ml (what the cavity holds: body, gate and vents; mix a little more), block_mm [x, y, z], parting_point, parting_normal \
+                casting, undercut_faces, undercut_percent and no_draft_percent (which faces lean back against the pull, and how much of the surface is \
+                undercut or has no draft; present even when the mold was refused), silicone_ml (what the cavity holds: body, gate and vents; mix a little more), block_mm [x, y, z], parting_point, parting_normal \
                 (the half "in front" is the side the normal points to), halves (ids: behind, in front), seconds}]}. Read-only.
                 """,
                 inputSchema: object(["document_id": documentID], []),

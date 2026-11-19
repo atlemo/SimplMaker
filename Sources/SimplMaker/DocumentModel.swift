@@ -121,6 +121,10 @@ final class DocumentModel {
     var moldOpenAmount = 0.0
     /// The viewport is waiting for a click on the body: the spot a vent or the gate goes in at.
     var moldPicking: MoldPick?
+    /// The Check view: the body drawn alone, each face coloured by whether the halves can let go of it.
+    var moldCheckView = false
+    /// Something the last Mold action found worth saying (no vents needed, say), shown in the status bar until the next change.
+    var moldNote: String?
     /// The mold's halves are out of date: the body or a setting changed while another workspace was showing.
     @ObservationIgnored var moldsStale = true
     @ObservationIgnored var moldGeneration = 0
@@ -327,6 +331,7 @@ final class DocumentModel {
         let shifts = explodeOffsets
         let shown = visibleMeshes
         for (n, body) in shown.enumerated() {
+            if workspace == .mold, body.id.hasPrefix("mold~") { continue }  // a click aims at the body, not at the halves or the markers
             let shift = shifts.count == shown.count ? SIMD3<Double>(shifts[n]) : .zero
             let p = body.mesh.positions, ix = body.mesh.indices
             func vertex(_ i: UInt32) -> SIMD3<Double> { SIMD3(Double(p[Int(i) * 3]), Double(p[Int(i) * 3 + 1]), Double(p[Int(i) * 3 + 2])) + shift }
@@ -1067,6 +1072,7 @@ final class DocumentModel {
     /// What the renderer draws each face of these bodies in, where it differs from the body: per body (in this order), by the
     /// face's index in its mesh. Colour, material and roughness are settled here, the body's own filling in what the face lacks.
     func faceLooks(for visible: [BodyMesh]) -> [[Int: Renderer.FaceLook]] {
+        if workspace == .mold, moldCheckView { return moldCheckLooks(for: visible) }
         let previewing = faceColorPreview != nil || faceRoughnessPreview != nil
         guard !document.faceAppearance.isEmpty || previewing else { return [] }
         return visible.map { m in

@@ -117,3 +117,7 @@ Order B = `block − channels`, split the plain block, add keys to the plain hal
 `Document.molds`, `MoldBuilder`, the studio (ribbon, Molds and Bodies lists, Mold inspector, Open slider, vents and gate by click), export of the halves laid out for printing, MCP tools `create_mold` / `get_mold` / `export_mold` and the guide topic `make_a_mold`. The details, the code map and what is not done are at the end of `docs/FEATURE-NOTES.md` ("The Mold workspace"). Checked in the real window (separately named test copy): make a mold, parting X/Y/Z, open, vent by click, reopen the file (the mold comes back). Not yet checked there: a dark window, a narrow window, the Export dialog end to end, a heavy imported STL, undo and redo of a mold change.
 
 Answers to the open questions so far: (2) mold settings are undoable (`mutate`); (3) the halves are not in the Design browser; (4) one body per mold in v1 (the list allows several molds per body).
+
+## Phase 2 built (2026-11-19, `mold-studio`)
+
+Release analysis and the Check view (green / amber / red on the body), undercut warnings for silicone and refusal for rigid resin, the best parting axis chosen at the start, automatic vents at the body's peaks, markers at the gate and vents, silicone volume (Phase 1). Details in `docs/FEATURE-NOTES.md`. Next on the list is Phase 3 (sealing and handling): tongue-and-groove seam, clamp ears or bolt holes, shrinkage scale for resin. Open: shadowing in the release analysis; vents under overhangs; one body only per mold.

@@ -22,30 +22,57 @@ extension DocumentModel {
     var activeMold: MoldSetup? { document.molds.first { $0.id == activeMoldID } ?? document.molds.first }
     var activeMoldResult: MoldResult? { activeMold.flatMap { moldResults[$0.id] } }
 
-    /// The scene of the Mold workspace: the body (ghosted), then the two halves. While a spot is being picked, only the body.
+    /// The scene of the Mold workspace: the body (ghosted), the two halves, and a marker at the gate and each vent. While a spot is being
+    /// picked, or in the Check view, the halves are left out: only the body and the markers.
     var moldShownMeshes: [BodyMesh] {
         guard let id = activeMold?.id, let set = moldMeshSets[id] else { return [] }
-        return moldPicking == nil ? set : Array(set.prefix(1))
+        return moldPicking == nil && !moldCheckView ? set : set.filter { !$0.id.hasSuffix("~behind") && !$0.id.hasSuffix("~front") }
     }
 
-    /// The halves are drawn in two calm tints, so they can be told apart (and from the body).
+    /// The halves are drawn in two calm tints, so they can be told apart (and from the body); the markers in strong ones.
     func moldTint(of id: FeatureID) -> BodyColor? {
         guard id.hasPrefix("mold~") else { return nil }
+        if id.hasSuffix("~gate") { return BodyColor(red: 0.80, green: 0.14, blue: 0.16) }
+        if id.contains("~vent") { return BodyColor(red: 0.45, green: 0.20, blue: 0.78) }
         return id.hasSuffix("~behind") ? BodyColor(red: 0.62, green: 0.76, blue: 0.93) : BodyColor(red: 0.96, green: 0.78, blue: 0.56)
     }
 
-    /// A body that has a mold shows through it, as a ghost; while a spot on it is picked it is solid.
+    /// A body that has a mold shows through it, as a ghost; while a spot on it is picked, or in the Check view, it is solid.
     func moldGhostOpacity(of id: FeatureID) -> Double? {
         guard document.molds.contains(where: { $0.body == id }) else { return nil }
-        return moldPicking == nil ? 0.3 : 1
+        return moldPicking == nil && !moldCheckView ? 0.3 : 1
     }
 
-    /// How far the halves are drawn apart: along the parting normal, the body staying where it is.
+    /// How far the halves are drawn apart: along the parting normal, the body and the markers staying where they are.
     var moldOpenOffsets: [SIMD3<Float>] {
-        guard moldOpenAmount > 0, let r = activeMoldResult, r.isBuilt, moldShownMeshes.count == 3 else { return [] }
+        guard moldOpenAmount > 0, let r = activeMoldResult, r.isBuilt else { return [] }
+        let shown = moldShownMeshes
+        guard shown.contains(where: { $0.id.hasSuffix("~behind") }) else { return [] }
         let n = SIMD3<Float>(r.partingNormal)
         let distance = Float(moldOpenAmount) * Float(abs(simd_dot(r.blockSize, r.partingNormal)))
-        return [.zero, -n * distance / 2, n * distance / 2]
+        return shown.map { $0.id.hasSuffix("~behind") ? -n * distance / 2 : $0.id.hasSuffix("~front") ? n * distance / 2 : .zero }
+    }
+
+    /// The Check view's colours: for each face of the body, whether the halves can let go of it.
+    func moldCheckLooks(for visible: [BodyMesh]) -> [[Int: Renderer.FaceLook]] {
+        guard let analysis = activeMoldResult?.analysis else { return [] }
+        return visible.map { m in
+            guard m.id == activeMold?.body else { return [:] }
+            var out: [Int: Renderer.FaceLook] = [:]
+            for (index, name) in m.mesh.faceNames.enumerated() {
+                guard let release = analysis.faces[name] else { continue }
+                out[index] = Renderer.FaceLook(color: Self.releaseColor(release), material: 0, roughness: -1)
+            }
+            return out
+        }
+    }
+
+    static func releaseColor(_ release: MoldAnalysis.Release) -> SIMD4<Float> {
+        switch release {
+        case .free: SIMD4(0.42, 0.76, 0.52, 1)
+        case .noDraft: SIMD4(0.96, 0.76, 0.30, 1)
+        case .undercut: SIMD4(0.89, 0.30, 0.27, 1)
+        }
     }
 
     /// What the status bar says in the Mold workspace: what a click does while a spot is being picked, else where things stand.
@@ -54,6 +81,10 @@ extension DocumentModel {
         case .vent?: return "Click on the body where an air vent goes (the top of a pocket the air would be trapped in) · Esc when done"
         case .gate?: return "Click on the body where the silicone goes in · Esc to cancel"
         case nil: break
+        }
+        if let note = moldNote { return note }
+        if moldCheckView, activeMoldResult?.analysis != nil {
+            return "Green: lets go · amber: parallel to the pull · red: undercut"
         }
         guard let mold = activeMold else {
             return document.molds.isEmpty ? "Make a mold from a body on the left" : "Choose a mold on the left"
@@ -69,6 +100,8 @@ extension DocumentModel {
     /// The workspace was entered or left.
     func moldWorkspaceChanged(entering: Bool) {
         moldPicking = nil
+        moldCheckView = false
+        moldNote = nil
         if entering {
             if activeMoldID == nil || !document.molds.contains(where: { $0.id == activeMoldID }) { activeMoldID = document.molds.first?.id }
             // The Mold workspace has no timeline: it goes while the workspace is on, and comes back after it (if it was open).
@@ -117,6 +150,7 @@ extension DocumentModel {
             defer { KernelActivity.shared.end() }
             var results: [String: MoldResult] = [:]
             var halfMeshes: [String: [Mesh]] = [:]
+            var markerMeshes: [String: [(id: String, name: String, mesh: Mesh)]] = [:]
             for setup in setups {
                 var built: MoldResult
                 if let part = parts[setup.id] ?? nil {
@@ -126,12 +160,26 @@ extension DocumentModel {
                 }
                 results[setup.id] = built
                 halfMeshes[setup.id] = built.halves.compactMap { try? $0.body.tessellate() }
+                markerMeshes[setup.id] = Self.markers(of: built)
             }
-            await self.finishMolds(results, halfMeshes, setups: setups, generation: gen, fit: fit)
+            await self.finishMolds(results, halfMeshes, markerMeshes, setups: setups, generation: gen, fit: fit)
         }
     }
 
-    private func finishMolds(_ results: [String: MoldResult], _ halfMeshes: [String: [Mesh]], setups: [MoldSetup], generation gen: Int, fit: Bool) {
+    /// Small balls at the gate and at each vent, drawn so they can be seen and checked.
+    nonisolated private static func markers(of r: MoldResult) -> [(id: String, name: String, mesh: Mesh)] {
+        var points: [(String, String, SIMD3<Double>, Double)] = []
+        if let gate = r.gatePoint { points.append(("gate", "Gate", gate, max(2.5, r.gateDiameter * 0.6))) }
+        for (i, v) in r.ventPoints.enumerated() { points.append(("vent\(i)", "Vent \(i + 1)", v, max(2.5, r.ventDiameter * 1.5))) }
+        return points.compactMap { key, name, at, size in
+            guard let ball = try? KBody.primitive(.sphere(diameter: size), on: Frame(origin: at, normal: SIMD3(0, 0, 1), xAxis: SIMD3(1, 0, 0)), featureID: "marker"),
+                  let mesh = try? ball.tessellate(linearDeflection: 0.1) else { return nil }
+            return ("mold~\(r.setup.id)~\(key)", name, mesh)
+        }
+    }
+
+    private func finishMolds(_ results: [String: MoldResult], _ halfMeshes: [String: [Mesh]], _ markerMeshes: [String: [(id: String, name: String, mesh: Mesh)]],
+                             setups: [MoldSetup], generation gen: Int, fit: Bool) {
         guard gen == moldGeneration else { return }  // a newer build is on its way
         moldBuilding = false
         moldResults = results
@@ -145,6 +193,9 @@ extension DocumentModel {
             if let built = results[setup.id], let meshesOfHalves = halfMeshes[setup.id], meshesOfHalves.count == 2 {
                 for (half, mesh) in zip(built.halves, meshesOfHalves) { set.append(BodyMesh(index: set.count, id: half.id, name: half.name, mesh: mesh)) }
             }
+            for marker in markerMeshes[setup.id] ?? [] {
+                set.append(BodyMesh(index: set.count, id: marker.id, name: marker.name, mesh: marker.mesh))
+            }
             sets[setup.id] = set
         }
         moldMeshSets = sets
@@ -156,12 +207,13 @@ extension DocumentModel {
 
     // MARK: changing molds
 
-    /// Makes a mold around a body and goes to the Mold workspace. The parting plane starts across the body's shortest side (so the
-    /// halves meet over its biggest outline) and the mold is poured from above.
+    /// Makes a mold around a body and goes to the Mold workspace. The parting plane starts across the axis that leaves the least
+    /// undercut (the shortest side among equals) and the mold is poured from above.
     func makeMold(of bodyID: FeatureID) {
         guard let body = result?.body(bodyID) else { return }
         let ext = body.bounds.map { $0.max - $0.min } ?? SIMD3(1, 1, 1)
-        let axis: MoldAxis = ext.x <= ext.y && ext.x <= ext.z ? .x : ext.y <= ext.z ? .y : .z
+        var axis: MoldAxis = ext.x <= ext.y && ext.x <= ext.z ? .x : ext.y <= ext.z ? .y : .z
+        if let mesh = meshes.first(where: { $0.id == bodyID })?.mesh, let bounds = body.bounds { axis = MoldAnalysis.bestAxis(mesh, bounds: bounds) }
         let name = bodies.first { $0.id == bodyID }?.name ?? "Body"
         let taken = Set(document.molds.map(\.name))
         var title = "\(name) mold", n = 2
@@ -192,6 +244,7 @@ extension DocumentModel {
         var next = document.molds[i]
         change(&next)
         guard next != document.molds[i] else { return }
+        moldNote = nil
         mutate(action) { $0.molds[i] = next }
     }
 
@@ -229,6 +282,30 @@ extension DocumentModel {
         moldPicking = moldPicking == pick ? nil : pick
         sceneRevision += 1
         overlayRevision += 1
+    }
+
+    /// The Check view on or off.
+    func toggleMoldCheck() {
+        moldCheckView.toggle()
+        moldPicking = nil
+        moldNote = nil
+        sceneRevision += 1
+        overlayRevision += 1
+    }
+
+    /// Adds a vent at the top of each lobe of the body that the gate does not reach (see `MoldVents`), unless one is there already.
+    func addAutomaticVents() {
+        guard let mold = activeMold, let r = moldResults[mold.id], let gate = r.gatePoint,
+              let ghost = meshes.first(where: { $0.id == mold.body }) else { return }
+        let found = MoldVents.suggest(ghost.mesh, up: mold.up.vector, gate: gate, gateRadius: max(r.gateDiameter, 8) / 2)
+        let fresh = found.filter { p in !mold.vents.contains { simd_length($0.vector - p) < 5 } }
+        if fresh.isEmpty {
+            moldNote = found.isEmpty ? "No trapped air found: the body has just one top, where the gate is." : "The vents are there already."
+            overlayRevision += 1
+            return
+        }
+        moldNote = nil
+        updateMold(mold.id, "Add Vents") { $0.vents += fresh.map { MoldPoint($0) } }
     }
 
     /// The parting planes the mold can be set to besides "across an axis through the middle": the origin planes and the construction

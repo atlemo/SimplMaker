@@ -106,4 +106,27 @@ import Testing
             #expect(none == nil)
         }
     }
+
+    @Test func castingAndTheUndercutReportGoThroughTheTools() async throws {
+        try await withMoldEnabled {
+            let rig = AIServiceTests.Rig()
+            let (id, model) = await rig.open(CADDocument())
+            model.undoManager = UndoManager()
+            let steps: [any AIOperation] = [
+                try AIOperationParser.parse(tool: "create_box", arguments: ["width": 40, "length": 40, "height": 5, "id": "disc"]),
+            ]
+            _ = try await rig.service.batch(documentID: id, expectedRevision: nil, label: "Disc", steps)
+            _ = try await rig.service.change(documentID: id, expectedRevision: nil,
+                                             try AIOperationParser.parse(tool: "create_box", arguments: ["width": 10, "length": 10, "height": 20, "id": "stem", "operation": "join"]))
+            let silicone = try await rig.service.createMold(documentID: id, expectedRevision: nil, args(["body_id": "disc", "parting": "z"]))
+            let s = try #require(silicone.mold)
+            #expect(s.casting == "silicone" && s.undercutFaces?.isEmpty == false && (s.undercutPercent ?? 0) > 1 && s.warnings.contains { $0.contains("undercut") }, "\(silicone.message)")
+            #expect(s.status == "built")
+            let resin = try await rig.service.createMold(documentID: id, expectedRevision: nil, args(["mold_id": .string(s.id), "casting": "resin"]))
+            let r = try #require(resin.mold)
+            #expect(r.status == "failed" && r.error?.contains("can not be released") == true && r.undercutFaces == s.undercutFaces, "\(resin.message)")
+            do { _ = try await rig.service.createMold(documentID: id, expectedRevision: nil, args(["mold_id": .string(s.id), "casting": "rubber"])); Issue.record("accepted") }
+            catch { #expect((error as? AIError)?.code == .invalidArguments) }
+        }
+    }
 }

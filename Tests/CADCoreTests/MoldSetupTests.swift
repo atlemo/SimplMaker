@@ -55,6 +55,32 @@ import Testing
             Feature(id: "box", name: "Block", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "50 mm", length: "34 mm", height: "26 mm"))),
             Feature(id: "knob", name: "Knob", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, v: "0 mm", height: "36 mm", diameter: "12 mm", operation: .join, target: "box"))),
         ]
-        try d.encoded().write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["SIMPLMAKER_WRITE_MOLD_SAMPLE"]!))
+        let path = ProcessInfo.processInfo.environment["SIMPLMAKER_WRITE_MOLD_SAMPLE"]!
+        try d.encoded().write(to: URL(fileURLWithPath: path))
+        // A disc with a stem (an undercut when parted across Z) and a block with two pegs of different heights (a vent for the lower one).
+        var disc = CADDocument()
+        disc.features = [
+            Feature(id: "disc", name: "Disc", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, height: "6 mm", diameter: "44 mm"))),
+            Feature(id: "stem", name: "Stem", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, height: "30 mm", diameter: "12 mm", operation: .join, target: "disc"))),
+        ]
+        try disc.encoded().write(to: URL(fileURLWithPath: path + ".disc"))
+        var pegs = CADDocument()
+        pegs.features = [
+            Feature(id: "b", name: "Base", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "60 mm", length: "24 mm", height: "10 mm"))),
+            Feature(id: "p1", name: "Peg 1", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, u: "-16 mm", height: "30 mm", diameter: "8 mm", operation: .join, target: "b"))),
+            Feature(id: "p2", name: "Peg 2", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, u: "16 mm", height: "24 mm", diameter: "8 mm", operation: .join, target: "b"))),
+        ]
+        try pegs.encoded().write(to: URL(fileURLWithPath: path + ".pegs"))
+    }
+}
+
+@Suite struct MoldCastingTests {
+    @Test func castingIsKeptAndDefaultsToSilicone() throws {
+        var d = CADDocument()
+        d.molds = [MoldSetup(id: "a", name: "A", body: "x", casting: .resin), MoldSetup(id: "b", name: "B", body: "x")]
+        let back = try JSONDecoder().decode(CADDocument.self, from: JSONEncoder().encode(d))
+        #expect(back.molds.map(\.casting) == [.resin, .silicone])
+        let json = String(decoding: try JSONEncoder().encode(MoldSetup(id: "b", name: "B", body: "x")), as: UTF8.self)
+        #expect(!json.contains("casting"), "the default is not written")
     }
 }

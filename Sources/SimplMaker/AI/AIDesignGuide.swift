@@ -46,9 +46,15 @@ enum AIDesignGuide {
         with at least three perimeters, seal the seam with rubber bands, clamps or a little tape, and use a release agent. Tell the user \
         where the file is and that the sizes (wall, keys, clearance) are first guesses to be proven with a test print.
 
-        What it cannot do yet: undercuts are not checked (silicone peels out of mild ones, rigid resin does not: part the body so that no \
-        face looks back at the other half), a body with a hole through it gets a pin that is part of the mold (fine for silicone), a \
-        leaning parting plane, more than one body in a mold, and parting surfaces that are not flat.
+        Undercuts are checked: get_mold lists the faces that lean back against the pull (undercut_faces, undercut_percent). Silicone only \
+        warns, because it is peeled out of a mild undercut. With casting "resin" an undercut refuses the mold: part the body another way \
+        (parting "x", "y" or "z"), or change the body so nothing hangs back. A face parallel to the pull (no_draft_percent) is fine in \
+        silicone; in resin lean such faces 1 to 2 degrees with create_draft. auto_vents: true puts a vent at each lobe the gate does not \
+        reach (peaks only: the ceiling under an overhang needs a vent you place yourself).
+
+        What it cannot do yet: shadowing (a face hidden behind another along the pull is not found), a body with a hole through it gets a \
+        pin that is part of the mold (fine for silicone), a leaning parting plane, more than one body in a mold, and parting surfaces that \
+        are not flat.
         """)
 
     // MARK: how to work

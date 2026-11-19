@@ -52,7 +52,7 @@ import simd
     @Test func theGateGoesInAtTheHighestPoint() throws {
         let r = MoldBuilder.build(setup(), part: try box(30, 20, 20), in: RegenResult())
         let gate = try #require(r.gatePoint)
-        #expect(abs(gate.z - 20) < 1e-3 && abs(gate.x) < 1e-2 && abs(gate.y) < 1e-2, "\(gate)")
+        #expect(abs(gate.z - 20) < 1e-3 && abs(gate.x) < 0.05 && abs(gate.y) < 0.05, "\(gate)")
         // The pour opening is cut right through the top of the block.
         let front = try #require(r.front)
         #expect(front.faceNames.contains { $0.hasPrefix("gate") }, "\(front.faceNames)")
@@ -156,5 +156,103 @@ import simd
         // through the settings instead: the part must exist and have volume.
         let r = MoldBuilder.build(setup(), part: try box(30, 20, 20), in: RegenResult())
         #expect(r.isBuilt)
+    }
+}
+
+/// A sphere, reported by the user: only one half got the cavity.
+@Suite struct MoldSphereTests {
+    private func sphere(_ d: Double = 40) throws -> KBody {
+        try KBody.primitive(.sphere(diameter: d), on: Frame(origin: .zero, normal: SIMD3(0, 0, 1), xAxis: SIMD3(1, 0, 0)), featureID: "ball")
+    }
+
+    @Test(arguments: [MoldAxis.x, .y, .z]) func bothHalvesGetTheCavity(_ axis: MoldAxis) throws {
+        let part = try sphere()
+        let r = MoldBuilder.build(MoldSetup(id: "m", name: "Mold", body: "ball", parting: .middle(axis)), part: part, in: RegenResult())
+        #expect(r.isBuilt, "\(r.error ?? "")")
+        let behind = try #require(r.behind), front = try #require(r.front)
+        Swift.print("SPHERE \(axis): behind \(behind.volume) front \(front.volume) cavity \(r.cavityVolume) part \(part.volume) warnings \(r.warnings)")
+        // The cavity is the sphere (plus a little gate): each half is missing about half of it.
+        let block = r.blockSize.x * r.blockSize.y * r.blockSize.z
+        #expect(abs(block - behind.volume - front.volume - r.cavityVolume) < block * 0.002)
+        #expect(r.cavityVolume > part.volume * 0.98, "cavity \(r.cavityVolume) vs sphere \(part.volume)")
+        #expect(abs(behind.volume - front.volume) < block * 0.03, "the halves differ: \(behind.volume) \(front.volume)")
+    }
+}
+
+@Suite struct MoldSphereMeshTests {
+    @Test(arguments: [MoldAxis.x, .y, .z]) func bothHalvesShowTheCavityInTheirMesh(_ axis: MoldAxis) throws {
+        let part = try KBody.primitive(.sphere(diameter: 40), on: Frame(origin: .zero, normal: SIMD3(0, 0, 1), xAxis: SIMD3(1, 0, 0)), featureID: "ball")
+        let r = MoldBuilder.build(MoldSetup(id: "m", name: "Mold", body: "ball", parting: .middle(axis)), part: part, in: RegenResult())
+        for (name, half) in [("behind", r.behind), ("front", r.front)] {
+            let mesh = try #require(half).tessellate()
+            // Triangles whose three corners lie on the sphere (radius 20): the cavity wall.
+            var onSphere = 0
+            for t in stride(from: 0, to: mesh.indices.count, by: 3) {
+                let ok = (0..<3).allSatisfy { k -> Bool in
+                    let i = Int(mesh.indices[t + k]) * 3
+                    let p = SIMD3<Float>(mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2])
+                    return abs(simd_length(p) - 20) < 0.3
+                }
+                if ok { onSphere += 1 }
+            }
+            Swift.print("SPHEREMESH \(axis) \(name): \(mesh.indices.count / 3) triangles, \(onSphere) on the cavity, faces \(half!.faceNames.count)")
+            #expect(onSphere > 20, "\(name) half of \(axis): the cavity is not in the mesh")
+        }
+    }
+}
+
+@Suite struct MoldSphereFromTheRegeneratorTests {
+    @Test(arguments: [MoldAxis.x, .y, .z], [44.0, 40.0]) func theSphereTheAppMakes(_ axis: MoldAxis, _ diameter: Double) throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "ball", name: "Sphere", .primitive(PrimitiveFeature(kind: .sphere, plane: .xy, diameter: "\(diameter) mm")))]
+        let regen = Regenerator.regenerate(d)
+        let part = try #require(regen.body("ball"))
+        Swift.print("REGEN sphere d\(diameter): bounds \(String(describing: part.bounds)) volume \(part.volume) valid \(part.isValid) faces \(part.faceNames)")
+        let r = MoldBuilder.build(MoldSetup(id: "m", name: "Mold", body: "ball", parting: .middle(axis)), part: part, in: regen)
+        let block = r.blockSize.x * r.blockSize.y * r.blockSize.z
+        Swift.print("REGEN \(axis): behind \(r.behind?.volume ?? 0) front \(r.front?.volume ?? 0) cavity \(r.cavityVolume) warnings \(r.warnings) error \(r.error ?? "-") block \(block)")
+        #expect(r.isBuilt)
+        #expect(r.cavityVolume > part.volume * 0.98, "cavity \(r.cavityVolume) vs sphere \(part.volume)")
+    }
+}
+
+@Suite struct MoldSphereAwayFromTheOriginTests {
+    @Test(arguments: [MoldAxis.x, .y, .z], [(0.0, 0.0), (13.7, -8.2), (30.0, 0.0), (-25.5, 17.25), (10.0, 10.0)])
+    func theCavityIsInBothHalves(_ axis: MoldAxis, _ at: (Double, Double)) throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "ball", name: "Sphere", .primitive(PrimitiveFeature(kind: .sphere, plane: .xy, u: "\(at.0) mm", v: "\(at.1) mm", diameter: "44 mm")))]
+        let regen = Regenerator.regenerate(d)
+        let part = try #require(regen.body("ball"))
+        let r = MoldBuilder.build(MoldSetup(id: "m", name: "Mold", body: "ball", parting: .middle(axis)), part: part, in: regen)
+        Swift.print("AWAY \(axis) at \(at): cavity \(Int(r.cavityVolume)) of sphere \(Int(part.volume)) behind \(Int(r.behind?.volume ?? 0)) front \(Int(r.front?.volume ?? 0)) \(r.warnings) \(r.error ?? "")")
+        #expect(r.isBuilt)
+        #expect(r.cavityVolume > part.volume * 0.98, "only part of the cavity was cut: \(r.cavityVolume) of \(part.volume)")
+    }
+}
+
+/// Round bodies at awkward places: the kernel's subtraction used to drop a cavity without saying so for a sphere at (13.7, -8.2).
+@Suite struct MoldRoundBodySweepTests {
+    @Test func theCavityIsAlwaysCut() throws {
+        var seed: UInt64 = 20261119
+        func next() -> Double { seed = seed &* 6364136223846793005 &+ 1442695040888963407; return Double(seed >> 33) / Double(1 << 31) }
+        var failures: [String] = []
+        for n in 0..<24 {
+            let kind: PrimitiveFeature = n % 3 == 0
+                ? PrimitiveFeature(kind: .sphere, plane: .xy, u: "\(next() * 60 - 30) mm", v: "\(next() * 60 - 30) mm", diameter: "\(20 + next() * 40) mm")
+                : n % 3 == 1
+                ? PrimitiveFeature(kind: .cylinder, plane: .xy, u: "\(next() * 60 - 30) mm", v: "\(next() * 60 - 30) mm", height: "\(20 + next() * 40) mm", diameter: "\(15 + next() * 30) mm")
+                : PrimitiveFeature(kind: .torus, plane: .xy, u: "\(next() * 60 - 30) mm", v: "\(next() * 60 - 30) mm", diameter: "\(30 + next() * 30) mm", tube: "\(6 + next() * 8) mm")
+            var d = CADDocument()
+            d.features = [Feature(id: "p", name: "P", .primitive(kind))]
+            let regen = Regenerator.regenerate(d)
+            guard let part = regen.body("p") else { continue }
+            for axis in MoldAxis.allCases {
+                let r = MoldBuilder.build(MoldSetup(id: "m", name: "M", body: "p", parting: .middle(axis)), part: part, in: regen)
+                if !r.isBuilt || r.cavityVolume < part.volume * 0.98 {
+                    failures.append("\(kind.kind.rawValue) \(kind.u),\(kind.v) across \(axis): \(r.error ?? "cavity \(Int(r.cavityVolume)) of \(Int(part.volume))")")
+                }
+            }
+        }
+        #expect(failures.isEmpty, "\(failures.joined(separator: "\n"))")
     }
 }
