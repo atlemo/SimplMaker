@@ -28,10 +28,11 @@ enum Workspace: String, CaseIterable, Identifiable, Sendable {
     /// tests, running at the same time, would see: `Workspace.$moldOverride.withValue(true) { … }`.
     @TaskLocal static var moldOverride: Bool?
 
-    /// Mold is unfinished: it shows with `defaults write <app id> moldWorkspace -bool YES`, or in a debug run with
-    /// SIMPLMAKER_MOLD=1.
+    /// Mold is unfinished: it shows in a build made with `scripts/bundle-app.sh --with-mold`, with `defaults write <app id> moldWorkspace -bool YES`,
+    /// or in a debug run with SIMPLMAKER_MOLD=1.
     static var moldEnabled: Bool {
         if let forced = moldOverride { return forced }
+        if Bundle.main.object(forInfoDictionaryKey: "SCMoldEnabled") as? Bool == true { return true }  // a build made with --with-mold
         #if DEBUG
         if ProcessInfo.processInfo.environment["SIMPLMAKER_MOLD"] == "1" { return true }
         #endif

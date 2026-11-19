@@ -63,8 +63,11 @@ struct WindowSizeMemory: NSViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak window] in
                 if let window { WindowControls.watch(window) }
             }
+            // didUpdate too: AppKit moved the zoom button back to its own place on its own once (after a save, when the document's title and
+            // edited state change), without a resize or an activation to hear about. A window update is the one thing that comes after
+            // every such change, and placing is cheap when nothing has moved (see `WindowControls.place`).
             for name in [NSWindow.didResizeNotification, NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
-                         NSWindow.didExitFullScreenNotification, NSWindow.didChangeScreenNotification] {
+                         NSWindow.didExitFullScreenNotification, NSWindow.didChangeScreenNotification, NSWindow.didUpdateNotification] {
                 NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { note in
                     guard let window = note.object as? NSWindow else { return }
                     MainActor.assumeIsolated { WindowControls.place(in: window) }
@@ -252,6 +255,10 @@ struct TitlebarAppearance: NSViewRepresentable {
         placing = true
         defer { placing = false }
         let height = (axes[window.windowNumber] ?? RibbonMetrics.defaultAxis) * 2
+        // Already in place (the usual case on a window update): nothing to do.
+        if let xs = standardX[window.windowNumber], container.frame.height == height, bar.frame == container.bounds,
+           zip([close, miniaturize, zoom], xs).allSatisfy({ button, x in
+               button.frame.origin == NSPoint(x: x + inset, y: ((height - button.frame.height) / 2).rounded()) }) { return }
         let frame = NSRect(x: 0, y: frameView.bounds.height - height, width: frameView.bounds.width, height: height)
         if container.frame != frame { container.frame = frame }
         if bar.frame != container.bounds { bar.frame = container.bounds }

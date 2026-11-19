@@ -97,14 +97,17 @@ struct StartPage: View {
             }
             .controlSize(.large)
             .buttonBorderShape(.capsule)
-            Button { startTutorial() } label: {
-                HStack(spacing: DS.Spacing.space2) {
-                    Text(tutorialCompleted ? "Done it before?" : "New here?").foregroundStyle(.secondary)
-                    Text(tutorialCompleted ? "Do the tutorial again" : "Take the tutorial").foregroundStyle(DS.brand)
+            // Only until the tutorial has been done once: after that the start page has nothing to say about it (it stays in the Help menu).
+            if !tutorialCompleted {
+                Button { startTutorial() } label: {
+                    HStack(spacing: DS.Spacing.space2) {
+                        Text("New here?").foregroundStyle(.secondary)
+                        Text("Take the tutorial").foregroundStyle(DS.brand)
+                    }
+                    .font(.callout)
                 }
-                .font(.callout)
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
