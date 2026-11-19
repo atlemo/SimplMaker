@@ -128,6 +128,9 @@ final class DocumentModel {
     /// The mold's halves are out of date: the body or a setting changed while another workspace was showing.
     @ObservationIgnored var moldsStale = true
     @ObservationIgnored var moldGeneration = 0
+    /// Whether the grid shows in the Mold workspace. It starts hidden there (the grid is about sketching, and gets in the way of
+    /// the halves); the Show Grid command flips this one, not the preference, while that workspace is on. Not saved.
+    var moldShowsGrid = false
     /// The timeline was open when the Mold workspace hid it (it has none).
     @ObservationIgnored var timelineHiddenByMold = false
     // The Split workspace's state (see SplitStudio.swift). Nothing here is saved: the splits themselves are `document.printSplits`.

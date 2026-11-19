@@ -104,10 +104,13 @@ struct WorkspaceList: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, DS.Spacing.space5)
                 .padding(.vertical, DS.Spacing.space4)
-            ForEach(Workspace.available) { workspace in
-                WorkspaceRow(workspace: workspace, current: model.workspace == workspace) {
-                    dismiss()
-                    model.setWorkspace(workspace)
+            // 1 pt between the rows, so the hover and current tints read as separate bars.
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(Workspace.available) { workspace in
+                    WorkspaceRow(workspace: workspace, current: model.workspace == workspace) {
+                        dismiss()
+                        model.setWorkspace(workspace)
+                    }
                 }
             }
             Divider().padding(.top, DS.Spacing.space3)

@@ -203,8 +203,9 @@ public enum MoldBuilder {
 
         // Where the gate goes in: the body's highest point along "up", or the point the setup names.
         let top = highestPoint(of: part, mesh: mesh, along: up, bounds: bounds, ext: ext)
+        // A hand-placed gate stays where it was clicked, at the height of the surface there (as a vent does): its channel starts a
+        // millimetre under that surface. Lifting it to the body's highest point made it start in the air wherever the body is lower.
         var gate = setup.gatePoint?.vector ?? top
-        if setup.gatePoint != nil { gate += up * (simd_dot(top - gate, up)) }  // a hand-placed gate: its place across "up", the height of the top
         // A gate beside a vertical parting plane lies on the plane, so the split makes two half-channels.
         let upAxis = setup.up.axis
         if upAxis != MoldResult.axis(of: normal), setup.gatePoint == nil { gate[axisIndex] = planeCoordinate }

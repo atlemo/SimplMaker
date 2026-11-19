@@ -58,6 +58,17 @@ import simd
         #expect(front.faceNames.contains { $0.hasPrefix("gate") }, "\(front.faceNames)")
     }
 
+    @Test func aGatePlacedOnALowerSurfaceStillReachesTheBody() throws {
+        // A tall end and a low step: a gate clicked on the step must start under the step's surface, not under the body's highest point.
+        let part = try box(40, 20, 10).boolean(try box(10, 20, 20, at: SIMD3(-15, 0, 0)), SK_FUSE)
+        let r = MoldBuilder.build(setup { $0.gatePoint = MoldPoint(10, 0, 10) }, part: part, in: RegenResult())
+        #expect(r.isBuilt, "\(r.error ?? "")")
+        #expect(!r.warnings.contains { $0.contains("does not reach") }, "\(r.warnings)")
+        #expect(abs((r.gatePoint?.z ?? 99) - 10) < 1e-6, "\(String(describing: r.gatePoint))")
+        let front = try #require(r.front)
+        #expect(front.faceNames.contains { $0.hasPrefix("gate") }, "\(front.faceNames)")
+    }
+
     @Test func aVentIsCutAlongUp() throws {
         let withVent = MoldBuilder.build(setup { $0.vents = [MoldPoint(5, 0, 18)] }, part: try box(30, 20, 20), in: RegenResult())
         let without = MoldBuilder.build(setup(), part: try box(30, 20, 20), in: RegenResult())

@@ -92,11 +92,11 @@ struct MoldToolbar: View {
                 RibbonDivider()
                 MoldGroup(title: "Gate & Vents") {
                     ToolButton(title: "Gate", icon: "cone", active: model.moldPicking == .gate,
-                               help: model.moldPicking == .gate ? "Click on the body where the silicone goes in (Esc cancels)"
-                                   : "Place the gate by clicking on the body. It starts at the highest point.") { model.toggleMoldPick(.gate) }
+                               help: model.moldPicking == .gate ? "Click on the body where the silicone goes in: the gate is the pour hole (Esc cancels)"
+                                   : "The gate is the hole you pour the silicone in through. Place it by clicking on the body; it starts at the highest point.") { model.toggleMoldPick(.gate) }
                     ToolButton(title: "Vent", icon: "circle-dot", active: model.moldPicking == .vent,
                                help: model.moldPicking == .vent ? "Click on the body to add a vent; Esc when done"
-                                   : "Add an air vent by clicking on the body, at the top of a pocket that air would be trapped in") { model.toggleMoldPick(.vent) }
+                                   : "A vent is a small hole that lets air out while you pour. Add one by clicking on the body, at the top of a pocket that air would be trapped in") { model.toggleMoldPick(.vent) }
                     ToolButton(title: "Auto Vents", icon: "waypoints",
                                help: "Add a vent at the top of every lobe of the body that the gate does not reach: where air would be trapped") { model.addAutomaticVents() }
                         .disabled(!built)
@@ -315,7 +315,7 @@ private struct MoldInspector: View {
                     .help("The way up while the silicone is poured: the gate goes in at the body's highest point this way")
                     size("Wall", mold.wall, mold, "Change Wall") { $0.wall = $1 }
                 }
-                Section("Gate") {
+                Section("Gate · where you pour") {
                     size("Diameter", mold.gateDiameter, mold, "Change Gate") { $0.gateDiameter = $1 }
                     LabeledContent("Position") {
                         HStack(spacing: DS.Spacing.space3) {
@@ -326,7 +326,7 @@ private struct MoldInspector: View {
                         }
                     }
                 }
-                Section("Vents") {
+                Section("Vents · where air escapes") {
                     size("Diameter", mold.ventDiameter, mold, "Change Vents") { $0.ventDiameter = $1 }
                     if mold.vents.isEmpty {
                         Text("None. Add one at the top of a pocket where air would be trapped.").font(.caption).foregroundStyle(.secondary)

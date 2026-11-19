@@ -211,7 +211,9 @@ struct SimplMakerCommands: Commands {
                                                   set: { model?.setExplodedView($0) }))
                 .disabled(model == nil)
             Divider()
-            Toggle("Show Grid", isOn: $showGrid)
+            Toggle("Show Grid", isOn: Binding(
+                get: { model?.workspace == .mold ? (model?.moldShowsGrid ?? false) : showGrid },
+                set: { if let model, model.workspace == .mold { model.moldShowsGrid = $0 } else { showGrid = $0 } }))
                 .shortcut(.showGrid)
             Toggle("Show Axes", isOn: $showAxes)
                 .shortcut(.showAxes)

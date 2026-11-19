@@ -108,7 +108,9 @@ extension DocumentModel {
         add("Make a Mold…", "View", keywords: "cast silicone resin two part halves") { self.startMold() }
         add("Section Analysis", "View", keywords: "cut slice", detail: state(sectionActive)) { self.setSectionAnalysis(!self.sectionActive) }
         add("Exploded View", "View", keywords: "assembly separate", detail: state(explodeOn)) { self.setExplodedView(!self.explodeOn) }
-        add("Show Grid", "View", shortcut: .showGrid, detail: state(flag(Preferences.showGrid))) { flip(Preferences.showGrid) }
+        add("Show Grid", "View", shortcut: .showGrid, detail: state(workspace == .mold ? moldShowsGrid : flag(Preferences.showGrid))) {
+            if self.workspace == .mold { self.moldShowsGrid.toggle() } else { flip(Preferences.showGrid) }
+        }
         add("Show Axes", "View", shortcut: .showAxes, detail: state(flag(Preferences.showAxes))) { flip(Preferences.showAxes) }
         add("Show Constraints", "View", detail: state(flag(Preferences.showConstraints))) { flip(Preferences.showConstraints) }
         add("Snap to Grid", "View", shortcut: .snapToGrid, detail: state(flag(Preferences.snapToGrid))) { flip(Preferences.snapToGrid) }

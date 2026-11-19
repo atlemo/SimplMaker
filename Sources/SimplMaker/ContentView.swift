@@ -192,7 +192,7 @@ struct DocumentWindow: View {
                              renderSettings: model.renderView ? model.renderSettings : nil,
                              spinning: model.renderView && model.renderSpinning && model.sketchSession == nil,
                              sectionPlane: model.sectionClip, explodeOffsets: model.explodeOffsets, sketchSlice: model.sketchSlicePlane,
-                             showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
+                             showGrid: model.workspace == .mold ? model.moldShowsGrid : showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
                              panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                            model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                            Panel.bottomInset(timeline: model.showTimeline)),
