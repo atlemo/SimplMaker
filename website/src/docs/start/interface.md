@@ -19,15 +19,20 @@ Hide the browser, inspector and timeline when you want more room: **View → Hid
 
 ## The toolbar
 
-The top of the window has two rows. The title bar holds a few buttons: the browser button, **Undo** and **Redo**, the **mode selector**, and at the right end the Hide UI and Inspector buttons. Under it the tools float over the view, each group on an island of its own, with the group's name underneath.
+The top of the window has two parts. The title bar holds a few buttons: the browser button with **Undo** and **Redo**, and at the right end the Hide UI and Inspector buttons. Under it floats the **ribbon**, one panel with the **workspace button** at its left and the tools of that workspace next to it, in groups divided by thin lines, each group with its name underneath.
 
-The mode selector has **Start**, **Design** and **Render** (and **Mold** while it is being built). It is there in every mode, so you can always move on.
+### Workspaces
 
-- **Start** is a page as big as the window: new and recent parts, and the ways to begin this part (a sketch, a box, a cylinder, the tutorial). A new, empty part opens on it. It makes way for Design as soon as you start something.
+The big button at the left of the ribbon shows where you are: its picture, its name and the word **Workspace**. Click it for the list of workspaces, each with a picture, a line on what it is for and what is in it. It is there in every workspace, so you can always move on.
+
+- **Start** is a page as big as the window: new and recent parts, and the ways to begin this part (a sketch, a box, a cylinder, the tutorial). A new, empty part opens on it. It makes way for Design as soon as you start something. **Window → Start** ([[⇧⌘1]]) comes back to it.
 - **Design** is where you model. Its tools are below.
 - **Render** shows the part on a floor with a light you set. See [Render view](doc:modify/render).
+- **Mold** is being built, and shows only when it is switched on.
 
-The tools change with the mode you are in.
+Switching finishes a sketch you were drawing. Every workspace works on the same part and its history; only the tools and panels change.
+
+Each part opens as a tab. The tabs show in the title bar as soon as you have a second part open (⌘N, **File → New**, or **New Part** on the Start page); until then there is no tab bar. The **+** opens another part, and a right-click on a tab offers **Close Other Tabs** and **Move Tab to New Window**.
 
 ### Design mode
 

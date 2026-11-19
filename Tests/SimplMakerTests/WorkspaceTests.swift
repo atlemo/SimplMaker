@@ -131,4 +131,12 @@ import Testing
         #expect(model.showRenderOptions)
         #expect(model.workspace == .render)
     }
+
+    /// The workspace list draws each workspace's glyph: a name that is not in the icon set would draw nothing.
+    @Test func everyWorkspaceHasAGlyphAndWords() {
+        for workspace in Workspace.allCases {
+            #expect(IconGlyphs.table[workspace.symbol] != nil, "\(workspace.rawValue): no glyph called \(workspace.symbol)")
+            #expect(!workspace.summary.isEmpty && !workspace.contents.isEmpty)
+        }
+    }
 }

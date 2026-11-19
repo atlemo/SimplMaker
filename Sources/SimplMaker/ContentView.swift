@@ -46,6 +46,8 @@ struct DocumentWindow: View {
     @State private var barHeight: CGFloat = 68
     /// The window's tabs, which the toolbar draws.
     @State private var tabs = WindowTabs()
+    /// The list of workspaces under the ribbon is open.
+    @State private var workspaceListOpen = false
     /// Bumped when a preference changes, so the pins are read again.
     @State private var defaultsTick = 0
 
@@ -61,7 +63,7 @@ struct DocumentWindow: View {
     /// The widest layout that fits between the window's edges: every pinned tool, then one fewer in each group at a
     /// time, down to one in each group, and past that one menu of everything.
     private var toolbarLayout: ToolbarLayout {
-        let room = windowWidth - 2 * Panel.inset
+        let room = windowWidth - 2 * Panel.inset - RibbonBar<EmptyView>.chrome
         var trim = 0
         while let width = toolRowWidths[.trimmed(trim)] {
             if room >= width { return .trimmed(trim) }
@@ -131,15 +133,9 @@ struct DocumentWindow: View {
         // is given, so they are drawn in the contrast ink on the tint, with no glass of the system's. Their glass is drawn here,
         // with the panels' own, rather than by the toolbar: the system's toolbar glass sits a level above the floating panels.
         .toolbar {
-            // The pills are items of their own, each followed by a 6 pt gap (the toolbar puts none between its items).
-            ToolbarItem(placement: .navigation) { ToolbarBrowserPill(model: model, ink: panelToggleInk).padding(.trailing, DS.Spacing.space3) }
+            // The pills in the toolbar (it keeps the traffic lights and the tabs): the browser, undo and redo in one, a gap, then the tabs.
+            ToolbarItem(placement: .navigation) { ToolbarLeadingPill(model: model, ink: panelToggleInk).padding(.trailing, DS.Spacing.space3) }
                 .sharedBackgroundHidden(true)
-            ToolbarItem(placement: .navigation) { ToolbarUndoRedoPill(model: model, ink: panelToggleInk).padding(.trailing, DS.Spacing.space3) }
-                .sharedBackgroundHidden(true)
-            if Workspace.available.count > 1 {
-                ToolbarItem(placement: .navigation) { WorkspaceSwitcher(model: model, ink: panelToggleInk).padding(.trailing, DS.Spacing.space3) }
-                    .sharedBackgroundHidden(true)
-            }
             // The tabs fill the middle once there is more than one part, so the trailing pill stays at the far right. With one part
             // the middle is empty: the tabs come with the second (⌘N, File → New, New Part), and a 1 pt item keeps the layout.
             ToolbarItem(placement: .principal) {
@@ -183,8 +179,8 @@ struct DocumentWindow: View {
     }
 
     /// How far the island bar reaches down from the top of the content: the panels start under it. Nothing while the UI is hidden.
-    private var showsToolRow: Bool { !model.uiHidden && model.workspace.hasTools }
-    private var chromeTop: CGFloat { showsToolRow ? barHeight : 0 }
+    private var showsRibbon: Bool { !model.uiHidden }
+    private var chromeTop: CGFloat { showsRibbon ? barHeight : 0 }
 
     /// The window's content and its floating panels. The dialogs are added in `body`.
     private var documentContent: some View {
@@ -202,32 +198,48 @@ struct DocumentWindow: View {
                                            model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                            Panel.bottomInset(timeline: model.showTimeline)),
                              chromeTop: chromeTop),
-                       chrome: Group {
-            if showsToolRow {
-                // Sketch mode's colour fills the band behind the islands; otherwise the islands float over the view.
-                ToolbarFade(tint: sketchPaper.toolbarTint, height: toolbarHeight + barHeight + Panel.inset,
-                            visible: sketchTint, material: false)
-                VStack(spacing: 0) {
-                    IslandBar {
+                       chrome: EmptyView(), topChrome: chromeTop, showsStartCard: false)
+        // The Start workspace is a page as big as the window, over the view and the panels; the toolbar and the ribbon stay over it.
+        // What it covers is hidden from VoiceOver.
+        .accessibilityHidden(model.workspace == .start)
+        .overlay {
+            if model.workspace == .start {
+                StartPage(model: model, guide: guide, topInset: chromeTop)
+                    .transition(.opacity)
+            }
+        }
+        // The ribbon floats over everything else, the Start page too, so the workspace button is always there. Sketch mode's colour
+        // fills the band behind it.
+        .overlay(alignment: .top) {
+            if showsRibbon {
+                ZStack(alignment: .top) {
+                    ToolbarFade(tint: sketchPaper.toolbarTint, height: toolbarHeight + barHeight + Panel.inset,
+                                visible: sketchTint, material: false)
+                    RibbonBar(model: model, ink: panelToggleInk, listOpen: $workspaceListOpen) {
                         toolRow(toolbarLayout)
                             .accessibilityElement(children: .contain)
                             .accessibilityLabel("Tools")
                     }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
-                    Spacer(minLength: 0)
                 }
-            }
-        }, topChrome: chromeTop, showsStartCard: false)
-        // The Start workspace is a page as big as the window, over the view and the panels; the toolbar stays over it. What it
-        // covers is hidden from VoiceOver.
-        .accessibilityHidden(model.workspace == .start)
-        .overlay {
-            if model.workspace == .start {
-                StartPage(model: model, guide: guide)
-                    .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.workspace == .start)
+        // The list of workspaces: a panel under the workspace button; a click anywhere else, or Esc, closes it.
+        .overlay(alignment: .topLeading) {
+            if workspaceListOpen && showsRibbon {
+                ZStack(alignment: .topLeading) {
+                    Color.clear.contentShape(Rectangle()).onTapGesture { workspaceListOpen = false }
+                    WorkspaceList(model: model) { workspaceListOpen = false }
+                        .padding(.leading, Panel.inset)
+                        .padding(.top, barHeight + DS.Spacing.space3)
+                        .transition(.opacity)
+                }
+                .onExitCommand { workspaceListOpen = false }
+            }
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: workspaceListOpen)
+        .onChange(of: model.workspace) { workspaceListOpen = false }
     }
 }
 #endif
@@ -2374,14 +2386,16 @@ struct SketchToolbar: View {
         Group {
             switch layout {
             case .single:
-                ToolsMenu(solo: selectTool, groups: groups, trailing: finish).island()
+                ToolsMenu(solo: selectTool, groups: groups, trailing: finish)
             case .trimmed(let trim):
                 HStack(spacing: DS.Spacing.space3) {
-                    SoloTool(tool: selectTool).island()
+                    SoloTool(tool: selectTool)
                     ForEach(groups) { group in
-                        ToolGroup(group).island()
+                        RibbonDivider()
+                        ToolGroup(group)
                     }
-                    finishButton.island()
+                    RibbonDivider()
+                    finishButton
                 }
                 .environment(\.toolTrim, trim)
             }
@@ -2536,12 +2550,13 @@ struct DesignToolbar: View {
         Group {
             switch layout {
             case .single:
-                ToolsMenu(solo: solo, groups: groups).island()
+                ToolsMenu(solo: solo, groups: groups)
             case .trimmed(let trim):
                 HStack(spacing: DS.Spacing.space3) {
-                    SoloTool(tool: solo).island()
+                    SoloTool(tool: solo)
                     ForEach(groups) { group in
-                        ToolGroup(group).island()
+                        RibbonDivider()
+                        ToolGroup(group)
                     }
                 }
                 .environment(\.toolTrim, trim)

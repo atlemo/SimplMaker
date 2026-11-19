@@ -142,8 +142,8 @@ struct WindowTabStrip: View {
     /// The window's width: the strip is as wide as the toolbar has room for between the workspace selector and the trailing pill, so it
     /// reads as a bar of its own and not as a few tabs floating in the middle. (The toolbar sizes a middle item to its content.)
     let windowWidth: CGFloat
-    /// What the toolbar's other items and their gaps take: the traffic lights, the browser, undo and redo, the selector, and the trailing pill.
-    static let reserved: CGFloat = 625
+    /// What the toolbar's other items and their gaps take: the traffic lights, the leading pill (browser, undo, redo) and the trailing pill.
+    static let reserved: CGFloat = 335
     @Environment(\.accent) private var accent
 
     var body: some View {

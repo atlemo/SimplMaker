@@ -11,6 +11,8 @@ import SwiftUI
 struct StartPage: View {
     @Bindable var model: DocumentModel
     let guide: TutorialGuide
+    /// How far the ribbon reaches down from the top, which the page starts under.
+    var topInset: CGFloat = 0
     @Environment(\.newDocument) private var newDocument
     @AppStorage(Preferences.tutorialCompleted) private var tutorialCompleted = false
 
@@ -28,7 +30,7 @@ struct StartPage: View {
             .frame(maxWidth: 1100)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, wide ? DS.Spacing.space10 : DS.Spacing.space6)
-            .padding(.top, wide ? (short ? DS.Spacing.space6 : DS.Spacing.space10) : DS.Spacing.space6)
+            .padding(.top, (wide ? (short ? DS.Spacing.space6 : DS.Spacing.space10) : DS.Spacing.space6) + topInset)
             .padding(.bottom, DS.Spacing.space10)
         }
         .background { StartBackground() }
