@@ -24,9 +24,14 @@ enum Workspace: String, CaseIterable, Identifiable, Sendable {
         allCases.filter { $0 != .mold || moldEnabled }
     }
 
+    /// Tests switch Mold on or off for the code they run (and the tasks it starts), without touching the preference that other
+    /// tests, running at the same time, would see: `Workspace.$moldOverride.withValue(true) { … }`.
+    @TaskLocal static var moldOverride: Bool?
+
     /// Mold is unfinished: it shows with `defaults write <app id> moldWorkspace -bool YES`, or in a debug run with
     /// SIMPLMAKER_MOLD=1.
     static var moldEnabled: Bool {
+        if let forced = moldOverride { return forced }
         #if DEBUG
         if ProcessInfo.processInfo.environment["SIMPLMAKER_MOLD"] == "1" { return true }
         #endif
@@ -65,7 +70,9 @@ extension DocumentModel {
         if pendingTool != nil { cancelTool() }
         if renderView, next != .render { setRenderView(false) }
         if next == .render { setRenderView(true) }
+        let previous = workspace
         workspace = next
+        if next == .mold || previous == .mold { moldWorkspaceChanged(entering: next == .mold) }
     }
 
     /// A design tool is about to run (from a key, a menu or a button of the start page): the window goes to Design first.

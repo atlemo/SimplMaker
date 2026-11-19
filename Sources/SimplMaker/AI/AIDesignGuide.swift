@@ -16,8 +16,40 @@ struct DesignTopic: Sendable {
 enum AIDesignGuide {
     static func topic(_ id: String) -> DesignTopic? { topics.first { $0.id == id.lowercased() } }
 
-    static let topics: [DesignTopic] = [workflow, parameters, printBasics, snapFitLid, roundedBox, nameTag, screwPostCase, hingesAndPrintInPlace,
+    static var topics: [DesignTopic] { baseTopics + (Workspace.moldEnabled ? [makeAMold] : []) }  // the mold topic comes with the Mold workspace
+
+    private static let baseTopics: [DesignTopic] = [workflow, parameters, printBasics, snapFitLid, roundedBox, nameTag, screwPostCase, hingesAndPrintInPlace,
                                         multiPartPrint, scanToPart, holesAndFasteners, threads, featureOrder, facesAndEdges, textAndLabels, photoToPart, fixingErrors]
+
+    // MARK: moulds
+
+    static let makeAMold = DesignTopic(
+        id: "make_a_mold", title: "A printable two-part mold to cast silicone or resin",
+        summary: "Read when the user wants copies of a body cast: create_mold, get_mold, export_mold.",
+        body: """
+        A mold here is two printed halves with a cavity in the shape of ONE body, to cast silicone or resin in. It is not a feature of the \
+        timeline: create_mold keeps it beside the part, it follows the body when the body changes, and the halves are worked out from it. \
+        The Design views and get_viewport_image do not show the halves; read the result with get_mold and export them with export_mold.
+
+        1. Build and check the body first (a valid solid; an imported mesh with gaps is refused). Make it the way it will be cast: the pour \
+        direction is "up" (+z by default), so stand the body the way it should be filled.
+        2. create_mold with body_id. It parts the mold across the body's shortest side through the middle, adds a gate where the body is \
+        highest along "pour", cone keys in the corners (one is bigger, so the halves only go together one way) and a 10 mm wall. Change what \
+        does not fit with mold_id: parting ("x", "y", "z", "xy", "xz", "yz" or a construction plane's id; planes that lean are refused), \
+        parting_offset, pour, wall, gate_diameter, gate_point [x, y, z], vents [[x, y, z], …] (replaces the list), vent_diameter, keys, \
+        key_size, key_clearance. Sizes can be parameters.
+        3. Read the answer: status "built" or "failed" with error, warnings, silicone_ml (the cavity: body, gate and vents: mix a little \
+        more), block_mm, the parting plane and the ids of the two halves. A failed mold is still saved so it can be fixed.
+        4. Vents: air is trapped at the top of every pocket that faces down while pouring. A part with such pockets needs a vent at the \
+        highest point of each, [x, y, z] on the body's surface; a vent runs straight up from the point. Keep them 1.5 to 2.5 mm wide.
+        5. export_mold writes both halves, laid out for printing: parting face up, cavity open, side by side. Print them in PLA or PETG \
+        with at least three perimeters, seal the seam with rubber bands, clamps or a little tape, and use a release agent. Tell the user \
+        where the file is and that the sizes (wall, keys, clearance) are first guesses to be proven with a test print.
+
+        What it cannot do yet: undercuts are not checked (silicone peels out of mild ones, rigid resin does not: part the body so that no \
+        face looks back at the other half), a body with a hole through it gets a pin that is part of the mold (fine for silicone), a \
+        leaning parting plane, more than one body in a mold, and parting surfaces that are not flat.
+        """)
 
     // MARK: how to work
 

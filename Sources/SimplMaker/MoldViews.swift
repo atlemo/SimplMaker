@@ -1,0 +1,419 @@
+// The Mold workspace's screens: the tool row in the ribbon, the list of molds and bodies on the left, the mold's settings and what
+// it comes to on the right, and the export of the halves. The model is MoldStudio.swift; the plan is docs/MOLD-PLAN.md.
+// Copyright © 2026 Atle Mo
+// SPDX-License-Identifier: GPL-3.0-or-later
+#if os(macOS)
+import AppKit
+import CADCore
+import CADKernel
+import SwiftUI
+
+// MARK: - Ribbon
+
+/// One group of the Mold ribbon: its tools as buttons and the group's name under them, as in Design.
+private struct MoldGroup<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+    @Environment(\.toolsOnTint) private var onTint
+    @Environment(\.toolsInk) private var toolsInk
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: DS.Spacing.space1) { content }
+                .environment(\.toolTitles, false)
+            Text(title)
+                .font(.system(size: 11))
+                .lineLimit(1)
+                .fixedSize()
+                .foregroundStyle((onTint ? toolsInk : Color.primary).opacity(0.8))
+                .padding(.horizontal, ToolListMetrics.labelPadding)
+                .frame(minHeight: ToolListMetrics.labelMinHeight)
+        }
+    }
+}
+
+/// A one-letter choice in the ribbon (the axis the mold is parted across), drawn like a tool button.
+private struct AxisButton: View {
+    let label: String
+    let active: Bool
+    let help: String
+    let action: () -> Void
+    @Environment(\.accent) private var accent
+    @Environment(\.toolsOnTint) private var onTint
+    @Environment(\.toolsInk) private var toolsInk
+    @State private var hovering = false
+
+    var body: some View {
+        let ink = onTint ? toolsInk : Color.primary
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(minWidth: ToolListMetrics.toolMinWidth, minHeight: ToolListMetrics.toolMinHeight)
+                .foregroundStyle(active && !onTint ? accent : ink)
+                .background(active ? (onTint ? toolsInk.opacity(0.24) : accent.opacity(0.16)) : (hovering ? ink.opacity(onTint ? 0.14 : 0.07) : .clear),
+                            in: RoundedRectangle(cornerRadius: DS.Radius.xl3, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .toolTip(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// The Mold workspace's tool row: Parting · Gate & Vents · Keys · View · Export, live sections that work on the mold chosen on the
+/// left (not a wizard: any of them can be changed at any time).
+struct MoldToolbar: View {
+    @Bindable var model: DocumentModel
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.space3) {
+            if let mold = model.activeMold {
+                let built = model.activeMoldResult?.isBuilt == true
+                MoldGroup(title: "Parting") {
+                    ForEach(MoldAxis.allCases, id: \.self) { axis in
+                        AxisButton(label: axis.rawValue.uppercased(), active: mold.parting == .middle(axis),
+                                   help: "Part the mold across \(axis.rawValue.uppercased()), through the middle of the body") {
+                            model.updateMold(mold.id, "Change Parting") { $0.parting = .middle(axis); $0.partingOffset = "0 mm" }
+                        }
+                    }
+                }
+                RibbonDivider()
+                MoldGroup(title: "Gate & Vents") {
+                    ToolButton(title: "Gate", icon: "cone", active: model.moldPicking == .gate,
+                               help: model.moldPicking == .gate ? "Click on the body where the silicone goes in (Esc cancels)"
+                                   : "Place the gate by clicking on the body. It starts at the highest point.") { model.toggleMoldPick(.gate) }
+                    ToolButton(title: "Vent", icon: "circle-dot", active: model.moldPicking == .vent,
+                               help: model.moldPicking == .vent ? "Click on the body to add a vent; Esc when done"
+                                   : "Add an air vent by clicking on the body, at the top of a pocket that air would be trapped in") { model.toggleMoldPick(.vent) }
+                    ToolButton(title: "Clear Vents", icon: "circle-x", help: "Take away every vent") {
+                        model.updateMold(mold.id, "Clear Vents") { $0.vents = [] }
+                    }
+                    .disabled(mold.vents.isEmpty)
+                }
+                RibbonDivider()
+                MoldGroup(title: "Keys") {
+                    ToolButton(title: "Keys", icon: "pyramid", active: mold.keys,
+                               help: "Cone keys on the seam make the halves go together one way only") {
+                        model.updateMold(mold.id, mold.keys ? "Remove Keys" : "Add Keys") { $0.keys.toggle() }
+                    }
+                }
+                RibbonDivider()
+                MoldGroup(title: "View") {
+                    ToolButton(title: "Open", icon: "expand", active: model.moldOpenAmount > 0,
+                               help: "Draw the halves apart to see the cavity") {
+                        model.moldOpenAmount = model.moldOpenAmount > 0 ? 0 : 0.7
+                        model.sceneRevision += 0  // the offsets are read from the amount on the next update
+                    }
+                    .disabled(!built)
+                }
+                RibbonDivider()
+                MoldGroup(title: "Export") {
+                    ToolButton(title: "Export", icon: "download", help: "Write the two halves, laid out for printing, as STL, 3MF or STEP") {
+                        model.exportMoldHalves()
+                    }
+                    .disabled(!built)
+                }
+            } else {
+                Text(model.bodies.isEmpty ? "Model a body in Design first, then make its mold here." : "Choose a body on the left to make a mold of.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(height: 44)
+        .fixedSize()
+    }
+}
+
+// MARK: - Left: molds and bodies
+
+/// The molds of the part, and the bodies a mold can be made of.
+struct MoldSidebar: View {
+    @Bindable var model: DocumentModel
+
+    var body: some View {
+        VStack(spacing: Panel.inset) {
+            SidebarPanel(title: "Molds", open: .constant(true), accessory: { EmptyView() }) {
+                MoldList(model: model)
+            }
+            SidebarPanel(title: "Bodies", open: .constant(true), accessory: { EmptyView() }) {
+                MoldBodyList(model: model)
+            }
+        }
+        .frame(width: Panel.sidebarWidth)
+        .frame(maxHeight: .infinity)
+    }
+}
+
+private struct MoldList: View {
+    @Bindable var model: DocumentModel
+
+    var body: some View {
+        if model.document.molds.isEmpty {
+            VStack(spacing: DS.Spacing.space3) {
+                Text("No mold yet")
+                    .font(.system(size: 13, weight: .medium))
+                Text("Make one from a body below: the mold is two halves to print, with a cavity in the shape of the body, to cast silicone or resin in.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(Panel.inset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } else {
+            List(selection: Binding(get: { model.activeMold?.id }, set: { if let id = $0 { model.selectMold(id) } })) {
+                ForEach(model.document.molds) { mold in
+                    MoldRow(model: model, mold: mold)
+                        .tag(mold.id)
+                        .contextMenu {
+                            Button("Delete Mold", role: .destructive) { model.deleteMold(mold.id) }
+                        }
+                }
+            }
+            .listStyle(.sidebar)
+        }
+    }
+}
+
+private struct MoldRow: View {
+    let model: DocumentModel
+    let mold: MoldSetup
+
+    var body: some View {
+        let result = model.moldResults[mold.id]
+        let bodyName = model.bodies.first { $0.id == mold.body }?.name ?? "missing body"
+        HStack(spacing: DS.Spacing.space3) {
+            Icon("cuboid", size: 14)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(mold.name).lineLimit(1)
+                Text(bodyName).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if model.moldBuilding, model.activeMold?.id == mold.id {
+                ProgressView().controlSize(.small)
+            } else if let result, result.error != nil {
+                Icon("triangle-alert", size: 13).foregroundStyle(.red).help(result.error ?? "")
+            } else if let result, !result.warnings.isEmpty {
+                Icon("triangle-alert", size: 13).foregroundStyle(.orange).help(result.warnings.joined(separator: "\n"))
+            }
+        }
+    }
+}
+
+private struct MoldBodyList: View {
+    let model: DocumentModel
+
+    var body: some View {
+        let bodies = model.bodies
+        if bodies.isEmpty {
+            Text("This part has no body yet. Model one in Design, then come back.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(Panel.inset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } else {
+            List {
+                ForEach(bodies) { body in
+                    HStack(spacing: DS.Spacing.space3) {
+                        Icon("box", size: 14)
+                        Text(body.name).lineLimit(1)
+                        Spacer(minLength: 0)
+                        Button("Make Mold") { model.makeMold(of: body.id) }
+                            .controlSize(.small)
+                            .help("Make a two-part mold around \(body.name)")
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+        }
+    }
+}
+
+// MARK: - Right: settings and result
+
+struct MoldInspectorColumn: View {
+    @Bindable var model: DocumentModel
+
+    var body: some View {
+        SidebarPanel(title: "Mold", open: .constant(true), headerTrailing: PanelTouch.panelToggleRoom, accessory: { EmptyView() }) {
+            MoldInspector(model: model)
+        }
+        .frame(width: Panel.inspectorWidth)
+        .frame(maxHeight: .infinity)
+    }
+}
+
+private struct MoldInspector: View {
+    @Bindable var model: DocumentModel
+
+    var body: some View {
+        if let mold = model.activeMold {
+            let result = model.moldResults[mold.id]
+            Form {
+                Section {
+                    LabeledContent("Name") {
+                        ExpressionField(text: mold.name, monospaced: false, completes: false) { v in
+                            model.updateMold(mold.id, "Rename Mold") { $0.name = v.isEmpty ? $0.name : v }
+                        }
+                    }
+                    LabeledContent("Body", value: model.bodies.first { $0.id == mold.body }?.name ?? "missing")
+                }
+                Section("Result") { MoldResultRows(model: model, mold: mold, result: result) }
+                Section("Parting") {
+                    Picker("Plane", selection: Binding(get: { partingTag(mold.parting) }, set: { tag in
+                        if let choice = model.moldPartingChoices.first(where: { partingTag($0.parting) == tag }) {
+                            model.updateMold(mold.id, "Change Parting") { $0.parting = choice.parting }
+                        }
+                    })) {
+                        ForEach(model.moldPartingChoices, id: \.title) { Text($0.title).tag(partingTag($0.parting)) }
+                    }
+                    size("Offset", mold.partingOffset, mold, "Move Parting Plane") { $0.partingOffset = $1 }
+                    Picker("Pour from", selection: Binding(get: { mold.up }, set: { d in model.updateMold(mold.id, "Change Pour Direction") { $0.up = d } })) {
+                        ForEach(MoldDirection.allCases, id: \.self) { Text($0.rawValue.uppercased()).tag($0) }
+                    }
+                    .help("The way up while the silicone is poured: the gate goes in at the body's highest point this way")
+                    size("Wall", mold.wall, mold, "Change Wall") { $0.wall = $1 }
+                }
+                Section("Gate") {
+                    size("Diameter", mold.gateDiameter, mold, "Change Gate") { $0.gateDiameter = $1 }
+                    LabeledContent("Position") {
+                        HStack(spacing: DS.Spacing.space3) {
+                            Text(mold.gatePoint == nil ? "Highest point" : "Placed by hand").foregroundStyle(.secondary)
+                            if mold.gatePoint != nil {
+                                Button("Reset") { model.updateMold(mold.id, "Reset Gate") { $0.gatePoint = nil } }.controlSize(.small)
+                            }
+                        }
+                    }
+                }
+                Section("Vents") {
+                    size("Diameter", mold.ventDiameter, mold, "Change Vents") { $0.ventDiameter = $1 }
+                    if mold.vents.isEmpty {
+                        Text("None. Add one at the top of a pocket where air would be trapped.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(Array(mold.vents.enumerated()), id: \.offset) { i, v in
+                        LabeledContent("Vent \(i + 1)") {
+                            HStack(spacing: DS.Spacing.space3) {
+                                Text(String(format: "%.0f, %.0f, %.0f", v.x, v.y, v.z)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                Button { model.updateMold(mold.id, "Remove Vent") { $0.vents.remove(at: i) } } label: { Icon("x", size: 12) }
+                                    .buttonStyle(.borderless)
+                                    .help("Remove this vent")
+                            }
+                        }
+                    }
+                }
+                Section("Keys") {
+                    Toggle("Keys on the seam", isOn: Binding(get: { mold.keys }, set: { v in model.updateMold(mold.id, v ? "Add Keys" : "Remove Keys") { $0.keys = v } }))
+                    if mold.keys {
+                        size("Size", mold.keyDiameter, mold, "Change Keys") { $0.keyDiameter = $1 }
+                        size("Clearance", mold.keyClearance, mold, "Change Key Clearance") { $0.keyClearance = $1 }
+                    }
+                }
+                Section("View") {
+                    LabeledContent("Open") {
+                        Slider(value: $model.moldOpenAmount, in: 0...1)
+                            .disabled(result?.isBuilt != true)
+                    }
+                }
+            }
+            .formStyle(.grouped)
+        } else {
+            Text("Make a mold from a body on the left, and its settings are here.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(Panel.inset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    /// A size field: the text is an expression like any other size, so a parameter can be used.
+    private func size(_ label: String, _ text: String, _ mold: MoldSetup, _ action: String, _ set: @escaping (inout MoldSetup, String) -> Void) -> some View {
+        LabeledContent(label) {
+            ExpressionField(text: text) { v in model.updateMold(mold.id, action) { set(&$0, v) } }
+        }
+    }
+
+    private func partingTag(_ p: MoldParting) -> String {
+        switch p {
+        case .middle(let axis): "middle-\(axis.rawValue)"
+        case .plane(.xy): "plane-xy"
+        case .plane(.xz): "plane-xz"
+        case .plane(.yz): "plane-yz"
+        case .plane(.plane(let id)): "plane-\(id)"
+        case .plane(.face(let ref)): "face-\(ref.body)-\(ref.face)"
+        }
+    }
+}
+
+/// What the mold comes to: an error in words, the warnings, and the numbers worth having (the silicone to mix, the size of the block).
+private struct MoldResultRows: View {
+    let model: DocumentModel
+    let mold: MoldSetup
+    let result: MoldResult?
+
+    var body: some View {
+        if model.moldBuilding, result == nil {
+            HStack { ProgressView().controlSize(.small); Text("Building…") }
+        } else if let result {
+            if let error = result.error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            } else {
+                // The cavity holds the body, the gate and the vents: this is the silicone (or resin) to mix, plus a little to spare.
+                LabeledContent("Silicone", value: Self.millilitres(result.cavityVolume))
+                    .help("What the cavity holds: the body, the gate and the vents. Mix a little more than this.")
+                LabeledContent("Block", value: String(format: "%.0f × %.0f × %.0f mm", result.blockSize.x, result.blockSize.y, result.blockSize.z))
+                if result.seconds >= 1 { LabeledContent("Built in", value: String(format: "%.1f s", result.seconds)) }  // only a heavy body is worth saying
+            }
+            ForEach(result.warnings, id: \.self) { w in
+                Label(w, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                    .font(.caption)
+            }
+            if model.moldBuilding {
+                HStack { ProgressView().controlSize(.small); Text("Updating…").foregroundStyle(.secondary) }
+            }
+        }
+    }
+
+    static func millilitres(_ mm3: Double) -> String {
+        let ml = mm3 / 1000
+        return ml < 10 ? String(format: "%.1f mL", ml) : String(format: "%.0f mL", ml)
+    }
+}
+
+// MARK: - Export
+
+extension DocumentModel {
+    /// Writes the two halves of the active mold, laid out for printing (see `MoldBuilder.printLayout`): as one file or one each.
+    func exportMoldHalves() {
+        guard let mold = activeMold, let built = moldResults[mold.id], built.isBuilt else {
+            alert = AlertInfo(title: "There is nothing to export", message: "The mold has not been built. Fix what the Mold panel says first.")
+            return
+        }
+        let placed = MoldBuilder.printLayout(built)
+        guard placed.count == 2, let choice = Self.askExportChoice(bodyCount: 2, noun: "halves") else { return }
+        choice.remember()
+        switch choice.grouping {
+        case .onePart:
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = "\(CADService.safeFileName(mold.name)).\(choice.fileExtension)"
+            panel.canCreateDirectories = true
+            guard panel.runModal() == .OK, let url = panel.url, write(placed, format: choice.format, to: url) else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        case .individualParts:
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.canCreateDirectories = true
+            panel.prompt = "Export"
+            panel.message = "Choose where to put the two halves of \(mold.name), one file each."
+            guard panel.runModal() == .OK, let folder = panel.url else { return }
+            let written = writeIndividually(placed, format: choice.format, into: folder)
+            if written.count == placed.count { NSWorkspace.shared.activateFileViewerSelecting(written) }
+        }
+    }
+}
+#endif

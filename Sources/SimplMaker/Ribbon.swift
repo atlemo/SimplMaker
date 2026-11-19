@@ -279,21 +279,4 @@ struct UndoRedoButtons: View {
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidRedoChange)) { _ in undoTick += 1 }
     }
 }
-
-/// The Mold workspace's tool row. Only a stand-in so far: the studio's steps will be tool groups here, as in Design.
-struct MoldToolbar: View {
-    @Bindable var model: DocumentModel
-
-    var body: some View {
-        HStack(spacing: DS.Spacing.space5) {
-            Text("The mold's steps will be here.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            Button("Back to Design") { model.setWorkspace(.design) }
-                .controlSize(.small)
-        }
-        .frame(height: 36)
-        .fixedSize()
-    }
-}
 #endif

@@ -89,6 +89,7 @@ extension DocumentModel {
     /// What the viewport shifts each shown body by now. Zero while the view is off, and while a sketch or a tool is
     /// at work: their handles and previews are drawn where the bodies really are.
     var explodeOffsets: [SIMD3<Float>] {
+        if workspace == .mold { return moldOpenOffsets }
         guard explodeOn, sketchSession == nil, pendingTool == nil else { return [] }
         return ExplodedView.offsets(boxes: bodyBoxes, amount: explodeAmount, direction: explodeDirection)
     }

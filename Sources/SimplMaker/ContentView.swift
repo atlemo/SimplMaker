@@ -470,7 +470,7 @@ struct StatusBar: View {
                 .lineLimit(1)
                 .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
             Group {
-                if !model.selection.isEmpty { Text("\(model.selection.count) selected") }
+                if !model.selection.isEmpty, model.workspace != .mold { Text("\(model.selection.count) selected") }
                 if let ai = model.aiActivity { Label("AI is editing the model · \(ai)", systemImage: "sparkles").foregroundStyle(.tint) }
                 if model.isImporting { Text(model.importProgress?.title ?? "Reading the file…").foregroundStyle(.secondary) }
                 if let step = model.regenProgress {
@@ -478,6 +478,8 @@ struct StatusBar: View {
                 }
                 if model.isRegenerating || model.isImporting {
                     ProgressView().controlSize(.small)
+                } else if model.workspace == .mold {
+                    if model.moldBuilding { ProgressView().controlSize(.small) }
                 } else if let r = model.result {
                     Text(String(format: "rebuilt in %.0f ms", r.duration * 1000)).foregroundStyle(.secondary)
                 }
@@ -502,7 +504,9 @@ struct StatusBar: View {
     }
 
     @ViewBuilder private var message: some View {
-        if let session = model.sketchSession {
+        if model.workspace == .mold {
+            Text(model.moldStatusText).foregroundStyle(.secondary)
+        } else if let session = model.sketchSession {
             hintText(session.statusText)
                 .foregroundStyle(session.message != nil || session.solve?.status == .failed ? Color.red : Color.secondary)
         } else if model.isPickingSketchPlane {

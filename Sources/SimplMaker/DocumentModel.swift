@@ -39,8 +39,8 @@ final class DocumentModel {
     private(set) var documentRevision = 0
     private(set) var result: RegenResult?
     private(set) var meshes: [BodyMesh] = []
-    private(set) var sceneRevision = 0
-    private(set) var fitRevision = 0
+    var sceneRevision = 0
+    var fitRevision = 0
     private(set) var isRegenerating = false
     /// How far a rebuild has got, once it has taken long enough to be worth showing (nil otherwise).
     private(set) var regenProgress: RegenProgress?
@@ -76,7 +76,7 @@ final class DocumentModel {
     #endif
     /// Asks what the Export dialog asks (given the number of bodies). Replaced in tests.
     #if os(macOS)
-    @ObservationIgnored var exportChoice: @MainActor (Int) -> ExportChoice? = DocumentModel.askExportChoice
+    @ObservationIgnored var exportChoice: @MainActor (Int) -> ExportChoice? = { DocumentModel.askExportChoice(bodyCount: $0) }
     #endif
 
     var selection: [PickID] = []
@@ -109,6 +109,23 @@ final class DocumentModel {
     var workspace = Workspace.design
     /// The workspace to go back to when the Render view is turned off.
     @ObservationIgnored private var workspaceBeforeRender = Workspace.design
+    // The Mold workspace's state (see MoldStudio.swift). Nothing here is saved: the molds themselves are `document.molds`.
+    /// What each mold built to, by the mold's id, and the meshes the viewport draws for it (the body, then its two halves).
+    var moldResults: [String: MoldResult] = [:]
+    var moldMeshSets: [String: [BodyMesh]] = [:]
+    /// The mold being worked on.
+    var activeMoldID: String?
+    /// A mold is being worked out (a heavy body takes a few seconds).
+    var moldBuilding = false
+    /// How far the halves are drawn apart, 0 (closed) to 1.
+    var moldOpenAmount = 0.0
+    /// The viewport is waiting for a click on the body: the spot a vent or the gate goes in at.
+    var moldPicking: MoldPick?
+    /// The mold's halves are out of date: the body or a setting changed while another workspace was showing.
+    @ObservationIgnored var moldsStale = true
+    @ObservationIgnored var moldGeneration = 0
+    /// The timeline was open when the Mold workspace hid it (it has none).
+    @ObservationIgnored var timelineHiddenByMold = false
     /// The sketch being edited, if any.
     private(set) var sketchSession: SketchSession?
     /// A new sketch is waiting for the user to click an origin plane or a flat face.
@@ -435,6 +452,7 @@ final class DocumentModel {
         if doc.ignoringPresentation == old.ignoringPresentation {  // only visibility or names changed: nothing to rebuild
             sceneRevision += 1
             overlayRevision += 1
+            if doc.molds != old.molds { moldSettingsChanged() }
         } else {
             regenerate()
         }
@@ -617,7 +635,10 @@ final class DocumentModel {
     }
 
     /// Bodies the viewport draws.
-    var visibleMeshes: [BodyMesh] { meshes.filter { !document.hidden.contains($0.id) } }
+    var visibleMeshes: [BodyMesh] {
+        if workspace == .mold { return moldShownMeshes }  // the Mold workspace shows its own scene: the body ghosted in its halves
+        return meshes.filter { !document.hidden.contains($0.id) }
+    }
 
     /// Bodies for the browser, in creation order.
     /// The bodies, with the names given to them (renaming a body needs no rebuild).
@@ -839,6 +860,7 @@ final class DocumentModel {
     /// The colour a body is drawn in: the one being picked for it, else its own; nil = the default.
     func displayColor(of id: FeatureID) -> BodyColor? {
         if let p = colorPreview, p.bodies.contains(id) { return p.color }
+        if workspace == .mold, let tint = moldTint(of: id) { return tint }
         // A piece of a split body looks like the body it came from until it is given a colour of its own.
         return document.bodyColors[id] ?? document.bodyColors[Regenerator.rootBody(id)]
     }
@@ -887,6 +909,7 @@ final class DocumentModel {
     /// piece of a split body has its parent's until given its own.
     func displayOpacity(of id: FeatureID) -> Double {
         if let p = opacityPreview, p.bodies.contains(id) { return p.opacity }
+        if workspace == .mold, let ghost = moldGhostOpacity(of: id) { return ghost }
         return document.bodyOpacity[id] ?? document.bodyOpacity[Regenerator.rootBody(id)] ?? 1
     }
 
@@ -1518,6 +1541,7 @@ final class DocumentModel {
         previewInvalid = false
         handleProblem = nil
         result = r
+        if final, previewFeature == nil { moldBodyChanged() }  // the molds follow their bodies
         roundNeighbors = [:]
         self.meshes = meshes
         selection = selection.filter { pick in

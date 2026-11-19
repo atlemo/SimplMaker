@@ -111,3 +111,9 @@ Order B = `block − channels`, split the plain block, add keys to the plain hal
 **Open numbers** (no sources, decide by test print): wall 8 mm, key radius 3 / height 3 / clearance 0.3, gate Ø 8, vent Ø 2 were used here only as spike defaults.
 
 **Not covered by the spike:** the pour direction other than z (gate along a tilted "up" is the same rod, untested), keys that hit the cavity (keys sit in the margin ring, a part that fills the block's width would collide with them: the builder must clamp keys to the ring), a gate that misses the cavity (the spike starts it at the bbox middle; Phase 1 needs the highest point of the part along "up"), the tongue-and-groove seam.
+
+## Phase 1 built (2026-11-19, branch `mold-studio`, not merged, not pushed)
+
+`Document.molds`, `MoldBuilder`, the studio (ribbon, Molds and Bodies lists, Mold inspector, Open slider, vents and gate by click), export of the halves laid out for printing, MCP tools `create_mold` / `get_mold` / `export_mold` and the guide topic `make_a_mold`. The details, the code map and what is not done are at the end of `docs/FEATURE-NOTES.md` ("The Mold workspace"). Checked in the real window (separately named test copy): make a mold, parting X/Y/Z, open, vent by click, reopen the file (the mold comes back). Not yet checked there: a dark window, a narrow window, the Export dialog end to end, a heavy imported STL, undo and redo of a mold change.
+
+Answers to the open questions so far: (2) mold settings are undoable (`mutate`); (3) the halves are not in the Design browser; (4) one body per mold in v1 (the list allows several molds per body).

@@ -81,6 +81,108 @@ enum AITools {
     ]
 
     static func make(service: CADService) -> [MCPTool] {
+        base(service: service) + (Workspace.moldEnabled ? moldTools(service: service) : [])  // the mold tools come with the Mold workspace
+    }
+
+    private static func moldTools(service: CADService) -> [MCPTool] {
+        [
+            MCPTool(
+                name: "create_mold", title: "Make or change a two-part mold around a body",
+                description: """
+                Makes a rigid, printable two-part mold for casting silicone or resin around ONE body, or changes or deletes one. A mold is not \
+                a feature of the timeline: it is kept beside the part and follows the body when the body changes. Read the topic "make_a_mold" of \
+                get_design_guide first.
+
+                Arguments: document_id (required). To make one: body_id (from get_document's bodies) and optionally name. To change or delete one: \
+                mold_id (from get_mold) and the settings to change (everything else stays), or delete: true. Settings: parting ("x", "y", "z": across \
+                that axis through the middle of the body; or "xy", "xz", "yz" or a construction plane's id: that plane; it has to be square to an \
+                axis; default: across the body's shortest side); parting_offset (mm, moves the plane along its normal); pour ("+z" default, or \
+                "-z", "+x", "-x", "+y", "-y": the way up while pouring; the gate goes in at the body's highest point that way); wall (mm, default \
+                10: the mold's thickness all round; keys need about 9 or more); gate_diameter (default 8); gate_point [x, y, z] (a hand-placed \
+                gate) or reset_gate: true; vents: [[x, y, z], …] replaces the air vents (each runs straight up from its point), vent_diameter \
+                (default 2); keys (default true: cone keys on the seam, one bigger so the halves go together one way only), key_size (default 5), \
+                key_clearance (default 0.3); expected_revision (optional). Sizes are numbers (mm) or expressions that can use parameters.
+
+                Changes the document (one undo step "AI: Make Mold" / "AI: Change Mold"). Waits for the halves to be built and returns \
+                {success, document_id, revision, message, mold} where mold is what get_mold returns for it. A mold that cannot be built is still \
+                saved, with status "failed" and the reason in error. Fails with FEATURE_NOT_FOUND (no such body or mold), INVALID_ARGUMENTS, \
+                USER_BUSY or STALE_REVISION.
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part, from list_documents."],
+                    "body_id": ["type": "string", "description": "To make a mold: the body to cast, from get_document."],
+                    "mold_id": ["type": "string", "description": "To change or delete a mold: its id, from get_mold."],
+                    "delete": ["type": "boolean", "description": "With mold_id: delete the mold."],
+                    "name": ["type": "string", "description": "The mold's name."],
+                    "parting": ["type": "string", "description": "\"x\", \"y\", \"z\" (across that axis through the middle), \"xy\", \"xz\", \"yz\" or a construction plane's id."],
+                    "parting_offset": quantity("Moves the parting plane along its normal."),
+                    "pour": ["type": "string", "enum": ["+x", "-x", "+y", "-y", "+z", "-z"], "description": "The way up while pouring (default +z)."],
+                    "wall": quantity("The thickness of the mold all round (default 10 mm)."),
+                    "gate_diameter": quantity("The pour opening's diameter (default 8 mm)."),
+                    "gate_point": ["type": "array", "items": ["type": "number"], "minItems": 3, "maxItems": 3, "description": "A hand-placed gate [x, y, z] in mm."],
+                    "reset_gate": ["type": "boolean", "description": "Put the gate back at the highest point."],
+                    "vents": ["type": "array", "items": ["type": "array", "items": ["type": "number"], "minItems": 3, "maxItems": 3], "description": "Air vents [[x, y, z], …] in mm; replaces the list."],
+                    "vent_diameter": quantity("The vents' diameter (default 2 mm)."),
+                    "keys": ["type": "boolean", "description": "Cone keys on the seam (default true)."],
+                    "key_size": quantity("The keys' diameter (default 5 mm)."),
+                    "key_clearance": quantity("How much bigger the sockets are than the keys (default 0.3 mm)."),
+                    "expected_revision": expectedRevision,
+                ], ["document_id"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in
+                    let a = AIArguments(args)
+                    return try JSONValue(encoding: try await service.createMold(documentID: try a.requiredDocumentID(), expectedRevision: try a.expectedRevision(), a))
+                }),
+
+            MCPTool(
+                name: "get_mold", title: "Read the molds of a part",
+                description: """
+                Reads every mold of the part (made with create_mold): its settings and what building it came to. Use it to check a mold after \
+                changing it, and to find a mold's id. Builds the halves first if they are out of date, so it can take a few seconds for a heavy body.
+
+                Arguments: document_id (optional). Returns {document_id, revision, molds: [{id, name, body, parting, parting_offset, pour, wall, \
+                gate_diameter, gate_point, vent_diameter, vents, keys, key_size, key_clearance, status ("built" or "failed"), error, warnings, \
+                silicone_ml (what the cavity holds: body, gate and vents; mix a little more), block_mm [x, y, z], parting_point, parting_normal \
+                (the half "in front" is the side the normal points to), halves (ids: behind, in front), seconds}]}. Read-only.
+                """,
+                inputSchema: object(["document_id": documentID], []),
+                readOnly: true,
+                handler: { args in
+                    let a = AIArguments(args)
+                    try a.rejectUnknown(["document_id"], in: "get_mold")
+                    return try JSONValue(encoding: try await service.getMolds(documentID: try a.string("document_id")))
+                }),
+
+            MCPTool(
+                name: "export_mold", title: "Export a mold's two halves for printing",
+                description: """
+                Writes the two halves of a mold to an STL or 3MF file (for printing) or a STEP file, laid out for printing: each with its seam face up \
+                and its cavity open, resting on the floor, side by side. The file goes to the folder "SimplMaker Exports" in the user's Documents \
+                folder, never over a file that is already there. Tell the user where it is. The part itself does not change.
+
+                Arguments: document_id (required); format (required: "stl", "3mf" or "step"); mold_id (optional: default the first mold); file_name \
+                (optional: a name without folders; default the mold's name). Returns {success, document_id, message, path, format, bytes, bodies}. \
+                Fails with FEATURE_NOT_FOUND (no mold) or INVALID_ARGUMENTS (the mold cannot be built: read get_mold).
+                """,
+                inputSchema: object([
+                    "document_id": ["type": "string", "description": "The part, from list_documents."],
+                    "format": ["type": "string", "enum": ["stl", "3mf", "step"], "description": "stl or 3mf for printing, step for CAD."],
+                    "mold_id": ["type": "string", "description": "The mold (default the first)."],
+                    "file_name": ["type": "string", "description": "File name without folders (default the mold's name)."],
+                ], ["document_id", "format"]),
+                readOnly: false, destructive: false, idempotent: false,
+                handler: { args in
+                    let a = AIArguments(args)
+                    try a.rejectUnknown(["document_id", "format", "mold_id", "file_name"], in: "export_mold")
+                    return try JSONValue(encoding: try await service.exportMold(documentID: try a.requiredDocumentID(),
+                                                                                moldID: try a.string("mold_id"),
+                                                                                format: try a.requiredString("format", hint: "\"stl\", \"3mf\" or \"step\"."),
+                                                                                fileName: try a.string("file_name")))
+                }),
+        ]
+    }
+
+    private static func base(service: CADService) -> [MCPTool] {
         [
             MCPTool(
                 name: "list_documents", title: "List open documents",

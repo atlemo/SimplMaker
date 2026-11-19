@@ -61,12 +61,12 @@ extension DocumentModel {
     }
 
     /// The Export dialog. Nil if the user cancels. With one body there is nothing to group, so that choice is disabled.
-    static func askExportChoice(bodyCount: Int) -> ExportChoice? {
+    static func askExportChoice(bodyCount: Int, noun: String = "bodies") -> ExportChoice? {
         let last = ExportChoice.remembered
 
         let alert = NSAlert()
         alert.messageText = "Export"
-        alert.informativeText = "Choose a file format and how the bodies are put into files."
+        alert.informativeText = "Choose a file format and how the \(noun) are put into files."
 
         let format = NSPopUpButton(frame: .zero, pullsDown: false)
         let formats: [ExportFormat] = [.stl, .threeMF, .step]
@@ -78,8 +78,8 @@ extension DocumentModel {
         formatRow.spacing = 8
 
         let target = RadioTarget()
-        let one = NSButton(radioButtonWithTitle: "All bodies as one single part", target: target, action: #selector(RadioTarget.chosen))
-        let many = NSButton(radioButtonWithTitle: "All bodies as individual parts", target: target, action: #selector(RadioTarget.chosen))
+        let one = NSButton(radioButtonWithTitle: "All \(noun) as one single part", target: target, action: #selector(RadioTarget.chosen))
+        let many = NSButton(radioButtonWithTitle: "All \(noun) as individual parts", target: target, action: #selector(RadioTarget.chosen))
         let individual = bodyCount > 1 && last.grouping == .individualParts
         one.state = individual ? .off : .on
         many.state = individual ? .on : .off
@@ -87,7 +87,7 @@ extension DocumentModel {
         one.isEnabled = !single
         many.isEnabled = !single
         let note = NSTextField(labelWithString: single ? "The part has one body."
-            : "Individual parts: one file for each of the \(bodyCount) bodies, in a folder you choose.")
+            : "Individual parts: one file for each of the \(bodyCount) \(noun), in a folder you choose.")
         note.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         note.textColor = .secondaryLabelColor
 

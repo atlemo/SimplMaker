@@ -91,13 +91,33 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
             VStack(spacing: Panel.inset) {
             HStack(alignment: .top, spacing: 0) {
                 if model.showSidebar {
+                    #if os(macOS)
+                    if model.workspace == .mold {
+                        MoldSidebar(model: model)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    } else {
+                        Sidebar(model: model)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+                    #else
                     Sidebar(model: model)
                         .transition(.move(edge: .leading).combined(with: .opacity))
+                    #endif
                 }
                 Spacer(minLength: 0)  // empty: clicks go through to the viewport
                 if model.showInspector {
+                    #if os(macOS)
+                    if model.workspace == .mold {
+                        MoldInspectorColumn(model: model)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    } else {
+                        InspectorColumn(model: model)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                    #else
                     InspectorColumn(model: model)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
+                    #endif
                 }
             }
             // With both panels closed the row holds only a Spacer, which has no height: without this the

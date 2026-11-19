@@ -647,7 +647,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private var currentCursor: NSCursor {
         guard let model else { return .arrow }
         if model.pointerOverSketchShortcuts { return .arrow }  // a panel floats over the viewport here
-        if model.pickingRenderFocus { return .crosshair }
+        if model.pickingRenderFocus || model.moldPicking != nil { return .crosshair }
         if manipulatorDrag != nil { return .closedHand }
         if manipulatorHover != nil { return .openHand }
         if sketchDrag, model.sketchSession?.tool == .select { return .closedHand }
@@ -731,6 +731,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private func applyPick(_ result: UInt32) {
         var raw = hoveredPlaneLabel?.pickID.raw ?? result
         if raw != 0, model?.isLockedPick(PickID(raw: raw)) == true { raw = 0 }  // a locked body or sketch is not there to hover
+        if model?.workspace == .mold { raw = 0 }  // the Mold workspace's scene is not the part's: nothing in it is picked
         guard let renderer, renderer.hovered != raw else { return }
         renderer.hovered = raw
         model?.hover(raw == 0 ? nil : PickID(raw: raw))
@@ -1072,6 +1073,17 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         // A double-click's second release isn't a click: the double-click already did its job.
         guard !dragged, event.clickCount < 2, let renderer, let model, model.sketchSession == nil else { return }
         let p = location(event)
+        if model.workspace == .mold {  // a vent or the gate waits for its spot on the body; otherwise a click does nothing here
+            if model.moldPicking != nil {
+                let ray = renderer.camera.ray(at: p, viewSize: bounds.size)
+                if let hit = model.focusPoint(origin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                                              direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z))) {
+                    model.placeMoldPoint(hit)
+                    refreshOverlay()
+                }
+            }
+            return
+        }
         if model.pickingRenderFocus {  // Select focus point: this click puts the sharp spot where it lands
             let ray = renderer.camera.ray(at: p, viewSize: bounds.size)
             if let hit = model.focusPoint(origin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
@@ -1309,7 +1321,8 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
                 return
             }
         } else if event.keyCode == 53 {
-            if model.pickingRenderFocus { model.togglePickingRenderFocus() }
+            if model.moldPicking != nil { model.moldPicking = nil }
+            else if model.pickingRenderFocus { model.togglePickingRenderFocus() }
             else if model.isPickingSketchPlane { model.cancelSketchPlanePick() }
             else if model.pendingTool != nil { model.cancelTool() }
             else if model.selection.isEmpty, model.dragHandle != nil || model.featureWithoutHandle != nil { model.finishFeatureEdit() }

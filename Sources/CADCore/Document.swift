@@ -1067,12 +1067,14 @@ public struct CADDocument: Codable, Hashable, Sendable {
     /// Folders the user made in the Parameters list, and the folder each parameter sits in, by its name.
     public var parameterFolders: [BrowserFolder] = []
     public var parameterFolderOf: [String: String] = [:]
+    /// The molds made around bodies in the Mold workspace. Not features: they live beside the timeline and follow their body.
+    public var molds: [MoldSetup] = []
 
     public init(parameters: [Parameter] = [], features: [Feature] = []) {
         self.parameters = parameters; self.features = features
     }
 
-    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, bodyRoughness, bodyOpacity, faceAppearance, folders, folderOf, browserOrder, parameterFolders, parameterFolderOf, thumbnail }
+    private enum CodingKeys: String, CodingKey { case version, parameters, features, rollback, hidden, locked, bodyNames, bodyColors, bodyMaterials, bodyRoughness, bodyOpacity, faceAppearance, folders, folderOf, browserOrder, parameterFolders, parameterFolderOf, molds, thumbnail }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -1093,6 +1095,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         browserOrder = try c.decodeIfPresent([FeatureID].self, forKey: .browserOrder) ?? []
         parameterFolders = try c.decodeIfPresent([BrowserFolder].self, forKey: .parameterFolders) ?? []
         parameterFolderOf = try c.decodeIfPresent([String: String].self, forKey: .parameterFolderOf) ?? [:]
+        molds = try c.decodeIfPresent([MoldSetup].self, forKey: .molds) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -1114,6 +1117,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         if !browserOrder.isEmpty { try c.encode(browserOrder, forKey: .browserOrder) }
         if !parameterFolders.isEmpty { try c.encode(parameterFolders, forKey: .parameterFolders) }
         if !parameterFolderOf.isEmpty { try c.encode(parameterFolderOf, forKey: .parameterFolderOf) }
+        if !molds.isEmpty { try c.encode(molds, forKey: .molds) }
         // A picture of the part for Finder's Quick Look; given when saving, never part of the design itself.
         if let png = encoder.userInfo[.cadThumbnail] as? Data { try c.encode(png, forKey: .thumbnail) }
     }
@@ -1134,6 +1138,7 @@ public struct CADDocument: Codable, Hashable, Sendable {
         d.browserOrder = []
         d.parameterFolders = []
         d.parameterFolderOf = [:]
+        d.molds = []  // a mold is worked out from the finished model, after it: changing one rebuilds no feature
         for i in d.features.indices {
             d.features[i].name = ""
             if case .image(var f) = d.features[i].kind { f.opacity = 1; d.features[i].kind = .image(f) }
