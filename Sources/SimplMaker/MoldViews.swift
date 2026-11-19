@@ -69,7 +69,7 @@ struct MoldToolbar: View {
 
     var body: some View {
         HStack(spacing: DS.Spacing.space3) {
-            if let mold = model.activeMold {
+            if let mold = model.activeMold, !model.choosingWorkspaceBody {
                 let built = model.activeMoldResult?.isBuilt == true
                 MoldGroup(title: "Parting") {
                     ForEach(MoldAxis.allCases, id: \.self) { axis in
@@ -135,7 +135,7 @@ struct MoldToolbar: View {
                     .disabled(!built)
                 }
             } else {
-                Text(model.bodies.isEmpty ? "Model a body in Design first, then make its mold here." : "Choose a body on the left to make a mold of.")
+                Text(model.bodies.isEmpty ? "Model a body in Design first, then make its mold here." : "Click a body in the 3D view, or choose one on the left, to make a mold of.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -156,7 +156,9 @@ struct MoldSidebar: View {
             SidebarPanel(title: "Molds", open: .constant(true), accessory: { EmptyView() }) {
                 MoldList(model: model)
             }
-            SidebarPanel(title: "Bodies", open: .constant(true), accessory: { EmptyView() }) {
+            SidebarPanel(title: "Bodies", open: .constant(true), accessory: {
+                HeaderIconButton(systemImage: "cursorarrow.click", help: "Pick the body in the 3D view") { model.startChoosingWorkspaceBody() }
+            }) {
                 MoldBodyList(model: model)
             }
         }
@@ -268,7 +270,7 @@ private struct MoldInspector: View {
     @Bindable var model: DocumentModel
 
     var body: some View {
-        if let mold = model.activeMold {
+        if let mold = model.activeMold, !model.choosingWorkspaceBody {
             let result = model.moldResults[mold.id]
             Form {
                 Section {
@@ -358,7 +360,7 @@ private struct MoldInspector: View {
             }
             .formStyle(.grouped)
         } else {
-            Text("Make a mold from a body on the left, and its settings are here.")
+            Text("Click a body in the 3D view, and the mold's settings are here.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

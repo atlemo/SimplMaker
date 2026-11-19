@@ -54,9 +54,11 @@ extension DocumentModel {
         if sketchSession != nil { finishSketch() }
         if isPickingSketchPlane { cancelSketchPlanePick() }
         if pendingTool != nil { cancelTool() }
-        if renderView, next != .render { setRenderView(false) }
-        if next == .render { setRenderView(true) }
+        // Read before the Render view is switched: turning it on or off moves `workspace` itself, and the workspace
+        // being left (Mold, Split) must still be told it was left, or its scene and bounds linger (a floor under a body that floats).
         let previous = workspace
+        if renderView, next != .render { applyRenderView(false) }
+        if next == .render { applyRenderView(true) }
         workspace = next
         if next == .mold || previous == .mold { moldWorkspaceChanged(entering: next == .mold) }
         if next == .split || previous == .split { splitWorkspaceChanged(entering: next == .split) }

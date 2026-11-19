@@ -131,6 +131,10 @@ final class DocumentModel {
     /// Whether the grid shows in the Mold workspace. It starts hidden there (the grid is about sketching, and gets in the way of
     /// the halves); the Show Grid command flips this one, not the preference, while that workspace is on. Not saved.
     var moldShowsGrid = false
+    /// The Mold or Split workspace is showing the part's bodies, waiting for a click on the one to work on. Set when the workspace is
+    /// entered with nothing made yet (or by "Pick in 3D View"); a body clicked, or a mold or split chosen in the list, ends it, and
+    /// the other bodies are then left out of the scene. Not saved.
+    var choosingWorkspaceBody = false
     /// The timeline was open when the Mold workspace hid it (it has none).
     @ObservationIgnored var timelineHiddenByMold = false
     // The Split workspace's state (see SplitStudio.swift). Nothing here is saved: the splits themselves are `document.printSplits`.
@@ -347,7 +351,14 @@ final class DocumentModel {
 
     /// Where a ray from the camera first meets the part (or, failing that, the floor): the point to focus on.
     func focusPoint(origin o: SIMD3<Double>, direction d: SIMD3<Double>) -> SIMD3<Double>? {
-        var best: Double?
+        var best = nearestHit(origin: o, direction: d)?.t
+        if best == nil, d.z < -1e-9, o.z > 0 { best = -o.z / d.z }  // the floor
+        return best.map { o + d * $0 }
+    }
+
+    /// The first shown body a ray from the camera meets, and how far along the ray.
+    func nearestHit(origin o: SIMD3<Double>, direction d: SIMD3<Double>) -> (mesh: BodyMesh, t: Double)? {
+        var best: (mesh: BodyMesh, t: Double)?
         let shifts = explodeOffsets
         let shown = visibleMeshes
         for (n, body) in shown.enumerated() {
@@ -369,11 +380,10 @@ final class DocumentModel {
                 let v = f * simd_dot(d, q)
                 if v < 0 || u + v > 1 { continue }
                 let tHit = f * simd_dot(e2, q)
-                if tHit > 1e-6, best == nil || tHit < best! { best = tHit }
+                if tHit > 1e-6, best == nil || tHit < best!.t { best = (body, tHit) }
             }
         }
-        if best == nil, d.z < -1e-9, o.z > 0 { best = -o.z / d.z }  // the floor
-        return best.map { o + d * $0 }
+        return best
     }
     /// The 3D view, for the one thing the model asks of it: a picture of what it shows (Export Image).
     #if os(macOS)
@@ -382,7 +392,7 @@ final class DocumentModel {
 
     /// The browser, inspector and timeline the Render view hid when it came on (they were open), to bring back when it goes off
     /// (unless they have been opened since).
-    @ObservationIgnored private var panelsHiddenByRender = (sidebar: false, inspector: false, timeline: false)
+    @ObservationIgnored var panelsHiddenByRender = (sidebar: false, inspector: false, timeline: false)
 
     private func restorePanelsHiddenByRender() {
         if panelsHiddenByRender.sidebar { showSidebar = true }
@@ -394,6 +404,18 @@ final class DocumentModel {
     /// Turns the Render view on or off; on, it opens its options, hides the browser and inspector (the toolbar buttons
     /// bring them back), leaves the print preview and needs a shaded style.
     func setRenderView(_ on: Bool) {
+        #if os(macOS)
+        // Through the workspace change, so the workspace being left (Mold, Split) is told it was left.
+        if on != (workspace == .render) {
+            setWorkspace(on ? .render : (workspaceBeforeRender == .render ? .design : workspaceBeforeRender))
+            return
+        }
+        #endif
+        applyRenderView(on)
+    }
+
+    /// The Render view itself on or off, without the workspace change round it (`setWorkspace` does that).
+    func applyRenderView(_ on: Bool) {
         let wasOn = renderView
         renderView = on
         // The Render view is a workspace of the window: the selector follows, from the menu and the context menu too.
@@ -2307,6 +2329,7 @@ final class DocumentModel {
     /// The waiting tool works on whole bodies (a click on any face picks its body), so hover and
     /// selection light up whole bodies. Pattern's edges pick a direction, so only its faces do.
     var picksWholeBodies: Bool {
+        if choosingWorkspaceBody { return true }  // the Mold and Split workspaces ask for a body: it lights up whole
         guard pendingTool?.picksBodies == true else { return false }
         // Pattern in Features mode lights up the face a feature made; choosing its axis, the round face.
         return !(pendingTool == .pattern && (patternSource == .features || patternChoosingAxis))

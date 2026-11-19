@@ -45,6 +45,75 @@ import Testing
         return model
     }
 
+    @Test func goingFromMoldToRenderShowsTheBodyAloneOnItsOwnFloor() async throws {
+        try await withMoldEnabled {
+            let model = try await part()
+            model.makeMold(of: "box")
+            try await settleMolds(model)
+            let inMold = try #require(model.explodedSceneBounds)  // the viewport asks for it on every update, and the answer is kept
+            #expect(inMold.min.z < -0.5, "the mold block reaches under the body")
+            model.setWorkspace(.render)
+            #expect(model.workspace == .render && model.renderView)
+            #expect(model.visibleMeshes.map(\.id) == ["box"], "Render shows the body, not the halves")
+            #expect(model.explodeOffsets.isEmpty, "the halves' opening does not move anything in Render")
+            let bounds = try #require(model.explodedSceneBounds)
+            #expect(abs(bounds.min.z) < 1e-3 && abs(bounds.max.z - 20) < 1e-3, "the floor is under the body, not under the halves")
+            // The Render button, the menu and the palette go through the same change.
+            model.setWorkspace(.mold)
+            model.setRenderView(true)
+            #expect(model.workspace == .render && model.visibleMeshes.map(\.id) == ["box"])
+            model.setRenderView(false)
+            #expect(model.workspace == .mold)
+        }
+    }
+
+    /// Two boxes side by side, so a click can tell them apart.
+    private func twoBodies() async throws -> DocumentModel {
+        var d = CADDocument()
+        d.features = [Feature(id: "a", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20 mm", length: "20 mm", height: "20 mm"))),
+                      Feature(id: "b", name: "Box2", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "60 mm", width: "20 mm", length: "20 mm", height: "20 mm")))]
+        let model = DocumentModel(document: d)
+        Self.made.append(model)
+        try await settle(model)
+        return model
+    }
+
+    /// A ray straight down onto the middle of a body.
+    private func ray(onto id: FeatureID, in model: DocumentModel) throws -> (SIMD3<Double>, SIMD3<Double>) {
+        let mesh = try #require(model.meshes.first { $0.id == id }).mesh
+        var lo = SIMD3<Float>(repeating: .infinity), hi = SIMD3<Float>(repeating: -.infinity)
+        for i in stride(from: 0, to: mesh.positions.count - 2, by: 3) {
+            let v = SIMD3(mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2])
+            lo = pointwiseMin(lo, v); hi = pointwiseMax(hi, v)
+        }
+        let mid = (lo + hi) / 2
+        return (SIMD3(Double(mid.x), Double(mid.y), 500), SIMD3(0, 0, -1))
+    }
+
+    @Test func theMoldWorkspaceShowsEveryBodyUntilOneIsClicked() async throws {
+        try await withMoldEnabled {
+            let model = try await twoBodies()
+            model.setWorkspace(.mold)
+            #expect(model.choosingWorkspaceBody)
+            #expect(Set(model.visibleMeshes.map(\.id)) == ["a", "b"], "every body is there to click")
+            #expect(model.picksWholeBodies && model.document.molds.isEmpty)
+            let (o, d) = try ray(onto: "b", in: model)
+            model.chooseWorkspaceBody(origin: o, direction: d)
+            #expect(!model.choosingWorkspaceBody && model.document.molds.first?.body == "b")
+            try await settleMolds(model)
+            #expect(!model.visibleMeshes.map(\.id).contains("a"), "the other body is left out once one is chosen")
+            // "Pick in 3D View" brings them all back, and a click on a body that has a mold shows that mold instead of making another.
+            model.startChoosingWorkspaceBody()
+            #expect(Set(model.visibleMeshes.map(\.id)) == ["a", "b"])
+            let (o2, d2) = try ray(onto: "b", in: model)
+            model.chooseWorkspaceBody(origin: o2, direction: d2)
+            #expect(model.document.molds.count == 1 && !model.choosingWorkspaceBody)
+            // Losing the only mold goes back to choosing.
+            model.deleteMold(try #require(model.document.molds.first).id)
+            #expect(model.choosingWorkspaceBody && Set(model.visibleMeshes.map(\.id)) == ["a", "b"])
+        }
+    }
+
     @Test func makingAMoldOpensTheWorkspaceAndBuildsTheHalves() async throws {
         try await withMoldEnabled {
             let model = try await part()
@@ -167,7 +236,8 @@ import Testing
             try await settleMolds(model)
             let id = try #require(model.activeMold?.id)
             model.deleteMold(id)
-            #expect(model.document.molds.isEmpty && model.moldResults[id] == nil && model.moldShownMeshes.isEmpty)
+            #expect(model.document.molds.isEmpty && model.moldResults[id] == nil && model.moldMeshSets[id] == nil)
+            #expect(model.choosingWorkspaceBody && model.moldShownMeshes.map(\.id) == ["box"], "back to choosing: the body, to click")
         }
     }
 

@@ -43,6 +43,28 @@ import Testing
         return model
     }
 
+    @Test func theSplitWorkspaceShowsEveryBodyUntilOneIsClicked() async throws {
+        try await finishing {
+            var d = CADDocument()
+            d.features = [Feature(id: "a", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20 mm", length: "20 mm", height: "20 mm"))),
+                          Feature(id: "b", name: "Box2", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "60 mm", width: "20 mm", length: "20 mm", height: "20 mm")))]
+            let model = DocumentModel(document: d)
+            Self.made.append(model)
+            try await settle(model)
+            model.setWorkspace(.split)
+            #expect(model.choosingWorkspaceBody && Set(model.visibleMeshes.map(\.id)) == ["a", "b"])
+            let mesh = try #require(model.meshes.first { $0.id == "a" }).mesh
+            let xs = stride(from: 0, to: mesh.positions.count - 2, by: 3).map { mesh.positions[$0] }
+            let ys = stride(from: 1, to: mesh.positions.count - 1, by: 3).map { mesh.positions[$0] }
+            model.chooseWorkspaceBody(origin: SIMD3(Double((xs.min()! + xs.max()!) / 2), Double((ys.min()! + ys.max()!) / 2), 500), direction: SIMD3(0, 0, -1))
+            #expect(!model.choosingWorkspaceBody && model.document.printSplits.first?.body == "a")
+            try await settleSplits(model)
+            #expect(model.visibleMeshes.allSatisfy { $0.id.hasPrefix("split~") }, "only the chosen body's pieces")
+            model.deleteSplit(try #require(model.document.printSplits.first).id)
+            #expect(model.choosingWorkspaceBody && Set(model.visibleMeshes.map(\.id)) == ["a", "b"])
+        }
+    }
+
     @Test func splittingABodyOpensTheWorkspaceAndBuildsThePieces() async throws {
         try await finishing {
             let model = try await part()
@@ -114,7 +136,7 @@ import Testing
             let id = try #require(model.activeSplitID)
             model.deleteSplit(id)
             #expect(model.document.printSplits.isEmpty && model.activeSplitID == nil && model.splitResults[id] == nil)
-            #expect(model.visibleMeshes.isEmpty)
+            #expect(model.choosingWorkspaceBody && model.visibleMeshes.map(\.id) == ["box"], "back to choosing: the body, to click")
             model.setWorkspace(.design)
             #expect(model.visibleMeshes.map(\.id) == ["box"])
             #expect(model.showTimeline == true, "the timeline comes back when the workspace is left")

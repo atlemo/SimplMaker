@@ -25,7 +25,10 @@ extension DocumentModel {
     /// The scene of the Mold workspace: the body (ghosted), the two halves, and a marker at the gate and each vent. While a spot is being
     /// picked, or in the Check view, the halves are left out: only the body and the markers.
     var moldShownMeshes: [BodyMesh] {
-        guard let id = activeMold?.id, let set = moldMeshSets[id] else { return [] }
+        if choosingWorkspaceBody { return meshes.filter { !document.hidden.contains($0.id) } }  // every body, to click the one to mold
+        guard let id = activeMold?.id else { return [] }
+        // The halves are on their way: the body alone until they land.
+        guard let set = moldMeshSets[id] else { return meshes.filter { $0.id == activeMold?.body }.map { BodyMesh(index: 0, id: $0.id, name: $0.name, mesh: $0.mesh) } }
         return moldPicking == nil && !moldCheckView ? set : set.filter { !MoldSetup.isPiece($0.id) }
     }
 
@@ -42,7 +45,7 @@ extension DocumentModel {
 
     /// A body that has a mold shows through it, as a ghost; while a spot on it is picked, or in the Check view, it is solid.
     func moldGhostOpacity(of id: FeatureID) -> Double? {
-        guard document.molds.contains(where: { $0.body == id }) else { return nil }
+        guard !choosingWorkspaceBody, document.molds.contains(where: { $0.body == id }) else { return nil }
         return moldPicking == nil && !moldCheckView ? 0.3 : 1
     }
 
@@ -90,6 +93,7 @@ extension DocumentModel {
 
     /// What the status bar says in the Mold workspace: what a click does while a spot is being picked, else where things stand.
     var moldStatusText: String {
+        if choosingWorkspaceBody { return bodies.isEmpty ? "This part has no body yet" : "Click the body you want to make a mold of" }
         switch moldPicking {
         case .vent?: return "Click on the body where an air vent goes (the top of a pocket the air would be trapped in) · Esc when done"
         case .gate?: return "Click on the body where the silicone goes in · Esc to cancel"
@@ -115,6 +119,7 @@ extension DocumentModel {
         moldPicking = nil
         moldCheckView = false
         moldNote = nil
+        choosingWorkspaceBody = entering && document.molds.isEmpty  // nothing made yet: the bodies are there to click
         if entering {
             if activeMoldID == nil || !document.molds.contains(where: { $0.id == activeMoldID }) { activeMoldID = document.molds.first?.id }
             // The Mold workspace has no timeline: it goes while the workspace is on, and comes back after it (if it was open).
@@ -122,7 +127,9 @@ extension DocumentModel {
             showTimeline = false
             if moldsStale || moldResults.isEmpty { rebuildMolds(fit: true) } else { sceneRevision += 1; fitRevision += 1 }
         } else {
-            if timelineHiddenByMold { showTimeline = true }
+            if timelineHiddenByMold {
+                if renderView { panelsHiddenByRender.timeline = true } else { showTimeline = true }  // Render keeps its panels away until it is left
+            }
             timelineHiddenByMold = false
             sceneRevision += 1
             fitRevision += 1
@@ -140,6 +147,10 @@ extension DocumentModel {
     func moldSettingsChanged() {
         moldsStale = true
         if let id = activeMoldID, !document.molds.contains(where: { $0.id == id }) { activeMoldID = document.molds.first?.id }
+        if workspace == .mold, document.molds.isEmpty, !choosingWorkspaceBody {  // the last mold went (an undo, say): back to choosing
+            choosingWorkspaceBody = true
+            sceneRevision += 1; fitRevision += 1; overlayRevision += 1
+        }
         if workspace == .mold { rebuildMolds() }
     }
 
@@ -232,10 +243,11 @@ extension DocumentModel {
         var title = "\(name) mold", n = 2
         while taken.contains(title) { title = "\(name) mold \(n)"; n += 1 }
         let setup = MoldSetup(name: title, body: bodyID, parting: .middle(axis))
+        choosingWorkspaceBody = false
         mutate("Make Mold") { $0.molds.append(setup) }
         activeMoldID = setup.id
         if workspace == .mold {
-            fitRevision += 1
+            sceneRevision += 1; fitRevision += 1; overlayRevision += 1
         } else {
             setWorkspace(.mold)
         }
@@ -266,11 +278,14 @@ extension DocumentModel {
         moldResults[id] = nil
         moldMeshSets[id] = nil
         if activeMoldID == id { activeMoldID = document.molds.first?.id }
+        if document.molds.isEmpty { choosingWorkspaceBody = true; fitRevision += 1 }
         sceneRevision += 1
+        overlayRevision += 1
     }
 
     func selectMold(_ id: String) {
-        guard activeMoldID != id, document.molds.contains(where: { $0.id == id }) else { return }
+        guard document.molds.contains(where: { $0.id == id }), activeMoldID != id || choosingWorkspaceBody else { return }
+        choosingWorkspaceBody = false
         activeMoldID = id
         moldPicking = nil
         sceneRevision += 1
@@ -287,6 +302,26 @@ extension DocumentModel {
         case .gate:
             updateMold(id, "Move Gate") { $0.gatePoint = MoldPoint(point) }
             moldPicking = nil
+        }
+    }
+
+    /// The Mold and Split workspaces show every body again, to click the one to work on (the other molds and splits stay in their lists).
+    func startChoosingWorkspaceBody() {
+        guard workspace == .mold || workspace == .split else { return }
+        choosingWorkspaceBody = true
+        moldPicking = nil
+        moldCheckView = false
+        sceneRevision += 1; fitRevision += 1; overlayRevision += 1
+    }
+
+    /// A click in the viewport while a body is being chosen: the body under the ray gets a mold (or a split), or, if it has one, shows it.
+    func chooseWorkspaceBody(origin: SIMD3<Double>, direction: SIMD3<Double>) {
+        guard choosingWorkspaceBody, let hit = nearestHit(origin: origin, direction: direction) else { return }
+        let id = hit.mesh.id
+        if workspace == .mold {
+            if let existing = document.molds.first(where: { $0.body == id }) { selectMold(existing.id) } else { makeMold(of: id) }
+        } else if workspace == .split {
+            if let existing = document.printSplits.first(where: { $0.body == id }) { selectSplit(existing.id) } else { makeSplit(of: id) }
         }
     }
 

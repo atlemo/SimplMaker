@@ -16,7 +16,10 @@ extension DocumentModel {
 
     /// The scene of the Split workspace: the pieces of the active split, side by side as they were cut.
     var splitShownMeshes: [BodyMesh] {
-        guard let id = activeSplit?.id, let set = splitMeshSets[id] else { return [] }
+        if choosingWorkspaceBody { return meshes.filter { !document.hidden.contains($0.id) } }  // every body, to click the one to split
+        guard let id = activeSplit?.id else { return [] }
+        // The pieces are on their way: the body alone until they land.
+        guard let set = splitMeshSets[id] else { return meshes.filter { $0.id == activeSplit?.body }.map { BodyMesh(index: 0, id: $0.id, name: $0.name, mesh: $0.mesh) } }
         return set
     }
 
@@ -38,7 +41,7 @@ extension DocumentModel {
 
     /// How far each piece is drawn from where it was cut: away from the middle of the body along the grid, the pieces at the ends the most.
     var splitOpenOffsets: [SIMD3<Float>] {
-        guard splitOpenAmount > 0, let r = activeSplitResult, r.isBuilt else { return [] }
+        guard splitOpenAmount > 0, !choosingWorkspaceBody, let r = activeSplitResult, r.isBuilt else { return [] }
         return splitShownMeshes.map { shown in
             guard let piece = r.pieces.first(where: { $0.id == shown.id }) else { return .zero }
             var shift = SIMD3<Float>.zero
@@ -54,6 +57,7 @@ extension DocumentModel {
 
     /// What the status bar says in the Split workspace.
     var splitStatusText: String {
+        if choosingWorkspaceBody { return bodies.isEmpty ? "This part has no body yet" : "Click the body you want to split" }
         if let note = splitNote { return note }
         guard let split = activeSplit else {
             return document.printSplits.isEmpty ? "Make a split from a body on the left" : "Choose a split on the left"
@@ -71,6 +75,7 @@ extension DocumentModel {
     /// The workspace was entered or left.
     func splitWorkspaceChanged(entering: Bool) {
         splitNote = nil
+        choosingWorkspaceBody = entering && document.printSplits.isEmpty  // nothing made yet: the bodies are there to click
         if entering {
             if activeSplitID == nil || !document.printSplits.contains(where: { $0.id == activeSplitID }) { activeSplitID = document.printSplits.first?.id }
             // The Split workspace has no timeline: it goes while the workspace is on, and comes back after it (if it was open).
@@ -78,7 +83,9 @@ extension DocumentModel {
             showTimeline = false
             if splitsStale || splitResults.isEmpty { rebuildSplits(fit: true) } else { sceneRevision += 1; fitRevision += 1 }
         } else {
-            if timelineHiddenBySplit { showTimeline = true }
+            if timelineHiddenBySplit {
+                if renderView { panelsHiddenByRender.timeline = true } else { showTimeline = true }  // Render keeps its panels away until it is left
+            }
             timelineHiddenBySplit = false
             sceneRevision += 1
             fitRevision += 1
@@ -96,6 +103,10 @@ extension DocumentModel {
     func splitSettingsChanged() {
         splitsStale = true
         if let id = activeSplitID, !document.printSplits.contains(where: { $0.id == id }) { activeSplitID = document.printSplits.first?.id }
+        if workspace == .split, document.printSplits.isEmpty, !choosingWorkspaceBody {  // the last split went (an undo, say): back to choosing
+            choosingWorkspaceBody = true
+            sceneRevision += 1; fitRevision += 1; overlayRevision += 1
+        }
         if workspace == .split { rebuildSplits() }
     }
 
@@ -161,10 +172,11 @@ extension DocumentModel {
         var title = "\(name) split", n = 2
         while taken.contains(title) { title = "\(name) split \(n)"; n += 1 }
         let setup = PrintSplit(name: title, body: bodyID)
+        choosingWorkspaceBody = false
         mutate("Make Split") { $0.printSplits.append(setup) }
         activeSplitID = setup.id
         if workspace == .split {
-            fitRevision += 1
+            sceneRevision += 1; fitRevision += 1; overlayRevision += 1
         } else {
             setWorkspace(.split)
         }
@@ -195,11 +207,14 @@ extension DocumentModel {
         splitResults[id] = nil
         splitMeshSets[id] = nil
         if activeSplitID == id { activeSplitID = document.printSplits.first?.id }
+        if document.printSplits.isEmpty { choosingWorkspaceBody = true; fitRevision += 1 }
         sceneRevision += 1
+        overlayRevision += 1
     }
 
     func selectSplit(_ id: String) {
-        guard activeSplitID != id, document.printSplits.contains(where: { $0.id == id }) else { return }
+        guard document.printSplits.contains(where: { $0.id == id }), activeSplitID != id || choosingWorkspaceBody else { return }
+        choosingWorkspaceBody = false
         activeSplitID = id
         sceneRevision += 1
         fitRevision += 1

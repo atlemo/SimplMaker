@@ -100,7 +100,7 @@ struct SplitToolbar: View {
 
     var body: some View {
         HStack(spacing: DS.Spacing.space3) {
-            if let split = model.activeSplit {
+            if let split = model.activeSplit, !model.choosingWorkspaceBody {
                 let built = model.activeSplitResult?.isBuilt == true
                 MoldGroup(title: "Printer") { PrinterMenu(model: model, split: split) }
                 RibbonDivider()
@@ -145,7 +145,7 @@ struct SplitToolbar: View {
                     .disabled(!built)
                 }
             } else {
-                Text(model.bodies.isEmpty ? "Model a body in Design first, then split it here." : "Choose a body on the left to split.")
+                Text(model.bodies.isEmpty ? "Model a body in Design first, then split it here." : "Click a body in the 3D view, or choose one on the left, to split.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -166,7 +166,9 @@ struct SplitSidebar: View {
             SidebarPanel(title: "Splits", open: .constant(true), accessory: { EmptyView() }) {
                 SplitList(model: model)
             }
-            SidebarPanel(title: "Bodies", open: .constant(true), accessory: { EmptyView() }) {
+            SidebarPanel(title: "Bodies", open: .constant(true), accessory: {
+                HeaderIconButton(systemImage: "cursorarrow.click", help: "Pick the body in the 3D view") { model.startChoosingWorkspaceBody() }
+            }) {
                 SplitBodyList(model: model)
             }
         }
@@ -279,7 +281,7 @@ private struct PrintSplitInspector: View {
     @Bindable var model: DocumentModel
 
     var body: some View {
-        if let split = model.activeSplit {
+        if let split = model.activeSplit, !model.choosingWorkspaceBody {
             let result = model.splitResults[split.id]
             Form {
                 Section {
@@ -377,7 +379,7 @@ private struct PrintSplitInspector: View {
             }
             .formStyle(.grouped)
         } else {
-            Text("Make a split from a body on the left, and its settings are here.")
+            Text("Click a body in the 3D view, and the split's settings are here.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

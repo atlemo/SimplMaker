@@ -731,10 +731,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private func applyPick(_ result: UInt32) {
         var raw = hoveredPlaneLabel?.pickID.raw ?? result
         if raw != 0, model?.isLockedPick(PickID(raw: raw)) == true { raw = 0 }  // a locked body or sketch is not there to hover
-        if model?.workspace == .mold || model?.workspace == .split { raw = 0 }  // the Mold workspace's scene is not the part's: nothing in it is picked
+        // The Mold and Split scenes are not the part's: nothing in them is picked, except while a body is being chosen: then the faces of
+        // the bodies light up (whole), though the model's own hover is left alone.
+        let inWorkspace = model?.workspace == .mold || model?.workspace == .split
+        let choosing = inWorkspace && model?.choosingWorkspaceBody == true
+        if inWorkspace, !choosing || ![.face, .edge].contains(PickID(raw: raw).kind) { raw = 0 }
         guard let renderer, renderer.hovered != raw else { return }
         renderer.hovered = raw
-        model?.hover(raw == 0 ? nil : PickID(raw: raw))
+        model?.hover(raw == 0 || inWorkspace ? nil : PickID(raw: raw))
         updateHoverGroup()
         if let model, model.pendingTool == .thread { renderer.selected = model.highlighted }  // the face it would thread
         if model?.sketchSession != nil { sketchEvent(.moved, at: nil, additive: false) }
@@ -1073,6 +1077,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         // A double-click's second release isn't a click: the double-click already did its job.
         guard !dragged, event.clickCount < 2, let renderer, let model, model.sketchSession == nil else { return }
         let p = location(event)
+        if model.choosingWorkspaceBody, model.workspace == .mold || model.workspace == .split {  // the body to work on is clicked in the scene
+            let ray = renderer.camera.ray(at: p, viewSize: bounds.size)
+            model.chooseWorkspaceBody(origin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                                      direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)))
+            refreshOverlay()
+            return
+        }
         if model.workspace == .split { return }  // the pieces are looked at here, not picked
         if model.workspace == .mold {  // a vent or the gate waits for its spot on the body; otherwise a click does nothing here
             if model.moldPicking != nil {
