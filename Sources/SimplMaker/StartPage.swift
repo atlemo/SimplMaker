@@ -11,8 +11,6 @@ import SwiftUI
 struct StartPage: View {
     @Bindable var model: DocumentModel
     let guide: TutorialGuide
-    /// How far the ribbon reaches down from the top, which the page starts under.
-    var topInset: CGFloat = 0
     @Environment(\.newDocument) private var newDocument
     @AppStorage(Preferences.tutorialCompleted) private var tutorialCompleted = false
 
@@ -30,7 +28,7 @@ struct StartPage: View {
             .frame(maxWidth: 1100)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, wide ? DS.Spacing.space10 : DS.Spacing.space6)
-            .padding(.top, (wide ? (short ? DS.Spacing.space6 : DS.Spacing.space10) : DS.Spacing.space6) + topInset)
+            .padding(.top, (wide ? (short ? DS.Spacing.space6 : DS.Spacing.space10) : DS.Spacing.space6))
             .padding(.bottom, DS.Spacing.space10)
         }
         .background { StartBackground() }
@@ -89,7 +87,7 @@ struct StartPage: View {
     private var actions: some View {
         VStack(spacing: DS.Spacing.space5) {
             VStack(spacing: DS.Spacing.space5) {
-                Button { PartWindows.open { newDocument { CADFile() } } } label: { Label("New Part", systemImage: "plus").frame(maxWidth: .infinity) }
+                Button { PartWindows.open { newDocument { CADFile(startsInDesign: true) } } } label: { Label("New Part", systemImage: "plus").frame(maxWidth: .infinity) }
                     .buttonStyle(.borderedProminent)
                 Button { NSDocumentController.shared.openDocument(nil) } label: { Label("Open…", systemImage: "folder").frame(maxWidth: .infinity) }
                     .buttonStyle(.bordered)
@@ -124,6 +122,12 @@ struct StartPage: View {
         }
         .frame(maxHeight: .infinity)
         .clipShape(shape)
+        // The shadow is drawn behind the block only (not on its contents), and cut out of its inside, as on the iPad.
+        .background {
+            shape.fill(.black)
+                .shadow(color: .black.opacity(0.16), radius: 24, y: 8)
+                .mask { Rectangle().padding(-120).overlay { shape.blendMode(.destinationOut) }.compositingGroup() }
+        }
     }
 
     /// The ways to begin this part (or to go on with it).

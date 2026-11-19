@@ -96,10 +96,16 @@ import SwiftUI
         join(after: before, to: anchor)
     }
 
+    /// Whether a part window is open (the Settings window and panels are not parts).
+    static var hasOpenPart: Bool {
+        NSApp.windows.contains { $0.isVisible && $0.styleMask.contains(.titled) && $0.tabbingMode == .preferred }
+    }
+
     /// The front window that is one of the parts' (the Settings window and panels are not).
     private static func frontPartWindow() -> NSWindow? {
-        [NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 }.first {
-            $0.styleMask.contains(.titled) && $0.tabbingMode == .preferred && $0.tabGroup != nil
+        // The key or main window, and failing those (the app is not the active one) the frontmost of its windows.
+        ([NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 } + NSApp.orderedWindows).first {
+            $0.isVisible && $0.styleMask.contains(.titled) && $0.tabbingMode == .preferred && $0.tabGroup != nil
         }
     }
 

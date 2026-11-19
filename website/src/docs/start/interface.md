@@ -23,9 +23,9 @@ The top of the window has two parts. The title bar holds a few buttons: the brow
 
 ### Workspaces
 
-The big button at the left of the ribbon shows where you are: its picture, its name and the word **Workspace**. Click it for the list of workspaces, each with a picture, a line on what it is for and what is in it. It is there in every workspace, so you can always move on.
+The big button at the left of the ribbon shows where you are: its picture, its name and the word **Workspace**. Click it for the list of workspaces, each with a picture, a line on what it is for and what is in it. It is there in every workspace except Start, which is a page of its own: pick Sketch, Box, Cylinder or New Part there to move on to Design, or choose **Window → Start** ([[⇧⌘1]]) to come back.
 
-- **Start** is a page as big as the window: new and recent parts, and the ways to begin this part (a sketch, a box, a cylinder, the tutorial). A new, empty part opens on it. It makes way for Design as soon as you start something. **Window → Start** ([[⇧⌘1]]) comes back to it.
+- **Start** is a page as big as the window: new and recent parts, and the ways to begin this part (a sketch, a box, a cylinder, the tutorial). The first part of a launch opens on it. A part you make yourself (**New Part**, ⌘N, a new tab) opens in Design. The page makes way for Design as soon as you start something. **Window → Start** ([[⇧⌘1]]) comes back to it.
 - **Design** is where you model. Its tools are below.
 - **Render** shows the part on a floor with a light you set. See [Render view](doc:modify/render).
 - **Mold** is being built, and shows only when it is switched on.

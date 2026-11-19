@@ -27,7 +27,9 @@ struct SimplMakerApp: App {
     }
 
     var body: some Scene {
-        DocumentGroup(newDocument: { CADFile() }) { configuration in
+        // The first part of a launch (nothing else open) is the Start page's; a part made while others are open (⌘N, a new tab) is made on
+        // purpose and opens in Design.
+        DocumentGroup(newDocument: { CADFile(startsInDesign: PartWindows.hasOpenPart) }) { configuration in
             ContentView(file: configuration.document, fileURL: configuration.fileURL)
                 .frame(minWidth: 1080, minHeight: 560)  // room for the default toolbar row (every Modify tool pinned)
                 .background(WindowSizeMemory())

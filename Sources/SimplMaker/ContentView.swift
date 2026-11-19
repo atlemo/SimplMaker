@@ -179,7 +179,8 @@ struct DocumentWindow: View {
     }
 
     /// How far the island bar reaches down from the top of the content: the panels start under it. Nothing while the UI is hidden.
-    private var showsRibbon: Bool { !model.uiHidden }
+    /// The ribbon is in every workspace but Start, which is a page of its own: a way out is on the page itself (and Window → Start brings it back).
+    private var showsRibbon: Bool { !model.uiHidden && model.workspace != .start }
     private var chromeTop: CGFloat { showsRibbon ? barHeight : 0 }
 
     /// The window's content and its floating panels. The dialogs are added in `body`.
@@ -204,7 +205,7 @@ struct DocumentWindow: View {
         .accessibilityHidden(model.workspace == .start)
         .overlay {
             if model.workspace == .start {
-                StartPage(model: model, guide: guide, topInset: chromeTop)
+                StartPage(model: model, guide: guide)
                     .transition(.opacity)
             }
         }

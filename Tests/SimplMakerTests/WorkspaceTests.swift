@@ -139,4 +139,9 @@ import Testing
             #expect(!workspace.summary.isEmpty && !workspace.contents.isEmpty)
         }
     }
+
+    @Test func aPartMadeOnPurposeOpensInDesignAndTheFirstOneOnTheStartPage() {
+        #expect(CADFile().model.workspace == .start)
+        #expect(CADFile(startsInDesign: true).model.workspace == .design)
+    }
 }

@@ -25,15 +25,18 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     private let latest: OSAllocatedUnfairLock<CADDocument>
     /// The window opens with the tutorial's card showing (the Start page's tutorial link, or Help ▸ Tutorial).
     private let startsTutorial: Bool
+    /// The window opens in Design, not on the Start page (a part made on purpose, from the Start page's New Part, ⌘N or a new tab).
+    private let startsInDesign: Bool
     @MainActor private var guideStorage: TutorialGuide?
     /// A picture of the part (PNG), stored in the file for Finder's Quick Look: the one read from the file until the part changes,
     /// then the latest drawn. Readable from any thread, like `latest`.
     private let thumbnail = OSAllocatedUnfairLock<Data?>(initialState: nil)
     @MainActor private var thumbnailTask: Task<Void, Never>?
 
-    init(document: CADDocument = CADDocument(), tutorial: Bool = false) {
+    init(document: CADDocument = CADDocument(), tutorial: Bool = false, startsInDesign: Bool = false) {
         initial = document
         startsTutorial = tutorial
+        self.startsInDesign = startsInDesign
         latest = OSAllocatedUnfairLock(initialState: document)
     }
 
@@ -41,6 +44,7 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     init(data: Data, tutorial: Bool = false) throws {
         initial = try CADDocument.decode(data)
         startsTutorial = tutorial
+        startsInDesign = false
         latest = OSAllocatedUnfairLock(initialState: initial)
         thumbnail.withLock { $0 = CADDocument.thumbnail(in: data) }
     }
@@ -60,6 +64,7 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     @MainActor var model: DocumentModel {
         if let m = modelStorage { return m }
         let m = DocumentModel(document: initial)
+        if startsInDesign { m.workspace = .design }
         m.onDocumentChange = { [weak self, latest] doc in
             latest.withLock { $0 = doc }
             Task { @MainActor in self?.scheduleThumbnail() }
