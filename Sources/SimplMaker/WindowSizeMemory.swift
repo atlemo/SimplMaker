@@ -241,6 +241,9 @@ struct TitlebarAppearance: NSViewRepresentable {
     }
 
     static func place(in window: NSWindow) {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["SIMPLMAKER_NO_LIGHTS"] == "1" { return }  // an experiment: leave the lights where AppKit has them
+        #endif
         guard !placing, !window.styleMask.contains(.fullScreen),
               let close = window.standardWindowButton(.closeButton),
               let miniaturize = window.standardWindowButton(.miniaturizeButton),
