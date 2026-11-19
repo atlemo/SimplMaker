@@ -144,12 +144,13 @@ extension Preferences {
             }
         }
         /// On Liquid Glass the same thickness is a frosted layer behind the glass (none for thin), so the panel keeps its glass edge and
-        /// highlights: the material, how much of it shows, and how much white is laid over it in light mode.
-        var glassFrost: (material: Material, opacity: Double, whiteInLight: Double)? {
+        /// highlights: the material, which always blurs fully (fading a material lets the sharp scene through), and how much white is laid
+        /// over it in light mode.
+        var glassFrost: (material: Material, whiteInLight: Double)? {
             switch self {
             case .thin: nil
-            case .regular: (.regularMaterial, 0.5, 0.3)
-            case .thick: (.thickMaterial, 0.85, 0.55)
+            case .regular: (.thinMaterial, 0.3)
+            case .thick: (.thickMaterial, 0.55)
             }
         }
         /// How much white is laid over the material in light mode.
@@ -190,7 +191,7 @@ struct PanelMaterialBackground<S: Shape>: ViewModifier {
             content
                 .background {
                     if let frost = thickness.glassFrost {
-                        shape.fill(frost.material).opacity(frost.opacity)
+                        shape.fill(frost.material)
                         if colorScheme == .light { shape.fill(Color.white.opacity(frost.whiteInLight)) }
                     }
                 }
