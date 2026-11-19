@@ -405,6 +405,51 @@ extension DocumentModel {
         selection = []
     }
 
+    // MARK: Draft: the face that stays put
+
+    /// The faces a draft could pivot about, best first, each named for a menu ("Left side (b.left)"). Empty for other features.
+    func draftPivotOptions(_ id: FeatureID) -> [(face: FaceRef, label: String)] {
+        guard case .draft(let d)? = document.features.first(where: { $0.id == id })?.kind else { return [] }
+        var options = draftFixedCandidates(for: d.faces, of: id)
+        // A face already picked to lean can stay put instead, when the others are square to it: with the top and an end
+        // of a bar picked, the end can be the face the top leans from, with the pull along the bar.
+        if d.faces.count > 1 {
+            for face in d.faces where !options.contains(where: { $0.face == face }) {
+                let others = d.faces.filter { $0 != face }
+                if let match = draftFixedCandidates(for: others, of: id).first(where: { $0.face == face }) {
+                    options.append((face, match.label + ", no longer drafted"))
+                }
+            }
+        }
+        return options
+    }
+
+    /// The face a draft pivots about now.
+    func draftPivot(_ id: FeatureID) -> FaceRef? {
+        if case .draft(let d)? = document.features.first(where: { $0.id == id })?.kind { return d.fixed }
+        return nil
+    }
+
+    func setDraftPivot(_ face: FaceRef, of id: FeatureID) {
+        guard draftPivot(id) != face else { return }
+        storeTypedSize()
+        updateFeature(id, "Change Fixed Face") { f in
+            // A face that stays put isn't drafted: picking one of the drafted faces moves it from one to the other.
+            if case .draft(var d) = f.kind { d.fixed = face; d.faces.removeAll { $0 == face }; f.kind = .draft(d) }
+        }
+        selection = []
+    }
+
+    /// The face on the far side of the body from the one that stays put now (a draft about the left end, say, becomes one
+    /// about the right end), which flips the pull direction. Nil when there is none to flip to.
+    func oppositeDraftPivot(_ id: FeatureID) -> FaceRef? {
+        guard let fixed = draftPivot(id), let body = result?.featureInputs[id]?[fixed.body] ?? result?.body(fixed.body), let now = try? body.faceFrame(fixed.face) else { return nil }
+        return draftPivotOptions(id).map(\.face).first { option in
+            guard option != fixed, let frame = try? body.faceFrame(option.face) else { return false }
+            return simd_dot(frame.normal, now.normal) < -0.999
+        }
+    }
+
     /// Why a feature failed to build, without the repeated "name:" the kernel puts in front.
     func errorText(of id: FeatureID) -> String? {
         guard let error = result?.errors[id] else { return nil }

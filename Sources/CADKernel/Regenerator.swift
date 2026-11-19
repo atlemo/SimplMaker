@@ -599,8 +599,13 @@ public enum Regenerator {
             r.bodies[i].body = try r.bodies[i].body.draft(faces: faces, fixed: fixed.face, angle: angle,
                                                           featureID: feature.id)
         } catch {
-            throw KernelError(message: "Draft couldn't lean these faces by \(UnitKind.angle.format(angle)): \("\(error)".replacingOccurrences(of: "draft: ", with: "")). "
-                              + "Try a smaller angle, other faces, or a different face to stay put.")
+            // The other way round often works (a positive angle that would cut through the far side of the body is
+            // a negative one that grows it), so say so rather than leave the user guessing.
+            let otherWay = (try? r.bodies[i].body.draft(faces: faces, fixed: fixed.face, angle: -angle, featureID: feature.id)) != nil
+            let hint = otherWay
+                ? "Leaning the other way (\(UnitKind.angle.format(-angle))) works: a positive angle narrows the body away from the face that stays put, a negative one widens it."
+                : "Try a smaller angle, other faces, or a different face to stay put."
+            throw KernelError(message: "Draft couldn't lean these faces by \(UnitKind.angle.format(angle)): \("\(error)".replacingOccurrences(of: "draft: ", with: "")). " + hint)
         }
     }
 

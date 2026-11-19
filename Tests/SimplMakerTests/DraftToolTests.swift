@@ -39,7 +39,7 @@ import simd
         let model = try await loaded()
         model.run(.draft)
         #expect(model.pendingTool == .draft)
-        #expect(model.toolPrompt == "Click the faces to draft")
+        #expect(model.toolPrompt?.hasPrefix("Click the faces to draft") == true)
         model.toolClick(.draft, try face(model, "b.right"))
         model.toolClick(.draft, try face(model, "b.left"))
         #expect(draft(model) == nil, "it waits for Return, so more faces can be picked")
@@ -62,6 +62,88 @@ import simd
         #expect(d.fixed == FaceRef(body: "b", face: "b.bottom"), "the lowest flat face next to it, not the top: \(String(describing: d.fixed))")
         let volume = try #require(model.result?.body("b")).volume
         #expect(volume < 8000 - 1, "leaning in 5° narrows the box: \(volume)")
+    }
+
+    @Test func theMenuOffersEveryFaceSquareToTheDraftedOneWithHorizontalOnesFirst() async throws {
+        let model = try await loaded()
+        let options = model.draftFixedCandidates(for: [FaceRef(body: "b", face: "b.right")])
+        #expect(options.first?.face.face == "b.bottom", "\(options.map(\.label))")
+        #expect(options.dropFirst().first?.face.face == "b.top")
+        #expect(Set(options.map(\.face.face)) == ["b.bottom", "b.top", "b.front", "b.back"], "\(options.map(\.label))")
+        #expect(options.first?.label.hasPrefix("Bottom") == true)
+    }
+
+    @Test func aDraftThatCutsThroughTheBodySuggestsTheOtherSign() async throws {
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "60 mm", length: "20 mm", height: "20 mm"))),
+            Feature(id: "d", name: "Draft1", .draft(DraftFeature(body: "b", faces: [FaceRef(body: "b", face: "b.top")],
+                                                                 fixed: FaceRef(body: "b", face: "b.left"), angle: "19 deg")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let message = try #require(model.result?.errors["d"], "the top would dip below the bottom")
+        #expect(message.contains("-19"), "\(message)")
+        d.features[1] = Feature(id: "d", name: "Draft1", .draft(DraftFeature(body: "b", faces: [FaceRef(body: "b", face: "b.top")],
+                                                                              fixed: FaceRef(body: "b", face: "b.left"), angle: "-19 deg")))
+        let other = DocumentModel(document: d)
+        try await settle(other)
+        #expect(other.result?.errors.isEmpty == true)
+        #expect((other.result?.body("b")?.bounds?.max.z ?? 0) > 40, "the top rises along the length")
+    }
+
+    @Test func thePanelOnTheCanvasChangesAndFlipsTheFaceThatStaysPut() async throws {
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "60 mm", length: "20 mm", height: "20 mm"))),
+            Feature(id: "d", name: "Draft1", .draft(DraftFeature(body: "b", faces: [FaceRef(body: "b", face: "b.top")],
+                                                                 fixed: FaceRef(body: "b", face: "b.front"), angle: "-9 deg")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        #expect(Set(model.draftPivotOptions("d").map(\.face.face)) == ["b.left", "b.right", "b.front", "b.back"], "\(model.draftPivotOptions("d").map(\.label))")
+        model.setDraftPivot(FaceRef(body: "b", face: "b.left"), of: "d")
+        try await settle(model)
+        #expect(model.draftPivot("d")?.face == "b.left")
+        #expect((model.result?.body("b")?.bounds?.max.z ?? 0) > 25, "the top rises along the long side")
+        #expect(model.oppositeDraftPivot("d")?.face == "b.right")
+        model.setDraftPivot(try #require(model.oppositeDraftPivot("d")), of: "d")
+        try await settle(model)
+        #expect(model.draftPivot("d")?.face == "b.right")
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+    }
+
+    @Test func aPickedEndCanStayPutWhileTheTopLeansAlongTheBar() async throws {
+        var d = CADDocument()
+        d.features = [
+            Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20 mm", length: "50 mm", height: "20 mm"))),
+            Feature(id: "d", name: "Draft1", .draft(DraftFeature(body: "b", faces: [FaceRef(body: "b", face: "b.front"), FaceRef(body: "b", face: "b.top")],
+                                                                 fixed: FaceRef(body: "b", face: "b.left"), angle: "-9 deg")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        let end = FaceRef(body: "b", face: "b.front")
+        #expect(model.draftPivotOptions("d").contains { $0.face == end }, "\(model.draftPivotOptions("d").map(\.label))")
+        model.setDraftPivot(end, of: "d")
+        try await settle(model)
+        guard case .draft(let made)? = model.document.features.last?.kind else { Issue.record("no draft"); return }
+        #expect(made.fixed == end && made.faces == [FaceRef(body: "b", face: "b.top")])
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        #expect((model.result?.body("b")?.bounds?.max.z ?? 0) > 25, "the top rises along the bar: \(String(describing: model.result?.body("b")?.bounds))")
+    }
+
+    @Test func theFirstFacePickedStaysPutAndTheRestLean() async throws {
+        var d = CADDocument()
+        d.features = [Feature(id: "b", name: "Box1", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "20 mm", length: "50 mm", height: "20 mm")))]
+        let model = DocumentModel(document: d)
+        try await settle(model)
+        model.run(.draft)
+        model.toolClick(.draft, try face(model, "b.front"))
+        model.toolClick(.draft, try face(model, "b.top"), additive: true)
+        #expect(model.toolPrompt?.contains("first stays put") == true, "\(model.toolPrompt ?? "")")
+        model.confirmTool()
+        try await settle(model)
+        let made = try #require(draft(model))
+        #expect(made.fixed == FaceRef(body: "b", face: "b.front"), "\(String(describing: made.fixed))")
+        #expect(made.faces == [FaceRef(body: "b", face: "b.top")])
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
     }
 
     @Test func aRoundWallLeansAboutAFaceSquareToItsAxis() async throws {

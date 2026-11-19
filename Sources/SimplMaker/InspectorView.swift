@@ -1590,7 +1590,18 @@ struct DraftInspector: View {
                     model.clearSelection()
                 }
             }
-            LabeledContent("Stays put", value: draft.fixed?.face ?? "Pick a flat face")
+            let options = model.draftPivotOptions(id)
+            if options.isEmpty {
+                LabeledContent("Stays put", value: draft.fixed?.face ?? "Pick a flat face")
+            } else {
+                Picker("Stays put", selection: Binding(get: { draft.fixed }, set: { f in
+                    if let f, f != draft.fixed { model.setDraftPivot(f, of: id) }
+                })) {
+                    if let current = draft.fixed, !options.contains(where: { $0.face == current }) { Text(current.face).tag(Optional(current)) }
+                    ForEach(options, id: \.face) { Text($0.label).tag(Optional($0.face)) }
+                }
+                .help("The flat face the drafted faces pivot about. The body narrows (or widens) away from it, so this is also the direction of the pull.")
+            }
             if picked.count == 1, let face = picked.first, face != draft.fixed, !draft.faces.contains(face) {
                 Button("Use the Selected Face as the One That Stays Put") {
                     edit.update("Change Fixed Face") { $0.fixed = face }

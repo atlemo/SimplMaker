@@ -8,8 +8,8 @@ description: Lean the sides of a body over by a small angle, so a mould or a sta
 ## Use it
 
 1. Press [[⇧D]] for **Draft**, or right-click a face and choose **Draft Face**.
-2. Click the **faces to lean**, such as the four sides of a box. Each click adds a face, and clicking it again takes it out. The status bar counts them.
-3. Press [[Return]]. A dial with a dot appears on the first face, with a field for the angle.
+2. Click the **faces to lean**, such as the four sides of a box. Each click adds a face, and clicking it again takes it out. The status bar counts them. To choose the face that stays put yourself, click **that face first** (see below).
+3. Press [[Return]]. A dial with a dot appears on the first face that leans, with a field for the angle.
 4. Drag the dot round the arc, or click it and type an angle, then press [[Return]].
 
 ![Draft: the dial on the drafted face, with the angle field, Cancel and OK. The inspector shows the angle, the faces and the face that stays put.](shot:draft-angle)
@@ -18,7 +18,11 @@ description: Lean the sides of a body over by a small angle, so a mould or a sta
 
 The faces pivot about a **flat face of the same body** that does not move: the bottom of a mould. Each drafted face keeps the line where it meets that face and leans away from it, so the body gets narrower the further it goes from it.
 
-Draft picks that face for you: a flat face next to the first face you picked and square to it, the lowest one if there are several. To use another, such as the top, select it and press **Use the selected face as the one that stays put** in the inspector.
+**Click it first.** When you pick two or more faces, the first one you click stays put and the others lean. To lean the top of a long bar along its length, click the end of the bar, then the top. The others have to be square to the first one. If they are not (two opposite walls, say), every face you picked leans and Draft finds the face that stays put.
+
+**Or let Draft pick.** With one face picked, or when the first face cannot be the one that stays put, Draft picks a flat horizontal face next to the first face and square to it, the lowest one if there are several.
+
+**Or change it afterwards.** While you size the draft, the **Stays put** menu beside Cancel and OK lists the faces it could pivot about, and the arrow button next to it flips to the face on the other side of the body. The inspector has the same menu.
 
 ## Inspector
 
@@ -26,7 +30,7 @@ Draft picks that face for you: a flat face next to the first face you picked and
 |---|---|
 | **Angle** | The draft angle, up to 85 degrees either way. It starts at `5 deg` and takes expressions. A positive angle leans the faces in, so the body gets narrower away from the fixed face. A negative angle widens it. |
 | **Drafted faces** | How many faces lean. **Draft the selected faces too** adds more. |
-| **Stays put** | The flat face the faces pivot about. |
+| **Stays put** | The flat face the faces pivot about, as a menu of the faces it could be. |
 | **Body** | The body being drafted |
 
 ## Good to know

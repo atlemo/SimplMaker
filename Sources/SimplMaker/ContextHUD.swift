@@ -75,6 +75,25 @@ struct FeatureHUD: View {
                 .toggleStyle(.button)
                 .help("Flip the direction")
             }
+            let pivots = model.draftPivotOptions(id)
+            if !pivots.isEmpty {
+                let now = model.draftPivot(id)
+                Menu {
+                    ForEach(pivots, id: \.face) { option in
+                        Button(option.label) { model.setDraftPivot(option.face, of: id) }
+                    }
+                } label: {
+                    Label("Stays put: " + (pivots.first { $0.face == now }.map { $0.label.components(separatedBy: " (").first ?? $0.label } ?? "pick"),
+                          systemImage: "square.dashed.inset.filled")
+                }
+                .menuStyle(.button)
+                .fixedSize()
+                .help("The flat face the drafted faces pivot about: the neutral plane. The body narrows (or widens) away from it")
+                if let other = model.oppositeDraftPivot(id) {
+                    Button { model.setDraftPivot(other, of: id) } label: { Image(systemName: "arrow.left.arrow.right") }
+                        .help("Flip the pull direction: pivot about the face on the other side of the body")
+                }
+            }
             if model.canStartOnFace(id) {
                 let start = model.startFace(of: id)
                 Menu {

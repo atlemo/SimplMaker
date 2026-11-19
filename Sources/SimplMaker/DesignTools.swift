@@ -410,7 +410,11 @@ extension DocumentModel {
         case .layOnFloor: return "Click the flat face that should lie on the floor"
         case .draft:
             let n = selection.filter(\.isFace).count
-            return n == 0 ? "Click the faces to draft" : "Click more faces, or press Return to draft (\(n) picked)"
+            switch n {
+            case 0: return "Click the faces to draft · to choose the face that stays put, click it first"
+            case 1: return "Click the faces to lean, or press Return to draft this one (1 picked) · the first face you click stays put"
+            default: return "Click more faces, or press Return to draft (\(n) picked) · the first stays put, the other \(n - 1) lean"
+            }
         case .split:
             if let bodies = splitBodies {
                 return "Click the face, plane or profile to split \(bodies.count == 1 ? "the body" : "the \(bodies.count) bodies") with"
@@ -575,8 +579,16 @@ extension DocumentModel {
         case .draft:
             let faces = selection.compactMap { faceRef($0) }
             guard let body = faces.first?.body, !waiting else { return false }
-            let drafted = faces.filter { $0.body == body }
-            guard let fixed = draftFixedFace(for: drafted) else {
+            var drafted = faces.filter { $0.body == body }
+            // With several faces picked the first stays put and the rest lean, as the neutral plane is picked first in
+            // other CAD programs. If the others aren't square to it (two opposite walls, say) nothing pivots about it,
+            // so all of them lean and the face that stays put is worked out.
+            var chosen: FaceRef?
+            if drafted.count > 1, let first = drafted.first {
+                let others = Array(drafted.dropFirst())
+                if draftFixedCandidates(for: others).contains(where: { $0.face == first }) { chosen = first; drafted = others }
+            }
+            guard let fixed = chosen ?? draftFixedFace(for: drafted) else {
                 alert = AlertInfo(title: "Draft needs a flat face that stays put",
                                   message: "The faces lean away from a flat face of the body, like the bottom of a mould. "
                                       + "Pick faces that stand square to one: the sides of a box, or the wall of a hole.")
@@ -662,7 +674,16 @@ extension DocumentModel {
     /// faces stand square to (a box's top or bottom for its sides; for a round wall, a face square to its axis),
     /// preferring one next to the first face, then the lowest. Nil if the body has none.
     func draftFixedFace(for faces: [FaceRef]) -> FaceRef? {
-        guard let first = faces.first, let body = result?.body(first.body) else { return nil }
+        draftFixedCandidates(for: faces).first?.face
+    }
+
+    /// Every flat face of the body that the drafted faces could pivot about, best first: a horizontal one (the pull
+    /// runs along Z, as for a mould or a printed part) before a slanted or upright one, then one next to the first
+    /// face, then the lowest. Each comes with a name for a menu ("Bottom", "Left side").
+    func draftFixedCandidates(for faces: [FaceRef], of feature: FeatureID? = nil) -> [(face: FaceRef, label: String)] {
+        // For a draft already made, the body it was made from: once drafted the faces are no longer square to what they were.
+        guard let first = faces.first,
+              let body = feature.flatMap({ result?.featureInputs[$0]?[first.body] }) ?? result?.body(first.body) else { return [] }
         let picked = Set(faces.map(\.face))
         // What each face stands square to: a flat face's normal (the fixed face's normal lies in it), or a round
         // face's axis (the fixed face's normal runs along it).
@@ -671,29 +692,40 @@ extension DocumentModel {
         for f in faces where f.body == first.body {
             if let frame = try? body.faceFrame(f.face) { leans.append(.flat(frame.normal)) }
             else if let cyl = try? body.faceCylinder(f.face) { leans.append(.round(cyl.direction)) }
-            else { return nil }  // a face that is neither can't be drafted
+            else { return [] }  // a face that is neither can't be drafted
         }
-        func fits(_ name: String) -> (frame: Frame, height: Double)? {
-            guard !picked.contains(name), let frame = try? body.faceFrame(name) else { return nil }
+        var neighbours = Set<String>()
+        for edge in (try? body.faceEdges(first.face)) ?? [] {
+            for face in (try? body.edgeFaces(edge)) ?? [] where face != first.face { neighbours.insert(face) }
+        }
+        struct Candidate { var name: String; var normal: SIMD3<Double>; var height: Double; var next: Bool }
+        var found: [Candidate] = []
+        for name in body.faceNames where !picked.contains(name) {
+            guard let frame = try? body.faceFrame(name) else { continue }
+            var fits = true
             for lean in leans {
                 switch lean {
-                case .flat(let n): if abs(simd_dot(n, frame.normal)) > 1e-3 { return nil }
-                case .round(let axis): if abs(simd_dot(axis, frame.normal)) < 1 - 1e-6 { return nil }
+                case .flat(let n): if abs(simd_dot(n, frame.normal)) > 1e-3 { fits = false }
+                case .round(let axis): if abs(simd_dot(axis, frame.normal)) < 1 - 1e-6 { fits = false }
                 }
             }
-            return (frame, ((try? body.faceOutlineCenter(name)) ?? frame.origin).z)
+            guard fits else { continue }
+            found.append(Candidate(name: name, normal: frame.normal, height: ((try? body.faceOutlineCenter(name)) ?? frame.origin).z,
+                                   next: neighbours.contains(name)))
         }
-        var neighbours: [String] = []
-        for edge in (try? body.faceEdges(first.face)) ?? [] {
-            for face in (try? body.edgeFaces(edge)) ?? [] where face != first.face && !neighbours.contains(face) { neighbours.append(face) }
+        func horizontal(_ c: Candidate) -> Bool { abs(c.normal.z) > 0.999 }
+        found.sort {
+            (horizontal($0) ? 0 : 1, $0.next ? 0 : 1, $0.height, $0.name) < (horizontal($1) ? 0 : 1, $1.next ? 0 : 1, $1.height, $1.name)
         }
-        for pool in [neighbours, body.faceNames] {
-            let candidates = pool.compactMap { name in fits(name).map { (name: name, height: $0.height) } }
-            if let best = candidates.min(by: { ($0.height, $0.name) < ($1.height, $1.name) }) {
-                return FaceRef(body: first.body, face: best.name)
-            }
+        return found.map { c in
+            let n = c.normal
+            let label: String
+            if n.z > 0.999 { label = "Top" } else if n.z < -0.999 { label = "Bottom" }
+            else if n.x > 0.999 { label = "Right side" } else if n.x < -0.999 { label = "Left side" }
+            else if n.y > 0.999 { label = "Back" } else if n.y < -0.999 { label = "Front" }
+            else { label = "Slanted face" }
+            return (FaceRef(body: first.body, face: c.name), "\(label) (\(c.name))")
         }
-        return nil
     }
 
     /// Whether a projection of this sketch should run against its normal to reach the body: when the body is on the
