@@ -15,11 +15,11 @@ Each part opens as a tab. The tabs show in the toolbar beside the mode selector 
 | **Inspector** | Right | The settings of the feature you selected |
 | **Timeline** | Bottom | Every step, in the order it was built |
 
-Hide the browser, inspector and timeline when you want more room: **View → Hide Browser** ([[⌃⌘S]]), **Hide Inspector** ([[⌥⌘I]]) and **Hide Timeline** ([[⌥⌘T]]). The buttons at the left and right ends of the title bar do the first two. Choose **Render** in the mode selector for the [Render view](doc:modify/render).
+Hide the browser, inspector and timeline when you want more room: **View → Hide Browser** ([[⌃⌘S]]), **Hide Inspector** ([[⌥⌘I]]) and **Hide Timeline** ([[⌥⌘T]]). **View → Hide UI** hides the panels and the ribbon. Choose **Render** in the mode selector for the [Render view](doc:modify/render).
 
 ## The toolbar
 
-The top of the window has two parts. The title bar holds a few buttons: the browser button with **Undo** and **Redo**, and at the right end the Hide UI and Inspector buttons. Under it floats the **ribbon**, one panel with the **workspace button** at its left and the tools of that workspace next to it, in groups divided by thin lines, each group with its name underneath.
+The toolbar is one bar, the **ribbon**, at the very top of the window and as wide as it. The window's controls (close, minimise, zoom) are at its left, then the **workspace button**, then the tools of that workspace in groups divided by thin lines, each group with its name underneath, and at the far right **Undo** and **Redo**. The Start page has no ribbon.
 
 ### Workspaces
 
@@ -32,7 +32,7 @@ The big button at the left of the ribbon shows where you are: its picture, its n
 
 Switching finishes a sketch you were drawing. Every workspace works on the same part and its history; only the tools and panels change.
 
-Each part opens as a tab. The tabs show in the title bar as soon as you have a second part open (⌘N, **File → New**, or **New Part** on the Start page); until then there is no tab bar. The **+** opens another part, and a right-click on a tab offers **Close Other Tabs** and **Move Tab to New Window**.
+Each part opens as a tab. The tabs show in a row under the ribbon as soon as you have a second part open (⌘N, **File → New**, or **New Part** on the Start page); until then there is no tab bar, and the Start page never has one. The **+** opens another part, and a right-click on a tab offers **Close Other Tabs** and **Move Tab to New Window**.
 
 ### Design mode
 

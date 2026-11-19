@@ -14,6 +14,9 @@ struct StartPage: View {
     @Environment(\.newDocument) private var newDocument
     @AppStorage(Preferences.tutorialCompleted) private var tutorialCompleted = false
 
+    /// How far past the block the shadow's mask reaches.
+    private static let shadowBleed: CGFloat = 120
+
     /// Nothing built yet: the page offers the first steps. Otherwise it also offers the way back to the part.
     private var isEmpty: Bool { model.document.features.isEmpty }
 
@@ -126,7 +129,7 @@ struct StartPage: View {
         .background {
             shape.fill(.black)
                 .shadow(color: .black.opacity(0.16), radius: 24, y: 8)
-                .mask { Rectangle().padding(-120).overlay { shape.blendMode(.destinationOut) }.compositingGroup() }
+                .mask { Rectangle().padding(-Self.shadowBleed).overlay { shape.blendMode(.destinationOut) }.compositingGroup() }
         }
     }
 

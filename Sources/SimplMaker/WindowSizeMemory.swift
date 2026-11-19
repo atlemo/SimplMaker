@@ -39,10 +39,15 @@ struct WindowSizeMemory: NSViewRepresentable {
                 window.setFrame(frame, display: true)
             }
             observed = true
+            OpenParts.opened()
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in OpenParts.closed() }
             // Parts open as tabs of one window. The system's tab bar would take a row of its own, so it is hidden: the toolbar
             // draws the tabs (see WindowTabs.swift). The document's name is in its tab rather than the toolbar.
             window.tabbingMode = .preferred
             window.titleVisibility = .hidden
+            // The ribbon is the window's top bar, drawn under a transparent titlebar that keeps only the traffic lights.
+            window.titlebarAppearsTransparent = true
+            window.styleMask.insert(.fullSizeContentView)
             SystemTabBar.hideSoon()
             NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
                                                    name: NSWindow.didEndLiveResizeNotification, object: window)

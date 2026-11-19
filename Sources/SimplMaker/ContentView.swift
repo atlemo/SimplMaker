@@ -63,7 +63,7 @@ struct DocumentWindow: View {
     /// The widest layout that fits between the window's edges: every pinned tool, then one fewer in each group at a
     /// time, down to one in each group, and past that one menu of everything.
     private var toolbarLayout: ToolbarLayout {
-        let room = windowWidth - 2 * Panel.inset - RibbonBar<EmptyView>.chrome
+        let room = windowWidth - RibbonBar<EmptyView>.chrome - DS.Spacing.space4
         var trim = 0
         while let width = toolRowWidths[.trimmed(trim)] {
             if room >= width { return .trimmed(trim) }
@@ -110,45 +110,25 @@ struct DocumentWindow: View {
     private var sketchTint: Bool { model.sketchSession != nil && activeState != .inactive }
     /// Files are being dragged over the window.
     @State private var fileDropTargeted = false
-    /// How much the window's titlebar and tab bar cover at the top: the island bar starts under them.
-    @State private var toolbarHeight: CGFloat = 65
+    /// How much the window's (transparent) titlebar covers at the top, where the content's safe area starts.
+    @State private var safeTop: CGFloat = 0
 
-    /// What the pills draw in while the band is tinted: black or white by contrast with the tint; nil off the tint.
+    /// What the ribbon's buttons draw in while the band is tinted: black or white by contrast with the tint; nil off the tint.
     private var panelToggleInk: Color? { sketchTint ? ContrastColor.ink(on: sketchPaper.toolbarNSColor) : nil }
 
     var body: some View {
         documentContent
+        // The window has no toolbar of its own: the ribbon is the top bar, and the titlebar over it is transparent (it keeps only the
+        // traffic lights).
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .toolbar(removing: .title)  // the document's name is in its tab
-        .toolbar(model.uiHidden ? .hidden : .automatic, for: .windowToolbar)
+        .toolbar(removing: .title)
         .background(HideUIKeyMonitor { model.toggleUIHidden() })
         .background(WindowTabsAttach(tabs: tabs))
         .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .task(id: toolRowSignature) { toolRowWidths = measureToolRows() }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in defaultsTick += 1 }
-        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
-        // The pills sit in the toolbar (it keeps the traffic lights and the tabs); the tools are islands under it, in the content.
-        // On the tinted sketch band the system's glass behind the pills would pick its own brightness, whatever colour the symbol
-        // is given, so they are drawn in the contrast ink on the tint, with no glass of the system's. Their glass is drawn here,
-        // with the panels' own, rather than by the toolbar: the system's toolbar glass sits a level above the floating panels.
-        .toolbar {
-            // The pills in the toolbar (it keeps the traffic lights and the tabs): the browser, undo and redo in one, a gap, then the tabs.
-            ToolbarItem(placement: .navigation) { ToolbarLeadingPill(model: model, ink: panelToggleInk).padding(.trailing, DS.Spacing.space3) }
-                .sharedBackgroundHidden(true)
-            // The tabs fill the middle once there is more than one part, so the trailing pill stays at the far right. With one part
-            // the middle is empty: the tabs come with the second (⌘N, File → New, New Part), and a 1 pt item keeps the layout.
-            ToolbarItem(placement: .principal) {
-                if tabs.tabs.count > 1 {
-                    WindowTabStrip(tabs: tabs, ink: panelToggleInk, windowWidth: windowWidth).padding(.trailing, DS.Spacing.space3)
-                } else {
-                    Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
-                }
-            }
-            .sharedBackgroundHidden(true)
-            ToolbarItem(placement: .primaryAction) { ToolbarTrailingPills(model: model, ink: panelToggleInk).padding(.trailing, DS.Spacing.space3) }
-                .sharedBackgroundHidden(true)
-        }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { safeTop = $0 }
         .modifier(AccentScope(sketching: model.sketchSession != nil))
         .focusedSceneValue(\.documentModel, model)
         .focusedSceneValue(\.tutorialGuide, guide)
@@ -181,7 +161,10 @@ struct DocumentWindow: View {
     /// How far the island bar reaches down from the top of the content: the panels start under it. Nothing while the UI is hidden.
     /// The ribbon is in every workspace but Start, which is a page of its own: a way out is on the page itself (and Window → Start brings it back).
     private var showsRibbon: Bool { !model.uiHidden && model.workspace != .start }
-    private var chromeTop: CGFloat { showsRibbon ? barHeight : 0 }
+    /// How far the ribbon (and the tab row) reach down from the top of the window.
+    private var ribbonBottom: CGFloat { showsRibbon ? barHeight : 0 }
+    /// How far they reach below the top of the safe area, which is where the panels start.
+    private var chromeTop: CGFloat { max(0, ribbonBottom - safeTop) }
 
     /// The window's content and its floating panels. The dialogs are added in `body`.
     private var documentContent: some View {
@@ -198,7 +181,7 @@ struct DocumentWindow: View {
                              panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                            model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
                                            Panel.bottomInset(timeline: model.showTimeline)),
-                             chromeTop: chromeTop),
+                             chromeTop: ribbonBottom),
                        chrome: EmptyView(), topChrome: chromeTop, showsStartCard: false)
         // The Start workspace is a page as big as the window, over the view and the panels; the toolbar and the ribbon stay over it.
         // What it covers is hidden from VoiceOver.
@@ -214,15 +197,23 @@ struct DocumentWindow: View {
         .overlay(alignment: .top) {
             if showsRibbon {
                 ZStack(alignment: .top) {
-                    ToolbarFade(tint: sketchPaper.toolbarTint, height: toolbarHeight + barHeight + Panel.inset,
-                                visible: sketchTint, material: false)
-                    RibbonBar(model: model, ink: panelToggleInk, listOpen: $workspaceListOpen) {
-                        toolRow(toolbarLayout)
-                            .accessibilityElement(children: .contain)
-                            .accessibilityLabel("Tools")
+                    ToolbarFade(tint: sketchPaper.toolbarTint, height: barHeight, visible: sketchTint, material: false)
+                    VStack(spacing: 0) {
+                        RibbonBar(model: model, ink: panelToggleInk, listOpen: $workspaceListOpen) {
+                            toolRow(toolbarLayout)
+                                .accessibilityElement(children: .contain)
+                                .accessibilityLabel("Tools")
+                        }
+                        // The tabs come with a second part.
+                        if tabs.tabs.count > 1 {
+                            WindowTabStrip(tabs: tabs, ink: panelToggleInk)
+                                .padding(.horizontal, Panel.inset)
+                                .padding(.top, DS.Spacing.space3)
+                        }
                     }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
                 }
+                .ignoresSafeArea(.container, edges: .top)
             }
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.workspace == .start)
@@ -233,7 +224,7 @@ struct DocumentWindow: View {
                     Color.clear.contentShape(Rectangle()).onTapGesture { workspaceListOpen = false }
                     WorkspaceList(model: model) { workspaceListOpen = false }
                         .padding(.leading, Panel.inset)
-                        .padding(.top, barHeight + DS.Spacing.space3)
+                        .padding(.top, chromeTop + DS.Spacing.space3)
                         .transition(.opacity)
                 }
                 .onExitCommand { workspaceListOpen = false }

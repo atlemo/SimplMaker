@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #if os(macOS)
 import AppKit
+import os
 import SwiftUI
 
 /// The tabs of the window's tab group, kept up to date, with what the strip can do to them.
@@ -75,6 +76,15 @@ import SwiftUI
     }
 }
 
+/// How many part windows are open, readable from any thread: the `newDocument:` closure of the DocumentGroup runs on an operation
+/// queue, where asking AppKit for its windows crashes. Counted by the windows themselves (see `WindowSizeMemory`).
+enum OpenParts {
+    private static let count = OSAllocatedUnfairLock(initialState: 0)
+    static var any: Bool { count.withLock { $0 > 0 } }
+    static func opened() { count.withLock { $0 += 1 } }
+    static func closed() { count.withLock { $0 = max(0, $0 - 1) } }
+}
+
 /// Opens part windows as tabs. A part opened from a button or a menu through SwiftUI's `newDocument` or `openDocument` comes as a
 /// window of its own: only File → New (the system's own) joins the front window's tabs. So the window that comes up is joined to
 /// the tab group of the window the part was opened from. (The new window is not known to the caller, so it is the one that
@@ -94,11 +104,6 @@ import SwiftUI
         let before = Set(NSApp.windows.map(\.windowNumber))
         try await create()
         join(after: before, to: anchor)
-    }
-
-    /// Whether a part window is open (the Settings window and panels are not parts).
-    static var hasOpenPart: Bool {
-        NSApp.windows.contains { $0.isVisible && $0.styleMask.contains(.titled) && $0.tabbingMode == .preferred }
     }
 
     /// The front window that is one of the parts' (the Settings window and panels are not).
@@ -168,16 +173,11 @@ struct WindowTabsAttach: NSViewRepresentable {
     }
 }
 
-/// The tab strip: the window's tabs and a new-tab button in one capsule of the toolbar.
+/// The tab strip: the window's tabs and a new-tab button in one capsule, a row of its own under the ribbon.
 struct WindowTabStrip: View {
     let tabs: WindowTabs
     /// The ink the pills draw in on the tinted sketch band; nil on the plain view.
     let ink: Color?
-    /// The window's width: the strip is as wide as the toolbar has room for between the workspace selector and the trailing pill, so it
-    /// reads as a bar of its own and not as a few tabs floating in the middle. (The toolbar sizes a middle item to its content.)
-    let windowWidth: CGFloat
-    /// What the toolbar's other items and their gaps take: the traffic lights, the leading pill (browser, undo, redo) and the trailing pill.
-    static let reserved: CGFloat = 335
     @Environment(\.accent) private var accent
 
     var body: some View {
@@ -192,7 +192,7 @@ struct WindowTabStrip: View {
             .scrollClipDisabled(false)
             PanelToggle(title: "New Tab", systemImage: "plus", ink: ink, help: "Open a new part in a tab") { tabs.newTab() }
         }
-        .frame(minWidth: max(160, windowWidth - Self.reserved), maxWidth: .infinity)
+        .frame(maxWidth: .infinity)
         .toolbarGlass(ink: ink)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tabs")

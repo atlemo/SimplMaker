@@ -213,7 +213,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     /// The insets the camera is centred on right now: `panelInsets`, or on the way to them.
     private var shownInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
-    /// The room the island bar takes below the titlebar (see `ViewportView.chromeTop`): the camera centres under it, and
+    /// How far the ribbon reaches down from the top of the window (see `ViewportView.chromeTop`): the camera centres under it, and
     /// the view cube sits below it.
     var chromeTop: CGFloat = 0 {
         didSet {
@@ -264,7 +264,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     func updateCameraInsets() {
         guard let renderer, bounds.width > 1, bounds.height > 1 else { return }
         let w = bounds.width, h = bounds.height
-        let top = min(topInset + chromeTop, h * 0.3)
+        let top = min(max(topInset, chromeTop), h * 0.3)
         // Where the picture is centred follows the gliding insets; how big a fit makes it uses the final ones.
         let sl = min(shownInsets.left, w * 0.45), sr = min(shownInsets.right, w * 0.45), sb = min(shownInsets.bottom, h * 0.3)
         renderer.camera.centerShift = SIMD2(Float((sl - sr) / w), Float((sb - top) / h))
@@ -409,7 +409,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     // MARK: view cube
 
     private var viewCube: ViewCubeView?
-    /// The toolbar's height as last seen, kept for the cube while the toolbar is hidden.
+    /// The top bar's height as last seen, kept for the cube while the bar is hidden.
     private var toolbarInset: CGFloat = 52
     private var cameraAnimation: Task<Void, Never>?
     /// Whether the view is moving by itself (a turn to a view, leaving a sketch).
@@ -470,10 +470,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         }()
         let right = min(shownInsets.right, bounds.width * 0.45)
         // With the toolbar hidden (Hide UI) the cube stays where it was, so the button that brings the UI back has the corner.
-        let top = topInset
+        let top = max(topInset, chromeTop)
         if top > 0 { toolbarInset = top }
         cube.frame.origin = NSPoint(x: bounds.width - right - ViewCubeView.size.width - DS.Spacing.space4,
-                                    y: max(top, toolbarInset) + chromeTop + DS.Spacing.space4)
+                                    y: max(top, toolbarInset) + DS.Spacing.space4)
         cube.offersTurning = true
         cube.needsDisplay = true
     }
@@ -2479,7 +2479,7 @@ struct ViewportView: NSViewRepresentable {
     let showConstraints: Bool
     /// Widths covered by the floating panels, so the camera centres on what's left.
     var panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
-    /// How far the island bar reaches down from the top of the window's content, over the titlebar's own room.
+    /// How far the ribbon reaches down from the top of the window.
     var chromeTop: CGFloat = 0
 
     final class Coordinator {

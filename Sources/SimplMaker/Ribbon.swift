@@ -1,8 +1,8 @@
-// The window's top bar, in two parts. The system toolbar (which keeps the traffic lights and the tabs) holds a few pills: the
-// browser, undo and redo in one; the panel toggles in another. Under it floats the ribbon, one panel: the big workspace button on
-// the left, which opens the list of workspaces, then the workspace's tool groups, divided by thin lines, each with its name under
-// its tools. The ribbon sits on the same glass as the panels; in Sketch mode it sits on the tinted band instead (see ToolbarFade)
-// and draws in the contrast ink.
+// The window's top bar: the ribbon, at the very top of the window and as wide as it. The window's controls (the traffic lights) are at
+// its left, then the big workspace button, which opens the list of workspaces, then the workspace's tool groups, divided by thin
+// lines, each with its name under its tools, and at the far right undo and redo. There is no system toolbar: the window's titlebar
+// is transparent and the ribbon is drawn under it. With more than one part open the tabs make a row of their own under the ribbon. In
+// Sketch mode the ribbon sits on the tinted band (see ToolbarFade) and draws in the contrast ink.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
 #if os(macOS)
@@ -185,86 +185,86 @@ struct RibbonDivider: View {
     }
 }
 
-/// The ribbon: one panel with the workspace button and, where the workspace has tools, the tool row (which the window builds, so it
-/// can measure it for the room it has). `ink` is the contrast ink on the tinted sketch band, nil on the plain view.
+/// Drags the window from the empty parts of the ribbon, and zooms it on a double click, as a titlebar does (the ribbon is drawn in the
+/// titlebar's place).
+struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2 { window?.performZoom(nil) } else { window?.performDrag(with: event) }
+        }
+    }
+}
+
+/// The ribbon: the window's controls' room, the workspace button and, where the workspace has tools, the tool row (which the window
+/// builds, so it can measure it for the room it has), then undo and redo at the far right. `ink` is the contrast ink on the tinted
+/// sketch band, nil on the plain view.
 struct RibbonBar<Tools: View>: View {
     @Bindable var model: DocumentModel
     let ink: Color?
     @Binding var listOpen: Bool
     @ViewBuilder let tools: Tools
 
-    /// What the ribbon takes besides the tool row: the workspace button, its divider and the panel's padding.
-    static var chrome: CGFloat { WorkspaceButton.width + 3 * DS.Spacing.space3 + 1 + 2 * DS.Spacing.space3 + DS.Spacing.space4 }
+    /// The room the traffic lights take at the left.
+    static var windowControls: CGFloat { 72 }
+    /// What the ribbon takes besides the tool row: the window controls, the workspace button, its divider, undo and redo, the gaps
+    /// between them and the padding.
+    static var chrome: CGFloat {
+        windowControls + WorkspaceButton.width + 1 + 2 * UndoRedoButtons.buttonWidth + 5 * DS.Spacing.space3 + 2 * DS.Spacing.space3
+    }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: DS.Radius.xl3, style: .continuous)
-        let row = HStack(spacing: DS.Spacing.space3) {
+        HStack(spacing: DS.Spacing.space3) {
+            Color.clear.frame(width: Self.windowControls, height: 1)
             WorkspaceButton(model: model, ink: ink, open: $listOpen)
             if model.workspace.hasTools {
                 RibbonDivider()
                 tools
             }
+            Spacer(minLength: 0)
+            UndoRedoButtons(model: model, ink: ink)
         }
         .padding(.horizontal, DS.Spacing.space3)
-        .padding(.vertical, DS.Spacing.space2)
+        .padding(.vertical, DS.Spacing.space3)
         .environment(\.toolsOnTint, ink != nil)
         .environment(\.toolsInk, ink ?? .white)
-        .fixedSize()
-        Group {
-            if let ink { row.background(ink.opacity(0.16), in: shape) } else { row.panelGlass(in: shape) }
+        .frame(maxWidth: .infinity)
+        .background { WindowDragArea() }
+        .background { if ink == nil { Rectangle().fill(.bar) } }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill((ink ?? Color.primary).opacity(ink == nil ? 0.12 : 0.2)).frame(height: 1)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Panel.inset)
-        .padding(.top, Panel.inset)
     }
 }
 
-// MARK: Pills in the toolbar
+// MARK: Undo and redo
 
-/// The toolbar's leading pill: the browser, undo and redo.
-struct ToolbarLeadingPill: View {
+/// Undo and redo, at the far right of the ribbon.
+struct UndoRedoButtons: View {
     @Bindable var model: DocumentModel
-    /// The ink the pills draw in on the tinted sketch band; nil on the plain view.
+    /// The ink the buttons draw in on the tinted sketch band; nil on the plain view.
     let ink: Color?
+    static let buttonWidth: CGFloat = 34
     @Environment(\.undoManager) private var undoManager
-    /// Bumped when the undo history changes, so the undo and redo buttons are read again.
+    /// Bumped when the undo history changes, so the buttons are read again.
     @State private var undoTick = 0
 
     var body: some View {
         _ = undoTick  // read, so a change to the history draws the buttons again
         let manager = undoManager ?? model.undoManager
         return HStack(spacing: 0) {
-            PanelToggle(title: "Browser", systemImage: "sidebar.left", ink: ink,
-                        help: shortcutHelp("Show or hide the browser", .browser)) { model.showSidebar.toggle() }
-                .disabled(model.workspace == .start)
             PanelToggle(title: "Undo", systemImage: "arrow.uturn.backward", ink: ink, help: "Undo the last change") { manager?.undo() }
                 .disabled(!(manager?.canUndo ?? false))
             PanelToggle(title: "Redo", systemImage: "arrow.uturn.forward", ink: ink, help: "Redo what was undone") { manager?.redo() }
                 .disabled(!(manager?.canRedo ?? false))
         }
-        .toolbarGlass(ink: ink)
         // Not the checkpoint notification: reading `canUndo` posts it, which would draw the buttons again, and so on.
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidCloseUndoGroup)) { _ in undoTick += 1 }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidUndoChange)) { _ in undoTick += 1 }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidRedoChange)) { _ in undoTick += 1 }
-    }
-}
-
-/// The toolbar's trailing pill: Hide UI and the inspector.
-struct ToolbarTrailingPills: View {
-    @Bindable var model: DocumentModel
-    let ink: Color?
-
-    var body: some View {
-        HStack(spacing: 0) {
-            PanelToggle(title: "Hide UI", systemImage: "rectangle.on.rectangle.slash", ink: ink,
-                        help: shortcutHelp("Hide the panels and toolbar, leaving only the view", .hideUI)) { model.toggleUIHidden() }
-                .disabled(model.workspace == .start)
-            PanelToggle(title: "Inspector", systemImage: "sidebar.right", ink: ink,
-                        help: shortcutHelp("Show or hide the inspector", .inspector)) { model.showInspector.toggle() }
-                .disabled(model.workspace == .start)
-        }
-        .toolbarGlass(ink: ink)
     }
 }
 
