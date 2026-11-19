@@ -9,17 +9,25 @@ Each part opens as a tab, with five areas.
 
 | Area | Where | What it is for |
 |---|---|---|
-| **Toolbar** | Top | The tools, in groups |
+| **Toolbar** | Top | The tools, in groups, each on a floating island |
 | **Browser** | Left | Your bodies, sketches, planes and images, and the parameters |
 | **Viewport** | Middle | The 3D view, where you pick and drag |
 | **Inspector** | Right | The settings of the feature you selected |
 | **Timeline** | Bottom | Every step, in the order it was built |
 
-Hide the browser, inspector and timeline when you want more room: **View → Hide Browser** ([[⌃⌘S]]), **Hide Inspector** ([[⌥⌘I]]) and **Hide Timeline** ([[⌥⌘T]]). The buttons at the left and right ends of the title bar do the first two. The sun button next to the inspector button turns on the [Render view](doc:modify/render).
+Hide the browser, inspector and timeline when you want more room: **View → Hide Browser** ([[⌃⌘S]]), **Hide Inspector** ([[⌥⌘I]]) and **Hide Timeline** ([[⌥⌘T]]). The buttons at the left and right ends of the title bar do the first two. Choose **Render** in the mode selector for the [Render view](doc:modify/render).
 
 ## The toolbar
 
-The toolbar changes with the mode you are in.
+The top of the window has two rows. The title bar holds a few buttons: the browser button, **Undo** and **Redo**, the **mode selector**, and at the right end the Hide UI and Inspector buttons. Under it the tools float over the view, each group on an island of its own, with the group's name underneath.
+
+The mode selector has **Start**, **Design** and **Render** (and **Mold** while it is being built). It is there in every mode, so you can always move on.
+
+- **Start** is a page as big as the window: new and recent parts, and the ways to begin this part (a sketch, a box, a cylinder, the tutorial). A new, empty part opens on it. It makes way for Design as soon as you start something.
+- **Design** is where you model. Its tools are below.
+- **Render** shows the part on a floor with a light you set. See [Render view](doc:modify/render).
+
+The tools change with the mode you are in.
 
 ### Design mode
 

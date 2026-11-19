@@ -65,6 +65,10 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
     let guide: TutorialGuide
     let viewport: Viewport
     let chrome: Chrome
+    /// How far the Mac's island bar reaches down from the top: the panels float under it. None on the iPad, whose top bar is its own.
+    var topChrome: CGFloat = 0
+    /// Whether an empty part shows the small "Start your part" card (the iPad does; the Mac has a Start workspace instead).
+    var showsStartCard = true
 
     /// Whether the tutorial's card is drawn here (the Mac) or by the caller, above everything else (the iPad).
     var cardHere = true
@@ -105,6 +109,7 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
             }
             }
             .padding(Panel.inset)
+            .padding(.top, topChrome)
             .animation(.easeOut(duration: DS.Duration.base), value: model.showTimeline)
             .animation(.easeOut(duration: DS.Duration.base), value: model.showSidebar)
             .animation(.easeOut(duration: DS.Duration.base), value: model.showInspector)
@@ -141,7 +146,7 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
         }
         // An empty part says how to begin, in the middle of the free space.
         .overlay {
-            if model.document.features.isEmpty, model.sketchSession == nil, model.pendingTool == nil,
+            if showsStartCard, model.document.features.isEmpty, model.sketchSession == nil, model.pendingTool == nil,
                !model.isPickingSketchPlane, !guide.isActive, !model.isImporting {
                 StartCard(model: model, guide: guide)
                     .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
@@ -186,7 +191,7 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
         .overlay(alignment: .topTrailing) {
             if model.pendingTool == .measure, model.sketchSession == nil {
                 MeasurePanel(model: model)
-                    .padding(.top, Panel.inset)
+                    .padding(.top, Panel.inset + topChrome)
                     .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset + toggleRoom)
                     .transition(.opacity)
             }
@@ -231,7 +236,7 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
                 }
             }
 #if os(macOS)
-            .padding(.top, Panel.inset)
+            .padding(.top, Panel.inset + topChrome)
             .padding(.bottom, Panel.inset)  // a tall panel covers the status bar rather than hiding behind it
 #else
             // The browser's show/hide button floats in this corner while the browser is closed: the panels start under it.

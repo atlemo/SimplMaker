@@ -215,6 +215,7 @@ enum PatternSource: String, CaseIterable {
 extension DocumentModel {
     /// A toolbar button or menu item: run the tool now if the selection allows, or wait for picks.
     func run(_ tool: DesignTool) {
+        ensureDesignWorkspace()
         if tool == .canvas, sketchSession != nil {  // a picture to trace over, on the sketch's own plane
             insertImageInSketch()
             return

@@ -37,13 +37,14 @@ struct DocumentWindow: View {
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
     /// The window's width: below this, the Finish Sketch button drops its title so the sketch
     /// tools still fit, and below the width they need, each group gives up its tools one at a time, then they become
-    /// one Tools menu (otherwise macOS folds the whole row away into the toolbar's overflow menu, which can't show it).
+    /// one Tools menu.
     @State private var windowWidth: CGFloat = 1200
     static let titledSketchWidth: CGFloat = 1100
     /// How wide the tool row is in each layout, for the current mode, the pins and the title setting. Measured on a copy of the row
-    /// that is never shown: a layout too wide for the window can't be shown to be measured, since macOS folds it away
-    /// and keeps it folded as the window grows.
+    /// that is never shown, so that a layout too wide for the window can be measured too.
     @State private var toolRowWidths: [ToolbarLayout: CGFloat] = [:]
+    /// How tall the island bar is, so the panels start under it and the camera centres on what it leaves free.
+    @State private var barHeight: CGFloat = 68
     /// Bumped when a preference changes, so the pins are read again.
     @State private var defaultsTick = 0
 
@@ -54,24 +55,15 @@ struct DocumentWindow: View {
     private var toolRowSignature: String {
         _ = defaultsTick
         let pins = Self.pinnedGroups.map { UserDefaults.standard.string(forKey: Preferences.toolbarPins($0)) ?? "-" }
-        return "\(model.sketchSession != nil) \(titled) \(model.isPickingSketchPlane) \(pins.joined(separator: "|"))"
+        return "\(model.workspace.rawValue) \(model.sketchSession != nil) \(titled) \(model.isPickingSketchPlane) \(pins.joined(separator: "|"))"
     }
-    /// Where the traffic lights and the browser button end, measured from the window's left edge (the document's name
-    /// is in the tab, not the toolbar), and the room the toolbar keeps beside the tools: the inspector button and the
-    /// space around it to the right, and a little air to the left.
-    static let leadingEdge: CGFloat = 160
-    static let toolbarMargin: CGFloat = 110
-    static let leadingGap: CGFloat = 36
-    /// The widest layout that fits: every pinned tool, then one fewer in each group at a time, down to one
-    /// in each group, and past that one menu of everything. The row stays centred while it fits that way; when
-    /// it doesn't, macOS slides it right, against the inspector button.
+    /// The widest layout that fits between the window's edges: every pinned tool, then one fewer in each group at a
+    /// time, down to one in each group, and past that one menu of everything.
     private var toolbarLayout: ToolbarLayout {
-        let centred = windowWidth - 2 * (Self.leadingEdge + Self.leadingGap)
-        let sliding = windowWidth - Self.leadingEdge - Self.toolbarMargin
+        let room = windowWidth - 2 * Panel.inset
         var trim = 0
         while let width = toolRowWidths[.trimmed(trim)] {
-            if centred >= width { return .trimmed(trim) }
-            if toolRowWidths[.trimmed(trim + 1)] == nil, sliding >= width { return .trimmed(trim) }
+            if room >= width { return .trimmed(trim) }
             trim += 1
         }
         return .single
@@ -80,10 +72,17 @@ struct DocumentWindow: View {
     /// The tools in one layout.
     @ViewBuilder private func toolRow(_ layout: ToolbarLayout) -> some View {
         Group {
-            if let session = model.sketchSession {
-                SketchToolbar(model: model, session: session, layout: layout)
-            } else {
-                DesignToolbar(model: model, layout: layout)
+            switch model.workspace {
+            case .mold:
+                MoldToolbar(model: model)
+            case .design:
+                if let session = model.sketchSession {
+                    SketchToolbar(model: model, session: session, layout: layout)
+                } else {
+                    DesignToolbar(model: model, layout: layout)
+                }
+            case .start, .render:
+                EmptyView()  // a page, and a view to look at: no tools (see `Workspace.hasTools`)
             }
         }
         .environment(\.toolTitles, titled)
@@ -104,109 +103,48 @@ struct DocumentWindow: View {
     }
 
     @Environment(\.controlActiveState) private var activeState
-    /// Sketch mode tints the toolbar while the window is active.
+    /// Sketch mode tints the band behind the toolbar's islands while the window is active.
     private var sketchTint: Bool { model.sketchSession != nil && activeState != .inactive }
-    /// The pointer is over the toolbar strip, which fades in a background, and how tall that strip is.
-    @State private var toolbarHovered = false
     /// Files are being dragged over the window.
     @State private var fileDropTargeted = false
+    /// How much the window's titlebar and tab bar cover at the top: the island bar starts under them.
     @State private var toolbarHeight: CGFloat = 65
 
-    /// What the panel toggles draw in while the toolbar is tinted: black or white by contrast with the tint; nil off the tint.
+    /// What the pills draw in while the band is tinted: black or white by contrast with the tint; nil off the tint.
     private var panelToggleInk: Color? { sketchTint ? ContrastColor.ink(on: sketchPaper.toolbarNSColor) : nil }
-
-
-    /// A toolbar button's tooltip with its shortcut: "Show or hide the browser (⌃⌘S)".
-    private func helpWithShortcut(_ text: String, _ command: ShortcutCommand) -> String {
-        Shortcuts.label(command).map { "\(text) (\($0))" } ?? text
-    }
-
-    @ToolbarContentBuilder private var toolsItem: some ToolbarContent {
-            ToolbarItem(placement: .principal) {
-                toolRow(toolbarLayout)
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Tools")
-            }
-            .withoutSharedBackground()  // the tools sit on the toolbar itself, with no glass of their own
-    }
-
-    /// Whether the tools sit in the native toolbar. On macOS 15 that toolbar is too short for the tools with their
-    /// names, so there they sit in a strip of the titlebar under it, over the tab bar.
-    private var toolsInNativeToolbar: Bool {
-        #if DEBUG
-        // SIMPLMAKER_TOOL_STRIP=1 shows macOS 15's strip on a newer Mac, to check it without a macOS 15 machine.
-        if ProcessInfo.processInfo.environment["SIMPLMAKER_TOOL_STRIP"] == "1" { return false }
-        #endif
-        if #available(macOS 26.0, *) { return true }
-        return false
-    }
-
-    /// The tools in the titlebar strip on macOS 15. The row is hosted apart from this view, so the accent and the
-    /// tutorial's spotlight are handed on to it here.
-    @ViewBuilder private var toolStrip: some View {
-        if !toolsInNativeToolbar, !model.uiHidden {
-            TitlebarToolStrip(height: Self.toolStripHeight) {
-                toolRow(toolbarLayout)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Tools")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .modifier(AccentScope(sketching: model.sketchSession != nil))
-                    .environment(\.tutorialSpotlight, guide.spotlight)
-            }
-        }
-    }
-
-    /// The strip's height: the same as macOS 26's toolbar, so the tools have the room they have there.
-    static let toolStripHeight: CGFloat = 52
 
     var body: some View {
         documentContent
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .toolbar(removing: .title)  // the document's name is in its tab
         .toolbar(model.uiHidden ? .hidden : .automatic, for: .windowToolbar)
-        .background(ToolbarHoverMonitor(hovering: $toolbarHovered))
         .background(HideUIKeyMonitor { model.toggleUIHidden() })
         .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
-        .background(toolStrip)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .task(id: toolRowSignature) { toolRowWidths = measureToolRows() }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in defaultsTick += 1 }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarHeight = $0 } }
+        // The pills sit in the toolbar (it keeps the traffic lights and the tabs); the tools are islands under it, in the content.
+        // On the tinted sketch band the system's glass behind the pills would pick its own brightness, whatever colour the symbol
+        // is given, so they are drawn in the contrast ink on the tint, with no glass of the system's. Their glass is drawn here,
+        // with the panels' own, rather than by the toolbar: the system's toolbar glass sits a level above the floating panels.
         .toolbar {
-            // The tools sit in the middle of the toolbar, in Design and in Sketch mode. They are one item whose
-            // content changes with the room, so the tools don't blink as the window is resized.
-            if toolsInNativeToolbar {
-                toolsItem
-            } else {
-                // On macOS 15 the tools are in the titlebar strip. An empty middle item keeps the toolbar laid out as it
-                // is with them, so the inspector button stays at the far right rather than packing up to the left.
-                ToolbarItem(placement: .principal) {
-                    Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
-                }
+            ToolbarItem(placement: .navigation) { ToolbarBrowserPill(model: model, ink: panelToggleInk) }
+                .sharedBackgroundHidden(true)
+            ToolbarItem(placement: .navigation) { ToolbarUndoRedoPill(model: model, ink: panelToggleInk) }
+                .sharedBackgroundHidden(true)
+            if Workspace.available.count > 1 {
+                ToolbarItem(placement: .navigation) { WorkspaceSwitcher(model: model, ink: panelToggleInk) }
+                    .sharedBackgroundHidden(true)
             }
-            // On the tinted sketch toolbar the system's glass behind these would pick its own brightness, whatever
-            // colour the symbol is given, so they are drawn like the tools: the contrast ink on the tint, no glass.
-            // The toggles' glass is drawn here, with the panels' own glass, rather than by the toolbar: the system's
-            // toolbar glass sits a level above the floating panels.
-            ToolbarItem(placement: .navigation) {
-                PanelToggle(title: "Browser", systemImage: "sidebar.left", ink: panelToggleInk,
-                            help: helpWithShortcut("Show or hide the browser", .browser)) { model.showSidebar.toggle() }
-                    .toolbarGlass(ink: panelToggleInk)
+            // An empty middle item keeps the toolbar laid out with a middle, so the trailing pill stays at the far right rather
+            // than packing up to the left beside the others.
+            ToolbarItem(placement: .principal) {
+                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
             }
             .sharedBackgroundHidden(true)
-            ToolbarItem(placement: .primaryAction) {
-              HStack(spacing: 0) {
-                PanelToggle(title: "Render", systemImage: model.renderView ? "camera.fill" : "camera", ink: panelToggleInk,
-                            help: "Show the part on a floor with a light you set, for presentation") { model.setRenderView(!model.renderView) }
-                    .disabled(model.sketchSession != nil)
-                PanelToggle(title: "Hide UI", systemImage: "rectangle.on.rectangle.slash", ink: panelToggleInk,
-                            help: helpWithShortcut("Hide the panels and toolbar, leaving only the view", .hideUI)) { model.toggleUIHidden() }
-                PanelToggle(title: "Inspector", systemImage: "sidebar.right", ink: panelToggleInk,
-                            help: helpWithShortcut("Show or hide the inspector", .inspector)) { model.showInspector.toggle() }
-              }
-              .toolbarGlass(ink: panelToggleInk)
-            }
-            .sharedBackgroundHidden(true)
+            ToolbarItem(placement: .primaryAction) { ToolbarTrailingPills(model: model, ink: panelToggleInk) }
+                .sharedBackgroundHidden(true)
         }
         .modifier(AccentScope(sketching: model.sketchSession != nil))
         .focusedSceneValue(\.documentModel, model)
@@ -219,9 +157,13 @@ struct DocumentWindow: View {
             if AIFeature.isAvailable, activeState == .key { DocumentRegistry.shared.activate(model) }
             if let fileURL { RecentParts.note(fileURL) }
             AppWindows.openWindow = openWindow
+            if guide.isActive, model.workspace == .start { model.setWorkspace(.design) }  // a part opened to its tutorial
             dismissWindow(id: AppWindows.welcomeID)  // a part is open; the welcome window has done its job
         }
         .onChange(of: undoManager) { model.undoManager = undoManager }
+        // The start page makes way when the part gets something in it (an import, or an AI client building) or the tutorial begins.
+        .onChange(of: model.document.features.isEmpty) { if !model.document.features.isEmpty, model.workspace == .start { model.setWorkspace(.design) } }
+        .onChange(of: guide.isActive) { if guide.isActive, model.workspace == .start { model.setWorkspace(.design) } }
         .onChange(of: activeState) { if AIFeature.isAvailable, activeState == .key { DocumentRegistry.shared.activate(model) } }
         .onChange(of: fileURL) {
             model.fileURL = fileURL
@@ -234,7 +176,11 @@ struct DocumentWindow: View {
         .animation(.easeOut(duration: DS.Duration.fast), value: fileDropTargeted)
     }
 
-    /// The window's content and its floating panels. The toolbar and the dialogs are added in `body`.
+    /// How far the island bar reaches down from the top of the content: the panels start under it. Nothing while the UI is hidden.
+    private var showsToolRow: Bool { !model.uiHidden && model.workspace.hasTools }
+    private var chromeTop: CGFloat { showsToolRow ? barHeight : 0 }
+
+    /// The window's content and its floating panels. The dialogs are added in `body`.
     private var documentContent: some View {
         DocumentPanels(model: model, guide: guide, viewport:
                         ViewportView(model: model, sceneRevision: model.sceneRevision, overlayRevision: model.overlayRevision,
@@ -248,13 +194,34 @@ struct DocumentWindow: View {
                              showGrid: showGrid, gridSetting: "\(unitSystem.rawValue)/\(gridSizeMetric)/\(gridSizeUS)", sketchPaper: sketchPaper, showAxes: showAxes && model.sketchSession == nil, showConstraints: showConstraints,
                              panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
                                            model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
-                                           Panel.bottomInset(timeline: model.showTimeline))),
+                                           Panel.bottomInset(timeline: model.showTimeline)),
+                             chromeTop: chromeTop),
                        chrome: Group {
-            if !model.uiHidden {
-                ToolbarFade(tint: sketchTint ? sketchPaper.toolbarTint : Color(nsColor: .windowBackgroundColor),
-                            height: toolbarHeight, visible: sketchTint || (toolbarHovered && toolsInNativeToolbar))
+            if showsToolRow {
+                // Sketch mode's colour fills the band behind the islands; otherwise the islands float over the view.
+                ToolbarFade(tint: sketchPaper.toolbarTint, height: toolbarHeight + barHeight + Panel.inset,
+                            visible: sketchTint, material: false)
+                VStack(spacing: 0) {
+                    IslandBar {
+                        toolRow(toolbarLayout)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityLabel("Tools")
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
+                    Spacer(minLength: 0)
+                }
             }
-        })
+        }, topChrome: chromeTop, showsStartCard: false)
+        // The Start workspace is a page as big as the window, over the view and the panels; the toolbar stays over it. What it
+        // covers is hidden from VoiceOver.
+        .accessibilityHidden(model.workspace == .start)
+        .overlay {
+            if model.workspace == .start {
+                StartPage(model: model, guide: guide)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.workspace == .start)
     }
 }
 #endif
@@ -286,16 +253,17 @@ struct CursorPrompt: View {
     }
 }
 
-/// The toolbar's background: a thick glass strip over the top of the view, always there so the
-/// tools read, with a colour that fades in and out over it.
+/// A band over the top of the view, with a colour that fades in and out over it (Sketch mode's tint behind the
+/// toolbar). With `material` it is a thick glass strip, always there, with the colour over it.
 struct ToolbarFade: View {
     let tint: Color
     let height: CGFloat
     let visible: Bool
+    var material = true
 
     var body: some View {
         VStack(spacing: 0) {
-            Rectangle().fill(.thickMaterial).frame(height: height)
+            Rectangle().fill(material ? AnyShapeStyle(.thickMaterial) : AnyShapeStyle(Color.clear)).frame(height: height)
                 .overlay { Rectangle().fill(tint).opacity(visible ? 1 : 0) }
             Spacer(minLength: 0)
         }
@@ -307,8 +275,6 @@ struct ToolbarFade: View {
 }
 
 #if os(macOS)
-/// Tells whether the pointer is over the window's toolbar strip. Events over the toolbar never reach
-/// the content's own tracking areas, so a local event monitor watches the pointer instead.
 /// Runs `action` when the Show/Hide UI shortcut is pressed in this window. Read from the key event itself rather
 /// than a menu key equivalent, which doesn't match a symbol like @ on every keyboard layout.
 struct HideUIKeyMonitor: NSViewRepresentable {
@@ -357,40 +323,6 @@ struct HideUIKeyMonitor: NSViewRepresentable {
             let typed = event.characters?.first.map { Character($0.lowercased()) }
             let bare = event.characters(byApplyingModifiers: [])?.first.map { Character($0.lowercased()) }
             return typed == chord.key || bare == chord.key
-        }
-    }
-}
-
-struct ToolbarHoverMonitor: NSViewRepresentable {
-    @Binding var hovering: Bool
-
-    func makeNSView(context: Context) -> MonitorView { MonitorView() }
-
-    func updateNSView(_ view: MonitorView, context: Context) {
-        let binding = $hovering
-        view.onChange = { if binding.wrappedValue != $0 { binding.wrappedValue = $0 } }
-    }
-
-    final class MonitorView: NSView {
-        var onChange: (Bool) -> Void = { _ in }
-        private var monitor: Any?
-
-        override func viewDidMoveToWindow() {
-            if let monitor { NSEvent.removeMonitor(monitor) }
-            monitor = nil
-            guard window != nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .mouseEntered, .mouseExited, .leftMouseDragged]) { [weak self] event in
-                MainActor.assumeIsolated { self?.check(event) }
-                return event
-            }
-        }
-
-        private func check(_ event: NSEvent) {
-            guard let window else { return }
-            let p = window.mouseLocationOutsideOfEventStream
-            let top = window.contentLayoutRect.maxY
-            let inside = event.window === window && p.y >= top && p.y <= window.frame.height && p.x >= 0 && p.x <= window.frame.width
-            onChange(inside)
         }
     }
 }
@@ -1472,8 +1404,8 @@ extension View {
     }
 }
 
-/// A toolbar button that shows or hides a panel. With an `ink` (on the tinted sketch toolbar) it draws its own symbol in
-/// that colour, lit softly under the pointer; without, it is the system's button. Group them with `toolbarGlass(ink:)`.
+/// A button of the toolbar's pills: its symbol in the contrast `ink` on the tinted sketch band, or in the primary colour, lit
+/// softly under the pointer. Group them with `toolbarGlass(ink:)`.
 struct PanelToggle: View {
     let title: String
     let systemImage: String
@@ -1481,25 +1413,23 @@ struct PanelToggle: View {
     let help: String
     let action: () -> Void
     @State private var hovering = false
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
-        if let ink {
-            Button(action: action) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(ink)
-                    .frame(width: 34, height: 34)
-                    .background(ink.opacity(hovering ? 0.16 : 0), in: Circle())  // the group's pill is the fill
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering = $0 }
-            .help(help)
-            .accessibilityLabel(title)
-        } else {
-            Button(action: action) { Label(title, systemImage: systemImage) }
-                .help(help)
+        let colour = ink ?? Color.primary
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(colour)
+                .frame(width: 34, height: 34)
+                .background(colour.opacity(hovering && isEnabled ? 0.16 : 0), in: Circle())  // the group's pill is the fill
+                .contentShape(Circle())
+                .opacity(isEnabled ? 1 : DS.opacityDisabled)
         }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityLabel(title)
     }
 }
 
@@ -2362,30 +2292,6 @@ extension EnvironmentValues {
     @Entry var toolsInk = Color.white
 }
 
-extension View {
-    /// The toolbar tools' row, sitting on the toolbar's own background. macOS makes the toolbar about
-    /// 52 pt tall whatever is in it: padding doesn't change that, and an accessory strip under it adds
-    /// at least 36 pt.
-    func toolsPanel() -> some View {
-        padding(.horizontal, DS.Spacing.space3)
-            .padding(.vertical, DS.Spacing.space2)
-            .fixedSize()
-    }
-}
-
-/// Tool groups in the toolbar are separated by a thin line.
-struct ToolDivider: View {
-    @Environment(\.toolTitles) private var showsTitles
-    @Environment(\.toolsOnTint) private var onTint
-    @Environment(\.toolsInk) private var toolsInk
-    var body: some View {
-        Group {
-            if onTint { Rectangle().fill(toolsInk.opacity(0.35)).frame(width: 1) } else { Divider() }
-        }
-        .frame(height: 30).padding(.horizontal, showsTitles ? DS.Spacing.space3 : DS.Spacing.space2)
-    }
-}
-
 /// Sketch mode's tools, next to the title, in groups: Select · draw · change curves ·
 /// dimension and constrain · Finish. Each group shows the tools pinned to it; its name opens the rest.
 struct SketchToolbar: View {
@@ -2462,16 +2368,14 @@ struct SketchToolbar: View {
         Group {
             switch layout {
             case .single:
-                ToolsMenu(solo: selectTool, groups: groups, trailing: finish)
+                ToolsMenu(solo: selectTool, groups: groups, trailing: finish).island()
             case .trimmed(let trim):
-                HStack(spacing: DS.Spacing.space1) {
-                    SoloTool(tool: selectTool)
+                HStack(spacing: DS.Spacing.space4) {
+                    SoloTool(tool: selectTool).island()
                     ForEach(groups) { group in
-                        ToolDivider()
-                        ToolGroup(group)
+                        ToolGroup(group).island()
                     }
-                    ToolDivider()
-                    finishButton
+                    finishButton.island()
                 }
                 .environment(\.toolTrim, trim)
             }
@@ -2479,7 +2383,7 @@ struct SketchToolbar: View {
         // Sketch mode tints the tools' glass while the window is active.
         .environment(\.toolsOnTint, activeState != .inactive)
         .environment(\.toolsInk, ContrastColor.ink(on: sketchPaper.toolbarNSColor))
-        .toolsPanel()
+        .fixedSize()
     }
 
     /// A sketch tool's button. Each way of drawing a shape is a tool of its own, listed in its group (the tool's key
@@ -2626,19 +2530,18 @@ struct DesignToolbar: View {
         Group {
             switch layout {
             case .single:
-                ToolsMenu(solo: solo, groups: groups)
+                ToolsMenu(solo: solo, groups: groups).island()
             case .trimmed(let trim):
-                HStack(spacing: DS.Spacing.space1) {
-                    SoloTool(tool: solo)
+                HStack(spacing: DS.Spacing.space4) {
+                    SoloTool(tool: solo).island()
                     ForEach(groups) { group in
-                        ToolDivider()
-                        ToolGroup(group)
+                        ToolGroup(group).island()
                     }
                 }
                 .environment(\.toolTrim, trim)
             }
         }
-        .toolsPanel()
+        .fixedSize()
     }
 
     private func group(_ title: String, id: String, _ tools: [DesignTool], defaults: [DesignTool]) -> ToolGroupSpec {

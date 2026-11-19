@@ -9,13 +9,13 @@ The **Render view** gives a part a presentation look. The grid gives way to a so
 
 ## Turn it on
 
-Press the **Render** button (a camera) at the right end of the toolbar, left of the Inspector button. You can also choose **View → Render**, or right-click in the viewport and choose **Render View**.
+Choose **Render** in the mode selector at the top of the window (Start, Design, Render). You can also choose **View → Render**, or right-click in the viewport and choose **Render View**.
 
-Press the button again to turn the view off. The options panel opens in the top left corner of the view while the view is on. The browser, the Inspector and the timeline close when the view comes on, to give the part the whole window. The buttons in the toolbar bring them back, and they come back by themselves when the view goes off. The options panel floats above the status bar, and scrolls when the window is too short for it.
+Choose **Design** (or any other mode) to turn the view off. The options panel opens in the top left corner of the view while the view is on. The browser, the Inspector and the timeline close when the view comes on, to give the part the whole window. The buttons in the toolbar bring them back, and they come back by themselves when the view goes off. The options panel floats above the status bar, and scrolls when the window is too short for it.
 
 - The view needs a shaded [visual style](doc:start/navigation). If you were in a wireframe style, turning it on switches to **Shaded with Visible Edges**.
 - It does not work together with the [3D Print Preview](doc:print/print-preview). Turning one on turns the other off.
-- While you [sketch](doc:sketch/start) the Render button is greyed out and you see the sketch as usual. The Render view comes back when you finish the sketch.
+- Render is a mode of its own, so it has no tools. Starting a tool or a sketch (from a key or a menu) takes you back to Design and turns the view off.
 - Finished sketches and construction planes are hidden, so the part is shown alone. They come back while a tool is waiting for you to pick something that needs them, such as a profile to extrude or a plane to sketch on. A [canvas](doc:create/canvas) picture stays.
 - You can keep working in it. Clicking and hovering pick faces and edges as always, and picks go through the floor.
 
@@ -114,7 +114,7 @@ The picture an AI assistant makes of a part is not changed by the Render view. S
 
 ## Good to know
 
-- **View → Render Options** shows and hides the panel while the Render view stays on. The **×** in the panel's title row hides it too. The Render button turns the whole view off. Right-click in the viewport and choose **Show Render Options** to bring the panel back.
+- **View → Render Options** shows and hides the panel while the Render view stays on. The **×** in the panel's title row hides it too. Choosing **Render** in the mode selector again brings the panel back too. Right-click in the viewport and choose **Show Render Options** to bring the panel back.
 - With [Section Analysis](doc:modify/section-analysis) on, the cut bodies show without shadows. The floor shadows stay.
 - The shadows cover the area around the part. With a very low light (a small Height), a long shadow can be cut off where that area ends.
 - With the [Exploded view](doc:modify/exploded-view) on, the floor and the shadows follow the bodies as they are pulled apart.

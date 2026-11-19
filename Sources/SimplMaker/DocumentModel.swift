@@ -105,6 +105,10 @@ final class DocumentModel {
             overlayRevision += 1
         }
     }
+    /// Which workspace the window is in (see Workspace.swift). Not saved with the part.
+    var workspace = Workspace.design
+    /// The workspace to go back to when the Render view is turned off.
+    @ObservationIgnored private var workspaceBeforeRender = Workspace.design
     /// The sketch being edited, if any.
     private(set) var sketchSession: SketchSession?
     /// A new sketch is waiting for the user to click an origin plane or a flat face.
@@ -350,6 +354,9 @@ final class DocumentModel {
     func setRenderView(_ on: Bool) {
         let wasOn = renderView
         renderView = on
+        // The Render view is a workspace of the window: the selector follows, from the menu and the context menu too.
+        if on, workspace != .render { workspaceBeforeRender = workspace; workspace = .render }
+        if !on, workspace == .render { workspace = workspaceBeforeRender == .render ? .design : workspaceBeforeRender }
         if !on { renderSpinning = false; restorePanelsHiddenByRender() }
         if on {
             if !wasOn {
@@ -389,6 +396,7 @@ final class DocumentModel {
 
     init(document: CADDocument = CADDocument()) {
         self.document = document
+        workspace = Self.openingWorkspace(for: document)
         regenerate(fit: true)
     }
 
@@ -1717,6 +1725,7 @@ final class DocumentModel {
     /// The Sketch button: sketches on the selected flat face right away, otherwise asks for a plane
     /// by showing the origin planes in the viewport (see `click`).
     func startSketch() {
+        ensureDesignWorkspace()
         if sketchSession != nil { finishSketch() }
         pendingTool = nil
         if let plane = selectedFacePlane {
@@ -1749,6 +1758,7 @@ final class DocumentModel {
     var showsOriginPlanes: Bool { isPickingSketchPlane || pendingTool?.showsPlanes == true }
 
     func beginSketch(on plane: PlaneRef) {
+        ensureDesignWorkspace()
         let frame: Frame
         do {
             frame = try Regenerator.sketchFrame(SketchFeature(plane: plane, sketch: Sketch()), result ?? RegenResult())

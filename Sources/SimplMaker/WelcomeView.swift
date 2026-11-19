@@ -21,18 +21,10 @@ enum AppWindows {
 
 struct WelcomeView: View {
     @Environment(\.newDocument) private var newDocument
-    @Environment(\.openDocument) private var openDocument
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     @AppStorage(Preferences.showWelcome) private var showWelcome = true
     @AppStorage(Preferences.tutorialCompleted) private var tutorialCompleted = false
-    @State private var recents: [URL] = []
-    @State private var selected: URL?
-    /// The part being opened, which shows a spinner.
-    @State private var opening: URL?
-    /// The recent list has the keyboard from the start (for ↑ ↓ Return), not the first button.
-    @FocusState private var listFocused: Bool
-    @State private var error: String?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -40,19 +32,13 @@ struct WelcomeView: View {
                 .frame(width: 520)
                 .frame(maxHeight: .infinity)
                 .background(DS.windowBackground)
-            recentList
+            RecentPartsList(takesFocus: true) { dismissWindow(id: AppWindows.welcomeID) }
                 .frame(width: 300)
                 .frame(maxHeight: .infinity)
                 .background(DS.underPageBackground)
         }
         .frame(height: 580)
-        .onAppear { AppWindows.openWindow = openWindow; reloadRecents() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in reloadRecents() }
-        .alert("The part couldn't be opened", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-            Button("OK") { error = nil }
-        } message: {
-            Text(error ?? "")
-        }
+        .onAppear { AppWindows.openWindow = openWindow }
     }
 
     // MARK: left: icon, title, actions
@@ -109,9 +95,37 @@ struct WelcomeView: View {
         return "Version \(version)"
     }
 
-    // MARK: right: recent parts
+}
 
-    @ViewBuilder private var recentList: some View {
+/// The recent parts, as a list to open them from: the welcome window's right side and the start page's. Drawn here rather than
+/// with List: a List shows its selection in grey until it has keyboard focus, and its table doesn't take the click that brings the
+/// window forward, so a double-click could select without opening. Here a click selects at once, the second click of a
+/// double-click opens, and ↑ ↓ Return work as in a list.
+struct RecentPartsList: View {
+    /// The list has the keyboard from the start (for ↑ ↓ Return), not the first button.
+    var takesFocus = false
+    /// Called once a part has been opened (the welcome window closes itself).
+    var opened: () -> Void = {}
+    @Environment(\.openDocument) private var openDocument
+    @State private var recents: [URL] = []
+    @State private var selected: URL?
+    /// The part being opened, which shows a spinner.
+    @State private var opening: URL?
+    @FocusState private var listFocused: Bool
+    @State private var error: String?
+
+    var body: some View {
+        list
+            .onAppear(perform: reload)
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in reload() }
+            .alert("The part couldn't be opened", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK") { error = nil }
+            } message: {
+                Text(error ?? "")
+            }
+    }
+
+    @ViewBuilder private var list: some View {
         if recents.isEmpty {
             VStack(spacing: 6) {
                 Text("No Recent Parts").font(.title3).foregroundStyle(.secondary)
@@ -119,10 +133,6 @@ struct WelcomeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            // Drawn here rather than with List: a List shows its selection in grey until it has
-            // keyboard focus, and its table doesn't take the click that brings the window forward,
-            // so a double-click could select without opening. Here a click selects at once, the
-            // second click of a double-click opens, and ↑ ↓ Return work as in a list.
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(recents, id: \.self) { url in
@@ -134,7 +144,7 @@ struct WelcomeView: View {
                                 Divider()
                                 Button("Remove from Recent Parts") {
                                     RecentParts.remove(url)
-                                    reloadRecents()
+                                    reload()
                                 }
                             }
                             .accessibilityAction { open(url) }
@@ -145,7 +155,7 @@ struct WelcomeView: View {
             .focusable()
             .focusEffectDisabled()
             .focused($listFocused)
-            .onAppear { listFocused = true }
+            .onAppear { listFocused = takesFocus }
             .onKeyPress(.upArrow) { step(-1) }
             .onKeyPress(.downArrow) { step(1) }
             .onKeyPress(.return) {
@@ -170,7 +180,7 @@ struct WelcomeView: View {
         return .handled
     }
 
-    private func reloadRecents() {
+    private func reload() {
         recents = RecentParts.urls
     }
 
@@ -181,7 +191,7 @@ struct WelcomeView: View {
             defer { opening = nil }
             do {
                 try await openDocument(at: url)
-                dismissWindow(id: AppWindows.welcomeID)
+                opened()
             } catch {
                 self.error = error.localizedDescription
             }
@@ -190,7 +200,7 @@ struct WelcomeView: View {
 }
 
 /// One of the big actions on the left: icon, bold title and a one-line description.
-private struct WelcomeAction: View {
+struct WelcomeAction: View {
     @Environment(\.accent) private var accent
     let title: String
     let subtitle: String
@@ -223,7 +233,7 @@ private struct WelcomeAction: View {
 }
 
 /// A recent part: file icon, name, and where it lives; blue when selected, as in a source list.
-private struct RecentRow: View {
+struct RecentRow: View {
     @Environment(\.accent) private var accent
     let url: URL
     let selected: Bool

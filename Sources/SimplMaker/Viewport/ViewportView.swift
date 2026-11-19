@@ -213,6 +213,15 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     /// The insets the camera is centred on right now: `panelInsets`, or on the way to them.
     private var shownInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
+    /// The room the island bar takes below the titlebar (see `ViewportView.chromeTop`): the camera centres under it, and
+    /// the view cube sits below it.
+    var chromeTop: CGFloat = 0 {
+        didSet {
+            guard chromeTop != oldValue else { return }
+            updateCameraInsets()
+            needsLayout = true
+        }
+    }
     private var insetAnimation: Task<Void, Never>?
     /// Whether a frame has been drawn, so the first insets (the window opening) are taken at once.
     private var hasDrawn = false
@@ -255,7 +264,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     func updateCameraInsets() {
         guard let renderer, bounds.width > 1, bounds.height > 1 else { return }
         let w = bounds.width, h = bounds.height
-        let top = min(topInset, h * 0.3)
+        let top = min(topInset + chromeTop, h * 0.3)
         // Where the picture is centred follows the gliding insets; how big a fit makes it uses the final ones.
         let sl = min(shownInsets.left, w * 0.45), sr = min(shownInsets.right, w * 0.45), sb = min(shownInsets.bottom, h * 0.3)
         renderer.camera.centerShift = SIMD2(Float((sl - sr) / w), Float((sb - top) / h))
@@ -464,7 +473,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
         let top = topInset
         if top > 0 { toolbarInset = top }
         cube.frame.origin = NSPoint(x: bounds.width - right - ViewCubeView.size.width - DS.Spacing.space4,
-                                    y: max(top, toolbarInset) + DS.Spacing.space4)
+                                    y: max(top, toolbarInset) + chromeTop + DS.Spacing.space4)
         cube.offersTurning = true
         cube.needsDisplay = true
     }
@@ -2470,6 +2479,8 @@ struct ViewportView: NSViewRepresentable {
     let showConstraints: Bool
     /// Widths covered by the floating panels, so the camera centres on what's left.
     var panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
+    /// How far the island bar reaches down from the top of the window's content, over the titlebar's own room.
+    var chromeTop: CGFloat = 0
 
     final class Coordinator {
         var sceneRevision = -1
@@ -2500,6 +2511,7 @@ struct ViewportView: NSViewRepresentable {
     func updateNSView(_ view: ViewportMTKView, context: Context) {
         guard let renderer = view.renderer else { return }
         view.panelInsets = panelInsets  // before any fit below
+        view.chromeTop = chromeTop
         let c = context.coordinator
         // Closing a sketch turns the flat view back to the one it was opened from. Noted before any camera
         // command below, which moves the camera to the new sketch.
