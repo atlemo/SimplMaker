@@ -8,7 +8,6 @@ struct SettingsView: View {
     @AppStorage(Preferences.showGrid) private var showGrid = true
     @AppStorage(Preferences.showAxes) private var showAxes = true
     @AppStorage(Preferences.showConstraints) private var showConstraints = true
-    @AppStorage(Preferences.showWelcome) private var showWelcome = true
     @AppStorage(Preferences.unitSystem) private var unitSystem = Preferences.UnitSystem.system
     @AppStorage(Preferences.gridSizeMetric) private var gridSizeMetric = 0.0
     @AppStorage(Preferences.gridSizeUS) private var gridSizeUS = 0.0
@@ -96,14 +95,6 @@ struct SettingsView: View {
 
     @ViewBuilder private var generalPane: some View {
         Form {
-#if os(macOS)
-            VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
-                Toggle("Show the welcome window at launch", isOn: $showWelcome)
-                Text("Off, SimplMaker opens an empty part at launch instead. The window is always available under Window → Welcome to SimplMaker.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-#endif
             VStack(alignment: .leading, spacing: 8) {  // one row, so no divider between them
                 Picker("Accent color", selection: $accentSource) {
                     ForEach(Preferences.AccentSource.allCases) { Text($0.title).tag($0) }

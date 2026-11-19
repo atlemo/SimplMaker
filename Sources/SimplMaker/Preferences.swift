@@ -16,7 +16,6 @@ enum Preferences {
     static let showConstraints = "showConstraints"
     static let showShapeCentres = "showShapeCentres"
     static let hideOtherSketches = "hideOtherSketches"  // stored the other way round, so that showing them is the default
-    static let showWelcome = "showWelcome"
     static let settingsHeight = "settingsWindowHeight"  // the height the user dragged the Settings window to
     static let snapToGrid = "snapToGrid"
     static let unitSystem = "unitSystem"
@@ -49,8 +48,6 @@ enum Preferences {
             UserDefaults.standard.set(text, forKey: navigation)
         }
     }
-    /// Show the welcome window at launch instead of an empty document (on by default).
-    static var showsWelcome: Bool { UserDefaults.standard.object(forKey: showWelcome) as? Bool ?? true }
     /// Sketch points snap to a grid that follows the zoom (on by default; ⌥ turns all snapping off).
     static var snapsToGrid: Bool { UserDefaults.standard.object(forKey: snapToGrid) as? Bool ?? true }
 

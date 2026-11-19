@@ -127,7 +127,7 @@ import Testing
     /// may only shrink. A new off-grid number fails the test; move a view onto the grid and lower its count.
     @Test func spacingAndPaddingLiteralsAreOnTheGrid() throws {
         let known: [String: Int] = [
-            "WelcomeView.swift": 7, "DocumentPanels.swift": 2, "AppearancePanel.swift": 2, "ContentView.swift": 3,
+            "RecentParts.swift": 5, "DocumentPanels.swift": 2, "AppearancePanel.swift": 2, "ContentView.swift": 3,
             "CommandPalette.swift": 1, "TutorialCard.swift": 1, "TutorialSpotlight.swift": 1, "AISettingsPane.swift": 1,
         ]
         let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()

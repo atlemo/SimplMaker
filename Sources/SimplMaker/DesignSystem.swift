@@ -205,7 +205,7 @@ extension ToolbarContent {
 extension DS {
     /// The window and under-page greys as macOS 26 draws them for an app built for 26. A binary whose
     /// deployment target is older gets the pre-26 values for the system's own colours even on 26
-    /// (light mode: window 236 instead of 255, under-page 159 instead of 246), so the welcome window
+    /// (light mode: window 236 instead of 255, under-page 159 instead of 246), so the Start page
     /// asks for the 26 values by hand there. Dark mode and older systems keep the system's colours.
     #if os(macOS)
     static let windowBackground = lightOverride(white: 1.0, system: .windowBackgroundColor)

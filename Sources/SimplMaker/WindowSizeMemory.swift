@@ -39,16 +39,11 @@ struct WindowSizeMemory: NSViewRepresentable {
                 window.setFrame(frame, display: true)
             }
             observed = true
-            // Parts open as tabs of one window, with the tab bar showing even for one part, and the document's name
-            // is in its tab rather than the toolbar.
+            // Parts open as tabs of one window. The system's tab bar would take a row of its own, so it is hidden: the toolbar
+            // draws the tabs (see WindowTabs.swift). The document's name is in its tab rather than the toolbar.
             window.tabbingMode = .preferred
             window.titleVisibility = .hidden
-            for delay in [0.0, 0.3] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak window] in
-                    guard let window, let group = window.tabGroup, !group.isTabBarVisible else { return }
-                    window.toggleTabBar(nil)
-                }
-            }
+            SystemTabBar.hideSoon()
             NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
                                                    name: NSWindow.didEndLiveResizeNotification, object: window)
         }

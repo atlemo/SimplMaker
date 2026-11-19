@@ -111,7 +111,7 @@ Other keys while sketching:
 | [[⌘Z]] | Undo |
 | [[⇧⌘Z]] | Redo |
 | [[⇧⌘I]] | Import ▸ STEP… |
-| [[⇧⌘1]] | Welcome to SimplMaker |
+| [[⇧⌘1]] | Start page |
 | [[⌥⌘N]] | Open the plate example part |
 | [[⌘,]] | Settings |
 

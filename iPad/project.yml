@@ -37,7 +37,7 @@ targets:
           - Viewport/ViewportView.swift
           - Viewport/ViewCube.swift
           - Viewport/ManipulatorView.swift
-          - WelcomeView.swift
+          - RecentParts.swift
           - RenameDocument.swift
           - ExportDialog.swift
           - ExportImageDialog.swift

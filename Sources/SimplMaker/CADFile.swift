@@ -23,7 +23,7 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
     /// The model's latest document, readable from any thread. SwiftUI takes snapshots on a
     /// background thread, where touching the main-actor model would crash.
     private let latest: OSAllocatedUnfairLock<CADDocument>
-    /// The window opens with the tutorial's card showing (File ▸ New from the welcome window's tutorial, or Help ▸ Tutorial).
+    /// The window opens with the tutorial's card showing (the Start page's tutorial link, or Help ▸ Tutorial).
     private let startsTutorial: Bool
     @MainActor private var guideStorage: TutorialGuide?
     /// A picture of the part (PNG), stored in the file for Finder's Quick Look: the one read from the file until the part changes,

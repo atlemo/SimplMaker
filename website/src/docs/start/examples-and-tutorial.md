@@ -1,24 +1,21 @@
 ---
 title: Examples and the tutorial
-description: The welcome window, the guided tutorial, and five example parts to learn from.
+description: The Start page, the guided tutorial, and five example parts to learn from.
 ---
 
-## The welcome window
+## The Start page
 
-SimplMaker opens a welcome window, like Xcode's.
-
-![The welcome window.](shot:welcome-window)
+SimplMaker opens on the **Start page**, a page as big as the window. It is also the **Start** choice in the mode selector at the top of every part, so you can come back to it any time (**Window → Start**, [[⇧⌘1]]).
 
 | Choice | What it does |
 |---|---|
-| **Make your first part** | Starts the guided tutorial |
-| **Create a new part** | Opens an empty part |
+| **New Part** | Opens an empty part in a new tab |
+| **Open…** | Opens a `.simplmaker` file |
+| **Take the tutorial** | Starts the guided tutorial in this part, or in a new one if this part has something in it already |
+| **Sketch**, **Box**, **Cylinder** | Begin this part with that tool, and move to Design |
 | **Open the demo part** | Opens a plate with a hole, fillets and a chamfer |
-| **Open an existing part** | Opens a `.simplmaker` file |
 
-Your recent parts are listed on the right. Double-click one, or select it and press [[Return]].
-
-To stop it appearing at launch, untick **Show this window when SimplMaker launches**, or turn it off in **Settings → General**. **Window → Welcome to SimplMaker** ([[⇧⌘1]]) brings it back.
+Your recent parts are listed on the right. Double-click one, or select it and press [[Return]]. A new, empty part opens on the Start page; a part with features in it opens in Design.
 
 ## The tutorial: a desk organizer
 

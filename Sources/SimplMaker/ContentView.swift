@@ -27,7 +27,6 @@ struct DocumentWindow: View {
     @ObservedObject private var shortcuts = ShortcutStore.shared  // tooltips name the shortcuts, which the user can change
     @Environment(\.undoManager) private var undoManager
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.dismissWindow) private var dismissWindow
     @AppStorage(Preferences.showGrid) private var showGrid = true
     @AppStorage(Preferences.unitSystem) private var unitSystem = Preferences.UnitSystem.system
     @AppStorage(Preferences.gridSizeMetric) private var gridSizeMetric = 0.0
@@ -45,6 +44,8 @@ struct DocumentWindow: View {
     @State private var toolRowWidths: [ToolbarLayout: CGFloat] = [:]
     /// How tall the island bar is, so the panels start under it and the camera centres on what it leaves free.
     @State private var barHeight: CGFloat = 68
+    /// The window's tabs, which the toolbar draws.
+    @State private var tabs = WindowTabs()
     /// Bumped when a preference changes, so the pins are read again.
     @State private var defaultsTick = 0
 
@@ -119,6 +120,7 @@ struct DocumentWindow: View {
         .toolbar(removing: .title)  // the document's name is in its tab
         .toolbar(model.uiHidden ? .hidden : .automatic, for: .windowToolbar)
         .background(HideUIKeyMonitor { model.toggleUIHidden() })
+        .background(WindowTabsAttach(tabs: tabs))
         .background(TitlebarAppearance(tint: sketchTint ? sketchPaper.toolbarNSColor : nil))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { windowWidth = $0 }
         .task(id: toolRowSignature) { toolRowWidths = measureToolRows() }
@@ -137,12 +139,9 @@ struct DocumentWindow: View {
                 ToolbarItem(placement: .navigation) { WorkspaceSwitcher(model: model, ink: panelToggleInk) }
                     .sharedBackgroundHidden(true)
             }
-            // An empty middle item keeps the toolbar laid out with a middle, so the trailing pill stays at the far right rather
-            // than packing up to the left beside the others.
-            ToolbarItem(placement: .principal) {
-                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
-            }
-            .sharedBackgroundHidden(true)
+            // The tabs fill the middle, so the trailing pill stays at the far right (the system's own tab bar is kept hidden).
+            ToolbarItem(placement: .principal) { WindowTabStrip(tabs: tabs, ink: panelToggleInk, windowWidth: windowWidth) }
+                .sharedBackgroundHidden(true)
             ToolbarItem(placement: .primaryAction) { ToolbarTrailingPills(model: model, ink: panelToggleInk) }
                 .sharedBackgroundHidden(true)
         }
@@ -158,7 +157,6 @@ struct DocumentWindow: View {
             if let fileURL { RecentParts.note(fileURL) }
             AppWindows.openWindow = openWindow
             if guide.isActive, model.workspace == .start { model.setWorkspace(.design) }  // a part opened to its tutorial
-            dismissWindow(id: AppWindows.welcomeID)  // a part is open; the welcome window has done its job
         }
         .onChange(of: undoManager) { model.undoManager = undoManager }
         // The start page makes way when the part gets something in it (an import, or an AI client building) or the tutorial begins.

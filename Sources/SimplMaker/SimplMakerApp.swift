@@ -5,6 +5,13 @@ import AppKit
 import CADCore
 import SwiftUI
 
+/// Lets AppKit code open SwiftUI windows once a view has captured the action.
+@MainActor
+enum AppWindows {
+    static let settingsID = "settings"
+    static var openWindow: OpenWindowAction?
+}
+
 @main
 struct SimplMakerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -24,18 +31,6 @@ struct SimplMakerApp: App {
         }
         .commands { SimplMakerCommands() }
 
-        // The welcome window replaces the empty document macOS would otherwise open at launch
-        // (see AppDelegate). It is never restored; launch decides whether it appears.
-        Window("Welcome to SimplMaker", id: AppWindows.welcomeID) {
-            WelcomeView().modifier(AccentScope())
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
-        .restorationBehavior(.disabled)
-        .defaultLaunchBehavior(Preferences.showsWelcome ? .presented : .suppressed)
-
-
         // An ordinary window rather than a Settings scene, whose window SwiftUI keeps from being resized.
         // The "Settings…" item (⌘,) is in SimplMakerCommands.
         Window("Settings", id: AppWindows.settingsID) {
@@ -47,7 +42,7 @@ struct SimplMakerApp: App {
     }
 }
 
-/// Launch and Dock behaviour for a document app with a welcome window.
+/// Launch behaviour of the app: what it does when it starts and when it quits.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -71,18 +66,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         if AIFeature.isAvailable { AIConnection.shared.stop() }  // closes the connections and marks the connection file as not running
-    }
-
-    /// No empty document at launch while the welcome window is on; the Window scene presents it.
-    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        !Preferences.showsWelcome
-    }
-
-    /// Clicking the Dock icon with no windows open brings the welcome window back, not an empty part.
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        guard !hasVisibleWindows, Preferences.showsWelcome else { return true }
-        AppWindows.showWelcome()
-        return false
     }
 }
 
@@ -144,8 +127,9 @@ struct SimplMakerCommands: Commands {
                 .keyboardShortcut("a")
         }
         CommandGroup(before: .windowList) {
-            Button("Welcome to SimplMaker") { openWindow(id: AppWindows.welcomeID) }
-                .shortcut(.welcome)
+            Button("Start") { model?.setWorkspace(.start) }
+                .shortcut(.startPage)
+                .disabled(model == nil)
         }
         CommandGroup(after: .importExport) {
             Menu("Import") {

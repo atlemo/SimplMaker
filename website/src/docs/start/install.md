@@ -17,7 +17,7 @@ SimplMaker is free and works offline. It needs the internet only to look for upd
 2. Open it and drag **SimplMaker** onto the **Applications** folder.
 3. Open SimplMaker from Applications. The official build is signed and notarised by Apple, so it opens without a warning.
 
-The first thing you see is the [welcome window](doc:start/examples-and-tutorial).
+The first thing you see is the [Start page](doc:start/examples-and-tutorial).
 
 There is no license key, no account and no sign-in. SimplMaker is open source; see [License and source](doc:reference/license-and-source) if you would rather build it yourself.
 

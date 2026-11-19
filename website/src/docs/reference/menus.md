@@ -76,7 +76,7 @@ While you are editing a sketch, the menu also lists the sketch tools, **Offset S
 
 ## Window
 
-Standard window commands, including **Move Tab to New Window** and **Merge All Windows** (parts open as tabs), plus **Welcome to SimplMaker** ([[⇧⌘1]]).
+Standard window commands, including **Move Tab to New Window** and **Merge All Windows** (parts open as tabs), plus **Start** ([[⇧⌘1]]), which goes to the Start page.
 
 ## Help
 

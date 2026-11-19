@@ -1,111 +1,17 @@
-// The welcome window shown at launch, in the style of Xcode's: the app icon and the ways to start
-// on the left, recently opened parts on the right.
+// The recent parts: the list the Start page shows, its rows, and the record of parts opened and saved.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
 import AppKit
 import CADCore
 import SwiftUI
 
-/// Lets AppKit code (the app delegate) open SwiftUI windows once a view has captured the action.
-@MainActor
-enum AppWindows {
-    static let welcomeID = "welcome"
-    static let settingsID = "settings"
-    static var openWindow: OpenWindowAction?
-
-    /// Shows the welcome window, or a new document if no SwiftUI view has appeared yet.
-    static func showWelcome() {
-        if let openWindow { openWindow(id: welcomeID) } else { NSDocumentController.shared.newDocument(nil) }
-    }
-}
-
-struct WelcomeView: View {
-    @Environment(\.newDocument) private var newDocument
-    @Environment(\.openWindow) private var openWindow
-    @Environment(\.dismissWindow) private var dismissWindow
-    @AppStorage(Preferences.showWelcome) private var showWelcome = true
-    @AppStorage(Preferences.tutorialCompleted) private var tutorialCompleted = false
-
-    var body: some View {
-        HStack(spacing: 0) {
-            actions
-                .frame(width: 520)
-                .frame(maxHeight: .infinity)
-                .background(DS.windowBackground)
-            RecentPartsList(takesFocus: true) { dismissWindow(id: AppWindows.welcomeID) }
-                .frame(width: 300)
-                .frame(maxHeight: .infinity)
-                .background(DS.underPageBackground)
-        }
-        .frame(height: 580)
-        .onAppear { AppWindows.openWindow = openWindow }
-    }
-
-    // MARK: left: icon, title, actions
-
-    private var actions: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(spacing: DS.Spacing.labelGap) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: 112, height: 112)
-                    .padding(.bottom, DS.Spacing.space3)
-                Text("Welcome to SimplMaker")
-                    .font(.system(size: 32, weight: .regular))
-                Text(Self.versionText)
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, DS.Spacing.space9)
-            .padding(.bottom, DS.Spacing.space8)
-
-            VStack(alignment: .leading, spacing: 18) {
-                // New users see the tutorial first; once it's been finished it moves down the list.
-                if !tutorialCompleted { tutorialAction }
-                WelcomeAction(title: "Create a new part", subtitle: "Start with an empty part and sketch on a plane.",
-                              systemImage: "plus.square") { newDocument { CADFile() } }
-                WelcomeAction(title: "Open the demo part", subtitle: "A plate with a hole, fillets and a chamfer to poke at.",
-                              systemImage: "cube") { newDocument { CADFile(document: .demo()) } }
-                WelcomeAction(title: "Open an existing part…", subtitle: "Open a .simplmaker file on your Mac.",
-                              systemImage: "folder") { NSDocumentController.shared.openDocument(nil) }
-                if tutorialCompleted { tutorialAction }
-            }
-            .padding(.horizontal, 52)
-
-            Spacer(minLength: DS.Spacing.space6)
-
-            Toggle("Show this window when SimplMaker launches", isOn: $showWelcome)
-                .toggleStyle(.checkbox)
-                .font(.callout)
-                .padding(.horizontal, DS.Spacing.windowMargin)
-                .padding(.bottom, DS.Spacing.windowMargin)
-        }
-    }
-
-    private var tutorialAction: some View {
-        WelcomeAction(title: tutorialCompleted ? "Do the tutorial again" : "Make your first part",
-                      subtitle: "A guided tutorial: make a desk organizer, step by step.",
-                      systemImage: "graduationcap") { newDocument { CADFile(tutorial: true) } }
-    }
-
-    static var versionText: String {
-        guard let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String else { return "Development build" }
-        return "Version \(version)"
-    }
-
-}
-
-/// The recent parts, as a list to open them from: the welcome window's right side and the start page's. Drawn here rather than
+/// The recent parts, as a list to open them from (the Start page's). Drawn here rather than
 /// with List: a List shows its selection in grey until it has keyboard focus, and its table doesn't take the click that brings the
 /// window forward, so a double-click could select without opening. Here a click selects at once, the second click of a
 /// double-click opens, and ↑ ↓ Return work as in a list.
 struct RecentPartsList: View {
     /// The list has the keyboard from the start (for ↑ ↓ Return), not the first button.
     var takesFocus = false
-    /// Called once a part has been opened (the welcome window closes itself).
-    var opened: () -> Void = {}
     @Environment(\.openDocument) private var openDocument
     @State private var recents: [URL] = []
     @State private var selected: URL?
@@ -191,7 +97,6 @@ struct RecentPartsList: View {
             defer { opening = nil }
             do {
                 try await openDocument(at: url)
-                opened()
             } catch {
                 self.error = error.localizedDescription
             }
@@ -199,8 +104,8 @@ struct RecentPartsList: View {
     }
 }
 
-/// One of the big actions on the left: icon, bold title and a one-line description.
-struct WelcomeAction: View {
+/// One of the big actions of the Start page: icon, bold title and a one-line description.
+struct StartAction: View {
     @Environment(\.accent) private var accent
     let title: String
     let subtitle: String
@@ -273,7 +178,7 @@ struct RecentRow: View {
 }
 
 /// Recently opened and saved parts. macOS's own list (File › Open Recent) is told too, but the
-/// welcome window keeps its own as well, so it shows recent parts even when the system list is
+/// Start page keeps its own as well, so it shows recent parts even when the system list is
 /// empty (recent items turned off, or a part that macOS never recorded).
 enum RecentParts {
     static let key = "recentParts"

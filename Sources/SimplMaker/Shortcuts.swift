@@ -120,7 +120,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
     case view(StandardView)
     case fitAll, orthographic, showGrid, showAxes, snapToGrid
     case appearance, browser, timeline, inspector, hideUI
-    case rebuild, importSTEP, welcome, exampleParts, palette
+    case rebuild, importSTEP, startPage, exampleParts, palette
     /// The floating panel of sketch tools (Space by default); read by the viewport while sketching, like the tool keys.
     case sketchPanel
 
@@ -150,7 +150,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .hideUI: return "hideUI"
         case .rebuild: return "rebuild"
         case .importSTEP: return "importSTEP"
-        case .welcome: return "welcome"
+        case .startPage: return "startPage"
         case .exampleParts: return "exampleParts"
         case .palette: return "palette"
         case .sketchPanel: return "sketchPanel"
@@ -174,7 +174,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .hideUI: return "Show or Hide UI"
         case .rebuild: return "Rebuild"
         case .importSTEP: return "Import STEP"
-        case .welcome: return "Welcome Window"
+        case .startPage: return "Start Page"
         case .exampleParts: return "Open Example Part"
         case .palette: return "Command Palette"
         case .sketchPanel: return "Sketch Shortcuts Panel"
@@ -204,7 +204,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         case .hideUI: return KeyChord("@", .command)
         case .rebuild: return KeyChord("r", .command)
         case .importSTEP: return KeyChord("i", [.command, .shift])
-        case .welcome: return KeyChord("1", [.command, .shift])
+        case .startPage: return KeyChord("1", [.command, .shift])
         case .exampleParts: return KeyChord("n", [.command, .option])
         case .palette: return KeyChord("k", .command)
         case .sketchPanel: return KeyChord(" ")
@@ -224,7 +224,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
         Section(title: "Inspect", commands: DesignTool.inspect.map { .tool($0) }),
         Section(title: "View", commands: StandardView.allCases.map { .view($0) } + [
             .fitAll, .orthographic, .showGrid, .showAxes, .snapToGrid, .appearance, .browser, .timeline, .inspector, .hideUI]),
-        Section(title: "Model", commands: [.palette, .rebuild, .importSTEP, .welcome, .exampleParts]),
+        Section(title: "Model", commands: [.palette, .rebuild, .importSTEP, .startPage, .exampleParts]),
         Section(title: "While Sketching", commands: [.sketchPanel] + SketchTool.allCases.filter { $0.family[0] == $0 }.map { .sketch($0) }),
     ]
 

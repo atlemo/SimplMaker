@@ -36,6 +36,11 @@ struct StartPage: View {
         .accessibilityLabel("Start")
     }
 
+    static var versionText: String {
+        guard let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String else { return "Development build" }
+        return "Version \(version)"
+    }
+
     // MARK: Header
 
     @ViewBuilder private func header(wide: Bool, short: Bool) -> some View {
@@ -63,7 +68,7 @@ struct StartPage: View {
                     .frame(width: 56, height: 56)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("SimplMaker").font(.title3.weight(.semibold))
-                    Text(WelcomeView.versionText).font(.subheadline).foregroundStyle(.secondary)
+                    Text(Self.versionText).font(.subheadline).foregroundStyle(.secondary)
                 }
             }
             VStack(alignment: .leading, spacing: 0) {
@@ -133,20 +138,20 @@ struct StartPage: View {
                 .padding(.horizontal, DS.Spacing.space4)
                 .padding(.bottom, DS.Spacing.space2)
             if !isEmpty {
-                WelcomeAction(title: "Go on modelling", subtitle: "Back to the part in Design.", systemImage: "arrow.right.circle") {
+                StartAction(title: "Go on modelling", subtitle: "Back to the part in Design.", systemImage: "arrow.right.circle") {
                     model.setWorkspace(.design)
                 }
             }
-            WelcomeAction(title: "Sketch", subtitle: "Draw a shape on a plane, then extrude it.", systemImage: "pencil.and.outline") {
+            StartAction(title: "Sketch", subtitle: "Draw a shape on a plane, then extrude it.", systemImage: "pencil.and.outline") {
                 model.startSketch()
             }
-            WelcomeAction(title: "Box", subtitle: "A ready-made block to change from there.", systemImage: "cube") {
+            StartAction(title: "Box", subtitle: "A ready-made block to change from there.", systemImage: "cube") {
                 model.run(.box)
             }
-            WelcomeAction(title: "Cylinder", subtitle: "A round block: a peg, a tube, a wheel.", systemImage: "cylinder") {
+            StartAction(title: "Cylinder", subtitle: "A round block: a peg, a tube, a wheel.", systemImage: "cylinder") {
                 model.run(.cylinder)
             }
-            WelcomeAction(title: "Open the demo part", subtitle: "A plate with a hole, fillets and a chamfer.", systemImage: "cube.transparent") {
+            StartAction(title: "Open the demo part", subtitle: "A plate with a hole, fillets and a chamfer.", systemImage: "cube.transparent") {
                 newDocument { CADFile(document: .demo()) }
             }
             Spacer(minLength: 0)
