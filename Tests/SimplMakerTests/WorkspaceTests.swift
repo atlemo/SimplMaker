@@ -144,4 +144,13 @@ import Testing
         #expect(CADFile().model.workspace == .start)
         #expect(CADFile(startsInDesign: true).model.workspace == .design)
     }
+
+    @Test func aStartPageIsRememberedAsOneUntilItStopsBeingOne() {
+        let number = 987_654
+        #expect(!StartPageWindows.contains(number))
+        StartPageWindows.set(number, true)
+        #expect(StartPageWindows.contains(number))
+        StartPageWindows.set(number, false)
+        #expect(!StartPageWindows.contains(number))
+    }
 }

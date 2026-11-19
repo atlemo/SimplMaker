@@ -40,7 +40,11 @@ struct WindowSizeMemory: NSViewRepresentable {
             }
             observed = true
             OpenParts.opened()
-            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in OpenParts.closed() }
+            let number = window.windowNumber
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
+                OpenParts.closed()
+                MainActor.assumeIsolated { StartPageWindows.set(number, false) }
+            }
             // Parts open as tabs of one window. The system's tab bar would take a row of its own, so it is hidden: the toolbar
             // draws the tabs (see WindowTabs.swift). The document's name is in its tab rather than the toolbar.
             window.tabbingMode = .preferred
@@ -49,6 +53,20 @@ struct WindowSizeMemory: NSViewRepresentable {
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
             SystemTabBar.hideSoon()
+            // The traffic lights sit on the same line as the ribbon's icons. AppKit puts them back when the window resizes, is
+            // activated or leaves full screen, so they are placed again then.
+            for delay in [0.0, 0.1, 0.4] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak window] in
+                    if let window { WindowControls.place(in: window) }
+                }
+            }
+            for name in [NSWindow.didResizeNotification, NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
+                         NSWindow.didExitFullScreenNotification, NSWindow.didChangeScreenNotification] {
+                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { note in
+                    guard let window = note.object as? NSWindow else { return }
+                    MainActor.assumeIsolated { WindowControls.place(in: window) }
+                }
+            }
             NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
                                                    name: NSWindow.didEndLiveResizeNotification, object: window)
         }
@@ -195,5 +213,26 @@ struct TitlebarAppearance: NSViewRepresentable {
 
     private static func allSubviews(of view: NSView) -> [NSView] {
         view.subviews + view.subviews.flatMap { allSubviews(of: $0) }
+    }
+}
+
+/// Places a window's traffic lights. The ribbon is the window's top bar and taller than a titlebar, so the lights are moved down to sit
+/// centred on the line through the ribbon's icons (`RibbonMetrics.iconAxis`): the titlebar view is made that much taller and the three
+/// buttons are centred in it.
+@MainActor enum WindowControls {
+    static func place(in window: NSWindow) {
+        guard !window.styleMask.contains(.fullScreen),
+              let close = window.standardWindowButton(.closeButton),
+              let miniaturize = window.standardWindowButton(.miniaturizeButton),
+              let zoom = window.standardWindowButton(.zoomButton),
+              let bar = close.superview, let container = bar.superview, let frameView = container.superview else { return }
+        let height = RibbonMetrics.iconAxis * 2
+        let frame = NSRect(x: 0, y: frameView.bounds.height - height, width: frameView.bounds.width, height: height)
+        if container.frame != frame { container.frame = frame }
+        if bar.frame != container.bounds { bar.frame = container.bounds }
+        for button in [close, miniaturize, zoom] {
+            let y = ((height - button.frame.height) / 2).rounded()
+            if button.frame.origin.y != y { button.setFrameOrigin(NSPoint(x: button.frame.origin.x, y: y)) }
+        }
     }
 }

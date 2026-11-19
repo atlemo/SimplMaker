@@ -96,8 +96,15 @@ struct SimplMakerCommands: Commands {
     var body: some Commands {
         // File → New (⌘N) makes a part as a tab of the front window, like the other ways to open one.
         CommandGroup(replacing: .newItem) {
-            Button("New") { PartWindows.open { NSDocumentController.shared.newDocument(nil) } }
-                .keyboardShortcut("n")
+            Button("New") {
+                // A part that is only a Start page is not a tab: the new part takes its place.
+                if let model, model.workspace == .start, model.document.features.isEmpty {
+                    model.setWorkspace(.design)
+                } else {
+                    PartWindows.open { NSDocumentController.shared.newDocument(nil) }
+                }
+            }
+            .keyboardShortcut("n")
         }
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { openWindow(id: AppWindows.settingsID) }

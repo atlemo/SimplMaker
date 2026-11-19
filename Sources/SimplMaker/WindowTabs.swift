@@ -1,5 +1,5 @@
-// The window's tabs, drawn in the toolbar. Parts open as tabs of one window, and the system's own tab bar would take a row of its
-// own under the toolbar, so it is kept hidden and the toolbar carries the tabs instead: one capsule beside the workspace selector.
+// The window's tabs, drawn under the ribbon. Parts open as tabs of one window, and the system's own tab bar would take a row of its
+// own, so it is kept hidden and a strip under the ribbon carries the tabs instead.
 // The tabs are still the system's (an NSWindowTabGroup), so Window → Move Tab to New Window and Merge All Windows keep working.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -7,6 +7,24 @@
 import AppKit
 import os
 import SwiftUI
+
+/// The parts that are only a Start page (empty, on the Start workspace), by window number. Such a part is a launcher, not a part: it is not
+/// a tab, a part made from it takes its place, and a part opened from it closes it.
+@MainActor enum StartPageWindows {
+    private(set) static var numbers: Set<Int> = []
+
+    static func contains(_ number: Int) -> Bool { numbers.contains(number) }
+
+    static func set(_ number: Int, _ isStartPage: Bool) {
+        let changed = isStartPage ? numbers.insert(number).inserted : numbers.remove(number) != nil
+        if changed { NotificationCenter.default.post(name: .startPagesChanged, object: nil) }
+    }
+}
+
+extension Notification.Name {
+    /// A part became a Start page, or stopped being one.
+    static let startPagesChanged = Notification.Name("simplmaker.startPagesChanged")
+}
 
 /// The tabs of the window's tab group, kept up to date, with what the strip can do to them.
 @MainActor @Observable final class WindowTabs {
@@ -17,6 +35,8 @@ import SwiftUI
     }
 
     private(set) var tabs: [Tab] = []
+    /// This window's part is only a Start page (see `StartPageWindows`); kept here until the window is known.
+    @ObservationIgnored private var isStartPage = false
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var watches: [NSKeyValueObservation] = []
@@ -25,9 +45,10 @@ import SwiftUI
     func attach(to window: NSWindow) {
         guard self.window !== window else { return refresh() }
         self.window = window
+        StartPageWindows.set(window.windowNumber, isStartPage)
         observers.forEach(NotificationCenter.default.removeObserver)
         // The group changes when a window joins or leaves it, and a window's tab group is a different object after that.
-        observers = [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification, NSWindow.willCloseNotification].map {
+        observers = [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification, NSWindow.willCloseNotification, .startPagesChanged].map {
             NotificationCenter.default.addObserver(forName: $0, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refresh() }
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.refresh() } }
@@ -41,7 +62,10 @@ import SwiftUI
     func refresh() {
         guard let window else { return }
         let group = window.tabGroup
-        let windows = (group?.windows ?? [window]).filter { $0.isVisible || $0 === window }
+        // A Start page is not a tab. (Unless nothing else is there.)
+        let all = (group?.windows ?? [window]).filter { $0.isVisible || $0 === window }
+        let parts = all.filter { !StartPageWindows.contains($0.windowNumber) }
+        let windows = parts.isEmpty ? all : parts
         let selected = group?.selectedWindow ?? window
         let next = windows.map { Tab(id: $0.windowNumber, title: $0.title, selected: $0 === selected) }
         if next != tabs { tabs = next }
@@ -52,6 +76,12 @@ import SwiftUI
         }
         for w in windows { watches.append(w.observe(\.title) { [weak self] _, _ in Task { @MainActor in self?.refresh() } }) }
         SystemTabBar.hideSoon()
+    }
+
+    /// This window's part is only a Start page, or is not any more.
+    func setStartPage(_ on: Bool) {
+        isStartPage = on
+        if let window { StartPageWindows.set(window.windowNumber, on) }
     }
 
     private func window(_ id: Int) -> NSWindow? { window?.tabGroup?.windows.first { $0.windowNumber == id } ?? (window?.windowNumber == id ? window : nil) }
@@ -94,16 +124,18 @@ enum OpenParts {
     static func open(from anchor: NSWindow? = nil, _ create: () -> Void) {
         let anchor = anchor ?? frontPartWindow()
         let before = Set(NSApp.windows.map(\.windowNumber))
+        let closesAnchor = anchor.map { StartPageWindows.contains($0.windowNumber) } ?? false
         create()
-        join(after: before, to: anchor)
+        join(after: before, to: anchor, closing: closesAnchor)
     }
 
     /// The same for something that opens the window asynchronously (opening a file).
     static func openAsync(from anchor: NSWindow? = nil, _ create: () async throws -> Void) async rethrows {
         let anchor = anchor ?? frontPartWindow()
         let before = Set(NSApp.windows.map(\.windowNumber))
+        let closesAnchor = anchor.map { StartPageWindows.contains($0.windowNumber) } ?? false
         try await create()
-        join(after: before, to: anchor)
+        join(after: before, to: anchor, closing: closesAnchor)
     }
 
     /// The front window that is one of the parts' (the Settings window and panels are not).
@@ -114,7 +146,8 @@ enum OpenParts {
         }
     }
 
-    private static func join(after before: Set<Int>, to anchor: NSWindow?) {
+    /// Joins the window that came up to `anchor`'s tabs; `closing`: the anchor was a Start page, which has done its job.
+    private static func join(after before: Set<Int>, to anchor: NSWindow?, closing: Bool) {
         guard let anchor else { return }
         Task { @MainActor in
             for _ in 0..<40 {
@@ -122,6 +155,7 @@ enum OpenParts {
                 guard let new = NSApp.windows.first(where: { !before.contains($0.windowNumber) && $0.styleMask.contains(.titled) && $0.tabbingMode != .disallowed }) else { continue }
                 if new.tabGroup !== anchor.tabGroup { anchor.addTabbedWindow(new, ordered: .above) }
                 new.makeKeyAndOrderFront(nil)
+                if closing, new !== anchor { anchor.close() }
                 return
             }
         }

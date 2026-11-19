@@ -199,6 +199,12 @@ struct WindowDragArea: NSViewRepresentable {
     }
 }
 
+/// Measures of the ribbon that other code needs (a generic type cannot hold them).
+enum RibbonMetrics {
+    /// How far below the top of the window the tool icons' middle is: the traffic lights are centred on the same line.
+    static let iconAxis: CGFloat = 31
+}
+
 /// The ribbon: the window's controls' room, the workspace button and, where the workspace has tools, the tool row (which the window
 /// builds, so it can measure it for the room it has), then undo and redo at the far right. `ink` is the contrast ink on the tinted
 /// sketch band, nil on the plain view.
@@ -234,9 +240,6 @@ struct RibbonBar<Tools: View>: View {
         .frame(maxWidth: .infinity)
         .background { WindowDragArea() }
         .background { if ink == nil { Rectangle().fill(.bar) } }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill((ink ?? Color.primary).opacity(ink == nil ? 0.12 : 0.2)).frame(height: 1)
-        }
     }
 }
 

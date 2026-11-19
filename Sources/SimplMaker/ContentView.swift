@@ -143,6 +143,8 @@ struct DocumentWindow: View {
             if guide.isActive, model.workspace == .start { model.setWorkspace(.design) }  // a part opened to its tutorial
         }
         .onChange(of: undoManager) { model.undoManager = undoManager }
+        // A part that is only a Start page is not a tab (see `StartPageWindows`).
+        .onChange(of: model.workspace == .start && model.document.features.isEmpty, initial: true) { tabs.setStartPage($1) }
         // The start page makes way when the part gets something in it (an import, or an AI client building) or the tutorial begins.
         .onChange(of: model.document.features.isEmpty) { if !model.document.features.isEmpty, model.workspace == .start { model.setWorkspace(.design) } }
         .onChange(of: guide.isActive) { if guide.isActive, model.workspace == .start { model.setWorkspace(.design) } }
@@ -208,7 +210,7 @@ struct DocumentWindow: View {
                         if tabs.tabs.count > 1 {
                             WindowTabStrip(tabs: tabs, ink: panelToggleInk)
                                 .padding(.horizontal, Panel.inset)
-                                .padding(.top, DS.Spacing.space3)
+                                .padding(.top, Panel.inset)  // as far below the ribbon as it is above the panels
                         }
                     }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }

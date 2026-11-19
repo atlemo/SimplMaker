@@ -90,7 +90,7 @@ struct StartPage: View {
     private var actions: some View {
         VStack(spacing: DS.Spacing.space5) {
             VStack(spacing: DS.Spacing.space5) {
-                Button { PartWindows.open { newDocument { CADFile(startsInDesign: true) } } } label: { Label("New Part", systemImage: "plus").frame(maxWidth: .infinity) }
+                Button { newPart() } label: { Label("New Part", systemImage: "plus").frame(maxWidth: .infinity) }
                     .buttonStyle(.borderedProminent)
                 Button { NSDocumentController.shared.openDocument(nil) } label: { Label("Open…", systemImage: "folder").frame(maxWidth: .infinity) }
                     .buttonStyle(.bordered)
@@ -169,6 +169,15 @@ struct StartPage: View {
                 .padding(.horizontal, DS.Spacing.space5 + DS.Spacing.space3)
                 .padding(.top, DS.Spacing.space5)
             RecentPartsList()
+        }
+    }
+
+    /// New Part: this part itself, when it is only a Start page (the page is not a tab, so it does not stay behind), otherwise a new tab.
+    private func newPart() {
+        if isEmpty {
+            model.setWorkspace(.design)
+        } else {
+            PartWindows.open { newDocument { CADFile(startsInDesign: true) } }
         }
     }
 
