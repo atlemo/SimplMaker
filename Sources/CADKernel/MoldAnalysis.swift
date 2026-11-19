@@ -45,11 +45,15 @@ public struct MoldAnalysis: Sendable, Equatable {
         return good.min { ext[$0.0.index] < ext[$1.0.index] }?.0 ?? .z
     }
 
-    /// Reads a body's mesh against a parting plane (a point on it and its normal, along which the half in front is pulled).
-    public static func analyse(_ mesh: Mesh, partingPoint: SIMD3<Double>, normal: SIMD3<Double>) -> MoldAnalysis {
+    /// Reads a body's mesh against a parting plane (a point on it and its normal, along which the half in front is pulled). With a second
+    /// plane (`cross`, a four-piece mold) each piece is pulled out away from both planes, in any direction between the two, so a face
+    /// that leans back against one pull can still let go sideways.
+    public static func analyse(_ mesh: Mesh, partingPoint: SIMD3<Double>, normal: SIMD3<Double>,
+                               cross: (point: SIMD3<Double>, normal: SIMD3<Double>)? = nil) -> MoldAnalysis {
         var out = MoldAnalysis()
         let drafted = sin(draftDegrees * .pi / 180), wrong = -sin(undercutDegrees * .pi / 180)
         let n = simd_normalize(normal)
+        let m = cross.map { simd_normalize($0.normal) }
         let p = mesh.positions, v = mesh.normals
         var area = [Double](repeating: 0, count: mesh.faceNames.count)
         var under = area, flat = area
@@ -59,18 +63,24 @@ public struct MoldAnalysis: Sendable, Equatable {
         for t in 0..<(mesh.indices.count / 3) {
             let i = Int(mesh.indices[t * 3]), j = Int(mesh.indices[t * 3 + 1]), k = Int(mesh.indices[t * 3 + 2])
             let a = point(i), b = point(j), c = point(k)
-            let cross = simd_cross(b - a, c - a)
-            let twice = simd_length(cross)
+            let outer = simd_cross(b - a, c - a)
+            let twice = simd_length(outer)
             guard twice > 1e-12 else { continue }
             // The surface's own normal where the mesh has them (exact on a curved face), else the triangle's, turned outwards.
-            var normalHere = cross / twice
+            var normalHere = outer / twice
             if hasNormals {
                 let average = vertexNormal(i) + vertexNormal(j) + vertexNormal(k)
                 if simd_length(average) > 1e-9 { normalHere = simd_normalize(average) }
             }
             let centroid = (a + b + c) / 3
             let release = simd_dot(centroid - partingPoint, n) >= 0 ? n : -n  // the half this bit of surface sits in is pulled this way
-            let lean = simd_dot(normalHere, release)
+            var lean = simd_dot(normalHere, release)
+            if let cross, let m {
+                let release2 = simd_dot(centroid - cross.point, m) >= 0 ? m : -m
+                let sideways = simd_dot(normalHere, release2)
+                // The best direction between the two pulls: across both when the face looks towards both, else the better one.
+                lean = lean > 0 && sideways > 0 ? (lean * lean + sideways * sideways).squareRoot() : max(lean, sideways)
+            }
             let f = Int(mesh.triangleFace[t])
             guard f < area.count else { continue }
             let a2 = twice / 2

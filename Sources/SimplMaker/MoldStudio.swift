@@ -26,15 +26,18 @@ extension DocumentModel {
     /// picked, or in the Check view, the halves are left out: only the body and the markers.
     var moldShownMeshes: [BodyMesh] {
         guard let id = activeMold?.id, let set = moldMeshSets[id] else { return [] }
-        return moldPicking == nil && !moldCheckView ? set : set.filter { !$0.id.hasSuffix("~behind") && !$0.id.hasSuffix("~front") }
+        return moldPicking == nil && !moldCheckView ? set : set.filter { !MoldSetup.isPiece($0.id) }
     }
 
-    /// The halves are drawn in two calm tints, so they can be told apart (and from the body); the markers in strong ones.
+    /// The pieces are drawn in calm tints, so they can be told apart (and from the body): blues behind the parting plane, warm ones in
+    /// front of it, the second piece of each half a shade over; the markers in strong ones.
     func moldTint(of id: FeatureID) -> BodyColor? {
         guard id.hasPrefix("mold~") else { return nil }
         if id.hasSuffix("~gate") { return BodyColor(red: 0.80, green: 0.14, blue: 0.16) }
         if id.contains("~vent") { return BodyColor(red: 0.45, green: 0.20, blue: 0.78) }
-        return id.hasSuffix("~behind") ? BodyColor(red: 0.62, green: 0.76, blue: 0.93) : BodyColor(red: 0.96, green: 0.78, blue: 0.56)
+        let second = id.hasSuffix("~b")
+        if id.contains("~behind") { return second ? BodyColor(red: 0.55, green: 0.84, blue: 0.82) : BodyColor(red: 0.62, green: 0.76, blue: 0.93) }
+        return second ? BodyColor(red: 0.94, green: 0.66, blue: 0.68) : BodyColor(red: 0.96, green: 0.78, blue: 0.56)
     }
 
     /// A body that has a mold shows through it, as a ghost; while a spot on it is picked, or in the Check view, it is solid.
@@ -43,14 +46,24 @@ extension DocumentModel {
         return moldPicking == nil && !moldCheckView ? 0.3 : 1
     }
 
-    /// How far the halves are drawn apart: along the parting normal, the body and the markers staying where they are.
+    /// How far the pieces are drawn apart: along the parting normal (and, in a four-piece mold, along the second plane's too), the body
+    /// and the markers staying where they are.
     var moldOpenOffsets: [SIMD3<Float>] {
         guard moldOpenAmount > 0, let r = activeMoldResult, r.isBuilt else { return [] }
         let shown = moldShownMeshes
-        guard shown.contains(where: { $0.id.hasSuffix("~behind") }) else { return [] }
+        guard shown.contains(where: { MoldSetup.isPiece($0.id) }) else { return [] }
         let n = SIMD3<Float>(r.partingNormal)
         let distance = Float(moldOpenAmount) * Float(abs(simd_dot(r.blockSize, r.partingNormal)))
-        return shown.map { $0.id.hasSuffix("~behind") ? -n * distance / 2 : $0.id.hasSuffix("~front") ? n * distance / 2 : .zero }
+        var across = SIMD3<Float>.zero, acrossDistance: Float = 0
+        if let m = r.crossNormal {
+            across = SIMD3<Float>(m)
+            acrossDistance = Float(moldOpenAmount) * Float(abs(simd_dot(r.blockSize, m)))
+        }
+        let pieces = Dictionary(r.pieces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return shown.map { mesh in
+            guard let piece = pieces[mesh.id] else { return .zero }
+            return n * Float(piece.side) * distance / 2 + across * Float(piece.crossSide) * acrossDistance / 2
+        }
     }
 
     /// The Check view's colours: for each face of the body, whether the halves can let go of it.
@@ -189,8 +202,8 @@ extension DocumentModel {
             if let ghost = meshes.first(where: { $0.id == setup.body }) {
                 set.append(BodyMesh(index: 0, id: ghost.id, name: ghost.name, mesh: ghost.mesh))
             }
-            // The halves come after the body, in the order they were made (behind, then in front).
-            if let built = results[setup.id], let meshesOfHalves = halfMeshes[setup.id], meshesOfHalves.count == 2 {
+            // The pieces come after the body, in the order they were made (behind the plane first).
+            if let built = results[setup.id], let meshesOfHalves = halfMeshes[setup.id], !meshesOfHalves.isEmpty, meshesOfHalves.count == built.pieces.count {
                 for (half, mesh) in zip(built.halves, meshesOfHalves) { set.append(BodyMesh(index: set.count, id: half.id, name: half.name, mesh: mesh)) }
             }
             for marker in markerMeshes[setup.id] ?? [] {

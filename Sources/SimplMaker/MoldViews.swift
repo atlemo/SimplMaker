@@ -7,11 +7,12 @@ import AppKit
 import CADCore
 import CADKernel
 import SwiftUI
+import simd
 
 // MARK: - Ribbon
 
 /// One group of the Mold ribbon: its tools as buttons and the group's name under them, as in Design.
-private struct MoldGroup<Content: View>: View {
+struct MoldGroup<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
     @Environment(\.toolsOnTint) private var onTint
@@ -33,7 +34,7 @@ private struct MoldGroup<Content: View>: View {
 }
 
 /// A one-letter choice in the ribbon (the axis the mold is parted across), drawn like a tool button.
-private struct AxisButton: View {
+struct AxisButton: View {
     let label: String
     let active: Bool
     let help: String
@@ -79,6 +80,16 @@ struct MoldToolbar: View {
                     }
                 }
                 RibbonDivider()
+                MoldGroup(title: "Pieces") {
+                    AxisButton(label: "2", active: mold.pieces == 2, help: "Two halves: the simplest mold, and the quickest to print") {
+                        model.updateMold(mold.id, "Two Pieces") { $0.pieces = 2 }
+                    }
+                    AxisButton(label: "4", active: mold.pieces == 4,
+                               help: "Four pieces: each half is cut again, so each piece is pulled out sideways as well as away. Lets go of more shapes.") {
+                        model.updateMold(mold.id, "Four Pieces") { $0.pieces = 4 }
+                    }
+                }
+                RibbonDivider()
                 MoldGroup(title: "Gate & Vents") {
                     ToolButton(title: "Gate", icon: "cone", active: model.moldPicking == .gate,
                                help: model.moldPicking == .gate ? "Click on the body where the silicone goes in (Esc cancels)"
@@ -97,20 +108,20 @@ struct MoldToolbar: View {
                 RibbonDivider()
                 MoldGroup(title: "Keys") {
                     ToolButton(title: "Keys", icon: "pyramid", active: mold.keys,
-                               help: "Cone keys on the seam make the halves go together one way only") {
+                               help: "Cone keys on the seams make the pieces go together one way only") {
                         model.updateMold(mold.id, mold.keys ? "Remove Keys" : "Add Keys") { $0.keys.toggle() }
                     }
                 }
                 RibbonDivider()
                 MoldGroup(title: "Check") {
                     ToolButton(title: "Release", icon: "scan", active: model.moldCheckView,
-                               help: "Colour the body by whether the halves can let go of it when they are pulled apart: red is an undercut") { model.toggleMoldCheck() }
+                               help: "Colour the body by whether the pieces can let go of it when they are pulled apart: red is an undercut") { model.toggleMoldCheck() }
                         .disabled(model.activeMoldResult?.analysis == nil)
                 }
                 RibbonDivider()
                 MoldGroup(title: "View") {
                     ToolButton(title: "Open", icon: "expand", active: model.moldOpenAmount > 0,
-                               help: "Draw the halves apart to see the cavity") {
+                               help: "Draw the pieces apart to see the cavity") {
                         model.moldOpenAmount = model.moldOpenAmount > 0 ? 0 : 0.7
                         model.sceneRevision += 0  // the offsets are read from the amount on the next update
                     }
@@ -118,7 +129,7 @@ struct MoldToolbar: View {
                 }
                 RibbonDivider()
                 MoldGroup(title: "Export") {
-                    ToolButton(title: "Export", icon: "download", help: "Write the two halves, laid out for printing, as STL, 3MF or STEP") {
+                    ToolButton(title: "Export", icon: "download", help: "Write the pieces, laid out for printing, as STL, 3MF or STEP") {
                         model.exportMoldHalves()
                     }
                     .disabled(!built)
@@ -162,7 +173,7 @@ private struct MoldList: View {
             VStack(spacing: DS.Spacing.space3) {
                 Text("No mold yet")
                     .font(.system(size: 13, weight: .medium))
-                Text("Make one from a body below: the mold is two halves to print, with a cavity in the shape of the body, to cast silicone or resin in.")
+                Text("Make one from a body below: the mold is two or four pieces to print, with a cavity in the shape of the body, to cast silicone or resin in.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -230,7 +241,7 @@ private struct MoldBodyList: View {
                         Spacer(minLength: 0)
                         Button("Make Mold") { model.makeMold(of: body.id) }
                             .controlSize(.small)
-                            .help("Make a two-part mold around \(body.name)")
+                            .help("Make a mold around \(body.name)")
                     }
                 }
             }
@@ -284,6 +295,20 @@ private struct MoldInspector: View {
                         ForEach(model.moldPartingChoices, id: \.title) { Text($0.title).tag(partingTag($0.parting)) }
                     }
                     size("Offset", mold.partingOffset, mold, "Move Parting Plane") { $0.partingOffset = $1 }
+                    Picker("Pieces", selection: Binding(get: { mold.pieces }, set: { n in model.updateMold(mold.id, "Change Pieces") { $0.pieces = n } })) {
+                        Text("Two halves").tag(2)
+                        Text("Four pieces").tag(4)
+                    }
+                    .help("Four pieces cut each half again across a second plane: each piece is pulled out sideways as well as away, so more shapes let go")
+                    if mold.pieces == 4 {
+                        // The second plane is square to an axis other than the parting plane's.
+                        let partingAxis: MoldAxis? = result.flatMap { r in MoldAxis.allCases.first { abs(simd_dot(r.partingNormal, $0.vector)) > 0.5 } }
+                        Picker("Second cut", selection: Binding(get: { mold.cross }, set: { c in model.updateMold(mold.id, "Change Second Cut") { $0.cross = c } })) {
+                            Text("Automatic").tag(MoldAxis?.none)
+                            ForEach(MoldAxis.allCases.filter { $0 != partingAxis }, id: \.self) { Text("Across \($0.rawValue.uppercased())").tag(MoldAxis?.some($0)) }
+                        }
+                        .help("The second plane, through the middle of the body. Automatic picks one that holds the pour direction, so the gate and vents are cut lengthways")
+                    }
                     Picker("Pour from", selection: Binding(get: { mold.up }, set: { d in model.updateMold(mold.id, "Change Pour Direction") { $0.up = d } })) {
                         ForEach(MoldDirection.allCases, id: \.self) { Text($0.rawValue.uppercased()).tag($0) }
                     }
@@ -318,7 +343,7 @@ private struct MoldInspector: View {
                     }
                 }
                 Section("Keys") {
-                    Toggle("Keys on the seam", isOn: Binding(get: { mold.keys }, set: { v in model.updateMold(mold.id, v ? "Add Keys" : "Remove Keys") { $0.keys = v } }))
+                    Toggle("Keys on the seams", isOn: Binding(get: { mold.keys }, set: { v in model.updateMold(mold.id, v ? "Add Keys" : "Remove Keys") { $0.keys = v } }))
                     if mold.keys {
                         size("Size", mold.keyDiameter, mold, "Change Keys") { $0.keyDiameter = $1 }
                         size("Clearance", mold.keyClearance, mold, "Change Key Clearance") { $0.keyClearance = $1 }
@@ -434,14 +459,15 @@ private struct MoldResultRows: View {
 // MARK: - Export
 
 extension DocumentModel {
-    /// Writes the two halves of the active mold, laid out for printing (see `MoldBuilder.printLayout`): as one file or one each.
+    /// Writes the pieces of the active mold, laid out for printing (see `MoldBuilder.printLayout`): as one file or one each.
     func exportMoldHalves() {
         guard let mold = activeMold, let built = moldResults[mold.id], built.isBuilt else {
             alert = AlertInfo(title: "There is nothing to export", message: "The mold has not been built. Fix what the Mold panel says first.")
             return
         }
         let placed = MoldBuilder.printLayout(built)
-        guard placed.count == 2, let choice = Self.askExportChoice(bodyCount: 2, noun: "halves") else { return }
+        let noun = mold.pieces == 4 ? "pieces" : "halves"
+        guard placed.count == built.pieces.count, let choice = Self.askExportChoice(bodyCount: placed.count, noun: noun) else { return }
         choice.remember()
         switch choice.grouping {
         case .onePart:
@@ -456,7 +482,7 @@ extension DocumentModel {
             panel.canChooseDirectories = true
             panel.canCreateDirectories = true
             panel.prompt = "Export"
-            panel.message = "Choose where to put the two halves of \(mold.name), one file each."
+            panel.message = "Choose where to put the \(noun) of \(mold.name), one file each."
             guard panel.runModal() == .OK, let folder = panel.url else { return }
             let written = writeIndividually(placed, format: choice.format, into: folder)
             if written.count == placed.count { NSWorkspace.shared.activateFileViewerSelecting(written) }

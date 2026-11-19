@@ -66,6 +66,33 @@ import Testing
         }
     }
 
+    @Test func fourPiecesAreDrawnTintedAndOpenInBothDirections() async throws {
+        try await withMoldEnabled {
+            let model = try await part()
+            model.makeMold(of: "box")
+            let id = try #require(model.activeMold?.id)
+            model.updateMold(id, "Four Pieces") { $0.pieces = 4 }
+            try await settleMolds(model)
+            for _ in 0..<2000 where model.activeMoldResult?.pieces.count != 4 { try await Task.sleep(for: .milliseconds(5)) }
+            let mold = try #require(model.activeMold)
+            let result = try #require(model.activeMoldResult)
+            #expect(result.isBuilt, "\(result.error ?? "")")
+            #expect(model.visibleMeshes.map(\.id) == ["box"] + mold.pieceIDs + ["mold~\(mold.id)~gate"], "\(model.visibleMeshes.map(\.id))")
+            // Four tints, all different.
+            #expect(Set(mold.pieceIDs.compactMap { model.displayColor(of: $0) }.map { "\($0)" }).count == 4)
+            // Opened, the pieces move apart along both planes' normals: no two end up in the same place.
+            model.moldOpenAmount = 0.5
+            let offsets = model.moldOpenOffsets
+            #expect(offsets.count == model.moldShownMeshes.count)
+            let moved = zip(model.moldShownMeshes, offsets).filter { MoldSetup.isPiece($0.0.id) }.map(\.1)
+            #expect(moved.count == 4 && Set(moved.map { "\($0)" }).count == 4, "\(moved)")
+            #expect(moved.allSatisfy { $0.x != 0 || $0.y != 0 }, "each moves along the second plane's normal too: \(moved)")
+            // The Check view and the marker picks leave the pieces out.
+            model.toggleMoldCheck()
+            #expect(model.moldShownMeshes.allSatisfy { !MoldSetup.isPiece($0.id) })
+        }
+    }
+
     @Test func aNewMoldStartsOnTheAxisWithoutAnUndercut() async throws {
         try await withMoldEnabled {
             var d = CADDocument()

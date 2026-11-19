@@ -121,3 +121,7 @@ Answers to the open questions so far: (2) mold settings are undoable (`mutate`);
 ## Phase 2 built (2026-11-19, `mold-studio`)
 
 Release analysis and the Check view (green / amber / red on the body), undercut warnings for silicone and refusal for rigid resin, the best parting axis chosen at the start, automatic vents at the body's peaks, markers at the gate and vents, silicone volume (Phase 1). Details in `docs/FEATURE-NOTES.md`. Next on the list is Phase 3 (sealing and handling): tongue-and-groove seam, clamp ears or bolt holes, shrinkage scale for resin. Open: shadowing in the release analysis; vents under overhangs; one body only per mold.
+
+## Four pieces built (2026-11-19, on `main`)
+
+`pieces: 4` cuts each half again across a second plane (see "Four-piece molds" in `docs/FEATURE-NOTES.md`). The release analysis lets each piece go in any direction between its two outward pulls, so more shapes pass for rigid resin. Still open: Phase 3 (tongue-and-groove seam, clamp ears or bolt holes, shrinkage scale), an offset for the second plane, shadowing, vents under overhangs, one body per mold, the Export dialog end to end with four pieces.

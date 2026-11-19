@@ -42,6 +42,27 @@ import Testing
 
     @Test func theHalvesHaveIdsOfTheirOwn() {
         #expect(MoldSetup(id: "q", name: "m", body: "x").halfIDs == ("mold~q~behind", "mold~q~front"))
+        #expect(MoldSetup(id: "q", name: "m", body: "x").pieceIDs == ["mold~q~behind", "mold~q~front"])
+    }
+
+    @Test func fourPiecesHaveIdsThatSayWhichSideOfBothPlanesTheyAreOn() {
+        let m = MoldSetup(id: "q", name: "m", body: "x", pieces: 4)
+        #expect(m.pieceIDs == ["mold~q~behind~a", "mold~q~behind~b", "mold~q~front~a", "mold~q~front~b"])
+        #expect(m.pieceIDs.allSatisfy(MoldSetup.isPiece))
+        #expect(!MoldSetup.isPiece("mold~q~gate") && !MoldSetup.isPiece("mold~q~vent0") && !MoldSetup.isPiece("box"))
+    }
+
+    @Test func thePieceCountAndTheSecondPlaneSurviveAFile() throws {
+        var d = CADDocument()
+        d.molds = [MoldSetup(id: "q", name: "m", body: "x", pieces: 4, cross: .y)]
+        let back = try JSONDecoder().decode(CADDocument.self, from: try d.encoded())
+        #expect(back.molds.first?.pieces == 4 && back.molds.first?.cross == .y)
+        // Two halves are the default and are not written; a made-up count falls back to two.
+        d.molds = [MoldSetup(id: "q", name: "m", body: "x")]
+        #expect(!String(decoding: try d.encoded(), as: UTF8.self).contains("pieces"))
+        let odd = #"{"version":1,"features":[],"molds":[{"id":"a","body":"b","pieces":3}]}"#
+        #expect(try JSONDecoder().decode(CADDocument.self, from: Data(odd.utf8)).molds.first?.pieces == 2)
+        #expect(MoldSetup(name: "m", body: "x", pieces: 7).pieces == 2)
     }
 }
 
@@ -71,6 +92,14 @@ import Testing
             Feature(id: "p2", name: "Peg 2", .primitive(PrimitiveFeature(kind: .cylinder, plane: .xy, u: "16 mm", height: "24 mm", diameter: "8 mm", operation: .join, target: "b"))),
         ]
         try pegs.encoded().write(to: URL(fileURLWithPath: path + ".pegs"))
+        // A block with a groove across its +X face, high up: an undercut for two halves parted across Z, none for four pieces.
+        var groove = CADDocument()
+        groove.features = [
+            Feature(id: "b", name: "Block", .primitive(PrimitiveFeature(kind: .box, plane: .xy, width: "40 mm", length: "30 mm", height: "24 mm"))),
+            Feature(id: "g", name: "Groove", .primitive(PrimitiveFeature(kind: .box, plane: .xz, u: "18 mm", v: "17 mm", width: "8 mm", length: "4 mm", height: "60 mm",
+                                                                         operation: .cut, target: "b"))),
+        ]
+        try groove.encoded().write(to: URL(fileURLWithPath: path + ".groove"))
     }
 }
 

@@ -56,6 +56,30 @@ import Testing
         }
     }
 
+    @Test func aMoldIsMadeInFourPieces() async throws {
+        try await withMoldEnabled {
+            let t = try await open()
+            let made = try await t.service.createMold(documentID: t.id, expectedRevision: nil, args(["body_id": "b", "pieces": 4, "parting": "z"]))
+            let mold = try #require(made.mold)
+            #expect(mold.status == "built" && mold.pieces == 4 && mold.cross == nil, "\(made.message)")
+            #expect(mold.halves?.count == 4 && mold.crossNormal != nil && mold.crossPoint != nil)
+            #expect(made.message.contains("four pieces"), "\(made.message)")
+            // The second plane is named, then back to automatic, then back to two halves.
+            let named = try await t.service.createMold(documentID: t.id, expectedRevision: nil, args(["mold_id": .string(mold.id), "cross": "y"]))
+            #expect(named.mold?.cross == "y" && named.mold?.crossNormal == [0, 1, 0], "\(String(describing: named.mold?.crossNormal))")
+            let auto = try await t.service.createMold(documentID: t.id, expectedRevision: nil, args(["mold_id": .string(mold.id), "cross": "auto"]))
+            #expect(auto.mold?.cross == nil)
+            let two = try await t.service.createMold(documentID: t.id, expectedRevision: nil, args(["mold_id": .string(mold.id), "pieces": 2]))
+            #expect(two.mold?.pieces == 2 && two.mold?.halves?.count == 2 && two.mold?.crossNormal == nil)
+            await #expect(throws: AIError.self) {
+                _ = try await t.service.createMold(documentID: t.id, expectedRevision: nil, args(["mold_id": .string(mold.id), "pieces": 3]))
+            }
+            await #expect(throws: AIError.self) {
+                _ = try await t.service.createMold(documentID: t.id, expectedRevision: nil, args(["mold_id": .string(mold.id), "cross": "w"]))
+            }
+        }
+    }
+
     @Test func aMoldThatCannotBeBuiltIsSavedWithItsReason() async throws {
         try await withMoldEnabled {
             let t = try await open()

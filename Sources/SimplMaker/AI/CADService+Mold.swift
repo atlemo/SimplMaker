@@ -26,6 +26,9 @@ struct MoldInfo: Encodable, Equatable {
     var keyClearance: String
     /// "silicone" or "resin".
     var casting: String
+    /// 2 halves or 4 pieces, and the axis the second plane of a four-piece mold is square to ("x", "y", "z"; nil = chosen for the body).
+    var pieces: Int
+    var cross: String?
     /// "built" or "failed".
     var status: String
     var error: String?
@@ -41,7 +44,10 @@ struct MoldInfo: Encodable, Equatable {
     /// Where the parting plane is: a point and the normal (which half is "front": the side the normal points to).
     var partingPoint: [Double]?
     var partingNormal: [Double]?
-    /// The ids of the halves: behind the plane, in front of it.
+    /// The second plane of a four-piece mold: a point and the normal.
+    var crossPoint: [Double]?
+    var crossNormal: [Double]?
+    /// The ids of the pieces: the halves (behind the plane, in front of it), or in a four-piece mold each half's two pieces.
     var halves: [String]?
     var seconds: Double?
 }
@@ -76,7 +82,8 @@ extension CADService {
         var info = MoldInfo(id: m.id, name: m.name, body: m.body, parting: parting, partingOffset: m.partingOffset, pour: m.up.rawValue,
                             wall: m.wall, gateDiameter: m.gateDiameter, gatePoint: m.gatePoint.map { [$0.x, $0.y, $0.z] },
                             ventDiameter: m.ventDiameter, vents: m.vents.map { [$0.x, $0.y, $0.z] }, keys: m.keys, keySize: m.keyDiameter,
-                            keyClearance: m.keyClearance, casting: m.casting.rawValue, status: "failed", warnings: [])
+                            keyClearance: m.keyClearance, casting: m.casting.rawValue, pieces: m.pieces, cross: m.cross?.rawValue,
+                            status: "failed", warnings: [])
         guard let r else { info.error = "Not built yet."; return info }
         info.error = r.error
         info.warnings = r.warnings
@@ -91,7 +98,11 @@ extension CADService {
             info.blockMm = [r.blockSize.x, r.blockSize.y, r.blockSize.z].map { ($0 * 10).rounded() / 10 }
             info.partingPoint = [r.partingPoint.x, r.partingPoint.y, r.partingPoint.z]
             info.partingNormal = [r.partingNormal.x, r.partingNormal.y, r.partingNormal.z]
-            info.halves = [m.halfIDs.behind, m.halfIDs.front]
+            if let point = r.crossPoint, let normal = r.crossNormal {
+                info.crossPoint = [point.x, point.y, point.z]
+                info.crossNormal = [normal.x, normal.y, normal.z]
+            }
+            info.halves = m.pieceIDs
         }
         info.seconds = (r.seconds * 100).rounded() / 100
         return info
@@ -168,7 +179,7 @@ extension CADService {
         let info = Self.moldInfo(setup, model.moldResults[setup.id])
         let message: String
         if info.status == "built" {
-            message = "\(creating ? "Made" : "Changed") the mold \(setup.name): two halves, about \(info.siliconeMl ?? 0) mL of silicone."
+            message = "\(creating ? "Made" : "Changed") the mold \(setup.name): \(setup.pieces == 4 ? "four pieces" : "two halves"), about \(info.siliconeMl ?? 0) mL of silicone."
                 + (info.warnings.isEmpty ? "" : " Warnings: " + info.warnings.joined(separator: " "))
         } else {
             message = "The mold \(setup.name) is saved but could not be built: \(info.error ?? "unknown reason")"
@@ -193,7 +204,8 @@ extension CADService {
 
     private static func apply(_ a: AIArguments, to m: inout MoldSetup, in model: DocumentModel) throws {
         try a.rejectUnknown(["document_id", "expected_revision", "mold_id", "delete", "body_id", "name", "parting", "parting_offset", "pour", "wall",
-                             "gate_diameter", "gate_point", "reset_gate", "vent_diameter", "vents", "auto_vents", "keys", "key_size", "key_clearance", "casting"], in: "create_mold")
+                             "gate_diameter", "gate_point", "reset_gate", "vent_diameter", "vents", "auto_vents", "keys", "key_size", "key_clearance", "casting",
+                             "pieces", "cross"], in: "create_mold")
         if let name = try a.string("name"), !name.isEmpty { m.name = name }
         if let parting = try a.string("parting") {
             switch parting.lowercased() {
@@ -231,6 +243,21 @@ extension CADService {
         }
         if let p = a.json["gate_point"], p != .null { m.gatePoint = try point(p, "gate_point") }
         if try a.bool("reset_gate") == true { m.gatePoint = nil }
+        if let n = try a.integer("pieces") {
+            guard n == 2 || n == 4 else {
+                throw AIError(.invalidArguments, "pieces must be 2 or 4.", reason: "Two halves, or four pieces: each half cut again across a second plane, so each piece is pulled out sideways as well as away.")
+            }
+            m.pieces = n
+        }
+        if let c = try a.string("cross") {
+            if c.lowercased() == "auto" { m.cross = nil } else {
+                guard let axis = MoldAxis(rawValue: c.lowercased()) else {
+                    throw AIError(.invalidArguments, "cross \"\(c)\" is not \"x\", \"y\", \"z\" or \"auto\".",
+                                  reason: "The axis the second plane of a four-piece mold is square to (through the middle of the body); \"auto\" picks one that holds the pour direction.")
+                }
+                m.cross = axis
+            }
+        }
         if let list = try a.array("vents") {
             guard list.count <= 20 else { throw AIError(.invalidArguments, "At most 20 vents.") }
             m.vents = try list.enumerated().map { try point($1, "vents[\($0)]") }
@@ -239,7 +266,7 @@ extension CADService {
 
     // MARK: exporting
 
-    /// Writes the two halves, laid out for printing, to the exports folder.
+    /// Writes the pieces, laid out for printing, to the exports folder.
     func exportMold(documentID: String, moldID: String?, format: String, fileName: String?) async throws -> ExportResult {
         guard let kind = ExportFormat(rawValue: format) else {
             throw AIError(.invalidArguments, "format \"\(format)\" is not stl, 3mf or step.", reason: "STL or 3MF for 3D printing, STEP for other CAD programs.")
@@ -263,7 +290,7 @@ extension CADService {
                           reason: "Read it with get_mold, change what it says, and try again.")
         }
         let placed = MoldBuilder.printLayout(built)
-        guard placed.count == 2 else { throw AIError(.invalidArguments, "The halves could not be laid out.") }
+        guard placed.count == built.pieces.count else { throw AIError(.invalidArguments, "The pieces could not be laid out.") }
 
         let directory = Self.exportFolder
         let base = Self.safeFileName(fileName.map { ($0 as NSString).deletingPathExtension } ?? setup.name)
@@ -289,7 +316,7 @@ extension CADService {
             throw AIError(.invalidArguments, "The export failed: \(error).")
         }
         let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        return ExportResult(documentId: id, message: "Exported the two halves of \(setup.name), laid out for printing, to \(url.path).",
+        return ExportResult(documentId: id, message: "Exported the \(setup.pieces == 4 ? "four pieces" : "two halves") of \(setup.name), laid out for printing, to \(url.path).",
                             path: url.path, format: format, bytes: size, bodies: placed.map(\.id))
     }
 }

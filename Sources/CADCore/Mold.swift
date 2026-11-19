@@ -85,19 +85,27 @@ public struct MoldSetup: Codable, Hashable, Sendable, Identifiable {
     public var keyClearance: String
     /// What is cast: decides whether an undercut is a warning or a refusal.
     public var casting: MoldCasting
+    /// How many pieces the mold is: 2 halves, or 4 (each half cut again across a second plane). Four pieces let go of more shapes, because
+    /// each one is pulled out sideways as well as away, and each is smaller to print.
+    public var pieces: Int
+    /// The axis the second plane of a four-piece mold is square to (through the middle of the body); nil = chosen for the body: a plane
+    /// that contains the pour direction, so the gate and the vents are cut lengthways.
+    public var cross: MoldAxis?
 
     public init(id: String = UUID().uuidString, name: String, body: FeatureID, parting: MoldParting = .middle(.z),
                 partingOffset: String = "0 mm", up: MoldDirection = .plusZ, wall: String = "10 mm", gateDiameter: String = "8 mm",
                 gatePoint: MoldPoint? = nil, ventDiameter: String = "2 mm", vents: [MoldPoint] = [], keys: Bool = true,
-                keyDiameter: String = "5 mm", keyClearance: String = "0.3 mm", casting: MoldCasting = .silicone) {
+                keyDiameter: String = "5 mm", keyClearance: String = "0.3 mm", casting: MoldCasting = .silicone,
+                pieces: Int = 2, cross: MoldAxis? = nil) {
         self.id = id; self.name = name; self.body = body; self.parting = parting; self.partingOffset = partingOffset
         self.up = up; self.wall = wall; self.gateDiameter = gateDiameter; self.gatePoint = gatePoint
         self.ventDiameter = ventDiameter; self.vents = vents; self.keys = keys; self.keyDiameter = keyDiameter
         self.keyClearance = keyClearance; self.casting = casting
+        self.pieces = pieces == 4 ? 4 : 2; self.cross = cross
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, body, parting, partingOffset, up, wall, gateDiameter, gatePoint, ventDiameter, vents, keys, keyDiameter, keyClearance, casting
+        case id, name, body, parting, partingOffset, up, wall, gateDiameter, gatePoint, ventDiameter, vents, keys, keyDiameter, keyClearance, casting, pieces, cross
     }
 
     /// Every setting is optional in a file, so a later version can add one and an older file still opens.
@@ -119,6 +127,8 @@ public struct MoldSetup: Codable, Hashable, Sendable, Identifiable {
         keyDiameter = try c.decodeIfPresent(String.self, forKey: .keyDiameter) ?? d.keyDiameter
         keyClearance = try c.decodeIfPresent(String.self, forKey: .keyClearance) ?? d.keyClearance
         casting = try c.decodeIfPresent(MoldCasting.self, forKey: .casting) ?? d.casting
+        pieces = (try c.decodeIfPresent(Int.self, forKey: .pieces)) == 4 ? 4 : 2
+        cross = try c.decodeIfPresent(MoldAxis.self, forKey: .cross)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -138,8 +148,20 @@ public struct MoldSetup: Codable, Hashable, Sendable, Identifiable {
         try c.encode(keyDiameter, forKey: .keyDiameter)
         try c.encode(keyClearance, forKey: .keyClearance)
         if casting != .silicone { try c.encode(casting, forKey: .casting) }
+        if pieces == 4 { try c.encode(pieces, forKey: .pieces) }
+        try c.encodeIfPresent(cross, forKey: .cross)
     }
 
     /// The ids the two halves have as bodies (the way a split names its pieces): behind the parting plane and in front of it.
     public var halfIDs: (behind: FeatureID, front: FeatureID) { ("mold~\(id)~behind", "mold~\(id)~front") }
+
+    /// The ids of every piece, in the order they are built: the two halves, or (in a four-piece mold) each half's two pieces, the one
+    /// behind the second plane first ("~a") and the one in front of it second ("~b").
+    public var pieceIDs: [FeatureID] {
+        let h = halfIDs
+        return pieces == 4 ? [h.behind + "~a", h.behind + "~b", h.front + "~a", h.front + "~b"] : [h.behind, h.front]
+    }
+
+    /// Whether `bodyID` is one of the pieces of a mold (they all have ids that start "mold~" and name a side).
+    public static func isPiece(_ bodyID: FeatureID) -> Bool { bodyID.hasPrefix("mold~") && (bodyID.contains("~behind") || bodyID.contains("~front")) }
 }

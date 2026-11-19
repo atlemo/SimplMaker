@@ -11,12 +11,23 @@ import CKernel
 import Foundation
 import simd
 
+/// One piece of a mold: a half, or a quarter of a four-piece mold.
+public struct MoldPiece: Sendable {
+    public var id: FeatureID
+    public var name: String
+    public var body: KBody
+    /// −1 behind the parting plane, +1 in front of it (along its normal).
+    public var side: Int
+    /// −1 behind the second plane of a four-piece mold, +1 in front of it; 0 in a two-piece mold.
+    public var crossSide: Int
+}
+
 /// What a mold build came to.
 public struct MoldResult: Sendable {
     public var setup: MoldSetup
-    /// The half behind the parting plane and the half in front of it (along its normal). Nil when the build failed.
-    public var behind: KBody?
-    public var front: KBody?
+    /// The pieces, in the order of `MoldSetup.pieceIDs`: behind the parting plane first, each behind the second plane first. Empty when
+    /// the build failed.
+    public var pieces: [MoldPiece] = []
     /// Why it could not be built, in words for the user; nil when it was.
     public var error: String?
     /// Things worth knowing about a mold that was built (keys made smaller, plane moved a hair, a gate that misses).
@@ -24,6 +35,9 @@ public struct MoldResult: Sendable {
     /// The parting plane as built: a point on it and its normal.
     public var partingPoint = SIMD3<Double>.zero
     public var partingNormal = SIMD3<Double>(0, 0, 1)
+    /// The second plane of a four-piece mold (square to X, Y or Z, through the middle of the body); nil in a two-piece one.
+    public var crossPoint: SIMD3<Double>?
+    public var crossNormal: SIMD3<Double>?
     /// Where the gate goes in at the body (its axis runs up from here), and where each vent starts.
     public var gatePoint: SIMD3<Double>?
     public var ventPoints: [SIMD3<Double>] = []
@@ -41,16 +55,14 @@ public struct MoldResult: Sendable {
 
     public init(setup: MoldSetup, error: String? = nil) { self.setup = setup; self.error = error }
 
-    public var isBuilt: Bool { error == nil && behind != nil && front != nil }
+    public var isBuilt: Bool { error == nil && !pieces.isEmpty }
 
-    /// The halves with their ids and names, behind first.
-    public var halves: [BodyResult] {
-        guard let behind, let front else { return [] }
-        let names = MoldBuilder.halfNames(axis: Self.axis(of: partingNormal))
-        let ids = setup.halfIDs
-        return [BodyResult(id: ids.behind, name: "\(setup.name) \(names.behind)", body: behind),
-                BodyResult(id: ids.front, name: "\(setup.name) \(names.front)", body: front)]
-    }
+    /// The two halves of a two-piece mold (nil for a four-piece one, which has no halves).
+    public var behind: KBody? { pieces.count == 2 ? pieces[0].body : nil }
+    public var front: KBody? { pieces.count == 2 ? pieces[1].body : nil }
+
+    /// The pieces with their ids and names, behind the parting plane first.
+    public var halves: [BodyResult] { pieces.map { BodyResult(id: $0.id, name: $0.name, body: $0.body) } }
 
     static func axis(of n: SIMD3<Double>) -> MoldAxis { abs(n.x) > 0.5 ? .x : abs(n.y) > 0.5 ? .y : .z }
 }
@@ -72,6 +84,15 @@ public enum MoldBuilder {
         }
     }
 
+    /// What a side of a plane square to `axis` is called: "left", "bottom" and so on (the first is the side behind the plane).
+    static func sideNames(axis: MoldAxis) -> (behind: String, front: String) {
+        switch axis {
+        case .x: ("left", "right")
+        case .y: ("front", "back")
+        case .z: ("bottom", "top")
+        }
+    }
+
     /// Builds the mold of `part` (the body the setup names, as the regeneration `r` made it).
     public static func build(_ setup: MoldSetup, part: KBody, in r: RegenResult) -> MoldResult {
         let started = Date()
@@ -80,9 +101,9 @@ public enum MoldBuilder {
         do {
             try build(setup, part: part, in: r, into: &result)
         } catch let e as MoldError {
-            result.error = e.message; result.behind = nil; result.front = nil
+            result.error = e.message; result.pieces = []
         } catch {
-            result.error = "The mold could not be built: \(error)"; result.behind = nil; result.front = nil
+            result.error = "The mold could not be built: \(error)"; result.pieces = []
         }
         return result
     }
@@ -141,20 +162,30 @@ public enum MoldBuilder {
         out.gateDiameter = gateDiameter
         out.ventDiameter = ventDiameter
 
-        // The body's mesh: where the gate goes in, and which faces the halves can release.
+        // The body's mesh: where the gate goes in, and which faces the pieces can release.
         let diagonal = simd_length(ext)
         let mesh = try? part.tessellate(linearDeflection: max(0.05, diagonal * 0.002))
+
+        // A four-piece mold cuts each half again across a second plane, square to the first, through the middle of the body.
+        let partingAxis = MoldResult.axis(of: normal)
+        let four = setup.pieces == 4
+        var cross: (axis: MoldAxis, normal: SIMD3<Double>, coordinate: Double)?
+        if four {
+            let axis = crossAxis(setup, partingAxis: partingAxis, mesh: mesh, point: point, normal: normal, centre: centre, ext: ext)
+            cross = (axis, axis.vector, centre[axis.index])
+            out.crossPoint = centre; out.crossNormal = axis.vector
+        }
         if let mesh {
-            let analysis = MoldAnalysis.analyse(mesh, partingPoint: point, normal: normal)
+            let analysis = MoldAnalysis.analyse(mesh, partingPoint: point, normal: normal, cross: cross.map { (centre, $0.normal) })
             out.analysis = analysis
             let pct = String(format: "%.0f%%", analysis.undercutShare * 100)
             if analysis.hasUndercuts {
                 let faces = "\(analysis.undercutFaces.count) face\(analysis.undercutFaces.count == 1 ? "" : "s") (\(pct) of the surface)"
                 switch setup.casting {
                 case .resin:
-                    throw MoldError(message: "\(faces) of the body can not be released across this parting plane: a rigid cast would be stuck in the mold. Part it another way (X, Y, Z or another plane), or turn the body so that nothing hangs back against the pull. The Check view shows where.")
+                    throw MoldError(message: "\(faces) of the body can not be released across this parting plane: a rigid cast would be stuck in the mold. Part it another way (X, Y, Z or another plane)\(four ? "" : ", split the mold into four pieces,") or turn the body so that nothing hangs back against the pull. The Check view shows where.")
                 case .silicone:
-                    out.warnings.append("\(faces) lean back against the pull (undercuts). Silicone can be peeled out of a mild one, but a deep one will tear it: the Check view shows where, and another parting plane may avoid it.")
+                    out.warnings.append("\(faces) lean back against the pull (undercuts). Silicone can be peeled out of a mild one, but a deep one will tear it: the Check view shows where, and another parting plane\(four ? "" : " or four pieces") may avoid it.")
                 }
             }
             if setup.casting == .resin, analysis.noDraftShare > 0.25 {
@@ -208,25 +239,40 @@ public enum MoldBuilder {
             out.warnings.append("The gate does not reach the body (\(String(format: "%.1f", reach.distance)) mm away).")
         }
 
-        // The keys: cones in the four corners of the ring around the body, on the parting plane; the last one is bigger so the halves
+        // The keys: cones in the four corners of the ring around the body, on a parting plane; the last one is bigger so the pieces
         // only go together one way. They have to fit inside the ring: the key is made smaller if the wall is thin.
-        let others = MoldAxis.allCases.filter { $0.index != axisIndex }
-        let (ua, wa) = (others[0].vector, others[1].vector)
         var keyRadius = keyDiameter / 2
         let fits = (wall / 2 - clearance - 0.8) / bigKeyShare
         if setup.keys, keyRadius > fits {
             keyRadius = max(fits, 0.5)
             out.warnings.append("The keys are made smaller (\(String(format: "%.1f", keyRadius * 2)) mm) to fit the wall: a thicker wall takes bigger ones.")
         }
-        let spots: [SIMD3<Double>] = {
+        /// One key: where it stands on its plane, its peg (on the piece in front of the plane) and its socket (in the one behind).
+        struct Key { var spot: SIMD3<Double>; var peg: KBody; var socket: KBody }
+        /// The keys of a plane square to `n` (through the axis' coordinate `at`), shifted by `shift` like the plane itself.
+        func keys(on n: SIMD3<Double>, at: Double, shift: Double, tag: String) throws -> [Key] {
+            guard setup.keys, keyRadius > 0 else { return [] }
+            let index = MoldResult.axis(of: n).index
+            let others = MoldAxis.allCases.filter { $0.index != index }
+            let (ua, wa) = (others[0].vector, others[1].vector)
             let ru = (size[others[0].index] - wall) / 2, rw = (size[others[1].index] - wall) / 2
-            let c = centre
-            var p = [c + ua * ru + wa * rw, c - ua * ru + wa * rw, c + ua * ru - wa * rw, c - ua * ru - wa * rw]
-            for i in p.indices { p[i][axisIndex] = planeCoordinate }
-            return p
-        }()
+            var spots = [centre + ua * ru + wa * rw, centre - ua * ru + wa * rw, centre + ua * ru - wa * rw, centre - ua * ru - wa * rw]
+            for i in spots.indices { spots[i][index] = at }
+            var made: [Key] = []
+            for (i, s) in spots.enumerated() {
+                // A key that would sit in a channel is left out.
+                let inPlane = { (q: SIMD3<Double>) in simd_length((q - s) * (SIMD3<Double>(1, 1, 1) - abs(n))) }
+                let radius = keyRadius * (i == 3 ? bigKeyShare : 1)
+                if axes.contains(where: { inPlane($0.point) < $0.radius + radius + clearance + 0.5 }) { continue }
+                let peg = try cone(base: s + n * shift, dir: -n, r0: radius, r1: radius * keyTipShare, h: radius * keyHeightShare, id: "peg\(tag)\(i)")
+                let socket = try cone(base: s + n * (shift + 0.01), dir: -n, r0: radius + clearance, r1: radius * keyTipShare + clearance,
+                                      h: radius * keyHeightShare + clearance, id: "socket\(tag)\(i)")
+                made.append(Key(spot: s, peg: peg, socket: socket))
+            }
+            return made
+        }
 
-        // How much the body's subtraction has to take out of the halves, at least. The kernel sometimes answers a subtraction with a
+        // How much the body's subtraction has to take out of the pieces, at least. The kernel sometimes answers a subtraction with a
         // valid solid that has no cavity in it (found with a sphere at (13.7, -8.2): one half came back whole, no error), so what was
         // taken out is measured. The channels were cut first, so the part of the body they already took is not taken again: for the gate
         // at the highest point that is a thin cap, otherwise it is measured.
@@ -238,57 +284,90 @@ public enum MoldBuilder {
         }
         let minimumRemoved = max(part.volume - overlap - part.volume * 0.002, part.volume * 0.5)
 
-        // One try at the split, keys and the body cut out. The usual order cuts the body out of the halves last (cheap on a heavy body);
-        // `partFirst` cuts it out of the block before the split instead.
-        func attempt(shift: Double, partFirst: Bool) throws -> (behind: KBody, front: KBody, pegs: Double, sockets: Double)? {
+        /// What `attempt` made: the pieces, and the volume the keys added to some and took from others.
+        typealias Built = (pieces: [KBody], pegs: Double, sockets: Double)
+
+        /// The block (or the block with the cavity) cut in two at the parting plane `p`, and in four when the mold has a second plane
+        /// (each half cut at `p2`). Nil when the kernel did not give pieces.
+        func split(_ body: KBody, at p: SIMD3<Double>, andAt p2: SIMD3<Double>?) throws -> [KBody]? {
+            let halves = try body.split(planeThrough: p, normal: normal, featureID: "mold")
+            guard halves.count == 2 else { return nil }
+            guard let cross, let p2 else { return halves }
+            var quarters: [KBody] = []
+            for half in halves {
+                let pair = try half.split(planeThrough: p2, normal: cross.normal, featureID: "mold")
+                guard pair.count == 2 else { return nil }
+                quarters += pair
+            }
+            return quarters
+        }
+
+        // One try at the split, keys and the body cut out. The usual order cuts the body out of the pieces last (cheap on a heavy
+        // body); `partFirst` cuts it out of the block before the split instead.
+        func attempt(shift: Double, partFirst: Bool) throws -> Built? {
             let p = point + normal * shift
+            let p2 = cross.map { centre + $0.normal * shift }
             let drilled = channels.isEmpty ? block : try block.boolean(channels, SK_CUT)
-            var behind: KBody, front: KBody
+            var pieces: [KBody]
             if partFirst {
                 let cavity = try drilled.boolean(part, SK_CUT)
                 guard drilled.volume - cavity.volume >= minimumRemoved else { return nil }
-                let halves = try cavity.split(planeThrough: p, normal: normal, featureID: "mold")
-                guard halves.count == 2, abs(halves[0].volume + halves[1].volume - cavity.volume) < cavity.volume * 0.002 else { return nil }
-                (behind, front) = (halves[0], halves[1])
+                guard let cut = try split(cavity, at: p, andAt: p2),
+                      abs(cut.reduce(0) { $0 + $1.volume } - cavity.volume) < cavity.volume * 0.002 else { return nil }
+                pieces = cut
             } else {
-                let halves = try drilled.split(planeThrough: p, normal: normal, featureID: "mold")
-                guard halves.count == 2 else { return nil }
-                (behind, front) = (halves[0], halves[1])
+                guard let cut = try split(drilled, at: p, andAt: p2) else { return nil }
+                pieces = cut
             }
+            // Which side of each plane a piece is on: the order the split gave them (behind first), as in `MoldSetup.pieceIDs`.
+            func sides(_ i: Int) -> (side: Int, crossSide: Int) { four ? (i < 2 ? -1 : 1, i % 2 == 0 ? -1 : 1) : (i == 0 ? -1 : 1, 0) }
+
             var pegVolume = 0.0, socketVolume = 0.0
-            if setup.keys, keyRadius > 0 {
-                var pegs: KBody?, sockets: KBody?
-                for (i, s) in spots.enumerated() {
-                    // A key that would sit in a channel is left out.
-                    let inPlane = { (q: SIMD3<Double>) in simd_length((q - s) * (SIMD3<Double>(1, 1, 1) - abs(normal))) }
-                    let radius = keyRadius * (i == 3 ? bigKeyShare : 1)
-                    if axes.contains(where: { inPlane($0.point) < $0.radius + radius + clearance + 0.5 }) { continue }
-                    let peg = try cone(base: s + normal * shift, dir: -normal, r0: radius, r1: radius * keyTipShare,
-                                       h: radius * keyHeightShare, id: "peg\(i)")
-                    let socket = try cone(base: s + normal * (shift + 0.01), dir: -normal, r0: radius + clearance,
-                                          r1: radius * keyTipShare + clearance, h: radius * keyHeightShare + clearance, id: "socket\(i)")
-                    pegVolume += peg.volume; socketVolume += socket.volume
-                    pegs = try pegs.map { try $0.boolean(peg, SK_FUSE) } ?? peg
-                    sockets = try sockets.map { try $0.boolean(socket, SK_FUSE) } ?? socket
+            // A plane's keys: pegs on the pieces in front of it, sockets in those behind. Each piece gets only the keys that lie in its own
+            // part of the plane (`lies`), so a peg never joins two pieces.
+            func fit(_ list: [Key], piece: Int, pegs onPegSide: Bool, lies: (Key) -> Bool) throws {
+                let mine = list.filter(lies)
+                guard !mine.isEmpty else { return }
+                if onPegSide {
+                    var pegs = mine[0].peg
+                    for k in mine.dropFirst() { pegs = try pegs.boolean(k.peg, SK_FUSE) }
+                    pieces[piece] = try pieces[piece].boolean(pegs, SK_FUSE)
+                } else {
+                    var sockets = mine[0].socket
+                    for k in mine.dropFirst() { sockets = try sockets.boolean(k.socket, SK_FUSE) }
+                    pieces[piece] = try pieces[piece].boolean(sockets, SK_CUT)
                 }
-                if let pegs, let sockets {
-                    front = try front.boolean(pegs, SK_FUSE)
-                    behind = try behind.boolean(sockets, SK_CUT)
+            }
+            let partingKeys = try keys(on: normal, at: p[axisIndex], shift: 0, tag: "")
+            for k in partingKeys { pegVolume += k.peg.volume; socketVolume += k.socket.volume }
+            for i in pieces.indices {
+                let mine = sides(i)
+                try fit(partingKeys, piece: i, pegs: mine.side > 0) { k in
+                    guard let cross else { return true }
+                    return (k.spot[cross.axis.index] > cross.coordinate ? 1 : -1) == mine.crossSide
+                }
+            }
+            if let cross {
+                // The second plane's keys, each on its own side of the first plane.
+                let crossKeys = try keys(on: cross.normal, at: cross.coordinate + shift, shift: 0, tag: "c")
+                for k in crossKeys { pegVolume += k.peg.volume; socketVolume += k.socket.volume }
+                for i in pieces.indices {
+                    let mine = sides(i)
+                    try fit(crossKeys, piece: i, pegs: mine.crossSide > 0) { k in (k.spot[axisIndex] > p[axisIndex] ? 1 : -1) == mine.side }
                 }
             }
             if !partFirst {
-                let before = behind.volume + front.volume
-                behind = try behind.boolean(part, SK_CUT)
-                front = try front.boolean(part, SK_CUT)
-                guard before - behind.volume - front.volume >= minimumRemoved else { return nil }
+                let before = pieces.reduce(0) { $0 + $1.volume }
+                for i in pieces.indices { pieces[i] = try pieces[i].boolean(part, SK_CUT) }
+                guard before - pieces.reduce(0, { $0 + $1.volume }) >= minimumRemoved else { return nil }
             }
-            guard behind.isValid, front.isValid, !behind.isEmpty, !front.isEmpty else { return nil }
-            return (behind, front, pegVolume, socketVolume)
+            guard pieces.allSatisfy({ $0.isValid && !$0.isEmpty }) else { return nil }
+            return (pieces, pegVolume, socketVolume)
         }
 
         // The usual order first, then the other one, each at the plane and then nudged (a plane exactly through a seam or a pole of a
         // round face is what upsets the kernel).
-        var built: (behind: KBody, front: KBody, pegs: Double, sockets: Double)?
+        var built: Built?
         var used = 0.0
         search: for shift in [0.0] + nudges {
             for partFirst in [false, true] {
@@ -296,14 +375,44 @@ public enum MoldBuilder {
             }
         }
         guard let built else {
-            throw MoldError(message: "The halves could not be made at this parting plane. Move the plane a little, or pick another.")
+            throw MoldError(message: "The pieces could not be made at this parting plane. Move the plane a little, or pick another.")
         }
         if used != 0 { out.warnings.append("The parting plane was moved \(String(format: "%.2f", abs(used))) mm: exactly there it gave a broken split.") }
-        out.behind = built.behind
-        out.front = built.front
+
+        // Names and ids: "Mold bottom half", or "Mold bottom left" in a four-piece mold.
+        let ids = setup.pieceIDs
+        let names = sideNames(axis: partingAxis)
+        out.pieces = built.pieces.enumerated().map { i, body in
+            if let cross {
+                let across = sideNames(axis: cross.axis)
+                let (a, b) = (i < 2 ? names.behind : names.front, i % 2 == 0 ? across.behind : across.front)
+                return MoldPiece(id: ids[i], name: "\(setup.name) \(a) \(b)", body: body, side: i < 2 ? -1 : 1, crossSide: i % 2 == 0 ? -1 : 1)
+            }
+            return MoldPiece(id: ids[i], name: "\(setup.name) \(i == 0 ? halfNames(axis: partingAxis).behind : halfNames(axis: partingAxis).front)",
+                             body: body, side: i == 0 ? -1 : 1, crossSide: 0)
+        }
         out.partingPoint = point + normal * used
-        // What the cavity holds is what is missing from the block: its volume, less the halves, plus what the keys added to one half and took from the other.
-        out.cavityVolume = block.volume - built.behind.volume - built.front.volume + built.pegs - built.sockets
+        if cross != nil { out.crossPoint = centre + (cross?.normal ?? .zero) * used }
+        // What the cavity holds is what is missing from the block: its volume, less the pieces, plus what the keys added to some and took from others.
+        out.cavityVolume = block.volume - built.pieces.reduce(0) { $0 + $1.volume } + built.pegs - built.sockets
+    }
+
+    /// The axis the second plane of a four-piece mold is square to. One the setup names (if it is not the parting plane's own). Else a
+    /// plane that contains the pour direction, so the gate and the vents are cut lengthways; when both of the others do (the mold is parted
+    /// across the pour direction), the one that leaves the least undercut, and among equals the longer side, so the pieces are the smaller.
+    static func crossAxis(_ setup: MoldSetup, partingAxis: MoldAxis, mesh: Mesh?, point: SIMD3<Double>, normal: SIMD3<Double>,
+                          centre: SIMD3<Double>, ext: SIMD3<Double>) -> MoldAxis {
+        let candidates = MoldAxis.allCases.filter { $0 != partingAxis }
+        if let named = setup.cross, candidates.contains(named) { return named }
+        let aroundUp = candidates.filter { $0 != setup.up.axis }
+        if aroundUp.count == 1 { return aroundUp[0] }
+        let longer = candidates.max { ext[$0.index] < ext[$1.index] } ?? candidates[0]
+        guard let mesh else { return longer }
+        let scored = candidates.map { ($0, MoldAnalysis.analyse(mesh, partingPoint: point, normal: normal, cross: (centre, $0.vector))) }
+        let total = scored.map(\.1.totalArea).max() ?? 0
+        let least = scored.map(\.1.undercutArea).min() ?? 0
+        let good = scored.filter { $0.1.undercutArea <= least + 0.005 * total }.map(\.0)
+        return good.contains(longer) ? longer : (good.first ?? longer)
     }
 
     // MARK: building blocks
@@ -359,18 +468,18 @@ public enum MoldBuilder {
 
     // MARK: laying the halves out for printing
 
-    /// The halves as they are printed: each with its parting face up and its back on the floor (z = 0), side by side along X with a gap.
+    /// The pieces as they are printed: each with its parting face up and its back on the floor (z = 0), side by side along X with a gap.
     /// The cavity opens upwards, so it is printed without support and the seam faces are the best surface.
     public static func printLayout(_ result: MoldResult, gap: Double = 10) -> [BodyResult] {
         guard result.isBuilt else { return [] }
         let n = result.partingNormal
         var placed: [BodyResult] = []
         var cursor = 0.0
-        for (half, outward) in zip(result.halves, [n, -n]) {  // each half's parting face looks towards the other one
-            guard var body = try? turned(half.body, from: outward, to: SIMD3(0, 0, 1)), let b = body.bounds else { continue }
+        for piece in result.pieces {  // each piece's parting face looks towards the other side of the plane
+            guard var body = try? turned(piece.body, from: n * Double(-piece.side), to: SIMD3(0, 0, 1)), let b = body.bounds else { continue }
             guard let moved = try? body.translated(SIMD3(cursor - b.min.x, -b.min.y, -b.min.z)) else { continue }
             body = moved
-            placed.append(BodyResult(id: half.id, name: half.name, body: body))
+            placed.append(BodyResult(id: piece.id, name: piece.name, body: body))
             cursor += (b.max.x - b.min.x) + gap
         }
         return placed

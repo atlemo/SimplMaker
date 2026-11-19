@@ -87,9 +87,9 @@ enum AITools {
     private static func moldTools(service: CADService) -> [MCPTool] {
         [
             MCPTool(
-                name: "create_mold", title: "Make or change a two-part mold around a body",
+                name: "create_mold", title: "Make or change a two- or four-piece mold around a body",
                 description: """
-                Makes a rigid, printable two-part mold for casting silicone or resin around ONE body, or changes or deletes one. A mold is not \
+                Makes a rigid, printable mold (two halves, or four pieces) for casting silicone or resin around ONE body, or changes or deletes one. A mold is not \
                 a feature of the timeline: it is kept beside the part and follows the body when the body changes. Read the topic "make_a_mold" of \
                 get_design_guide first.
 
@@ -100,12 +100,15 @@ enum AITools {
                 "-z", "+x", "-x", "+y", "-y": the way up while pouring; the gate goes in at the body's highest point that way); wall (mm, default \
                 10: the mold's thickness all round; keys need about 9 or more); gate_diameter (default 8); gate_point [x, y, z] (a hand-placed \
                 gate) or reset_gate: true; vents: [[x, y, z], …] replaces the air vents (each runs straight up from its point), vent_diameter \
-                (default 2); keys (default true: cone keys on the seam, one bigger so the halves go together one way only), key_size (default 5), \
-                key_clearance (default 0.3); casting ("silicone" default, or "resin": a rigid cast is stuck in an undercut, so the mold is refused \
+                (default 2); keys (default true: cone keys on the seams, one bigger so the pieces go together one way only), key_size (default 5), \
+                key_clearance (default 0.3); pieces (2 default, or 4: each half is cut again across a second plane through the middle of the \
+                body, so each piece is pulled out sideways as well as away: shapes with an undercut across the parting plane can let go, and \
+                each piece prints smaller), cross ("x", "y", "z" or "auto", default auto: the axis the second plane is square to; auto picks a \
+                plane that holds the pour direction); casting ("silicone" default, or "resin": a rigid cast is stuck in an undercut, so the mold is refused \
                 and the faces are listed; silicone only warns); auto_vents: true (adds a vent at the top of every lobe of the body that the gate does \
                 not reach: where air would be trapped); expected_revision (optional). Sizes are numbers (mm) or expressions that can use parameters.
 
-                Changes the document (one undo step "AI: Make Mold" / "AI: Change Mold"). Waits for the halves to be built and returns \
+                Changes the document (one undo step "AI: Make Mold" / "AI: Change Mold"). Waits for the pieces to be built and returns \
                 {success, document_id, revision, message, mold} where mold is what get_mold returns for it. A mold that cannot be built is still \
                 saved, with status "failed" and the reason in error. Fails with FEATURE_NOT_FOUND (no such body or mold), INVALID_ARGUMENTS, \
                 USER_BUSY or STALE_REVISION.
@@ -125,7 +128,9 @@ enum AITools {
                     "reset_gate": ["type": "boolean", "description": "Put the gate back at the highest point."],
                     "vents": ["type": "array", "items": ["type": "array", "items": ["type": "number"], "minItems": 3, "maxItems": 3], "description": "Air vents [[x, y, z], …] in mm; replaces the list."],
                     "vent_diameter": quantity("The vents' diameter (default 2 mm)."),
-                    "keys": ["type": "boolean", "description": "Cone keys on the seam (default true)."],
+                    "keys": ["type": "boolean", "description": "Cone keys on the seams (default true)."],
+                    "pieces": ["type": "integer", "enum": [2, 4], "description": "Two halves (default) or four pieces: each half cut again across a second plane."],
+                    "cross": ["type": "string", "enum": ["auto", "x", "y", "z"], "description": "Four pieces: the axis the second plane is square to (default auto)."],
                     "key_size": quantity("The keys' diameter (default 5 mm)."),
                     "key_clearance": quantity("How much bigger the sockets are than the keys (default 0.3 mm)."),
                     "casting": ["type": "string", "enum": ["silicone", "resin"], "description": "What is cast: a rigid resin refuses an undercut (default silicone)."],
@@ -148,7 +153,9 @@ enum AITools {
                 gate_diameter, gate_point, vent_diameter, vents, keys, key_size, key_clearance, status ("built" or "failed"), error, warnings, \
                 casting, undercut_faces, undercut_percent and no_draft_percent (which faces lean back against the pull, and how much of the surface is \
                 undercut or has no draft; present even when the mold was refused), silicone_ml (what the cavity holds: body, gate and vents; mix a little more), block_mm [x, y, z], parting_point, parting_normal \
-                (the half "in front" is the side the normal points to), halves (ids: behind, in front), seconds}]}. Read-only.
+                (the half "in front" is the side the normal points to), pieces (2 or 4), cross (the axis of a four-piece mold's second plane, if named), \
+                cross_point and cross_normal (that plane, once built), halves (the ids of the pieces: behind the parting plane first; in a four-piece \
+                mold each half's two pieces, the one behind the second plane first), seconds}]}. Read-only.
                 """,
                 inputSchema: object(["document_id": documentID], []),
                 readOnly: true,
@@ -159,9 +166,9 @@ enum AITools {
                 }),
 
             MCPTool(
-                name: "export_mold", title: "Export a mold's two halves for printing",
+                name: "export_mold", title: "Export a mold's pieces for printing",
                 description: """
-                Writes the two halves of a mold to an STL or 3MF file (for printing) or a STEP file, laid out for printing: each with its seam face up \
+                Writes the pieces of a mold to an STL or 3MF file (for printing) or a STEP file, laid out for printing: each with its seam face up \
                 and its cavity open, resting on the floor, side by side. The file goes to the folder "SimplMaker Exports" in the user's Documents \
                 folder, never over a file that is already there. Tell the user where it is. The part itself does not change.
 

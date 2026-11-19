@@ -24,7 +24,7 @@ enum AIDesignGuide {
     // MARK: moulds
 
     static let makeAMold = DesignTopic(
-        id: "make_a_mold", title: "A printable two-part mold to cast silicone or resin",
+        id: "make_a_mold", title: "A printable two- or four-piece mold to cast silicone or resin",
         summary: "Read when the user wants copies of a body cast: create_mold, get_mold, export_mold.",
         body: """
         A mold here is two printed halves with a cavity in the shape of ONE body, to cast silicone or resin in. It is not a feature of the \
@@ -37,9 +37,9 @@ enum AIDesignGuide {
         highest along "pour", cone keys in the corners (one is bigger, so the halves only go together one way) and a 10 mm wall. Change what \
         does not fit with mold_id: parting ("x", "y", "z", "xy", "xz", "yz" or a construction plane's id; planes that lean are refused), \
         parting_offset, pour, wall, gate_diameter, gate_point [x, y, z], vents [[x, y, z], …] (replaces the list), vent_diameter, keys, \
-        key_size, key_clearance. Sizes can be parameters.
+        key_size, key_clearance, pieces. Sizes can be parameters.
         3. Read the answer: status "built" or "failed" with error, warnings, silicone_ml (the cavity: body, gate and vents: mix a little \
-        more), block_mm, the parting plane and the ids of the two halves. A failed mold is still saved so it can be fixed.
+        more), block_mm, the parting plane and the ids of the pieces. A failed mold is still saved so it can be fixed.
         4. Vents: air is trapped at the top of every pocket that faces down while pouring. A part with such pockets needs a vent at the \
         highest point of each, [x, y, z] on the body's surface; a vent runs straight up from the point. Keep them 1.5 to 2.5 mm wide.
         5. export_mold writes both halves, laid out for printing: parting face up, cavity open, side by side. Print them in PLA or PETG \
@@ -48,9 +48,15 @@ enum AIDesignGuide {
 
         Undercuts are checked: get_mold lists the faces that lean back against the pull (undercut_faces, undercut_percent). Silicone only \
         warns, because it is peeled out of a mild undercut. With casting "resin" an undercut refuses the mold: part the body another way \
-        (parting "x", "y" or "z"), or change the body so nothing hangs back. A face parallel to the pull (no_draft_percent) is fine in \
+        (parting "x", "y" or "z"), cut it in four (pieces 4), or change the body so nothing hangs back. A face parallel to the pull (no_draft_percent) is fine in \
         silicone; in resin lean such faces 1 to 2 degrees with create_draft. auto_vents: true puts a vent at each lobe the gate does not \
         reach (peaks only: the ceiling under an overhang needs a vent you place yourself).
+
+        Four pieces: pieces 4 cuts each half again across a second plane through the middle of the body (cross: "auto" picks one that \
+        holds the pour direction, or name "x", "y" or "z"). Each piece is then pulled out sideways as well as away, so a groove or a hook that \
+        is an undercut across the parting plane can let go, and each piece is smaller to print. Reach for it when get_mold reports undercuts \
+        that no single parting axis avoids; two halves are simpler to print and to clamp, so keep them when they work. get_mold gives the \
+        second plane (cross_point, cross_normal) and the four ids, the one behind the second plane first.
 
         What it cannot do yet: shadowing (a face hidden behind another along the pull is not found), a body with a hole through it gets a \
         pin that is part of the mold (fine for silicone), a leaning parting plane, more than one body in a mold, and parting surfaces that \
