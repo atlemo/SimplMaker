@@ -149,16 +149,16 @@ extension Preferences {
         var glassFrost: (material: Material, whiteInLight: Double)? {
             switch self {
             case .thin: nil
-            case .regular: (.thinMaterial, 0.3)
-            case .thick: (.thickMaterial, 0.55)
+            case .regular: (.thinMaterial, 0.7)
+            case .thick: (.thickMaterial, 0.92)
             }
         }
         /// How much white is laid over the material in light mode.
         var whiteInLight: Double {
             switch self {
-            case .thin: 0.5
-            case .regular: 0.7
-            case .thick: 0.88
+            case .thin: 0.6
+            case .regular: 0.8
+            case .thick: 0.95
             }
         }
     }
