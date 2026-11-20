@@ -152,14 +152,11 @@ struct StartPage: View {
             StartAction(title: "Sketch", subtitle: "Draw a shape on a plane, then extrude it.", systemImage: "pencil.and.outline") {
                 model.startSketch()
             }
-            StartAction(title: "Box", subtitle: "A ready-made block to change from there.", systemImage: "cube") {
-                model.run(.box)
-            }
-            StartAction(title: "Cylinder", subtitle: "A round block: a peg, a tube, a wheel.", systemImage: "cylinder") {
-                model.run(.cylinder)
-            }
             StartAction(title: "Open the demo part", subtitle: "A plate with a hole, fillets and a chamfer.", systemImage: "cube.transparent") {
                 PartWindows.open { newDocument { CADFile(document: .demo()) } }
+            }
+            StartAction(title: "Watch the video tutorials", subtitle: "Short how-tos on the SimplMaker YouTube channel.", systemImage: "play.rectangle") {
+                NSWorkspace.shared.open(URL(string: "https://www.youtube.com/@SimplMaker")!)
             }
             Spacer(minLength: 0)
         }
