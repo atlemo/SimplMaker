@@ -175,7 +175,7 @@ struct StartPage: View {
         }
     }
 
-    /// New Part: this part itself, when it is only a Start page (a launcher does not stay behind), otherwise a new window.
+    /// New Part: this part itself, when it is only a Start page (a launcher does not stay behind), otherwise a new tab.
     private func newPart() {
         if isEmpty {
             model.setWorkspace(.design)

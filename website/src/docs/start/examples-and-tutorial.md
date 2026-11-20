@@ -9,13 +9,13 @@ SimplMaker opens on the **Start page**, a page as big as the window. It is also 
 
 | Choice | What it does |
 |---|---|
-| **New Part** | Opens an empty part in a new window, in Design |
+| **New Part** | Opens an empty part in a new tab, in Design |
 | **Open…** | Opens a `.simplmaker` file |
 | **Take the tutorial** | Starts the guided tutorial in this part, or in a new one if this part has something in it already |
 | **Sketch**, **Box**, **Cylinder** | Begin this part with that tool, and move to Design |
 | **Open the demo part** | Opens a plate with a hole, fillets and a chamfer |
 
-Your recent parts are listed on the right. Double-click one, or select it and press [[Return]]. The first part of a launch opens on the Start page. A part you make yourself (**New Part**, ⌘N, a new window) opens in Design, and so does a part with features in it.
+Your recent parts are listed on the right. Double-click one, or select it and press [[Return]]. The first part of a launch opens on the Start page. A part you make yourself (**New Part**, ⌘N, a new tab) opens in Design, and so does a part with features in it.
 
 ## The tutorial: a desk organizer
 

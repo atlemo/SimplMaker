@@ -20,8 +20,6 @@ struct SimplMakerApp: App {
         // Lets `swift run SimplMaker` show a normal, focusable app without an .app bundle.
         // (Use scripts/bundle-app.sh or Xcode for the full document experience.)
         NSApplication.shared.setActivationPolicy(.regular)
-        // No tabs: every part has a window of its own, and the system's tab commands (Show Tab Bar, Merge All Windows…) stay out of the Window menu.
-        NSWindow.allowsAutomaticWindowTabbing = false
         // A document app that starts with no window to restore shows the system's Open panel (with a New Document button) instead of an
         // empty part, on launch and when the Dock icon is clicked with no window open. The Start page is the way in, so an empty part opens.
         UserDefaults.standard.register(defaults: ["NSShowAppCentricOpenPanelInsteadOfUntitledFile": false])
@@ -29,7 +27,7 @@ struct SimplMakerApp: App {
     }
 
     var body: some Scene {
-        // The first part of a launch (nothing else open) is the Start page's; a part made while others are open (⌘N, a new window) is made on
+        // The first part of a launch (nothing else open) is the Start page's; a part made while others are open (⌘N, a new tab) is made on
         // purpose and opens in Design.
         DocumentGroup(newDocument: { CADFile(startsInDesign: OpenParts.any) }) { configuration in
             ContentView(file: configuration.document, fileURL: configuration.fileURL)
@@ -96,7 +94,7 @@ struct SimplMakerCommands: Commands {
     @AppStorage(Preferences.showAxes) private var showAxes = true
 
     var body: some Commands {
-        // File → New (⌘N) makes a part in a new window, like the other ways to open one.
+        // File → New (⌘N) makes a part as a tab of the front window, like the other ways to open one.
         CommandGroup(replacing: .newItem) {
             Button("New") {
                 // A part that is only a Start page is a launcher: the new part takes its place.

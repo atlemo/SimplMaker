@@ -3,7 +3,7 @@ title: The interface
 description: Where everything is: the toolbar, browser, parameters, viewport, inspector and timeline.
 ---
 
-Each part opens in a window of its own (⌘N, **File → New**, or **New Part** on the Start page); there are no tabs. The window has five areas.
+Each new part opens as a tab of the window you are in (⌘N, **File → New**, or **New Part** on the Start page). A slim tab bar hangs from the title bar once a window holds two parts, and is not there while it holds one. Right-click a tab, or use **Window → Move Tab to New Window**, to give a part its own window. The window has five areas.
 
 ![The SimplMaker window: toolbar on top, browser on the left, viewport in the middle, inspector on the right, timeline along the bottom.](shot:interface-overview)
 

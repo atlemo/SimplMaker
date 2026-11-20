@@ -45,8 +45,8 @@ struct WindowSizeMemory: NSViewRepresentable {
                 OpenParts.closed()
                 MainActor.assumeIsolated { StartPageWindows.set(number, false) }
             }
-            // Every part has a window of its own: no tabs.
-            window.tabbingMode = .disallowed
+            // Parts open as tabs of one window; the system's tab bar is hidden and our own strip hangs from the title bar (see `WindowChrome`).
+            window.tabbingMode = .preferred
             // A standard title bar: the traffic lights and the document's title are the system's. The ribbon floats in the content below.
             NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
                                                    name: NSWindow.didEndLiveResizeNotification, object: window)
