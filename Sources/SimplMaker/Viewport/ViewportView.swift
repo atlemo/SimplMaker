@@ -2239,7 +2239,7 @@ final class ConstraintGlyphView: NSTextField {
     /// Fixed colours (not the system's dynamic ones), so the symbol keeps its contrast over any sketch paper.
     private func updateAppearance() {
         if isSelectedGlyph {
-            backgroundColor = .controlAccentColor  // constraint symbols exist only while sketching
+            backgroundColor = Preferences.sketchAccentNS()  // constraint symbols exist only while sketching
             textColor = .white
         } else if isProblemGlyph {
             backgroundColor = NSColor(srgbRed: 0.86, green: 0.18, blue: 0.16, alpha: 0.95)  // fixed red, readable on any paper
@@ -2248,7 +2248,7 @@ final class ConstraintGlyphView: NSTextField {
             backgroundColor = dark ? NSColor(white: 0.14, alpha: 0.92) : NSColor(white: 1, alpha: 0.92)
             textColor = dark ? NSColor(white: 0.85, alpha: 1) : NSColor(white: 0.2, alpha: 1)
         }
-        layer?.borderColor = (isPatternButton ? NSColor.controlAccentColor
+        layer?.borderColor = (isPatternButton ? Preferences.sketchAccentNS()
                               : dark ? NSColor(white: 1, alpha: 0.3) : NSColor(white: 0, alpha: 0.3)).cgColor
         layer?.borderWidth = isPatternButton ? 1.5 : 0.5
         if isPatternButton {
@@ -2302,10 +2302,10 @@ final class DimensionLabelView: NSTextField {
             textColor = .alternateSelectedControlTextColor
             layer?.borderWidth = 0
         } else if isHovered {
-            backgroundColor = dark ? NSColor(white: 0.14, alpha: 0.95).blended(withFraction: 0.35, of: .controlAccentColor)
-                : NSColor(white: 1, alpha: 0.95).blended(withFraction: 0.3, of: .controlAccentColor)
+            backgroundColor = dark ? NSColor(white: 0.14, alpha: 0.95).blended(withFraction: 0.35, of: Preferences.sketchAccentNS())
+                : NSColor(white: 1, alpha: 0.95).blended(withFraction: 0.3, of: Preferences.sketchAccentNS())
             textColor = dark ? .white : .black
-            layer?.borderColor = NSColor.controlAccentColor.cgColor
+            layer?.borderColor = Preferences.sketchAccentNS().cgColor
             layer?.borderWidth = 1
         } else {
             let base = dark ? NSColor(white: 0.12, alpha: 0.92) : NSColor(white: 1, alpha: 0.92)
@@ -2316,9 +2316,9 @@ final class DimensionLabelView: NSTextField {
                 layer?.borderWidth = 0
             } else if isDimension {
                 // A dimension: a tinted pill with an accent outline, like a field. Opaque enough to read over the grid.
-                backgroundColor = base.blended(withFraction: 0.22, of: .controlAccentColor)
+                backgroundColor = base.blended(withFraction: 0.22, of: Preferences.sketchAccentNS())
                 textColor = dark ? .white : .black
-                layer?.borderColor = NSColor.controlAccentColor.cgColor
+                layer?.borderColor = Preferences.sketchAccentNS().cgColor
                 layer?.borderWidth = 1
             } else {
                 backgroundColor = base
@@ -2374,9 +2374,9 @@ final class MarqueeView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard rect.width > 0 || rect.height > 0 else { return }
         let path = NSBezierPath(rect: rect)
-        NSColor.controlAccentColor.withAlphaComponent(crossing ? 0.12 : 0.18).setFill()
+        Preferences.sketchAccentNS().withAlphaComponent(crossing ? 0.12 : 0.18).setFill()
         path.fill()
-        NSColor.controlAccentColor.setStroke()
+        Preferences.sketchAccentNS().setStroke()
         path.lineWidth = 1
         if crossing { path.setLineDash([5, 3], count: 2, phase: 0) }
         path.stroke()
@@ -2462,7 +2462,7 @@ final class SketchFieldPanel: NSStackView {
     func applyColors() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
-            layer?.borderColor = NSColor.controlAccentColor.cgColor
+            layer?.borderColor = Preferences.sketchAccentNS().cgColor
         }
     }
 

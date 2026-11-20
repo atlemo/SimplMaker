@@ -109,13 +109,18 @@ extension Preferences {
         AccentSource(rawValue: UserDefaults.standard.string(forKey: accentSource) ?? "") ?? .simplMaker
     }
 
-    /// Sketch mode never uses the orange: the sketch paper and its toolbar are tones of the system's colour.
-    static func accent(_ source: AccentSource, sketching: Bool) -> Color {
-        source == .simplMaker && !sketching ? DS.brand : Color(nsColor: .controlAccentColor)
+    /// Sketch mode never uses the orange: the sketch paper and its toolbar are tones of the system's colour, or of
+    /// the paper chosen in Settings (green paper, green highlights), so the highlight always matches the toolbar.
+    static func accent(_ source: AccentSource, sketching: Bool, paper: SketchPaper = sketchPaperSetting) -> Color {
+        if sketching { return Color(nsColor: paper.toolbarNSColor) }
+        return source == .simplMaker ? DS.brand : Color(nsColor: .controlAccentColor)
     }
     static func nsAccent(sketching: Bool) -> NSColor {
-        accentSourceSetting == .simplMaker && !sketching ? DS.brandNS : .controlAccentColor
+        if sketching { return sketchPaperSetting.toolbarNSColor }
+        return accentSourceSetting == .simplMaker ? DS.brandNS : .controlAccentColor
     }
+    /// The system accent colour, or while a sketch is open the one of the chosen sketch paper (see `accent`).
+    static func sketchAccentNS() -> NSColor { sketchPaperSetting.toolbarNSColor }
 }
 
 /// Gives a window's content the accent colour (the `\.accent` environment value, and the tint of its native
@@ -123,9 +128,10 @@ extension Preferences {
 struct AccentScope: ViewModifier {
     var sketching = false
     @AppStorage(Preferences.accentSource) private var source = Preferences.AccentSource.simplMaker
+    @AppStorage(Preferences.sketchPaper) private var paper = Preferences.SketchPaper.blue
 
     func body(content: Content) -> some View {
-        let color = Preferences.accent(source, sketching: sketching)
+        let color = Preferences.accent(source, sketching: sketching, paper: paper)
         content.environment(\.accent, color).tint(color)
     }
 }

@@ -101,7 +101,7 @@ struct SettingsView: View {
                 Picker("Accent color", selection: $accentSource) {
                     ForEach(Preferences.AccentSource.allCases) { Text($0.title).tag($0) }
                 }
-                Text("The highlight color of tools and selections. While you sketch, the system's color is always used, since the sketch paper is tinted to match it.")
+                Text("The highlight color of tools and selections. While you sketch, the color of the sketch paper you chose below is used instead (the system's color for Soft blue and None).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
