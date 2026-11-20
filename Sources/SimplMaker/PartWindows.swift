@@ -168,10 +168,22 @@ enum OpenParts {
 
     /// Called by a part window as it is being set up: if a part was opened from `pendingAnchor`, this window joins its tabs now, while
     /// it is still hidden, so it never shows as a window of its own first.
+    /// A part opened in a way that does not go through `open` (File → Open, the Start page's Open…, a file dropped on the Dock icon or
+    /// opened from Finder) has no `pendingAnchor`: it joins the front part window's tabs all the same, so a part always opens as a tab.
     static func adopt(_ window: NSWindow) {
-        guard let anchor = pendingAnchor, anchor !== window, window.tabbingMode != .disallowed, !window.isVisible else { return }
+        guard anchorIsFree(for: window) else { return }
+        let explicit = pendingAnchor
+        guard let anchor = explicit ?? frontPartWindow(), anchor !== window else { return }
         pendingAnchor = nil
         if window.tabGroup !== anchor.tabGroup { anchor.addTabbedWindow(window, ordered: .above) }
+        // A Start page is only a launcher: the part opened from it takes its place (`open` does this for the ones it knows about).
+        if explicit == nil, StartPageWindows.contains(anchor.windowNumber) {
+            DispatchQueue.main.async { [weak anchor] in anchor?.close() }
+        }
+    }
+
+    private static func anchorIsFree(for window: NSWindow) -> Bool {
+        window.tabbingMode != .disallowed && !window.isVisible
     }
 
     /// Runs `create`, which opens a part's window, and joins that window to `anchor`'s tabs (the front part window by default).
@@ -262,7 +274,7 @@ struct WindowChromeAttach: NSViewRepresentable {
     }
 }
 /// The tab strip that hangs from the title bar: a flat row, the tabs and a new-tab button, drawn straight on the title bar's own colour
-/// rather than on glass, with a hairline under it. It is in the title bar only while the window has two parts or more.
+/// rather than on glass. (The hairline under it is the window's own title bar separator; drawing a second one here showed as two lines.) It is in the title bar only while the window has two parts or more.
 struct WindowTabStrip: View {
     let chrome: WindowChrome
 
@@ -283,7 +295,6 @@ struct WindowTabStrip: View {
         .padding(.horizontal, DS.Spacing.space3)
         .frame(maxWidth: .infinity)
         .frame(height: WindowChrome.stripHeight)
-        .overlay(alignment: .bottom) { Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 0.5) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tabs")
     }
