@@ -130,9 +130,11 @@ final class DocumentModel {
     /// The mold's halves are out of date: the body or a setting changed while another workspace was showing.
     @ObservationIgnored var moldsStale = true
     @ObservationIgnored var moldGeneration = 0
-    /// Whether the grid shows in the Mold workspace. It starts hidden there (the grid is about sketching, and gets in the way of
-    /// the halves); the Show Grid command flips this one, not the preference, while that workspace is on. Not saved.
-    var moldShowsGrid = false
+    /// Whether the grid shows in the Mold and Split workspaces. It starts hidden there (the grid is about sketching, and gets in the
+    /// way of the halves and pieces); the Show Grid command flips this one, not the preference, while one of them is on. Not saved.
+    var workspaceShowsGrid = false
+    /// The workspace is one where the grid starts hidden and Show Grid flips `workspaceShowsGrid` instead of the preference.
+    var hasOwnGridSetting: Bool { workspace == .mold || workspace == .split }
     /// The Mold or Split workspace is showing the part's bodies, waiting for a click on the one to work on. Set when the workspace is
     /// entered with nothing made yet (or by "Pick in 3D View"); a body clicked, or a mold or split chosen in the list, ends it, and
     /// the other bodies are then left out of the scene. Not saved.
