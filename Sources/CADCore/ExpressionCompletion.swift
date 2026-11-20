@@ -98,6 +98,22 @@ public enum ExpressionCompletion {
         return items.isEmpty ? nil : (word, items)
     }
 
+    /// What a chosen candidate replaces: the typed word, and the unit that followed the value it stands in for.
+    /// A field holding "2 mm" with the "2" typed over leaves " mm" behind the word, and "width mm" is not an
+    /// expression (a parameter already carries its unit), so the stale unit goes with the word. Only a bare
+    /// unit name right after the word counts; "wi + 2 mm" and "wi mmx" are left alone.
+    public static func replacementRange(for word: Word, in text: String) -> Range<Int> {
+        let tail = text[String.Index(utf16Offset: word.range.upperBound, in: text)...]
+        var i = tail.startIndex
+        while i < tail.endIndex, tail[i] == " " || tail[i] == "\t" { i = tail.index(after: i) }
+        var j = i
+        while j < tail.endIndex, tail[j].isLetter { j = tail.index(after: j) }
+        let unit = String(tail[i..<j])
+        guard !unit.isEmpty, Units.table[unit] != nil else { return word.range }
+        if j < tail.endIndex, tail[j].isNumber || tail[j] == "_" || tail[j] == "(" { return word.range }  // part of a longer name
+        return word.range.lowerBound..<j.utf16Offset(in: text)
+    }
+
     /// `text` with the word replaced by the chosen candidate, and where the caret goes.
     public static func applying(_ candidate: CompletionCandidate, to text: String, replacing range: Range<Int>) -> (text: String, caret: Int) {
         let lo = String.Index(utf16Offset: range.lowerBound, in: text), hi = String.Index(utf16Offset: range.upperBound, in: text)

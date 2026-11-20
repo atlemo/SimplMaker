@@ -84,6 +84,21 @@ import Testing
         #expect(f.caret == 4)
     }
 
+    @Test func completingOverAValueTakesItsStaleUnitToo() throws {
+        let edge = CompletionCandidate(name: "chamfer_edge", detail: "1 mm")
+        func complete(_ text: String, caret: Int) throws -> String {
+            let w = try #require(ExpressionCompletion.word(in: text, caret: caret))
+            let r = ExpressionCompletion.replacementRange(for: w, in: text)
+            return ExpressionCompletion.applying(edge, to: text, replacing: r).text
+        }
+        #expect(try complete("cham mm", caret: 4) == "chamfer_edge", "the '2' of '2 mm' typed over")
+        #expect(try complete("cham   cm", caret: 4) == "chamfer_edge")
+        #expect(try complete("cham mm + 2", caret: 4) == "chamfer_edge + 2")
+        #expect(try complete("cham + 2 mm", caret: 4) == "chamfer_edge + 2 mm", "a unit after another value stays")
+        #expect(try complete("2 * cham", caret: 8) == "2 * chamfer_edge")
+        #expect(try complete("cham mmx", caret: 4) == "chamfer_edge mmx", "not a unit")
+    }
+
     @Test func limitsTheList() {
         let many = (0..<30).map { CompletionCandidate(name: "p\($0)") }
         #expect(ExpressionCompletion.suggestions(for: "p", parameters: many).count == ExpressionCompletion.maxSuggestions)

@@ -81,7 +81,8 @@ final class ParameterCompleter: NSObject {
         // offered for the field's submit handler, which runs just after this.
         if let editor, let word, items.indices.contains(selected), word.prefix != items[selected].name,
            (note.userInfo?["NSTextMovement"] as? Int) == NSTextMovement.return.rawValue {
-            let done = ExpressionCompletion.applying(items[selected], to: editor.string, replacing: word.range).text
+            let range = ExpressionCompletion.replacementRange(for: word, in: editor.string)
+            let done = ExpressionCompletion.applying(items[selected], to: editor.string, replacing: range).text
             endedOffer = done
             DispatchQueue.main.async { [weak self] in self?.endedOffer = nil }
         }
@@ -219,7 +220,8 @@ final class ParameterCompleter: NSObject {
         guard items.indices.contains(index), let editor, let word else { return }
         let candidate = items[index]
         applying = true  // the edit is ours: no new list for the word just completed
-        editor.insertText(candidate.insertion, replacementRange: NSRange(location: word.range.lowerBound, length: word.range.count))
+        let range = ExpressionCompletion.replacementRange(for: word, in: editor.string)
+        editor.insertText(candidate.insertion, replacementRange: NSRange(location: range.lowerBound, length: range.count))
         applying = false
         hide()
     }
