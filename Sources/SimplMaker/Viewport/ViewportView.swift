@@ -94,7 +94,16 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     private let controlsLayer = ControlsLayer()
 
     /// False while the view is disabled (the Start page is over it), so Tab skips it.
-    var allowsFocus = true
+    /// The view cube, its turn arrows, the labels and the typing fields are controls of this view (and of the layer above the
+    /// window's content), so hiding both takes them out of the Tab loop and the clicks too.
+    var allowsFocus = true {
+        didSet {
+            guard allowsFocus != oldValue else { return }
+            isHidden = !allowsFocus
+            controlsLayer.isHidden = !allowsFocus
+            if allowsFocus { needsDisplay = true }
+        }
+    }
     override var acceptsFirstResponder: Bool { allowsFocus }
 
     /// Whether a point (in this view) is on the toolbar strip at the top, which drags the window.
