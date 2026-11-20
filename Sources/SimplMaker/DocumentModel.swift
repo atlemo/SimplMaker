@@ -35,6 +35,8 @@ struct RegenProgress: Equatable {
 @Observable
 final class DocumentModel {
     private(set) var document: CADDocument
+    /// A picture of the part (PNG), kept up to date by its file; the tab strip shows it in front of the title.
+    var thumbnailPNG: Data?
     /// Counts the changes made to the document (also undo and redo), so a reader can tell whether it has changed since.
     private(set) var documentRevision = 0
     private(set) var result: RegenResult?

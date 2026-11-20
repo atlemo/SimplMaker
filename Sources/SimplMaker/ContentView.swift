@@ -157,6 +157,8 @@ struct DocumentWindow: View {
         .onChange(of: undoManager) { model.undoManager = undoManager }
         // A part that is only a Start page is a launcher, not a part (see `StartPageWindows`).
         .onChange(of: model.workspace == .start && model.document.features.isEmpty, initial: true) { chrome.setStartPage($1) }
+        // The part's picture is the small icon in front of its tab's title.
+        .onChange(of: model.thumbnailPNG, initial: true) { chrome.setIcon($1) }
         // The start page makes way when the part gets something in it (an import, or an AI client building) or the tutorial begins.
         .onChange(of: model.document.features.isEmpty) { if !model.document.features.isEmpty, model.workspace == .start { model.setWorkspace(.design) } }
         .onChange(of: guide.isActive) { if guide.isActive, model.workspace == .start { model.setWorkspace(.design) } }

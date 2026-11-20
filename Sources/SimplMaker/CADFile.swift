@@ -74,6 +74,7 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
         #if os(macOS)
         if AIFeature.isAvailable { DocumentRegistry.shared.register(m) }  // the AI interface can now name this document
         #endif
+        m.thumbnailPNG = thumbnail.withLock { $0 }  // the picture stored in the file, until a new one is drawn
         modelStorage = m
         return m
     }
@@ -105,6 +106,7 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
             let image = try? await ViewportSnapshot.render(model, direction: .iso, width: 512, height: 512, axes: false)
             guard !Task.isCancelled else { return }
             thumbnail.withLock { $0 = image?.png }  // nothing to show (an empty part) means no picture
+            model.thumbnailPNG = image?.png
             if let fileURL { RecentPictures.store(image?.png, for: fileURL) }
             #endif
         }

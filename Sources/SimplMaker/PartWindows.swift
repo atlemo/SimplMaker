@@ -41,6 +41,7 @@ extension Notification.Name {
     private(set) var tabs: [Tab] = []
     /// This window's part is only a Start page (see `StartPageWindows`); kept here until the window is known.
     @ObservationIgnored private var isStartPage = false
+    @ObservationIgnored private var pendingIcon: NSImage?
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private weak var accessory: NSTitlebarAccessoryViewController?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
@@ -52,6 +53,7 @@ extension Notification.Name {
         self.window = window
         PartWindows.adopt(window)
         StartPageWindows.set(window.windowNumber, isStartPage)
+        TabIcons.shared.images[window.windowNumber] = pendingIcon
         installStrip(in: window)
         // A Start page opens in the middle of the screen it is on. Next turn of the run loop: the window's remembered size is applied
         // while it is being set up (see `WindowSizeMemory`), and the centre is the centre of that size.
@@ -106,6 +108,12 @@ extension Notification.Name {
         SystemTabBar.hideSoon()
     }
 
+    /// The part's picture for its tab (nil: none yet, an empty part).
+    func setIcon(_ png: Data?) {
+        pendingIcon = png.flatMap { NSImage(data: $0) }
+        if let window { TabIcons.shared.images[window.windowNumber] = pendingIcon }
+    }
+
     /// This window's part is only a Start page, or is not any more.
     func setStartPage(_ on: Bool) {
         isStartPage = on
@@ -132,6 +140,12 @@ extension Notification.Name {
     func newTab() {
         PartWindows.open(from: window) { NSDocumentController.shared.newDocument(nil) }
     }
+}
+
+/// The pictures of the open parts, by window number, for the tab strip (every window's strip shows all the tabs).
+@MainActor @Observable final class TabIcons {
+    static let shared = TabIcons()
+    var images: [Int: NSImage] = [:]
 }
 
 /// How many part windows are open, readable from any thread: the `newDocument:` closure of the DocumentGroup runs on an operation
@@ -282,8 +296,20 @@ private struct TabButton: View {
     @State private var hovering = false
 
     var body: some View {
-        let fill: Color = tab.selected ? Color.primary.opacity(0.12) : hovering ? Color.primary.opacity(0.06) : .clear
+        // A tab in the background has a faint fill of its own, so it reads as a tab and not as loose text.
+        let fill: Color = tab.selected ? Color.primary.opacity(0.12) : hovering ? Color.primary.opacity(0.09) : Color.primary.opacity(0.045)
         HStack(spacing: DS.Spacing.space2) {
+            // The part's picture, tiny, like a favicon (a cube until the part has one).
+            Group {
+                if let image = TabIcons.shared.images[tab.id] {
+                    Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+                } else {
+                    Image(systemName: "cube").font(.system(size: 11)).foregroundStyle(.tertiary)
+                }
+            }
+            .frame(width: 16, height: 16)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .accessibilityHidden(true)
             Text(tab.title)
                 .font(.system(size: 12, weight: tab.selected ? .medium : .regular))
                 .lineLimit(1)
