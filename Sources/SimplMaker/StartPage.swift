@@ -113,12 +113,12 @@ struct StartPage: View {
 
     // MARK: Panel
 
-    /// One block, rounded at its outside corners only: the ways to begin on white, the recent parts on white at 30 %, so the two read as
+    /// One block, rounded at its outside corners only: the ways to begin on white, the recent parts on white at 50 %, so the two read as
     /// parts of the same thing.
     private func panel(wide: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: DS.Radius.window + DS.Spacing.space5, style: .continuous)
         let white = begin.frame(maxWidth: wide ? 380 : .infinity, maxHeight: .infinity).background(DS.windowBackground)
-        let faded = recents.frame(maxWidth: .infinity, maxHeight: .infinity).background(DS.windowBackground.opacity(0.3))
+        let faded = recents.frame(maxWidth: .infinity, maxHeight: .infinity).background(DS.windowBackground.opacity(0.5))
         return Group {
             if wide {
                 HStack(spacing: 0) { white; faded }
@@ -128,11 +128,12 @@ struct StartPage: View {
         }
         .frame(maxHeight: .infinity)
         .clipShape(shape)
-        // The shadow is drawn behind the block only (not on its contents), and cut out of its inside, as on the iPad.
+        // The shadow is drawn behind the block only (not on its contents), and cut out of its inside, as on the iPad. The cut-out is one point
+        // larger than the block: cut with the same outline, the antialiased rim of the black fill survives it as a dark, jagged fringe.
         .background {
             shape.fill(.black)
                 .shadow(color: .black.opacity(0.16), radius: 24, y: 8)
-                .mask { Rectangle().padding(-Self.shadowBleed).overlay { shape.blendMode(.destinationOut) }.compositingGroup() }
+                .mask { Rectangle().padding(-Self.shadowBleed).overlay { shape.inset(by: -1).blendMode(.destinationOut) }.compositingGroup() }
         }
     }
 
