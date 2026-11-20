@@ -50,6 +50,7 @@ extension Notification.Name {
     func attach(to window: NSWindow) {
         guard self.window !== window else { return refresh() }
         self.window = window
+        PartWindows.adopt(window)
         StartPageWindows.set(window.windowNumber, isStartPage)
         installStrip(in: window)
         // A Start page opens in the middle of the screen it is on. Next turn of the run loop: the window's remembered size is applied
@@ -147,11 +148,24 @@ enum OpenParts {
 /// the tab group of the window the part was opened from. (The new window is not known to the caller, so it is the one that
 /// appears while `create` runs and a moment after.) A Start page, which is only a launcher, is closed once the part it started has opened.
 @MainActor enum PartWindows {
+    /// The window whose tabs the next part window is to join. A new window joins them the moment it is set up (see `adopt`), before it
+    /// is on screen; the wait in `join` is the fallback for a window that did not.
+    private static weak var pendingAnchor: NSWindow?
+
+    /// Called by a part window as it is being set up: if a part was opened from `pendingAnchor`, this window joins its tabs now, while
+    /// it is still hidden, so it never shows as a window of its own first.
+    static func adopt(_ window: NSWindow) {
+        guard let anchor = pendingAnchor, anchor !== window, window.tabbingMode != .disallowed, !window.isVisible else { return }
+        pendingAnchor = nil
+        if window.tabGroup !== anchor.tabGroup { anchor.addTabbedWindow(window, ordered: .above) }
+    }
+
     /// Runs `create`, which opens a part's window, and joins that window to `anchor`'s tabs (the front part window by default).
     static func open(from anchor: NSWindow? = nil, _ create: () -> Void) {
         let anchor = anchor ?? frontPartWindow()
         let before = Set(NSApp.windows.map(\.windowNumber))
         let closesAnchor = anchor.map { StartPageWindows.contains($0.windowNumber) } ?? false
+        pendingAnchor = anchor
         create()
         join(after: before, to: anchor, closing: closesAnchor)
     }
@@ -161,6 +175,7 @@ enum OpenParts {
         let anchor = anchor ?? frontPartWindow()
         let before = Set(NSApp.windows.map(\.windowNumber))
         let closesAnchor = anchor.map { StartPageWindows.contains($0.windowNumber) } ?? false
+        pendingAnchor = anchor
         try await create()
         join(after: before, to: anchor, closing: closesAnchor)
     }
@@ -182,8 +197,10 @@ enum OpenParts {
                 if let anchor, new.tabGroup !== anchor.tabGroup { anchor.addTabbedWindow(new, ordered: .above) }
                 new.makeKeyAndOrderFront(nil)
                 if closing, let anchor, new !== anchor { anchor.close() }
+                pendingAnchor = nil
                 return
             }
+            pendingAnchor = nil
         }
     }
 }
