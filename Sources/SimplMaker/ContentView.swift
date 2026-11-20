@@ -95,8 +95,10 @@ struct DocumentWindow: View {
                 } else {
                     DesignToolbar(model: model, layout: layout)
                 }
-            case .start, .render:
-                EmptyView()  // a page, and a view to look at: no tools (see `Workspace.hasTools`)
+            case .render:
+                RenderToolbar(model: model)
+            case .start:
+                EmptyView()  // a page: no tools (see `Workspace.hasTools`)
             }
         }
         .environment(\.toolTitles, titled)
@@ -201,8 +203,10 @@ struct DocumentWindow: View {
                              chromeTop: ribbonBottom),
                        chrome: EmptyView(), topChrome: chromeTop, showsStartCard: false)
         // The Start workspace is a page as big as the window, over the view and the panels; the toolbar and the ribbon stay over it.
-        // What it covers is hidden from VoiceOver.
+        // What it covers is hidden from VoiceOver and out of the Tab key loop (disabled, so no button or field under the page can be
+        // reached with the keyboard; the page is opaque, so nothing shows of it).
         .accessibilityHidden(model.workspace == .start)
+        .disabled(model.workspace == .start)
         .overlay {
             if model.workspace == .start {
                 StartPage(model: model, guide: guide)

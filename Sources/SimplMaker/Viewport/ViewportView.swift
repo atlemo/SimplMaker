@@ -93,7 +93,9 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// the Text tool's box) above the floating panels, which cover the viewport's own subviews.
     private let controlsLayer = ControlsLayer()
 
-    override var acceptsFirstResponder: Bool { true }
+    /// False while the view is disabled (the Start page is over it), so Tab skips it.
+    var allowsFocus = true
+    override var acceptsFirstResponder: Bool { allowsFocus }
 
     /// Whether a point (in this view) is on the toolbar strip at the top, which drags the window.
     private func isOnToolbar(_ p: NSPoint) -> Bool { topInset > 0 && p.y < topInset }
@@ -2535,6 +2537,8 @@ struct ViewportView: NSViewRepresentable {
 
     func updateNSView(_ view: ViewportMTKView, context: Context) {
         guard let renderer = view.renderer else { return }
+        view.allowsFocus = context.environment.isEnabled
+        if !view.allowsFocus, view.window?.firstResponder === view { view.window?.makeFirstResponder(nil) }
         view.panelInsets = panelInsets  // before any fit below
         view.chromeTop = chromeTop
         let c = context.coordinator
