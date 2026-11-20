@@ -202,13 +202,16 @@ public enum MoldBuilder {
         let block = try makeBlock(centre: centre, size: size)
 
         // Where the gate goes in: the body's highest point along "up", or the point the setup names.
-        let top = highestPoint(of: part, mesh: mesh, along: up, bounds: bounds, ext: ext)
-        // A hand-placed gate stays where it was clicked, at the height of the surface there (as a vent does): its channel starts a
-        // millimetre under that surface. Lifting it to the body's highest point made it start in the air wherever the body is lower.
-        var gate = setup.gatePoint?.vector ?? top
         // A gate beside a vertical parting plane lies on the plane, so the split makes two half-channels.
         let upAxis = setup.up.axis
-        if upAxis != MoldResult.axis(of: normal), setup.gatePoint == nil { gate[axisIndex] = planeCoordinate }
+        let onPlane = upAxis != MoldResult.axis(of: normal)
+        // The point has to lie on material: the average of the highest vertices is in the hole of a top face that has one (the SimplCAD
+        // logo's), and a gate there pours into the hole and never reaches the cavity.
+        let spot = gateSpot(of: part, mesh: mesh, along: up, bounds: bounds, ext: ext, radius: gateDiameter / 2,
+                            plane: onPlane ? (axisIndex, planeCoordinate) : nil)
+        // A hand-placed gate stays where it was clicked, at the height of the surface there (as a vent does): its channel starts a
+        // millimetre under that surface. Lifting it to the body's highest point made it start in the air wherever the body is lower.
+        var gate = setup.gatePoint?.vector ?? spot.point
         // The highest point of a round body is often where its own axis runs out (the pole of a sphere), and a gate exactly on that axis
         // makes the kernel's subtraction drop the cavity without saying so (a sphere at (13.7, -8.2) did). A hundredth of a millimetre to
         // the side is the same gate to the eye and to the printer, and the kernel copes.
@@ -234,10 +237,22 @@ public enum MoldBuilder {
         }
         if gateDiameter / 2 + 1 > wall { out.warnings.append("The gate is wider than the wall, so it may break through the side of the mold.") }
 
-        // Does the gate meet the body? It starts just under the highest point, so it does, unless the point was placed by hand.
-        if setup.gatePoint != nil, let reach = try? part.distance(.body, to: try channel(gate, diameter: gateDiameter, id: "check"), .body),
-           reach.distance > 1e-3 {
-            out.warnings.append("The gate does not reach the body (\(String(format: "%.1f", reach.distance)) mm away).")
+        // Does the gate meet the body? It starts just under the highest point, so it does, unless the point was placed by hand or the
+        // top is narrower than the gate (a ring around a hole): then it is measured how much of its mouth is in the body. A gate that
+        // only touches the wall of a hole, or hangs over an edge, lets nothing into the cavity.
+        let mouth = Double.pi * (gateDiameter / 2) * (gateDiameter / 2) * gateDepth
+        var gateEngaged: Double?
+        if setup.gatePoint != nil || (spot.margin ?? .infinity) < gateDiameter / 2 {
+            let probe = try channel(gate, diameter: gateDiameter, id: "check")
+            if let reach = try? part.distance(.body, to: probe, .body), reach.distance > 1e-3 {
+                out.warnings.append("The gate does not reach the body (\(String(format: "%.1f", reach.distance)) mm away).")
+            } else {
+                let engaged = (try? probe.boolean(part, SK_COMMON))?.volume ?? 0
+                gateEngaged = engaged
+                if engaged < mouth * 0.25 {
+                    out.warnings.append("The gate sits over a hole or an edge of the body, so almost none of it meets the body and the cavity may not fill. Move it onto solid material.")
+                }
+            }
         }
 
         // The keys: cones in the four corners of the ring around the body, on a parting plane; the last one is bigger so the pieces
@@ -278,8 +293,10 @@ public enum MoldBuilder {
         // taken out is measured. The channels were cut first, so the part of the body they already took is not taken again: for the gate
         // at the highest point that is a thin cap, otherwise it is measured.
         let overlap: Double
-        if setup.gatePoint == nil, setup.vents.isEmpty {
+        if setup.gatePoint == nil, setup.vents.isEmpty, (spot.margin ?? .infinity) >= gateDiameter / 2 {
             overlap = Double.pi * (gateDiameter / 2) * (gateDiameter / 2) * gateDepth * 1.5
+        } else if setup.gatePoint == nil, setup.vents.isEmpty, let gateEngaged {
+            overlap = gateEngaged * 1.5
         } else {
             overlap = (try? channels.boolean(part, SK_COMMON))?.volume ?? channels.volume
         }
@@ -465,6 +482,95 @@ public enum MoldBuilder {
             if simd_dot(v, up) >= best - tolerance { sum += v; n += 1 }
         }
         return n > 0 ? sum / n : fallback
+    }
+
+    /// Where the gate goes in: the middle of the body's highest surface, moved to where there is material when that middle is not on any
+    /// (a top face with a hole, a ring). `margin` is how far the point is from the nearest edge of that top surface, so a gate of
+    /// `radius` or less sits wholly on material; nil when the top is not flat enough to tell (a dome: its highest point is solid).
+    /// `plane` keeps the point on a vertical parting plane (axis index, coordinate), where the gate is cut into two half-channels.
+    static func gateSpot(of part: KBody, mesh: Mesh?, along up: SIMD3<Double>, bounds: (min: SIMD3<Double>, max: SIMD3<Double>),
+                         ext: SIMD3<Double>, radius: Double, plane: (index: Int, coordinate: Double)?) -> (point: SIMD3<Double>, margin: Double?) {
+        var base = highestPoint(of: part, mesh: mesh, along: up, bounds: bounds, ext: ext)
+        if let plane { base[plane.index] = plane.coordinate }
+        guard let mesh, mesh.indices.count >= 3, !mesh.positions.isEmpty else { return (base, nil) }
+        let pos = mesh.positions
+        func vertex(_ i: UInt32) -> SIMD3<Double> { let k = Int(i) * 3; return SIMD3(Double(pos[k]), Double(pos[k + 1]), Double(pos[k + 2])) }
+        var best = -Double.infinity
+        for i in stride(from: 0, to: pos.count - 2, by: 3) { best = max(best, simd_dot(SIMD3(Double(pos[i]), Double(pos[i + 1]), Double(pos[i + 2])), up)) }
+        let tolerance = max(1e-3, simd_length(ext) * 1e-4)
+
+        // The triangles of the highest, flat surface.
+        var top: [(SIMD3<Double>, SIMD3<Double>, SIMD3<Double>)] = []
+        for t in stride(from: 0, to: mesh.indices.count - 2, by: 3) {
+            let (a, b, c) = (vertex(mesh.indices[t]), vertex(mesh.indices[t + 1]), vertex(mesh.indices[t + 2]))
+            if min(simd_dot(a, up), simd_dot(b, up), simd_dot(c, up)) >= best - tolerance { top.append((a, b, c)) }
+        }
+        guard !top.isEmpty else { return (base, nil) }
+
+        // Everything in 2D across `up`. An edge that only one top triangle has is the surface's edge (a hole's rim counts).
+        let ua = perpendicular(to: up), wa = simd_cross(up, ua)
+        func flat(_ v: SIMD3<Double>) -> SIMD2<Double> { SIMD2(simd_dot(v, ua), simd_dot(v, wa)) }
+        struct Corner: Hashable { var x, y, z: Int }
+        func corner(_ v: SIMD3<Double>) -> Corner { Corner(x: Int((v.x * 1000).rounded()), y: Int((v.y * 1000).rounded()), z: Int((v.z * 1000).rounded())) }
+        struct EdgeKey: Hashable { var a, b: Corner }
+        var counts: [EdgeKey: (n: Int, p: SIMD2<Double>, q: SIMD2<Double>)] = [:]
+        for (a, b, c) in top {
+            for (u, v) in [(a, b), (b, c), (c, a)] {
+                let (cu, cv) = (corner(u), corner(v))
+                let key = (cu.x, cu.y, cu.z) < (cv.x, cv.y, cv.z) ? EdgeKey(a: cu, b: cv) : EdgeKey(a: cv, b: cu)
+                counts[key] = ((counts[key]?.n ?? 0) + 1, flat(u), flat(v))
+            }
+        }
+        let rim = counts.values.filter { $0.n == 1 }.map { ($0.p, $0.q) }
+        guard !rim.isEmpty else { return (base, nil) }
+
+        func distance(_ p: SIMD2<Double>, _ s: (SIMD2<Double>, SIMD2<Double>)) -> Double {
+            let d = s.1 - s.0, l2 = simd_dot(d, d)
+            let t = l2 > 0 ? max(0, min(1, simd_dot(p - s.0, d) / l2)) : 0
+            return simd_length(p - (s.0 + d * t))
+        }
+        func inside(_ p: SIMD2<Double>) -> Bool {
+            for (a, b, c) in top {
+                let (pa, pb, pc) = (flat(a), flat(b), flat(c))
+                func side(_ u: SIMD2<Double>, _ v: SIMD2<Double>) -> Double { (v.x - u.x) * (p.y - u.y) - (v.y - u.y) * (p.x - u.x) }
+                let (s1, s2, s3) = (side(pa, pb), side(pb, pc), side(pc, pa))
+                let eps = 1e-9
+                if (s1 >= -eps && s2 >= -eps && s3 >= -eps) || (s1 <= eps && s2 <= eps && s3 <= eps) { return true }
+            }
+            return false
+        }
+        /// Distance to the surface's edge for a point on it; −1 for a point that is not (the middle of a hole).
+        func margin(_ v: SIMD3<Double>) -> Double {
+            let p = flat(v)
+            guard inside(p) else { return -1 }
+            return rim.reduce(Double.infinity) { min($0, distance(p, $1)) }
+        }
+
+        let middle = margin(base)
+        if middle >= radius { return (base, middle) }
+
+        // Candidates on the surface: the middle of its triangles, or along the parting plane where the plane crosses them. A step
+        // through the triangles keeps this cheap on a body with a lot of them.
+        var candidates: [SIMD3<Double>] = []
+        let step = max(1, top.count / 300)
+        for (i, tri) in top.enumerated() where i % step == 0 {
+            let (a, b, c) = tri
+            guard let plane else { candidates.append((a + b + c) / 3); continue }
+            var ends: [SIMD3<Double>] = []
+            for (u, v) in [(a, b), (b, c), (c, a)] {
+                let (du, dv) = (u[plane.index] - plane.coordinate, v[plane.index] - plane.coordinate)
+                if (du < 0) != (dv < 0), du != dv { ends.append(u + (v - u) * (du / (du - dv))) }
+            }
+            if ends.count >= 2 { for s in [0.25, 0.5, 0.75] { candidates.append(ends[0] + (ends[1] - ends[0]) * s) } }
+        }
+        var bestPoint = base, bestMargin = middle
+        for var v in candidates {
+            v += up * (best - simd_dot(v, up))
+            let m = margin(v)
+            if m > bestMargin { bestPoint = v; bestMargin = m }
+        }
+        if let plane { bestPoint[plane.index] = plane.coordinate }
+        return (bestPoint, max(0, bestMargin))
     }
 
     // MARK: laying the halves out for printing

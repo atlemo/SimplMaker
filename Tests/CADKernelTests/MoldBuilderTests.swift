@@ -58,6 +58,29 @@ import simd
         #expect(front.faceNames.contains { $0.hasPrefix("gate") }, "\(front.faceNames)")
     }
 
+    /// A 20 mm cube with an 8 mm hole straight down through the middle of its top, the SimplCAD logo's problem: the middle of the top
+    /// face is the hole, so a gate put there (also 8 mm) poured into the hole and never met the cavity.
+    private func cubeWithTopHole() throws -> KBody {
+        let hole = try MoldBuilder.rod(from: SIMD3(10, 10, -1), dir: SIMD3(0, 0, 1), diameter: 8, length: 22, id: "hole")
+        return try box(20, 20, 20).boolean(hole, SK_CUT)
+    }
+
+    @Test func theGateLeavesTheHoleInTheTopAndMeetsTheBody() throws {
+        let part = try cubeWithTopHole()
+        for parting in [MoldParting.middle(.z), .middle(.x)] {
+            let r = MoldBuilder.build(setup { $0.parting = parting }, part: part, in: RegenResult())
+            #expect(r.isBuilt, "\(parting): \(r.error ?? "")")
+            let gate = try #require(r.gatePoint)
+            #expect(abs(gate.z - 20) < 1e-3, "\(gate)")
+            // On the ring of material between the hole (radius 4) and the edge of the top, not in the hole.
+            let fromAxis = simd_length(SIMD2(gate.x, gate.y) - SIMD2(10, 10))
+            #expect(fromAxis > 4.5 && gate.x >= 0 && gate.x <= 20 && gate.y >= 0 && gate.y <= 20, "\(parting): \(gate)")
+            #expect(!r.warnings.contains { $0.contains("hole or an edge") }, "\(r.warnings)")
+            // It cuts into the body: the cavity holds more than the part (the gate's part above the top, and the gate's mouth).
+            #expect(r.cavityVolume > part.volume + 300, "\(parting): \(r.cavityVolume) vs \(part.volume)")
+        }
+    }
+
     @Test func aGatePlacedOnALowerSurfaceStillReachesTheBody() throws {
         // A tall end and a low step: a gate clicked on the step must start under the step's surface, not under the body's highest point.
         let part = try box(40, 20, 10).boolean(try box(10, 20, 20, at: SIMD3(-15, 0, 0)), SK_FUSE)
