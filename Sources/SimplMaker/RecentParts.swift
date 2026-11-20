@@ -254,7 +254,7 @@ enum RecentParts {
     /// Parts removed from the list by the user; macOS's list can't drop single items, so these are
     /// hidden from it until the part is opened again.
     static let removedKey = "recentPartsRemoved"
-    static let limit = 12
+    static let limit = 20
 
     /// Called when a part window shows a file (opened, or saved for the first time).
     @MainActor static func note(_ url: URL) {
@@ -276,9 +276,10 @@ enum RecentParts {
     @MainActor static var urls: [URL] {
         var seen = Set(removed)
         let all = stored.map { URL(fileURLWithPath: $0) } + NSDocumentController.shared.recentDocumentURLs
-        return all.filter { url in
+        let existing = all.filter { url in
             FileManager.default.fileExists(atPath: url.path) && seen.insert(url.standardizedFileURL.path).inserted
         }
+        return Array(existing.prefix(limit))
     }
 
     private static var stored: [String] { UserDefaults.standard.stringArray(forKey: key) ?? [] }
