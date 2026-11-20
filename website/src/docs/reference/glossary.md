@@ -33,9 +33,13 @@ description: The CAD words used in SimplMaker, in plain language.
 
 **Fillet.** A rounded edge.
 
+**Gate.** The hole you pour silicone or resin through, in a [mold](doc:print/mold).
+
 **Loop.** A closed chain of edges around a face.
 
 **Marker.** The orange mark on the timeline that shows how far the model is built. Drag it back to roll the model back.
+
+**Mold.** A printable block with a hollow in the shape of a body, in two or four pieces, to cast copies in silicone or resin. See [Make a mold](doc:print/mold).
 
 **Normal.** The direction a face points: straight out of its surface.
 
@@ -44,6 +48,8 @@ description: The CAD words used in SimplMaker, in plain language.
 **Parameter.** A named value you can use anywhere, such as `width`.
 
 **Parametric.** Built from values and rules, so changing one value rebuilds the model.
+
+**Parting plane.** The plane where a mold opens into its pieces.
 
 **Profile.** A closed shape in a sketch that a tool can use, such as the outline you extrude.
 
@@ -59,7 +65,13 @@ description: The CAD words used in SimplMaker, in plain language.
 
 **STL.** A file format made of triangles, used by slicers.
 
+**Split to Print.** Cutting a part that is too big for the printer into pieces that fit, with connectors. See [Split to Print](doc:print/split-to-print).
+
 **Suppress.** Switch a feature off without deleting it.
+
+**Undercut.** A face that leans back against the way a mold piece is pulled away, so it holds the casting.
+
+**Vent.** A small hole in a mold that lets air out while you pour.
 
 **Timeline.** The list of features in the order they were made.
 

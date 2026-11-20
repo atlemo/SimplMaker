@@ -7,7 +7,11 @@ The **Split** workspace takes one body that is bigger than your printer's build 
 
 It sits between Design and Mold in the workspace list. Choose **Split** there, or right-click a body and choose **Split to Print…**, or use the command palette (⌘K).
 
+Every body is drawn and lights up as you point at it. **Click the body** that is too big, or press **Split** beside its name in the **Bodies** panel. The pointer button in that panel's header takes you back to choosing in the 3D view.
+
 A split is not a feature of the timeline. It is kept beside the part and has no effect on the modelling history.
+
+![The Split workspace: a big body cut into 27 pieces, with dovetail connectors, and the Split panel on the right.](shot:split-workspace)
 
 ## Choose your printer
 

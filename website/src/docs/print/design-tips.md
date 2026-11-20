@@ -57,6 +57,10 @@ A fillet on the underside of a part prints as an overhang. Use a **chamfer** at 
 
 A thin wall or a tall post is weak. Add [ribs](doc:create/rib) behind it, or [fillet](doc:modify/fillet-chamfer) the inside corners where it meets the base.
 
+## Too big for the printer?
+
+Use the [Split](doc:print/split-to-print) workspace to cut the part into pieces that fit, with pins, dovetails or magnets to join them. To copy a part many times, make a [mold](doc:print/mold) of it and cast it.
+
 ## A test print is cheap
 
 Print a small piece that has just the tricky feature: a thread, a snap fit, a hinge. Adjust `tolerance`, rebuild, print again. Because every size is a parameter, each round takes a minute.

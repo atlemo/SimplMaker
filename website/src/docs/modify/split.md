@@ -39,6 +39,8 @@ To split along a different place, move the construction plane or sketch that the
 - Splitting a hole-ridden body can make more than two pieces, if the cut separates parts that were only joined through the cut.
 - To keep only one side, split, then hide the other body in the browser.
 
+Cutting a part that is too big for your printer? The [Split to Print](doc:print/split-to-print) workspace does the sums for you and adds connectors.
+
 ## Split into Parts
 
 A body can be several loose pieces that were joined into one body without ever touching (two blocks extruded from one sketch, say). **Split into Parts** turns each piece into a body of its own, like the "split to parts" button in a slicer. No cutting plane is needed.

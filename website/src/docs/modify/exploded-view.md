@@ -45,7 +45,7 @@ On an axis where all the bodies are on one level, nothing opens along that axis,
 - While you [sketch](doc:sketch/start) or use a tool, the bodies sit back in place, because the handles and previews of the tools are drawn where the bodies really are. When you are done, they slide out again. The slider keeps its place.
 - You can still click bodies to select them and read their sizes in the inspector.
 - **Fit All** ([[⌘0]]) fits the view around the bodies as they are drawn now, so use it when a body has moved out of the window.
-- With the [Render view](doc:modify/render) on, the floor and the shadows follow the moved bodies. Together they make a good picture for a manual: use **Export render** to save it.
+- With the [Render view](doc:modify/render) on, the floor and the shadows follow the moved bodies. Together they make a good picture for a manual: use **Export** in the Render view to save it.
 - With [Section Analysis](doc:modify/section-analysis) on, the cut stays where its plane is. It does not move along with the bodies.
 - The exploded view is not in the file. STL and STEP exports, and the picture an AI assistant makes of a part, show the bodies in place. See [Work with AI](doc:ai/assistant).
 - Bodies that lie one inside the other with the same middle, such as a pin in the centre of a ring, do not separate along the axes where their middles are the same.

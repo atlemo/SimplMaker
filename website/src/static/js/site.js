@@ -68,4 +68,43 @@
   } else {
     items.forEach(function (el) { el.classList.add('in'); });
   }
+  // Screenshot slideshow: arrows, keys and mouse drag move it one picture at a time; touch scrolls it natively.
+  var track = document.querySelector('.shots-track');
+  if (track) {
+    var prevBtn = document.querySelector('.shots-btn[data-dir="-1"]'), nextBtn = document.querySelector('.shots-btn[data-dir="1"]');
+    var step = function () { var f = track.querySelector('.shot'); return f ? f.getBoundingClientRect().width + parseFloat(getComputedStyle(track).columnGap || 0) : 600; };
+    var go = function (dir) { track.scrollBy({ left: dir * step(), behavior: reduced ? 'auto' : 'smooth' }); };
+    var sync = function () {
+      var max = track.scrollWidth - track.clientWidth - 2;
+      if (prevBtn) prevBtn.disabled = track.scrollLeft <= 2;
+      if (nextBtn) nextBtn.disabled = track.scrollLeft >= max;
+    };
+    if (prevBtn) prevBtn.addEventListener('click', function () { go(-1); });
+    if (nextBtn) nextBtn.addEventListener('click', function () { go(1); });
+    track.addEventListener('scroll', sync, { passive: true });
+    window.addEventListener('resize', sync);
+    track.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowRight') { e.preventDefault(); go(1); } else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+    });
+    var down = false, startX = 0, startLeft = 0, moved = false;
+    track.addEventListener('pointerdown', function (e) {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      down = true; moved = false; startX = e.clientX; startLeft = track.scrollLeft;
+    });
+    window.addEventListener('pointermove', function (e) {
+      if (!down) return;
+      var dx = e.clientX - startX;
+      if (!moved && Math.abs(dx) > 4) { moved = true; track.classList.add('dragging'); }
+      if (moved) track.scrollLeft = startLeft - dx;
+    });
+    window.addEventListener('pointerup', function () {
+      if (!down) return;
+      down = false;
+      if (moved) {                       // settle on the nearest picture
+        track.classList.remove('dragging');
+        var s = step(); track.scrollTo({ left: Math.round(track.scrollLeft / s) * s, behavior: reduced ? 'auto' : 'smooth' });
+      }
+    });
+    sync();
+  }
 })();

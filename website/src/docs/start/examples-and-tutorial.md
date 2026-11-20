@@ -5,17 +5,20 @@ description: The Start page, the guided tutorial, and five example parts to lear
 
 ## The Start page
 
-SimplMaker opens on the **Start page**, a page as big as the window. It is also the **Start** choice in the mode selector at the top of every part, so you can come back to it any time (**Window → Start**, [[⇧⌘1]]).
+SimplMaker opens on the **Start page**, a page as big as the window. It is also the **Start** choice in the workspace list of every part, so you can come back to it any time (**Window → Start**, [[⇧⌘1]]).
+
+![The Start page, with the ways to begin on the left and the recent parts as picture cards on the right.](shot:start-page)
 
 | Choice | What it does |
 |---|---|
 | **New Part** | Opens an empty part in a new tab, in Design |
 | **Open…** | Opens a `.simplmaker` file |
 | **Take the tutorial** | Starts the guided tutorial in this part, or in a new one if this part has something in it already |
-| **Sketch**, **Box**, **Cylinder** | Begin this part with that tool, and move to Design |
+| **Sketch** | Begins this part with a sketch, and moves to Design |
 | **Open the demo part** | Opens a plate with a hole, fillets and a chamfer |
+| **Watch the video tutorials** | Opens the SimplMaker YouTube channel, with short how-tos |
 
-Your recent parts are listed on the right. Double-click one, or select it and press [[Return]]. The first part of a launch opens on the Start page. A part you make yourself (**New Part**, ⌘N, a new tab) opens in Design, and so does a part with features in it.
+Your recent parts are listed on the right as cards with a picture of each part, the last 20 of them. Click one to open it, or select it and press [[Return]]. The first part of a launch opens on the Start page. A part you make yourself (**New Part**, ⌘N, a new tab) opens in Design, and so does a part with features in it.
 
 ## The tutorial: a desk organizer
 

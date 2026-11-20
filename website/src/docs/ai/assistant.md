@@ -50,6 +50,7 @@ The first time the assistant changes your part, Claude asks you for permission. 
 - **Change.** Edit a feature, a sketch or a parameter, delete a feature, name, colour or hide a body, and undo or redo.
 - **Read a mesh.** Cut any body, an imported STL most of all, with a plane at as many positions as it likes and read the outline, thickness, tilt and centre of each cut. That is how it works out what a scan is made of. It can also draw the cuts as sketches on planes and loft through them or through outlines you give it, and rebuild the shape as features you can edit, with **Twist Sweep** for blades and other twisted shapes.
 - **Measure and check.** Measure distances and sizes. A **design check** looks over a part meant for printing and reports what is likely to go wrong: overhangs, thin walls and narrow gaps, tight or loose fits between separate bodies, a part that is bigger than the print bed or that floats above or sinks below the bed, and sizes that are not parameters. It only reports. It never changes anything.
+- **Cast.** Make a two- or four-piece [mold](doc:print/mold) around a body, with a gate, vents and keys, check that it lets go, and export the pieces for printing.
 - **Files.** Export a part as STL or STEP, and import a STEP or STL file.
 - **Follow a guide.** A built-in design guide holds print-friendly sizes and recipes for things such as a snap-fit lid, a rounded box, a name tag, a screw-post case and a print-in-place hinge. The assistant reads it before it designs.
 
@@ -88,5 +89,5 @@ Switch off **Let AI assistants work with SimplMaker**. SimplMaker stops answerin
 
 - Only **parts that are open** can be reached.
 - [Locking](doc:concepts/selecting) a body or sketch protects it from your own clicks. It does not stop the assistant, so tell it which parts to leave alone.
-- Browser folders and some newer options, such as choosing which bodies an extrude affects, are not yet available to the assistant.
+- [Split to Print](doc:print/split-to-print) is not yet available to the assistant, and neither are browser folders or some newer options, such as choosing which bodies an extrude affects.
 - An imported STL that is over the size limit has to be reduced first. The assistant cannot reduce it. Import it yourself with **File → Import → STL…**, which offers to reduce it.

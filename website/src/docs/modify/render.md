@@ -9,21 +9,30 @@ The **Render view** gives a part a presentation look. The grid gives way to a so
 
 ## Turn it on
 
-Choose **Render** in the mode selector at the top of the window (Start, Design, Render). You can also choose **View → Render**, or right-click in the viewport and choose **Render View**.
+Choose **Render** in the workspace list: the big button at the left of the ribbon. You can also choose **View → Render**, or right-click in the viewport and choose **Render View**.
 
-Choose **Design** (or any other mode) to turn the view off. The options panel opens in the top left corner of the view while the view is on. The browser, the Inspector and the timeline close when the view comes on, to give the part the whole window. The buttons in the toolbar bring them back, and they come back by themselves when the view goes off. The options panel floats above the status bar, and scrolls when the window is too short for it.
+Choose **Design** (or any other workspace) to turn the view off. The options panel opens in the top left corner of the view while the view is on. The browser, the Inspector and the timeline close when the view comes on, to give the part the whole window. The buttons in the toolbar bring them back, and they come back by themselves when the view goes off. The options panel floats above the status bar, and scrolls when the window is too short for it.
 
 - The view needs a shaded [visual style](doc:start/navigation). If you were in a wireframe style, turning it on switches to **Shaded with Visible Edges**.
 - It does not work together with the [3D Print Preview](doc:print/print-preview). Turning one on turns the other off.
-- Render is a mode of its own, so it has no tools. Starting a tool or a sketch (from a key or a menu) takes you back to Design and turns the view off.
+- Render is a workspace of its own, with a short tool row of its own (see below). Starting a tool or a sketch (from a key or a menu) takes you back to Design and turns the view off.
 - Finished sketches and construction planes are hidden, so the part is shown alone. They come back while a tool is waiting for you to pick something that needs them, such as a profile to extrude or a plane to sketch on. A [canvas](doc:create/canvas) picture stays.
 - You can keep working in it. Clicking and hovering pick faces and edges as always, and picks go through the floor.
 
+## The tool row
+
+The ribbon in the Render view holds the things you reach for all the time:
+
+- **Quality**: **Simple**, **Realistic**, **Photo** and **Custom** (see below).
+- **Turntable**: slowly turns the part around so every side comes into view. Press it again to pause.
+- **Options**: shows and hides the options panel.
+- **Export**: saves what the view shows as a picture (see [Make a picture](#make-a-picture)).
+
 ## Two tabs and a quality preset
 
-The options panel has two tabs. **Simple** holds what an everyday render needs: the quality preset, the floor, the room and the light, the shadows, and the export. **Advanced** holds, one by one, the settings that the quality presets switch on together.
+The options panel has two tabs. **Simple** holds what an everyday render needs: the floor, the room and the light, and the shadows. **Advanced** holds, one by one, the settings that the quality presets switch on together.
 
-At the top of **Simple** you choose a **Quality**:
+You choose a **Quality** in the ribbon:
 
 | Quality | What you get |
 |---|---|
@@ -96,7 +105,7 @@ The settings are kept between launches, and they are the same for every part. Th
 
 ## Make a picture
 
-Press **Export render** at the bottom of the panel (or choose **File → Export Image…**) to save what the view shows as a picture. It is the view alone, at its full pixel size, without the panels, the toolbar and the navigation cube. Anything drawn in the view goes in it, including a selection and the edge lines if they are on. File → Export Image… works the same way in the ordinary 3D view, with the Render view off.
+Press **Export** in the ribbon (or choose **File → Export Image…**) to save what the view shows as a picture. It is the view alone, at its full pixel size, without the panels, the toolbar and the navigation cube. Anything drawn in the view goes in it, including a selection and the edge lines if they are on. File → Export Image… works the same way in the ordinary 3D view, with the Render view off.
 
 1. Put the part on the floor and set the view you want. [[⌘0]] fits it in the window. A bigger window makes a bigger picture.
 2. Click an empty place to clear any selection, and move the pointer off the part so nothing is lit up.
@@ -114,7 +123,7 @@ The picture an AI assistant makes of a part is not changed by the Render view. S
 
 ## Good to know
 
-- **View → Render Options** shows and hides the panel while the Render view stays on. The **×** in the panel's title row hides it too. Choosing **Render** in the mode selector again brings the panel back too. Right-click in the viewport and choose **Show Render Options** to bring the panel back.
+- **View → Render Options** shows and hides the panel while the Render view stays on. The **×** in the panel's title row hides it too. The **Options** button in the ribbon, and choosing **Render** in the workspace list again, bring the panel back. Right-click in the viewport and choose **Show Render Options** to bring the panel back.
 - With [Section Analysis](doc:modify/section-analysis) on, the cut bodies show without shadows. The floor shadows stay.
 - The shadows cover the area around the part. With a very low light (a small Height), a long shadow can be cut off where that area ends.
 - With the [Exploded view](doc:modify/exploded-view) on, the floor and the shadows follow the bodies as they are pulled apart.

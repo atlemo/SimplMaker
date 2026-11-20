@@ -1,7 +1,7 @@
 ---
 title: Features: parametric CAD for Mac
 nav: features
-description: What SimplMaker does: parametric sketches, constraints, extrude, revolve, sweep, loft, fillet, chamfer, shell, holes, threads, STEP, STL and DXF import, STEP, STL, 3MF and DXF export. Native on Mac.
+description: What SimplMaker does: parametric sketches, constraints, extrude, revolve, sweep, loft, fillet, chamfer, shell, holes, threads, split to print, molds, STEP, STL and DXF import, STEP, STL, 3MF and DXF export. Native on Mac.
 ---
 <section class="page-head wrap">
   <p class="mono">Features</p>
@@ -121,9 +121,47 @@ description: What SimplMaker does: parametric sketches, constraints, extrude, re
   <div class="wrap">
     <div class="feature-top">
       <p class="mono num">07</p>
+      <h2 class="big">Too big?<br />Cut it down.</h2>
+      <div class="copy">
+        <p>The <strong>Split</strong> workspace cuts a part that is bigger than your printer into pieces that fit, with pins, keys, dovetails, dowels or magnets so they go back together.</p>
+        <ul>
+          <li>Printer presets, or your own build volume</li>
+          <li>Even cuts, the fewest pieces, and a fit you can tune</li>
+          <li>Pieces exported laid out on plates, ready to slice</li>
+          <li>Change the body and the pieces follow</li>
+        </ul>
+      </div>
+    </div>
+    <div class="reveal">{{clip:cut|3446/2160|Clip · pick a printer, cut a big part into pieces, add connectors}}</div>
+  </div>
+</section>
+
+<section class="feature">
+  <div class="wrap">
+    <div class="feature-top">
+      <p class="mono num">08</p>
+      <h2 class="big">Make it once.<br />Cast it often.</h2>
+      <div class="copy">
+        <p>The <strong>Mold</strong> workspace wraps a printable mold round any body, so you can cast copies in silicone or resin. It is marked experimental, so print a small test mold first.</p>
+        <ul>
+          <li>Two or four pieces, with a gate, vents and keys</li>
+          <li>A release check that shows undercuts before you pour</li>
+          <li>The silicone to mix, worked out for you</li>
+          <li>Change the body and the mold follows</li>
+        </ul>
+      </div>
+    </div>
+    <div class="reveal">{{clip:mold|3446/2160|Clip · pick a body, make a mold around it, check the undercuts, open it up}}</div>
+  </div>
+</section>
+
+<section class="feature">
+  <div class="wrap">
+    <div class="feature-top">
+      <p class="mono num">09</p>
       <h2 class="big">Properly<br />a Mac app.</h2>
       <div class="copy">
-        <p>Native, fast and well-behaved. Metal viewport, one window per part, autosave and versions, light and dark mode, trackpad gestures. It works offline, needs no account and costs nothing.</p>
+        <p>Native, fast and well-behaved. Metal viewport, parts as tabs, autosave and versions, light and dark mode, trackpad gestures. It works offline, needs no account and costs nothing.</p>
         <ul>
           <li>Built for Apple Silicon</li>
           <li>Autosave, versions and Open Recent</li>
@@ -132,17 +170,6 @@ description: What SimplMaker does: parametric sketches, constraints, extrude, re
       </div>
     </div>
     <div class="reveal">{{clip:mac|1728/1080|Clip · orbit with the trackpad, switch to dark mode, open a recent part}}</div>
-  </div>
-</section>
-
-<section class="section dark">
-  <div class="wrap honest">
-    <h2 class="big">What it<br />doesn't do.</h2>
-    <ul>
-      <li>No assemblies with joints</li>
-      <li>No CAM or simulation</li>
-      <li>Mac only: macOS 15, Apple Silicon</li>
-    </ul>
   </div>
 </section>
 

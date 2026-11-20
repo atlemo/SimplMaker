@@ -47,6 +47,8 @@ A quick check before you export:
 - **Colours**, except in a 3MF. STL and STEP leave them out.
 - **Sketches and construction planes.** Only solid bodies are exported. To cut a flat shape on a laser cutter or CNC router, export the sketch as DXF instead: see [DXF](doc:sketch/dxf).
 
+Parts from the [Split](doc:print/split-to-print) and [Mold](doc:print/mold) workspaces have their own **Export**, which lays the pieces out for printing.
+
 ## Import
 
 To bring other files in, see [Files and saving](doc:concepts/files).

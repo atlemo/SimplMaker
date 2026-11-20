@@ -11,7 +11,7 @@ Prefer to be guided inside the app? Choose **Help → Tutorial: Make a Desk Orga
 
 ## 1. Start a part
 
-Open SimplMaker. It starts on the Start page: choose **Sketch**, **Box** or **Cylinder** to begin, or press [[⌘N]] for another part.
+Open SimplMaker. It starts on the Start page: choose **Sketch** to begin, or press [[⌘N]] for another part.
 
 ![A new, empty part.](shot:quick-empty)
 

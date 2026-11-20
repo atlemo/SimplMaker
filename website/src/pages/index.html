@@ -1,16 +1,16 @@
 ---
-title: SimplMaker · Free, open source parametric CAD for Mac
+title: SimplMaker · The maker's multi-tool: free, open source CAD for Mac
 raw_title: 1
-description: Parametric CAD for makers who 3D print. Sketch, extrude, change a number and the whole part follows. Free and open source (GPL), no subscription, no account. Mac only.
+description: The maker's multi-tool for Mac. Parametric CAD that also splits big parts to fit your printer, makes molds and renders. Free and open source (GPL), no subscription, no account.
 ---
 <section class="hero">
   <div class="wrap">
     <div class="hero-top">
       <h1 class="display">Model it.<br />Print it.<br /><span class="accent">Own it.</span></h1>
-      <canvas class="hero-model" tabindex="0" role="img" aria-label="A wireframe part being built step by step: a sketched square is extruded into a cube, its edges are rounded, and two holes are cut, then it slowly turns. Drag to rotate it."></canvas>
+      <canvas class="hero-model" tabindex="0" role="img" aria-label="The SimplMaker logo, a wireframe part built step by step: a sketched square is extruded into a cube, a big hole is drilled in the front and a small one in the top, a notch is cut from the side and its corner rounded, and the edges are chamfered. Then it slowly turns. Drag to rotate it."></canvas>
     </div>
     <div class="hero-meta">
-      <p class="lead">Parametric CAD for Mac, made for makers.</p>
+      <p class="lead">The maker's multi-tool for Mac. Sketch, shape, split, cast and render, without the bloat.</p>
       <div class="hero-cta">
         <div class="btn-row">
           <a class="btn btn-accent btn-lg" href="/download/">Download, it's free</a>
@@ -26,38 +26,164 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
   <p class="caption mono hero-caption"><span>A beautiful, fast, native macOS interface</span><span>01:10</span></p>
 </section>
 
-<section class="section">
-  <div class="wrap">
-    <div class="section-head">
-      <h2 class="big">Three things<br />it does well.</h2>
-      <a class="arrow-link" href="/features/">All features</a>
+<section class="section wire-section wire-light wire-flip" id="model">
+  <div class="wrap wire-grid">
+    <div class="wire-copy reveal">
+      <p class="mono">01 · Model</p>
+      <h2 class="big">Draw it.<br /><span class="accent">Pull it up.</span></h2>
+      <p class="lead">Sketch a shape, give it sizes, and lift it into 3D.</p>
+      <div class="wire-list" data-for="wire-model">
+        <details data-focus="sketch" open>
+          <summary><span>Sketch</span></summary>
+          <p>Lines, arcs, circles and splines, held in place by constraints.</p>
+        </details>
+        <details data-focus="dims">
+          <summary><span>Dimensions</span></summary>
+          <p>Type a number or a formula. Change it later and the whole part follows.</p>
+        </details>
+        <details data-focus="extrude">
+          <summary><span>Extrude</span></summary>
+          <p>Drag the arrow or type a height. Join, cut, or start a new body.</p>
+        </details>
+        <details data-focus="all">
+          <summary><span>Timeline</span></summary>
+          <p>Every step is kept. Go back, change it, and watch the rest rebuild.</p>
+        </details>
+      </div>
+      <a class="arrow-link" href="/docs/start/quick-start/">Make your first part</a>
     </div>
-    <div class="tiles">
-      <article class="tile reveal">
-        {{clip:parameters_4_3|4/3|Clip · change width from 40 to 60 mm, the whole bracket rebuilds}}
-        <p class="mono">01 · Parameters</p>
-        <h3 class="mid">Change it later.</h3>
-        <p>Name a size once: <code>wall</code>, <code>tolerance</code>, <code>hole_d</code>. Edit it and everything built on it rebuilds.</p>
-      </article>
-      <article class="tile reveal">
-        {{clip:extrude_4_3|4/3|Clip · sketch a profile, drag the arrow, it becomes solid}}
-        <p class="mono">02 · Shape</p>
-        <h3 class="mid">Intuitive interface.</h3>
-        <p>Sketch with constraints, pull it into 3D, then fillet, chamfer, shell and drill. Type a value, or just drag and see what happens.</p>
-      </article>
-      <article class="tile reveal">
-        {{clip:export_4_3|4/3|Clip · export an STL and open it in the slicer}}
-        <p class="mono">03 · Print</p>
-        <h3 class="mid">Import. Export.</h3>
-        <p>STL and STEP, in and out. Straight to your slicer, with no cloud and no upload bar in between.</p>
-      </article>
+    <canvas class="wire-scene" id="wire-model" data-scene="model" data-theme="light" tabindex="0" role="img" aria-label="A wireframe hex nut being made: a hexagon and a circle are sketched, dimensioned, and then extruded into a solid. Drag to turn it."></canvas>
+  </div>
+</section>
+
+<section class="section dark wire-section" id="split">
+  <div class="wrap wire-grid">
+    <div class="wire-copy reveal">
+      <p class="mono">02 · Split</p>
+      <h2 class="big">Too big?<br /><span class="accent">Cut it down.</span></h2>
+      <p class="lead">Cut a part into pieces that fit your printer, then glue, pin or magnet it back together.</p>
+      <div class="wire-list" data-for="wire-split">
+        <details data-focus="printer" open>
+          <summary><span>Your printer</span></summary>
+          <p>Pick it from the list or type your own build volume. The pieces are planned to fit it.</p>
+        </details>
+        <details data-focus="cuts">
+          <summary><span>Smart cuts</span></summary>
+          <p>The fewest pieces, cut evenly, turned any way up. Or place every cut yourself.</p>
+        </details>
+        <details data-focus="connectors">
+          <summary><span>Connectors</span></summary>
+          <p>Pins, keys, dovetails, dowels or magnets, so the pieces find each other again.</p>
+        </details>
+        <details data-focus="fit">
+          <summary><span>Tunable fit</span></summary>
+          <p>Tight, standard, loose or your own number, because every printer is a little different.</p>
+        </details>
+      </div>
+      <a class="arrow-link" href="/docs/print/split-to-print/">How splitting works</a>
     </div>
+    <canvas class="wire-scene" id="wire-split" data-scene="split" tabindex="0" role="img" aria-label="A wireframe vase cut into three pieces. The pieces slide apart along their pins and dowels, each inside the printer's build volume, then slide back together. Drag to turn it."></canvas>
+  </div>
+</section>
+
+<section class="section shots-section" id="app">
+  <div class="wrap shots-head reveal">
+    <div>
+      <p class="mono">The app</p>
+      <h2 class="big">Native<br /><span class="accent">macOS interface</span></h2>
+    </div>
+    <div class="shots-nav" role="group" aria-label="Slideshow controls">
+      <button type="button" class="shots-btn" data-dir="-1" aria-label="Previous screenshot">←</button>
+      <button type="button" class="shots-btn" data-dir="1" aria-label="Next screenshot">→</button>
+    </div>
+  </div>
+  <div class="shots-track" tabindex="0" role="group" aria-roledescription="carousel" aria-label="Screenshots of SimplMaker">
+      <figure class="shot">
+        <img src="/img/ui/design.webp" width="2000" height="1253" alt="SimplMaker in Design: a desk organizer with its parameters, appearance panel and feature timeline." loading="lazy" decoding="async" />
+        <figcaption><span class="mono">01 · Design</span>Parameters on the left, the part in the middle, every step on the timeline.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="/img/ui/sketch.webp" width="2000" height="1253" alt="A sketch with dimensions and constraint symbols, the Inspector saying it is fully constrained." loading="lazy" decoding="async" />
+        <figcaption><span class="mono">02 · Sketch</span>Dimensions and constraints, with the sketch fully constrained.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="/img/ui/split.webp" width="2000" height="1253" alt="The Split workspace: a large body cut into coloured pieces with round pin connectors." loading="lazy" decoding="async" />
+        <figcaption><span class="mono">03 · Split</span>Big parts cut into printer-sized pieces, joined with pins.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="/img/ui/mold.webp" width="2000" height="1253" alt="The Mold workspace: a four-piece mold opened apart, with the gate marked in red." loading="lazy" decoding="async" />
+        <figcaption><span class="mono">04 · Mold</span>A mold in four pieces, drawn apart around the part it casts.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="/img/ui/render.webp" width="2000" height="1253" alt="The Render workspace: an orange part lit on a dark floor with a soft shadow." loading="lazy" decoding="async" />
+        <figcaption><span class="mono">05 · Render</span>A floor, a light and a material. Then take the picture.</figcaption>
+      </figure>
+  </div>
+</section>
+
+<section class="section dark wire-section wire-flip" id="mold">
+  <div class="wrap wire-grid">
+    <div class="wire-copy reveal">
+      <p class="mono">03 · Mold · Experimental</p>
+      <h2 class="big">Make it once.<br /><span class="accent">Cast it often.</span></h2>
+      <p class="lead">Wrap a printable mold round any body, and pour.</p>
+      <div class="wire-list" data-for="wire-mold">
+        <details data-focus="auto" open>
+          <summary><span>Auto mold</span></summary>
+          <p>Pick a body. SimplMaker builds the block, splits it in two or four, and carves out the shape. You print the pieces.</p>
+        </details>
+        <details data-focus="gate">
+          <summary><span>Gate and vents</span></summary>
+          <p>Where the silicone goes in and the air comes out. Placed for you, movable by you.</p>
+        </details>
+        <details data-focus="keys">
+          <summary><span>Keys</span></summary>
+          <p>Little cones on the seam, so the halves only ever meet one way.</p>
+        </details>
+        <details data-focus="check">
+          <summary><span>Release check</span></summary>
+          <p>Undercuts glow red before the silicone finds them.</p>
+        </details>
+      </div>
+      <a class="arrow-link" href="/docs/print/mold/">How molds work</a>
+    </div>
+    <canvas class="wire-scene" id="wire-mold" data-scene="mold" tabindex="0" role="img" aria-label="A wireframe mold slowly opening: two printed halves slide apart and show the cup that was cast inside, with its pour hole, vent and keys. Drag to turn it."></canvas>
+  </div>
+</section>
+
+<section class="section wire-section wire-light" id="render">
+  <div class="wrap wire-grid">
+    <div class="wire-copy reveal">
+      <p class="mono">04 · Render</p>
+      <h2 class="big">Make it<br /><span class="accent">look good.</span></h2>
+      <p class="lead">Set the part on a floor, pick a light, and take the picture.</p>
+      <div class="wire-list" data-for="wire-render">
+        <details data-focus="floor" open>
+          <summary><span>Floor</span></summary>
+          <p>A floor that catches the shadow, so the part sits instead of floating.</p>
+        </details>
+        <details data-focus="light">
+          <summary><span>Light</span></summary>
+          <p>Move the light and the shadow follows. Soft by default, studio when you want it.</p>
+        </details>
+        <details data-focus="materials">
+          <summary><span>Materials</span></summary>
+          <p>Plastic, metal, glass or wood, one click each.</p>
+        </details>
+        <details data-focus="export">
+          <summary><span>Export</span></summary>
+          <p>Save a picture, with or without the background.</p>
+        </details>
+      </div>
+      <a class="arrow-link" href="/docs/modify/render/">How rendering works</a>
+    </div>
+    <canvas class="wire-scene" id="wire-render" data-scene="render" data-theme="light" tabindex="0" role="img" aria-label="A vase that starts as a wireframe and is then lit: it gets a floor, a soft shadow and a slowly moving light, and turns from orange plastic to black gloss to pale ceramic. Drag to turn it."></canvas>
   </div>
 </section>
 
 <section class="section toolwall">
   <div class="wrap toolwall-head">
-    <h2 class="big">All the tools you need.<br />One window.</h2>
+    <h2 class="big">All the tools you need.</h2>
     <div class="toolwall-side">
       <p class="lead">Sketch, shape, finish and print, without a menu maze.</p>
       <a class="btn btn-ink btn-lg" href="/features/">Learn the features</a>
@@ -79,20 +205,20 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
       <li style="--i:12"><a href="/docs/create/rib/"><span class="n">13</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 6V40H42"/><path d="M10 18L30 40" /><path d="M10 28L20 40" class="d"/></svg><span class="t">Rib</span></a></li>
       <li style="--i:13"><a href="/docs/create/pipe/"><span class="n">14</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M6 16H28Q40 16 40 28V44"/><path d="M6 30H22Q28 30 28 36V44"/></svg><span class="t">Pipe</span></a></li>
       <li style="--i:14"><a href="/docs/modify/combine/"><span class="n">15</span><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="18" cy="24" r="12"/><circle cx="30" cy="24" r="12"/></svg><span class="t">Combine</span></a></li>
-      <li style="--i:15"><a href="/docs/modify/split/"><span class="n">16</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="6" width="32" height="15"/><rect x="8" y="27" width="32" height="15"/><path d="M3 24H45" class="d"/></svg><span class="t">Split</span></a></li>
-      <li style="--i:16"><a href="/docs/modify/fillet-chamfer/"><span class="n">17</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 8H40V40" class="d"/><path d="M8 40V26A18 18 0 0 1 26 8H40"/></svg><span class="t">Fillet</span></a></li>
-      <li style="--i:17"><a href="/docs/modify/fillet-chamfer/#chamfer-types"><span class="n">18</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 8H40V40" class="d"/><path d="M8 40V22L22 8H40"/></svg><span class="t">Chamfer</span></a></li>
-      <li style="--i:18"><a href="/docs/modify/shell/"><span class="n">19</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6L40 15V33L24 42L8 33V15Z"/><path d="M24 17L32 21.5V30.5L24 35L16 30.5V21.5Z"/></svg><span class="t">Shell</span></a></li>
-      <li style="--i:19"><a href="/docs/modify/hole/"><span class="n">20</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="7" width="34" height="34" rx="3"/><circle cx="24" cy="24" r="9"/><path d="M24 12V36M12 24H36" class="d"/></svg><span class="t">Hole</span></a></li>
-      <li style="--i:20"><a href="/docs/modify/thread/"><span class="n">21</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M15 6V42M33 6V42"/><path d="M15 15L33 10M15 25L33 20M15 35L33 30M15 44L33 40"/></svg><span class="t">Thread</span></a></li>
-      <li style="--i:21"><a href="/docs/modify/draft/"><span class="n">22</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 42V6" class="d"/><path d="M11 42L17 8H31L37 42Z"/><path d="M11 22C14 22 15 24 15 26"/></svg><span class="t">Draft</span></a></li>
-      <li style="--i:22"><a href="/docs/modify/mirror-pattern/#mirror"><span class="n">23</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3V45" class="d"/><path d="M19 12L7 38H19Z"/><path d="M29 12L41 38H29Z" class="x"/></svg><span class="t">Mirror</span></a></li>
-      <li style="--i:23"><a href="/docs/modify/mirror-pattern/#pattern"><span class="n">24</span><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="11" cy="11" r="4.5"/><circle cx="24" cy="11" r="4.5"/><circle cx="37" cy="11" r="4.5"/><circle cx="11" cy="24" r="4.5"/><circle cx="24" cy="24" r="4.5"/><circle cx="37" cy="24" r="4.5"/><circle cx="11" cy="37" r="4.5"/><circle cx="24" cy="37" r="4.5"/><circle cx="37" cy="37" r="4.5"/></svg><span class="t">Pattern</span></a></li>
-      <li style="--i:24"><a href="/docs/modify/move-scale/#move-and-rotate"><span class="n">25</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5V43M5 24H43M17 11L24 5L31 11M17 37L24 43L31 37M11 17L5 24L11 31M37 17L43 24L37 31"/></svg><span class="t">Move</span></a></li>
-      <li style="--i:25"><a href="/docs/modify/move-scale/#scale"><span class="n">26</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="22" width="20" height="20"/><path d="M26 22L42 6M31 6H42V17"/></svg><span class="t">Scale</span></a></li>
-      <li style="--i:26"><a href="/docs/modify/lay-on-floor/"><span class="n">27</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M4 42H44"/><rect x="10" y="26" width="28" height="16"/><path d="M24 5V18M18 12L24 18L30 12"/></svg><span class="t">Lay on floor</span></a></li>
-      <li style="--i:27"><a href="/docs/modify/section-analysis/"><span class="n">28</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="7" width="34" height="34"/><path d="M7 21L21 7M7 35L35 7M19 41L41 19M33 41L41 33"/></svg><span class="t">Section</span></a></li>
-      <li style="--i:28"><a href="/docs/print/print-preview/"><span class="n">29</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 41H40M11 34H37M14 27H34M17 20H31M20 13H28" class="t"/></svg><span class="t">Print preview</span></a></li>
+      <li style="--i:15"><a href="/docs/modify/split/"><span class="n">16</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="6" width="32" height="15"/><rect x="8" y="27" width="32" height="15"/><path d="M3 24H45" class="d"/></svg><span class="t">Split body</span></a></li>
+      <li style="--i:16"><a href="/docs/modify/fillet-chamfer/"><span class="n">17</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 8H40V40" class="d"/><path d="M8 40V26A18 18 0 0 1 26 8H40"/></svg><span class="t">Fillet · chamfer</span></a></li>
+      <li style="--i:17"><a href="/docs/modify/shell/"><span class="n">18</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6L40 15V33L24 42L8 33V15Z"/><path d="M24 17L32 21.5V30.5L24 35L16 30.5V21.5Z"/></svg><span class="t">Shell</span></a></li>
+      <li style="--i:18"><a href="/docs/modify/hole/"><span class="n">19</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="7" width="34" height="34" rx="3"/><circle cx="24" cy="24" r="9"/><path d="M24 12V36M12 24H36" class="d"/></svg><span class="t">Hole</span></a></li>
+      <li style="--i:19"><a href="/docs/modify/thread/"><span class="n">20</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M15 6V42M33 6V42"/><path d="M15 15L33 10M15 25L33 20M15 35L33 30M15 44L33 40"/></svg><span class="t">Thread</span></a></li>
+      <li style="--i:20"><a href="/docs/modify/draft/"><span class="n">21</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 42V6" class="d"/><path d="M11 42L17 8H31L37 42Z"/><path d="M11 22C14 22 15 24 15 26"/></svg><span class="t">Draft</span></a></li>
+      <li style="--i:21"><a href="/docs/modify/mirror-pattern/#mirror"><span class="n">22</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3V45" class="d"/><path d="M19 12L7 38H19Z"/><path d="M29 12L41 38H29Z" class="x"/></svg><span class="t">Mirror</span></a></li>
+      <li style="--i:22"><a href="/docs/modify/mirror-pattern/#pattern"><span class="n">23</span><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="11" cy="11" r="4.5"/><circle cx="24" cy="11" r="4.5"/><circle cx="37" cy="11" r="4.5"/><circle cx="11" cy="24" r="4.5"/><circle cx="24" cy="24" r="4.5"/><circle cx="37" cy="24" r="4.5"/><circle cx="11" cy="37" r="4.5"/><circle cx="24" cy="37" r="4.5"/><circle cx="37" cy="37" r="4.5"/></svg><span class="t">Pattern</span></a></li>
+      <li style="--i:23"><a href="/docs/modify/move-scale/"><span class="n">24</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5V43M5 24H43M17 11L24 5L31 11M17 37L24 43L31 37M11 17L5 24L11 31M37 17L43 24L37 31"/></svg><span class="t">Move · scale</span></a></li>
+      <li style="--i:24"><a href="/docs/modify/lay-on-floor/"><span class="n">25</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M4 42H44"/><rect x="10" y="26" width="28" height="16"/><path d="M24 5V18M18 12L24 18L30 12"/></svg><span class="t">Lay on floor</span></a></li>
+      <li style="--i:25"><a href="/docs/modify/section-analysis/"><span class="n">26</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="7" width="34" height="34"/><path d="M7 21L21 7M7 35L35 7M19 41L41 19M33 41L41 33"/></svg><span class="t">Section</span></a></li>
+      <li style="--i:26"><a href="/docs/print/print-preview/"><span class="n">27</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 41H40M11 34H37M14 27H34M17 20H31M20 13H28" class="t"/></svg><span class="t">Print preview</span></a></li>
+      <li style="--i:27"><a href="/docs/print/split-to-print/"><span class="n">28</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M6 12H22V20H27V28H22V36H6Z"/><path d="M42 12H27V20M27 28V36H42Z"/><path d="M24 6V42" class="d"/></svg><span class="t">Split to print</span></a></li>
+      <li style="--i:28"><a href="/docs/print/mold/"><span class="n">29</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="7" width="34" height="34"/><path d="M7 24H41" class="d"/><circle cx="24" cy="26" r="8"/><path d="M24 7V18"/></svg><span class="t">Mold</span></a></li>
       <li style="--i:29"><a href="/docs/concepts/files/#import"><span class="n">30</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 34V6M14 24L24 34L34 24"/><path d="M7 37V43H41V37"/></svg><span class="t">Import</span></a></li>
       <li style="--i:30"><a href="/docs/print/export/"><span class="n">31</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6V34M14 16L24 6L34 16"/><path d="M7 37V43H41V37"/></svg><span class="t">Export</span></a></li>
       <li style="--i:31"><a href="/docs/ai/assistant/"><span class="n">32</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5C25.5 17 31 22.5 43 24C31 25.5 25.5 31 24 43C22.5 31 17 25.5 5 24C17 22.5 22.5 17 24 5Z"/></svg><span class="t">AI assistant</span></a></li>
@@ -126,3 +252,4 @@ description: Parametric CAD for makers who 3D print. Sketch, extrude, change a n
 </section>
 
 <script src="{{asset:js/hero-model.js}}" defer></script>
+<script src="{{asset:js/wire-scenes.js}}" defer></script>

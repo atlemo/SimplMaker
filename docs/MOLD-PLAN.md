@@ -2,13 +2,15 @@
 
 Written 2026-11-19 at the end of the session that built the workspaces and the ribbon. Read this first when you start the Mold work.
 
+**Status (2026-11-20, for 1.2.9):** Phases 1 and 2 and the four-piece option are built, merged into `main` and on for everyone (no flag). The user documentation is `website/src/docs/print/mold.md`. Phase 3 (tongue-and-groove seams, clamps, shrinkage, several bodies per mold, leaning planes) is still open.
+
 ## What we are making
 
 A **rigid, printed two-part mold**: the user has a body, prints the two halves, and casts silicone (or resin) in them to get copies. Not the other kind (a silicone mold poured around a printed master): that can follow later and reuses most of the code.
 
 ## Decisions already made
 
-- **Mold is a workspace, not a timeline feature.** The window's workspaces are Start | Design | Mold | Render (`Workspace.swift`). Mold is linked to a body of the part but its settings live apart from the part's history: they must follow the part when it changes, and do not belong in rollback or the feature list.
+- **Mold is a workspace, not a timeline feature.** The window's workspaces are Start | Design | Split | Mold | Render (`Workspace.swift`). Mold is linked to a body of the part but its settings live apart from the part's history: they must follow the part when it changes, and do not belong in rollback or the feature list.
 - **Storage:** `Document.molds` (an optional Codable list, like `folders` and `parameterFolders`, so old files are untouched). One mold per source body to start with, several molds per part allowed.
 - **Building:** a `MoldBuilder` that runs after the regenerator on the same background thread, from the source body's latest shape, with a cache keyed by the setup and the body. The halves are derived bodies, not features. They are shown in the Mold workspace and exported from it; a later "Place in Design" button may add them as normal bodies.
 - **Mold is only offered while unfinished:** `defaults write com.simplmaker.SimplMaker moldWorkspace -bool YES`, or a debug run with `SIMPLMAKER_MOLD=1`. Remove the gate when v1 is good.

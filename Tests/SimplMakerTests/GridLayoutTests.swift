@@ -10,7 +10,7 @@ import Testing
 /// scale. These tests measure the drawn views, so a symbol that is wider than its frame (the cause of the padlock and
 /// eye once nearly touching) or a row that drifts off its header's columns fails here instead of in a screenshot.
 @Suite(.serialized) @MainActor struct GridLayoutTests {
-    /// The horizontal runs of ink (in points from the view's left edge) of a view drawn on a transparent background,
+    /// The horizontal runs of ink (in points from the view's left edge) of a view drawn on a transparent (or pale) background,
     /// looking only at the rows `bandTop..<bandBottom` (points from the top), left to right.
     private func inkRuns<V: View>(of view: V, size: CGSize = CGSize(width: 120, height: 40), band: Range<CGFloat>? = nil,
                                   settle: Duration? = nil) async throws -> [ClosedRange<CGFloat>] {
@@ -30,7 +30,11 @@ import Testing
         var runs: [ClosedRange<CGFloat>] = []
         var start: Int?
         for x in 0..<rep.pixelsWide {
-            let inked = rows.contains { (rep.colorAt(x: x, y: $0)?.alphaComponent ?? 0) > 0.25 }
+            // Ink is dark: the panels now draw a pale frosted layer of their own behind what is measured, which is not ink.
+            let inked = rows.contains {
+                guard let c = rep.colorAt(x: x, y: $0)?.usingColorSpace(.deviceRGB) else { return false }
+                return c.alphaComponent > 0.25 && c.brightnessComponent < 0.8
+            }
             if inked, start == nil { start = x }
             if !inked, let s = start { runs.append(CGFloat(s) / scale ... CGFloat(x) / scale); start = nil }
         }
@@ -127,7 +131,7 @@ import Testing
     /// may only shrink. A new off-grid number fails the test; move a view onto the grid and lower its count.
     @Test func spacingAndPaddingLiteralsAreOnTheGrid() throws {
         let known: [String: Int] = [
-            "RecentParts.swift": 5, "DocumentPanels.swift": 2, "AppearancePanel.swift": 2, "ContentView.swift": 3,
+            "RecentParts.swift": 3, "Ribbon.swift": 1, "DocumentPanels.swift": 2, "AppearancePanel.swift": 2, "ContentView.swift": 3,
             "CommandPalette.swift": 1, "TutorialCard.swift": 1, "TutorialSpotlight.swift": 1, "AISettingsPane.swift": 1,
         ]
         let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()

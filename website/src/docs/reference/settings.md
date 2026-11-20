@@ -1,6 +1,6 @@
 ---
 title: Settings
-description: Every setting in SimplMaker: accent colour, updates, usage statistics, navigation, grid, units, sketch background and antialiasing.
+description: Every setting in SimplMaker: accent colour, panel style, sketch background, updates, usage statistics, navigation, grid, units and antialiasing.
 ---
 
 Open **SimplMaker → Settings…** ([[⌘,]]). The panes are along the top.
@@ -12,6 +12,9 @@ Open **SimplMaker → Settings…** ([[⌘,]]). The panes are along the top.
 | Setting | What it does |
 |---|---|
 | **Accent color** | **SimplMaker orange**, or the colour set in System Settings. The highlight colour of tools and selections. While you sketch, the system's colour is always used, because the sketch paper is tinted to match it. |
+| **Panel style** | What the panels and the ribbon are made of: **Liquid Glass** (the default, macOS 26 and later) or the system's **System blur**. Older systems only have the blur. |
+| **Panel material** | How frosted they are: **Thin** lets the most of what is behind them through, **Thick** the least. **Regular** to start. |
+| **Sketch background** | The drafting-paper tint while you sketch: **Soft blue**, **Soft green**, **Cream** or **None** |
 | **Check for updates automatically** | Looks for new versions in the background |
 | **Share anonymous usage statistics** | On by default. Sends anonymous events to TelemetryDeck (which version and macOS you use, and which features get used) so SimplMaker can be improved. Never your parts, file names or anything personal. Takes full effect the next time SimplMaker starts. See [Privacy](/privacy/). |
 
@@ -40,7 +43,6 @@ The details are in [Navigating the view](doc:start/navigation#make-navigation-yo
 | **Show grid** | Shows the grid |
 | **Units** | **Same as system**, **Metric (mm)** or **US (inches)**. Sets the units the grid is laid out in. Everything inside a model stays in mm. |
 | **Grid square** | The size of one square of the sketch grid, which Snap to Grid snaps to. **Automatic** picks a round size that follows the zoom. |
-| **Sketch background** | The drafting-paper tint while you sketch: **Soft blue**, **Soft green**, **Cream** or **None** |
 | **Antialiasing** | Smooths jagged edges: **Off**, **2×**, **4×** or **8×**. Takes effect the next time SimplMaker starts. 4× is hardly noticeable on Apple silicon. |
 | **Show axes** | Shows the coordinate axes |
 | **Show sketch constraints** | Shows the constraint symbols |

@@ -7,7 +7,7 @@ near the middle of the frame in those three.
 ## How to record
 
 - Size the SimplMaker window to **16:9** (for example 1600 × 900 points) and record only the window (⇧⌘5 → *Record Selected Portion*).
-- Use **dark mode**: it sits well on the dark frames and makes the blue/orange handles pop. Hide the welcome window.
+- Use **dark mode**: it sits well on the dark frames and makes the blue/orange handles pop. Open on a part, not the Start page.
 - Slow, deliberate mouse. Pause half a second before and after each action. No cursor wiggling.
 - 6 to 12 seconds each. The end should look like the start (or be a clean cut), so the loop does not jump.
 - Use one part throughout, so the clips feel like one product: the **box with a lid**, or a small bracket with a hole.
@@ -24,7 +24,7 @@ near the middle of the frame in those three.
 | `finish` | features 04 | Select edges → fillet; shell the body hollow; add a hole and a thread. Three quick beats. |
 | `timeline` | features 05 | Click an early sketch in the timeline, change a dimension, watch every later feature rebuild. Show a red triangle on a failed feature if you can make one cleanly. |
 | `export` | features 06, home tile | Import a STEP file, cut or fillet it, File → Export STL, then cut to the slicer opening it. |
-| `mac` | features 07 | Orbit with the trackpad, switch to dark/light, open a recent part from the welcome window. |
+| `mac` | features 07 | Orbit with the trackpad, switch to dark/light, open a recent part from the Start page. |
 
 ## Poster images
 

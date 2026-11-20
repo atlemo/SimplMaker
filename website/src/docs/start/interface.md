@@ -1,38 +1,41 @@
 ---
 title: The interface
-description: Where everything is: the toolbar, browser, parameters, viewport, inspector and timeline.
+description: Where everything is: the ribbon, workspaces, browser, parameters, viewport, inspector and timeline.
 ---
 
-Each new part opens as a tab of the window you are in (⌘N, **File → New**, or **New Part** on the Start page). A slim tab bar hangs from the title bar once a window holds two parts, and is not there while it holds one. Right-click a tab, or use **Window → Move Tab to New Window**, to give a part its own window. The window has five areas.
+Each part opens as a tab of the window you are in (⌘N, **File → New**, **File → Open**, **New Part** on the Start page, or a file opened from the Finder). A slim tab bar hangs from the title bar once a window holds two parts, and is not there while it holds one. Right-click a tab, or use **Window → Move Tab to New Window**, to give a part its own window. The window has five areas.
 
 ![The SimplMaker window: toolbar on top, browser on the left, viewport in the middle, inspector on the right, timeline along the bottom.](shot:interface-overview)
 
 | Area | Where | What it is for |
 |---|---|---|
-| **Toolbar** | Top | The tools, in groups, each on a floating island |
+| **Ribbon** | Top | The tools, in groups |
 | **Browser** | Left | Your bodies, sketches, planes and images, and the parameters |
 | **Viewport** | Middle | The 3D view, where you pick and drag |
 | **Inspector** | Right | The settings of the feature you selected |
 | **Timeline** | Bottom | Every step, in the order it was built |
 
-Hide the browser, inspector and timeline when you want more room: **View → Hide Browser** ([[⌃⌘S]]), **Hide Inspector** ([[⌥⌘I]]) and **Hide Timeline** ([[⌥⌘T]]). **View → Hide UI** hides the panels and the ribbon. Choose **Render** in the mode selector for the [Render view](doc:modify/render).
+Hide the browser, inspector and timeline when you want more room: **View → Hide Browser** ([[⌃⌘S]]), **Hide Inspector** ([[⌥⌘I]]) and **Hide Timeline** ([[⌥⌘T]]). **View → Hide UI** hides the panels and the ribbon. Choose **Render** in the workspace list for the [Render view](doc:modify/render).
 
 ## The toolbar
 
-The toolbar is one bar, the **ribbon**, at the very top of the window and as wide as it. The window's controls (close, minimise, zoom) are at its left, then the **workspace button**, then the tools of that workspace in groups divided by thin lines, each group with its name underneath, and at the far right **Undo** and **Redo**. The Start page has no ribbon.
+The toolbar is one rounded bar, the **ribbon**, floating just under the title bar (the system's own, with the window controls and the part's name). In it: the **workspace button** at the left, then the tools of that workspace in groups divided by thin lines, each group with its name underneath, and at the far right **Undo** and **Redo**. The Start page has no ribbon.
 
 ### Workspaces
 
-The big button at the left of the ribbon shows where you are: its picture, its name and the word **Workspace**. Click it for the list of workspaces, each with a picture, a line on what it is for and what is in it. It is there in every workspace except Start, which is a page of its own: pick Sketch, Box, Cylinder or New Part there to move on to Design, or choose **Window → Start** ([[⇧⌘1]]) to come back.
+The big button at the left of the ribbon shows where you are: its picture, its name and the word **Workspace**. Click it for the list of workspaces, each with a picture, a line on what it is for and what is in it. The ribbon turns tinted while you sketch. It is there in every workspace except Start, which is a page of its own: pick Sketch, the demo part or New Part there to move on to Design, or choose **Window → Start** ([[⇧⌘1]]) to come back.
 
-- **Start** is a page as big as the window: new and recent parts, and the ways to begin this part (a sketch, a box, a cylinder, the tutorial). The first part of a launch opens on it. A part you make yourself (**New Part**, ⌘N, a new window) opens in Design. The page makes way for Design as soon as you start something. **Window → Start** ([[⇧⌘1]]) comes back to it.
+![The workspace list: Start, Design, Split, Mold and Render, each with a line on what it is for.](shot:workspace-list)
+
+- **Start** is a page as big as the window: new and recent parts, and the ways to begin this part (a sketch, the demo part, the tutorial and the video tutorials). The first part of a launch opens on it. A part you make yourself (**New Part**, ⌘N, a new tab) opens in Design. The page makes way for Design as soon as you start something. **Window → Start** ([[⇧⌘1]]) comes back to it.
 - **Design** is where you model. Its tools are below.
+- **Split** cuts a part that is too big for your printer into pieces that fit, with pins, keys, dovetails, dowels or magnets to put them back together. See [Split to Print](doc:print/split-to-print).
+- **Mold** makes a printable mold around a body, in two or four pieces, to cast copies of it in silicone or resin. It is marked Experimental. See [Make a mold](doc:print/mold).
 - **Render** shows the part on a floor with a light you set. See [Render view](doc:modify/render).
-- **Mold** makes a printable two-part mold around a body, to cast copies of it. It is still being built.
 
 Switching finishes a sketch you were drawing. Every workspace works on the same part and its history; only the tools and panels change.
 
-Each part opens in a window of its own, so two parts can sit side by side on the screen. Use **Window** in the menu bar to switch between them.
+Two parts can sit side by side on the screen: right-click a tab, or use **Window → Move Tab to New Window**. Use **Window** in the menu bar to switch between them.
 
 ### Design mode
 
