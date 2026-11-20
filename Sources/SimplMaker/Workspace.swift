@@ -23,8 +23,8 @@ enum Workspace: String, CaseIterable, Identifiable, Sendable {
     /// The workspaces the mode selector offers.
     static var available: [Workspace] { allCases }
 
-    /// Whether the workspace has a row of tool islands under the toolbar. Start is a page of its own, and Render is for looking.
-    var hasTools: Bool { self == .design || self == .split || self == .mold }
+    /// Whether the workspace has a row of tool islands under the toolbar. Start is a page of its own.
+    var hasTools: Bool { self != .start }
 
     var help: String {
         switch self {

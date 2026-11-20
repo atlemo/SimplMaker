@@ -21,8 +21,8 @@ import Testing
         #expect(Workspace.available == [.start, .design, .split, .mold, .render])
     }
 
-    @Test func onlyDesignSplitAndMoldHaveToolRows() {
-        #expect(Workspace.allCases.filter(\.hasTools) == [.design, .split, .mold])
+    @Test func everyWorkspaceButStartHasToolRows() {
+        #expect(Workspace.allCases.filter(\.hasTools) == [.design, .split, .mold, .render])
     }
 
     @Test func switchingFinishesTheSketchBeingEdited() {

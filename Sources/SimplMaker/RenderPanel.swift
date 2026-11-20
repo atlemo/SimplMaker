@@ -4,11 +4,11 @@
 import SwiftUI
 import simd
 
-/// The Render view's options, at the top left of the view while it is on, in two tabs. Simple: the quality preset, the
-/// floor, the room, the light and the shadows, and the export, everything an everyday render needs. Advanced: each of the
-/// settings a quality preset sets, one by one. Orange marks values, the selection and the one main button (Export render). A double-click on a
-/// control puts it back to its default and Reset puts back all of them. The X hides the panel (the view stays on); the
-/// Render button in the toolbar turns the view off.
+/// The Render view's options, at the top left of the view while it is on, in two tabs. Simple: the floor, the room, the light
+/// and the shadows, everything an everyday render needs. Advanced: each of the settings a quality preset sets, one by one. The
+/// quality preset, the turntable and the export are in the toolbar (`RenderToolbar`), with a button that shows and hides this
+/// panel. A double-click on a control puts it back to its default and Reset puts back all of them. The X hides the panel (the
+/// view stays on); leaving the Render workspace turns the view off.
 struct RenderPanel: View {
     @Bindable var model: DocumentModel
     @Environment(\.accent) private var accent
@@ -71,8 +71,6 @@ struct RenderPanel: View {
     private var simpleTab: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: DS.Spacing.space6) {
-                qualityGroup
-                Divider()
                 floorGroup
                 Divider()
                 lightingGroup
@@ -80,11 +78,12 @@ struct RenderPanel: View {
                 shadowsGroup
                 Divider()
                 switchRow("Show edges", isOn: $model.renderSettings.showEdges, help: "Draw the lines along the edges of the bodies")
+                Text("The quality, turntable and export are in the toolbar. While rendering, the floor replaces the grid. Double-click any control to reset it.")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(DS.Spacing.space6)
-            Divider()
-            exportGroup
-                .padding(DS.Spacing.space6)
         }
     }
 
@@ -117,19 +116,6 @@ struct RenderPanel: View {
     }
 
     // MARK: groups
-
-    private var qualityGroup: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space5) {
-            header("Quality", detail: model.renderSettings.matchingQuality?.title ?? "Custom")
-            SegmentedRow(items: RenderSettings.Quality.allCases.map { q in
-                SegmentedRow.Item(title: q.title, selected: model.renderSettings.matchingQuality == q) { model.renderSettings.apply(q) }
-            } + [SegmentedRow.Item(title: "Custom", selected: model.renderSettings.matchingQuality == nil, action: nil)])
-            Text(model.renderSettings.matchingQuality?.detail ?? "Your own mix of the Advanced settings.")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
 
     private var floorGroup: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space5) {
@@ -190,28 +176,6 @@ struct RenderPanel: View {
             sliderRow("Softness", value: $model.renderSettings.softness, range: 0...1, reset: defaults.softness, show: percent)
                 .disabled(!model.renderSettings.shadows)
                 .opacity(model.renderSettings.shadows ? 1 : DS.opacityDisabled)
-        }
-    }
-
-    private var exportGroup: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space6) {
-            Button { model.renderSpinning.toggle() } label: {
-                Label(model.renderSpinning ? "Pause turntable" : "Play turntable",
-                      systemImage: model.renderSpinning ? "pause.fill" : "play.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .help("Slowly turn the part around so every side comes into view")
-            Button { model.exportImageWithDialog() } label: {
-                Label("Export render", systemImage: "square.and.arrow.up")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(SolidAccentButtonStyle(accent: accent))
-            .help("Save what the view shows as a picture, with or without the background")
-            Text("While rendering, the floor replaces the grid. Double-click any control to reset it.")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -370,21 +334,5 @@ private struct DirectionDial: View {
         .simultaneousGesture(TapGesture(count: 2).onEnded { bearing = reset })
         .accessibilityLabel("Light direction")
         .accessibilityValue("\(Int(bearing.rounded())) degrees")
-    }
-}
-
-
-/// The panel's one main button: solid in the accent colour with white text.
-private struct SolidAccentButtonStyle: ButtonStyle {
-    let accent: Color
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.body.weight(.semibold))
-            .foregroundStyle(.white)
-            .padding(.vertical, DS.Spacing.space4)
-            .background(RoundedRectangle(cornerRadius: DS.Radius.lg).fill(accent))
-            .opacity(configuration.isPressed ? 0.8 : 1)
-            .contentShape(RoundedRectangle(cornerRadius: DS.Radius.lg))
     }
 }
