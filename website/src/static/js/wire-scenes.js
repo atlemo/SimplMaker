@@ -85,31 +85,6 @@
       }
     }
   }
-  // the same, with smooth normals along the profile (a crease stays a crease where the profile turns sharply)
-  function revolveN(k, prof, a0, a1, n) {
-    var segs = [], i;
-    for (i = 0; i + 1 < prof.length; i++) {
-      var dr = prof[i + 1][0] - prof[i][0], dz = prof[i + 1][1] - prof[i][1], l = Math.sqrt(dr * dr + dz * dz);
-      segs.push(l < 1e-9 ? null : [dz / l, -dr / l]);
-    }
-    function vn(si, end) {                 // the profile normal at one end of segment si
-      var own = segs[si], nb = segs[si + (end ? 1 : -1)];
-      if (!nb || nb[0] * own[0] + nb[1] * own[1] < 0.8) return own;
-      var x = own[0] + nb[0], y = own[1] + nb[1], l = Math.sqrt(x * x + y * y) || 1;
-      return [x / l, y / l];
-    }
-    for (i = 0; i < segs.length; i++) {
-      if (!segs[i]) continue;
-      var p = prof[i], q = prof[i + 1], np = vn(i, 0), nq = vn(i, 1);
-      if (p[0] === 0 && q[0] === 0) continue;
-      for (var j = 0; j < n; j++) {
-        var a = a0 + (a1 - a0) * j / n, b = a0 + (a1 - a0) * (j + 1) / n, ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
-        var pa = [p[0] * ca, p[0] * sa, p[1]], pb = [p[0] * cb, p[0] * sb, p[1]], qb = [q[0] * cb, q[0] * sb, q[1]], qa = [q[0] * ca, q[0] * sa, q[1]];
-        var Na = [np[0] * ca, np[0] * sa, np[1]], Nb = [np[0] * cb, np[0] * sb, np[1]], Mb = [nq[0] * cb, nq[0] * sb, nq[1]], Ma = [nq[0] * ca, nq[0] * sa, nq[1]];
-        k.TN(pa, Na, pb, Nb, qb, Mb); k.TN(pa, Na, qb, Mb, qa, Ma);
-      }
-    }
-  }
   // the lean silhouette lines of a surface of revolution: the two generators square to the line of sight
   function silhouette(prof, yaw, off) {
     var out = [];
@@ -441,45 +416,7 @@
     return scene;
   }
 
-  // ================================================================ scene: the vase, rendered
-  // Wireframe, then lit: a soft light, a floor that catches the shadow, and three materials in turn.
-  function renderScene() {
-    var Z0 = -1.5, Z1 = 1.5, prof = [[0, Z0]], zz;
-    for (zz = Z0; zz <= Z1 + 1e-9; zz += 0.05) prof.push([vaseR(zz), zz]);
-    prof.push([0, Z1]);
-    var k = new Kit();
-    revolveN(k, prof, 0, TAU, 72);
-    for (zz = Z0; zz <= Z1 + 1e-9; zz += 0.25) k.P('piece', ringZ(vaseR(zz), zz, 0, TAU, 64), true);
-    var vase = k.part('vase', { dyn: function (yaw) { return { piece: silhouette(prof, yaw) }; } });
-
-    var PLAY = 14.8, bonus = 0, lightT = 0;
-    function ramp(t) { return t < 1.3 ? 0 : t < 2.9 ? ease((t - 1.3) / 1.6) : t < 13.2 ? 1 : t < 14.6 ? 1 - ease((t - 13.2) / 1.4) : 0; }
-    return {
-      parts: [vase],
-      view: { yaw: -0.7, pitch: 0.3, dist: 11, fov: 11 * 0.4, swing: 0, spin: 0.24 },
-      period: PLAY,
-      rest: 6,
-      floor: { z: Z0, radius: 2.5 },
-      colour: function (g, focus, P) { return P.mix(P.BG, P.INK, 0.85); },
-      tick: function (t, focus, dt, P) {
-        if (focus === 'materials') bonus += dt * 1.6;      // asking about materials speeds the changes up
-        var matT = Math.max(0, t - 1.3) + bonus;
-        lightT += dt * (focus === 'light' ? 1.8 : 0.45);
-        var mats = [{ c: P.ACC, spec: 0.38, shin: 26 }, { c: [0.085, 0.09, 0.1], spec: 0.95, shin: 64 }, { c: [0.83, 0.8, 0.73], spec: 0.28, shin: 16 }];
-        var seg = 3.9, i = Math.floor(matT / seg) % 3, f = (matT % seg) / seg, w = ease((f - 0.82) / 0.18);
-        var a = mats[i], b = mats[(i + 1) % 3];
-        var fill = ramp(t), ang = -0.5 + 0.9 * Math.sin(lightT);
-        return {
-          fill: fill, lineAlpha: 1 - 0.98 * fill,
-          base: P.mix(a.c, b.c, w), spec: a.spec + (b.spec - a.spec) * w, shin: a.shin + (b.shin - a.shin) * w,
-          light: [Math.sin(ang) * 0.85, 0.7, -Math.cos(ang) * 0.85],
-          floorAmt: fill, shadowAmt: fill * (focus === 'floor' ? 1.5 : 1)
-        };
-      }
-    };
-  }
-
-  var SCENES = { mold: moldScene, split: splitScene, model: modelScene, render: renderScene };
+  var SCENES = { mold: moldScene, split: splitScene, model: modelScene };
 
   // ================================================================ the renderer
   function run(canvas) {

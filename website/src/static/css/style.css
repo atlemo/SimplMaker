@@ -11,6 +11,12 @@
   font-display: swap;
 }
 @font-face {
+  font-family: "Familjen Grotesk";
+  src: url("/fonts/FamiljenGrotesk.woff2") format("woff2");
+  font-weight: 400 700;
+  font-display: swap;
+}
+@font-face {
   font-family: "JetBrains Mono";
   src: url("/fonts/JetBrainsMono.woff2") format("woff2");
   font-weight: 100 800;
@@ -34,6 +40,7 @@
   --line-dark: rgba(243, 241, 234, 0.18);
 
   --font: "Inter Tight", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --font-display: "Familjen Grotesk", "Inter Tight", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   --gutter: clamp(20px, 4vw, 56px);
@@ -54,6 +61,9 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+/* Headings and big figures use Familjen Grotesk; body copy stays in Inter Tight. */
+h1, h2, h3, h4, .display, .big, .mid, .small-head,
+.price-strip .figure .num, .math .n, .footer-word, .nav-logo { font-family: var(--font-display); }
 img, video { display: block; max-width: 100%; }
 a { color: inherit; text-decoration: none; }
 ul { list-style: none; }
@@ -98,28 +108,29 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   font-size: clamp(3.4rem, 14vw, 16rem);
   font-weight: 600;
   line-height: 0.84;
-  letter-spacing: -0.062em;
+  letter-spacing: -0.02em;
   margin-left: -0.04em;
 }
 .display-page { font-size: clamp(3rem, 11vw, 12rem); }
+.hero .display .accent { position: relative; } /* paints over the line above, so descenders (the p in "people") never cover the dot of the i */
 .big {
   font-size: clamp(2.6rem, 8.6vw, 9rem);
   font-weight: 600;
   line-height: 0.9;
-  letter-spacing: -0.052em;
+  letter-spacing: -0.02em;
   margin-left: -0.03em;
 }
 .mid {
   font-size: clamp(1.9rem, 4.4vw, 4.2rem);
   font-weight: 600;
   line-height: 0.98;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.025em;
 }
 .small-head {
   font-size: clamp(1.35rem, 2.2vw, 1.9rem);
   font-weight: 600;
   line-height: 1.1;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 .lead {
   font-size: clamp(1.2rem, 2vw, 1.75rem);
@@ -159,7 +170,7 @@ p + p { margin-top: 1em; }
   transition: transform 0.2s var(--ease), background 0.2s, color 0.2s, border-color 0.2s;
 }
 .btn:hover { transform: translateY(-2px); }
-.btn:active { transform: none; }
+.btn:active { transform: scale(0.97); transition-duration: 0.1s; } /* answers the press at once, not on release */
 .btn-accent { background: var(--accent); color: var(--ink); }
 .btn-accent:hover { background: var(--accent-hover); }
 .btn-ink { background: var(--ink); color: var(--paper); }
@@ -178,7 +189,7 @@ p + p { margin-top: 1em; }
   border-bottom: 1px solid var(--line);
 }
 .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; padding-inline: var(--gutter); }
-.nav-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; letter-spacing: -0.03em; }
+.nav-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; letter-spacing: -0.015em; }
 .nav-logo img { border-radius: 7px; }
 .nav-menu { display: flex; align-items: center; gap: clamp(18px, 3vw, 40px); }
 .nav-menu a:not(.btn) { font-weight: 500; font-size: 0.97rem; letter-spacing: -0.01em; position: relative; padding-block: 6px; }
@@ -282,11 +293,11 @@ main { padding-top: 64px; }
 
 /* ---------- Home: price strip ---------- */
 .price-strip { display: grid; grid-template-columns: repeat(12, 1fr); column-gap: clamp(16px, 2vw, 32px); align-items: end; row-gap: 32px; }
-.price-strip .figure { grid-column: 1 / span 7; }
+.price-strip .figure { grid-column: 1 / span 6; }
 .price-strip .figure .num {
-  display: block; font-size: clamp(8rem, 30vw, 34rem); font-weight: 600; line-height: 0.78; letter-spacing: -0.08em; margin-left: -0.05em;
+  display: block; font-size: clamp(8rem, 30vw, 34rem); font-weight: 600; line-height: 0.78; letter-spacing: -0.05em; margin-left: -0.05em;
 }
-.price-strip .copy { grid-column: 8 / span 5; padding-bottom: 1.2vw; }
+.price-strip .copy { grid-column: 7 / span 6; padding-bottom: 1.2vw; }
 .price-strip .copy .mid { margin-bottom: 20px; }
 .price-strip .copy p { margin-bottom: 28px; }
 @media (max-width: 860px) {
@@ -307,6 +318,8 @@ main { padding-top: 64px; }
   cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none;
 }
 .wire-scene.grabbing { cursor: grabbing; }
+/* a finished render shown as a picture, in the same place a wire scene would be */
+.wire-photo { grid-column: 6 / -1; grid-row: 1; justify-self: end; display: block; width: 100%; max-width: 760px; height: auto; border-radius: 10px; }
 .wire-scene:focus-visible { outline: 2px solid var(--accent-on-dark); outline-offset: 4px; border-radius: 4px; }
 .wire-copy .mono { color: var(--on-dark-2); margin-bottom: clamp(18px, 2.4vw, 32px); }
 .wire-copy .big { font-size: clamp(2.6rem, 6vw, 6rem); margin-bottom: clamp(18px, 2vw, 28px); }
@@ -363,6 +376,7 @@ main { padding-top: 64px; }
   .wire-grid { grid-template-columns: 1fr; }
   .wire-copy, .wire-flip .wire-copy { grid-column: 1; grid-row: 1; }
   .wire-scene, .wire-flip .wire-scene { grid-column: 1; grid-row: 2; justify-self: center; max-width: 520px; }
+  .wire-photo { grid-column: 1; grid-row: 2; justify-self: center; max-width: 520px; }
 }
 
 /* ---------- Home: tool wall (accent, full bleed) ---------- */
@@ -404,7 +418,7 @@ main { padding-top: 64px; }
 
 /* cells pop in one after another when the wall scrolls into view */
 .js .toolwall-grid.reveal { opacity: 1; transform: none; }
-.js .toolwall-grid.reveal li { opacity: 0; transform: translateY(18px); transition: opacity 0.6s var(--ease), transform 0.6s var(--ease); transition-delay: calc(var(--i) * 22ms); }
+.js .toolwall-grid.reveal li { opacity: 0; transform: translateY(12px); transition: opacity 0.4s var(--ease), transform 0.4s var(--ease); transition-delay: calc(var(--i) * 22ms); }
 .js .toolwall-grid.reveal.in li { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) { .js .toolwall-grid.reveal li { opacity: 1; transform: none; transition: none; } }
 
@@ -470,7 +484,7 @@ main { padding-top: 64px; }
 
 .math { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(16px, 2vw, 32px); }
 .math > div { border-top: 1.5px solid var(--ink); padding-top: 16px; }
-.math .n { display: block; font-size: clamp(2.6rem, 6vw, 5.5rem); font-weight: 600; letter-spacing: -0.06em; line-height: 1; margin: 10px 0 8px; }
+.math .n { display: block; font-size: clamp(2.6rem, 6vw, 5.5rem); font-weight: 600; letter-spacing: -0.035em; line-height: 1; margin: 10px 0 8px; }
 .math .n.hot { color: var(--accent); }
 @media (max-width: 700px) { .math { grid-template-columns: 1fr; } }
 
@@ -529,8 +543,8 @@ main { padding-top: 64px; }
 
 /* ---------- Text pages (legal, support, changelog) ---------- */
 .text-page { max-width: 760px; }
-.text-page h2 { font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 600; letter-spacing: -0.035em; line-height: 1.1; margin: 2.2em 0 0.6em; }
-.text-page h3 { font-size: 1.2rem; font-weight: 600; letter-spacing: -0.02em; margin: 1.6em 0 0.4em; }
+.text-page h2 { font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin: 2.2em 0 0.6em; }
+.text-page h3 { font-size: 1.2rem; font-weight: 600; letter-spacing: -0.01em; margin: 1.6em 0 0.4em; }
 .text-page p, .text-page li { color: #25241f; }
 .text-page ul { list-style: disc; padding-left: 1.3em; margin-top: 0.8em; }
 .text-page li + li { margin-top: 0.4em; }
@@ -557,7 +571,7 @@ main { padding-top: 64px; }
 .footer-col a { width: fit-content; position: relative; }
 .footer-col a:hover { color: var(--accent-on-dark); }
 .footer-word {
-  font-size: clamp(4rem, 19.5vw, 26rem); font-weight: 600; letter-spacing: -0.07em; line-height: 0.8;
+  font-size: clamp(4rem, 19.5vw, 26rem); font-weight: 600; letter-spacing: -0.04em; line-height: 0.8;
   margin: clamp(48px, 8vw, 110px) 0 0 -0.04em; padding-inline: var(--gutter); white-space: nowrap; user-select: none;
   color: #171922;
 }
@@ -568,12 +582,22 @@ main { padding-top: 64px; }
 }
 
 /* ---------- Motion ---------- */
-.js .reveal { opacity: 0; transform: translateY(28px); transition: opacity 0.9s var(--ease), transform 0.9s var(--ease); }
+.js .reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.45s var(--ease), transform 0.45s var(--ease); }
 .js .reveal.in { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .js .reveal { opacity: 1; transform: none; transition: none; }
   * { transition-duration: 0.01ms !important; }
+}
+/* Translucent bars go solid when the system asks for less transparency. */
+@media (prefers-reduced-transparency: reduce) {
+  .nav { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .lightbox { background: #08090c; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+/* Higher contrast: firmer lines where the bar meets the page. */
+@media (prefers-contrast: more) {
+  .nav { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom-color: var(--ink); }
+  .lightbox { background: #08090c; -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 /* ---------- Inline code ---------- */
@@ -625,11 +649,11 @@ code {
 .docs-article { min-width: 0; max-width: 780px; }
 .docs-crumb { color: var(--ink-2); margin-bottom: 18px; }
 .docs-crumb a:hover { color: var(--accent-text); }
-.docs-article h1 { font-size: clamp(2.4rem, 5.4vw, 4.4rem); font-weight: 600; letter-spacing: -0.05em; line-height: 0.95; margin-bottom: 20px; margin-left: -0.03em; }
+.docs-article h1 { font-size: clamp(2.4rem, 5.4vw, 4.4rem); font-weight: 600; letter-spacing: -0.03em; line-height: 0.95; margin-bottom: 20px; margin-left: -0.03em; }
 .docs-lead { font-size: clamp(1.15rem, 1.8vw, 1.45rem); line-height: 1.32; letter-spacing: -0.015em; color: var(--ink-2); max-width: 36em; margin-bottom: 28px; }
 .docs-article > p, .docs-article > ul, .docs-article > ol { max-width: 66ch; }
-.docs-article h2 { font-size: clamp(1.6rem, 2.8vw, 2.3rem); font-weight: 600; letter-spacing: -0.04em; line-height: 1.05; margin: 2.2em 0 0.55em; padding-top: 1.1em; border-top: 1px solid var(--line); }
-.docs-article h3 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.025em; line-height: 1.2; margin: 1.7em 0 0.45em; }
+.docs-article h2 { font-size: clamp(1.6rem, 2.8vw, 2.3rem); font-weight: 600; letter-spacing: -0.025em; line-height: 1.05; margin: 2.2em 0 0.55em; padding-top: 1.1em; border-top: 1px solid var(--line); }
+.docs-article h3 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.015em; line-height: 1.2; margin: 1.7em 0 0.45em; }
 .docs-article h2 .anchor, .docs-article h3 .anchor { margin-left: -1.1em; padding-right: 0.35em; color: var(--accent); opacity: 0; text-decoration: none; font-weight: 400; }
 .docs-article h2:hover .anchor, .docs-article h3:hover .anchor, .docs-article .anchor:focus-visible { opacity: 1; }
 .docs-article p + p, .docs-article p + ul, .docs-article p + ol, .docs-article ul + p, .docs-article ol + p { margin-top: 1em; }
@@ -656,8 +680,8 @@ kbd {
 .callout p { max-width: none; }
 .callout p + p { margin-top: 0.7em; }
 .callout-title { margin-bottom: 6px; color: var(--ink-2); }
-.callout-tip { border-color: var(--accent); background: rgba(235, 87, 41, 0.07); }
-.callout-tip .callout-title { color: var(--accent-text); }
+.callout-tip { border-color: #2f6fdb; background: rgba(47, 111, 219, 0.07); }
+.callout-tip .callout-title { color: #1f55b5; } /* blue, so a tip does not read as a warning; 6:1 on paper */
 .callout-warning { background: var(--paper-2); }
 .callout-warning .callout-title { color: var(--ink); }
 
