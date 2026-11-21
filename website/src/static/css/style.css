@@ -11,12 +11,6 @@
   font-display: swap;
 }
 @font-face {
-  font-family: "Familjen Grotesk";
-  src: url("/fonts/FamiljenGrotesk.woff2") format("woff2");
-  font-weight: 400 700;
-  font-display: swap;
-}
-@font-face {
   font-family: "JetBrains Mono";
   src: url("/fonts/JetBrainsMono.woff2") format("woff2");
   font-weight: 100 800;
@@ -40,7 +34,7 @@
   --line-dark: rgba(243, 241, 234, 0.18);
 
   --font: "Inter Tight", system-ui, -apple-system, "Helvetica Neue", sans-serif;
-  --font-display: "Familjen Grotesk", "Inter Tight", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --font-display: Helvetica, Arial, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   --gutter: clamp(20px, 4vw, 56px);
@@ -61,7 +55,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-/* Headings and big figures use Familjen Grotesk; body copy stays in Inter Tight. */
+/* Headings and big figures use Helvetica; body copy stays in Inter Tight. */
 h1, h2, h3, h4, .display, .big, .mid, .small-head,
 .price-strip .figure .num, .math .n, .footer-word, .nav-logo { font-family: var(--font-display); }
 img, video { display: block; max-width: 100%; }
@@ -108,7 +102,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   font-size: clamp(3.4rem, 14vw, 16rem);
   font-weight: 600;
   line-height: 0.84;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.035em;
   margin-left: -0.04em;
 }
 .display-page { font-size: clamp(3rem, 11vw, 12rem); }
@@ -117,20 +111,20 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   font-size: clamp(2.6rem, 8.6vw, 9rem);
   font-weight: 600;
   line-height: 0.9;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.035em;
   margin-left: -0.03em;
 }
 .mid {
   font-size: clamp(1.9rem, 4.4vw, 4.2rem);
   font-weight: 600;
   line-height: 0.98;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.035em;
 }
 .small-head {
   font-size: clamp(1.35rem, 2.2vw, 1.9rem);
   font-weight: 600;
   line-height: 1.1;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
 .lead {
   font-size: clamp(1.2rem, 2vw, 1.75rem);
@@ -572,7 +566,7 @@ main { padding-top: 64px; }
 .footer-col a { width: fit-content; position: relative; }
 .footer-col a:hover { color: var(--accent-on-dark); }
 .footer-word {
-  font-size: clamp(4rem, 19.5vw, 26rem); font-weight: 600; letter-spacing: -0.04em; line-height: 0.8;
+  font-size: clamp(3.4rem, 17.8vw, 26rem); font-weight: 600; letter-spacing: -0.04em; line-height: 0.8;
   margin: clamp(48px, 8vw, 110px) 0 0 -0.04em; padding-inline: var(--gutter); white-space: nowrap; user-select: none;
   color: #171922;
 }
