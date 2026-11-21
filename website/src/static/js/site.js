@@ -73,7 +73,42 @@
   if (track) {
     var prevBtn = document.querySelector('.shots-btn[data-dir="-1"]'), nextBtn = document.querySelector('.shots-btn[data-dir="1"]');
     var step = function () { var f = track.querySelector('.shot'); return f ? f.getBoundingClientRect().width + parseFloat(getComputedStyle(track).columnGap || 0) : 600; };
-    var go = function (dir) { track.scrollBy({ left: dir * step(), behavior: reduced ? 'auto' : 'smooth' }); };
+    var shots = track.querySelectorAll('.shot');
+    var maxLeft = function () { return Math.max(0, track.scrollWidth - track.clientWidth); };
+    var slideLeft = function (i) { return Math.min(Math.max(0, Math.min(i, shots.length - 1)) * step(), maxLeft()); };
+    var nearest = function (x) { return Math.max(0, Math.min(shots.length - 1, Math.round(x / step()))); };
+    // One eased glide to a picture. Mouse and trackpad scrolling settle through this instead of the browser's
+    // hard CSS snap, which jumps as soon as the wheel stops; touch screens keep the native snap (it is smooth there).
+    var fine = window.matchMedia('(hover: hover) and (pointer: fine)');
+    var anim = 0, animTarget = null;
+    var stop = function () { if (anim) cancelAnimationFrame(anim); anim = 0; animTarget = null; };
+    var glide = function (x) {
+      stop();
+      x = Math.min(Math.max(0, x), maxLeft());
+      var from = track.scrollLeft, d = x - from;
+      if (Math.abs(d) < 1) return;
+      if (reduced) { track.scrollLeft = x; return; }
+      var t0 = performance.now(), dur = Math.min(900, Math.max(450, Math.abs(d) * 0.55));
+      animTarget = x;
+      var tick = function (now) {
+        var p = Math.min(1, (now - t0) / dur);
+        track.scrollLeft = from + d * (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);   // ease in-out cubic
+        if (p < 1) anim = requestAnimationFrame(tick); else { anim = 0; animTarget = null; }
+      };
+      anim = requestAnimationFrame(tick);
+    };
+    var go = function (dir) {
+      var base = animTarget !== null ? animTarget : track.scrollLeft;
+      glide(slideLeft(nearest(base) + dir));
+    };
+    var settleTimer = 0, pointerDown = false;
+    var settleSoon = function () {
+      clearTimeout(settleTimer);
+      if (!fine.matches || anim || pointerDown) return;
+      settleTimer = setTimeout(function () { if (!pointerDown) glide(slideLeft(nearest(track.scrollLeft))); }, 120);
+    };
+    track.addEventListener('wheel', stop, { passive: true });          // the user took over: let go
+    track.addEventListener('scroll', settleSoon, { passive: true });
     var sync = function () {
       var max = track.scrollWidth - track.clientWidth - 2;
       if (prevBtn) prevBtn.disabled = track.scrollLeft <= 2;
@@ -89,6 +124,7 @@
     var down = false, startX = 0, startLeft = 0, moved = false;
     track.addEventListener('pointerdown', function (e) {
       if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      stop(); clearTimeout(settleTimer); pointerDown = true;
       down = true; moved = false; startX = e.clientX; startLeft = track.scrollLeft;
     });
     window.addEventListener('pointermove', function (e) {
@@ -99,10 +135,10 @@
     });
     window.addEventListener('pointerup', function () {
       if (!down) return;
-      down = false;
+      down = false; pointerDown = false;
       if (moved) {                       // settle on the nearest picture
         track.classList.remove('dragging');
-        var s = step(); track.scrollTo({ left: Math.round(track.scrollLeft / s) * s, behavior: reduced ? 'auto' : 'smooth' });
+        glide(slideLeft(nearest(track.scrollLeft)));
       }
     });
     sync();

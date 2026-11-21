@@ -349,6 +349,7 @@ main { padding-top: 64px; }
   padding-inline: var(--gutter); scroll-padding-inline: var(--gutter); scrollbar-width: none; cursor: grab; -webkit-overflow-scrolling: touch;
 }
 .shots-track::-webkit-scrollbar { display: none; }
+@media (hover: hover) and (pointer: fine) { .shots-track { scroll-snap-type: none; } }   /* mouse and trackpad: site.js glides to the nearest picture instead */
 .shots-track.dragging { cursor: grabbing; scroll-snap-type: none; user-select: none; -webkit-user-select: none; }
 .shots-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .shot { flex: 0 0 min(80vw, 1180px); scroll-snap-align: start; margin: 0; }
