@@ -12,6 +12,8 @@
 # wants its native width), and SRC picks a differently named recording for a single clip:
 #   WIDTH=1728 CRF=20 SRC=parameters_16_9 website/make-clips.sh parameters
 # CRF (x264, default 25; the webm gets CRF+9) trades size for sharpness, lower is sharper.
+# CROP="crop=w:h:x:y" trims dark edge pixels off the recording first (the ratio you give the page is then the cropped one):
+#   CROP=crop=1438:1076:2:2 SRC=render_loop website/make-clips.sh render
 # The height always follows the recording, so the clip keeps its native aspect ratio.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -28,10 +30,10 @@ for name in "${NAMES[@]}"; do
   src="$(ls clips-raw/"${SRC:-$name}".* 2>/dev/null | head -n 1 || true)"
   [ -n "$src" ] || { echo "no recording for $name in clips-raw/" >&2; continue; }
   echo "==> $name ($src)"
-  VF="scale=${WIDTH:-1280}:-2:flags=lanczos,fps=30,format=yuv420p"
+  VF="${CROP:+$CROP,}scale=${WIDTH:-1280}:-2:flags=lanczos,fps=30,format=yuv420p"
   ffmpeg -y -loglevel error -i "$src" -an -vf "$VF" -c:v libx264 -preset slow -crf "${CRF:-25}" -movflags +faststart "$OUT/$name.mp4"
   ffmpeg -y -loglevel error -i "$src" -an -vf "$VF" -c:v libvpx-vp9 -crf "$((${CRF:-25} + 9))" -b:v 0 -row-mt 1 "$OUT/$name.webm"
-  ffmpeg -y -loglevel error -ss 1 -i "$src" -frames:v 1 -vf "scale=${WIDTH:-1280}:-2:flags=lanczos" -q:v 4 "$OUT/$name.jpg"
+  ffmpeg -y -loglevel error -ss 1 -i "$src" -frames:v 1 -vf "${CROP:+$CROP,}scale=${WIDTH:-1280}:-2:flags=lanczos" -q:v 4 "$OUT/$name.jpg"
   ls -lh "$OUT/$name".mp4 "$OUT/$name".webm "$OUT/$name".jpg | awk '{print "   " $5 "  " $9}'
 done
 echo "Now: python3 website/build.py, and look at the page."

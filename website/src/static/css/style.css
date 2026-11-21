@@ -318,8 +318,9 @@ main { padding-top: 64px; }
   cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none;
 }
 .wire-scene.grabbing { cursor: grabbing; }
-/* a finished render shown as a picture, in the same place a wire scene would be */
-.wire-photo { grid-column: 6 / -1; grid-row: 1; justify-self: end; display: block; width: 100%; max-width: 760px; height: auto; border-radius: 10px; }
+/* a finished render (a looping clip) shown in the same place a wire scene would be */
+.wire-photo { grid-column: 6 / -1; grid-row: 1; justify-self: end; width: 100%; max-width: 760px; }
+.wire-photo .clip { border-radius: 10px; }
 .wire-scene:focus-visible { outline: 2px solid var(--accent-on-dark); outline-offset: 4px; border-radius: 4px; }
 .wire-copy .mono { color: var(--on-dark-2); margin-bottom: clamp(18px, 2.4vw, 32px); }
 .wire-copy .big { font-size: clamp(2.6rem, 6vw, 6rem); margin-bottom: clamp(18px, 2vw, 28px); }
