@@ -1,6 +1,7 @@
 // The Render view's options panel (Mac). The settings themselves are in RenderSettings.swift, which the iPad app shares.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+import CADCore
 import SwiftUI
 import simd
 
@@ -121,7 +122,7 @@ struct RenderPanel: View {
         VStack(alignment: .leading, spacing: DS.Spacing.space5) {
             header("Floor", detail: model.renderSettings.floor.title)
             HStack(spacing: DS.Spacing.space2) {
-                ForEach(RenderSettings.Floor.allCases) { floor in
+                ForEach(RenderSettings.Floor.presets) { floor in
                     let c = floor.rgb
                     ColorSwatch(color: Color(.sRGB, red: Double(c.x), green: Double(c.y), blue: Double(c.z)),
                                 name: floor.title, current: model.renderSettings.floor == floor) {
@@ -130,11 +131,34 @@ struct RenderPanel: View {
                     .help(floor.title)
                 }
             }
+            row("Custom") {
+                ColorPicker("Custom floor colour", selection: customFloor, supportsOpacity: false)
+                    .labelsHidden()
+                    .help("Pick any colour for the floor")
+                Text(model.renderSettings.customFloor.hex).font(.caption.monospaced()).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Spacer(minLength: 0)
+                if model.renderSettings.floor != .custom {
+                    Button("Use") { model.renderSettings.floor = .custom }
+                        .help("Use the custom colour for the floor")
+                }
+            }
             sliderRow("Reflection", value: $model.renderSettings.reflection, range: 0...1, reset: defaults.reflection, show: percent)
             sliderRow("Blur", value: $model.renderSettings.reflectionBlur, range: 0...1, reset: defaults.reflectionBlur, show: percent)
                 .disabled(model.renderSettings.reflection == 0)
                 .opacity(model.renderSettings.reflection == 0 ? DS.opacityDisabled : 1)
         }
+    }
+
+    /// The colour well for the floor: picking a colour also switches the floor to it.
+    private var customFloor: Binding<Color> {
+        Binding(get: { let c = model.renderSettings.customFloor.components
+                       return Color(.sRGB, red: c.red, green: c.green, blue: c.blue) },
+                set: { new in
+                    guard let c = BodyColor(new) else { return }
+                    model.renderSettings.customFloor = c
+                    model.renderSettings.floor = .custom
+                })
     }
 
     private var lightingGroup: some View {

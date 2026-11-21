@@ -1,6 +1,7 @@
 // The Render view: a solid floor and a light you set, to make the model ready for presentation.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
+import CADCore
 import SwiftUI
 import simd
 
@@ -10,7 +11,12 @@ struct RenderSettings: Codable, Equatable {
     /// The colour of the floor (and, a little darker, of the backdrop it fades into).
     enum Floor: String, Codable, CaseIterable, Identifiable {
         case white, light, mid, charcoal, sand, slate
+        /// The colour picked with the colour well (see `RenderSettings.customFloor`); not one of the swatches.
+        case custom
         var id: String { rawValue }
+
+        /// The ready-made floors, the swatches of the panel.
+        static var presets: [Floor] { allCases.filter { $0 != .custom } }
 
         var title: String {
             switch self {
@@ -20,6 +26,7 @@ struct RenderSettings: Codable, Equatable {
             case .charcoal: return "Charcoal"
             case .sand: return "Sand"
             case .slate: return "Slate"
+            case .custom: return "Custom"
             }
         }
 
@@ -31,6 +38,7 @@ struct RenderSettings: Codable, Equatable {
             case .charcoal: return SIMD3(0.17, 0.175, 0.19)
             case .sand: return SIMD3(0.86, 0.8, 0.69)
             case .slate: return SIMD3(0.36, 0.45, 0.58)
+            case .custom: return SIMD3(0.5, 0.51, 0.53)  // not used: RenderSettings.floorRGB takes the picked colour
             }
         }
     }
@@ -116,6 +124,14 @@ struct RenderSettings: Codable, Equatable {
     }
 
     var floor = Floor.white
+    /// The floor's colour when `floor` is `.custom`: any colour from the colour well.
+    var customFloor = BodyColor(red: 0.62, green: 0.74, blue: 0.62)
+    /// The floor's own colour, before any light falls on it.
+    var floorRGB: SIMD3<Float> {
+        guard floor == .custom else { return floor.rgb }
+        let c = customFloor.components
+        return SIMD3(Float(c.red), Float(c.green), Float(c.blue))
+    }
     /// The strength of the main light, about 0.2 to 1.5.
     var brightness: Double = 0.8
     /// Where the main light shines from: degrees around the part, from the X axis toward Y.
@@ -170,6 +186,7 @@ struct RenderSettings: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = RenderSettings()
         floor = try c.decodeIfPresent(Floor.self, forKey: .floor) ?? d.floor
+        customFloor = try c.decodeIfPresent(BodyColor.self, forKey: .customFloor) ?? d.customFloor
         brightness = try c.decodeIfPresent(Double.self, forKey: .brightness) ?? d.brightness
         direction = try c.decodeIfPresent(Double.self, forKey: .direction) ?? d.direction
         height = try c.decodeIfPresent(Double.self, forKey: .height) ?? d.height
@@ -289,10 +306,10 @@ struct RenderSettings: Codable, Equatable {
             let key = c.tint * (mainLight ? Float(brightness) * Self.keyScale * max(l.z, 0) : 0)
             let irradiance = key + SIMD3(repeating: Float(brightness) * Self.fillScale * fillUp)
                 + sky * Float(ambient) * Self.ambientScale + SIMD3(repeating: Float(softbox) * Self.softboxScale)
-            return display(Self.decode(floor.rgb) * irradiance)
+            return display(Self.decode(floorRGB) * irradiance)
         }
         let v = Float(ambient) + Float(brightness) * ((mainLight ? 0.7 * max(l.z, 0) : 0) + 0.3 * fillUp)
-        return floor.rgb * v
+        return floorRGB * v
     }
 
     /// The floor as it is lit, in a shadow, and the backdrop it fades into (a little darker, so the model sits in a pool of light).

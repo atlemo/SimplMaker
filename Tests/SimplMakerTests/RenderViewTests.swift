@@ -395,6 +395,17 @@ import simd
         #expect(RenderSettings().noise == 0.1)
     }
 
+    @Test func aCustomFloorColourIsKeptAndLightsTheFloor() throws {
+        var s = RenderSettings()
+        s.floor = .custom
+        s.customFloor = BodyColor(hex: "#C82828")!
+        let back = try JSONDecoder().decode(RenderSettings.self, from: JSONEncoder().encode(s))
+        #expect(back.floor == .custom && back.customFloor == s.customFloor)
+        let c = back.floorColor
+        #expect(c.x > c.y * 2 && c.x > c.z * 2, "the floor is red: \(c)")
+        #expect(!RenderSettings.Floor.presets.contains(.custom))
+    }
+
     @Test func settingsKeptByAnOlderVersionStillLoad() throws {
         let old = #"{"floor":"sand","brightness":1,"direction":-90,"height":40,"ambient":0.3,"showEdges":true}"#
         let s = try JSONDecoder().decode(RenderSettings.self, from: Data(old.utf8))
