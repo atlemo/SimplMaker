@@ -435,6 +435,13 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     func setSpinning(_ on: Bool) {
         if !on { spinTask?.cancel(); spinTask = nil; return }
         guard spinTask == nil else { return }
+        // The camera circles its target, so the target has to be the middle of the part: otherwise the part swings
+        // around the spin axis instead of turning on the spot. Zoom and angle stay as they are.
+        if let renderer, let b = renderer.sceneBounds {
+            var goal = renderer.camera.pose
+            goal.target = (b.min + b.max) / 2
+            animateCamera(to: goal, duration: 0.4)
+        }
         spinTask = Task { @MainActor [weak self] in
             var last = Date()
             while !Task.isCancelled {
@@ -2596,8 +2603,8 @@ struct ViewportView: NSViewRepresentable {
         renderer.printLayer = Float(printLayer)
         renderer.printNozzle = Float(printNozzle)
         renderer.renderSettings = renderSettings
-        view.setSpinning(spinning)
         renderer.sceneBounds = model.explodedSceneBounds
+        view.setSpinning(spinning)
         renderer.sectionPlane = sectionPlane
         renderer.sketchSlice = sketchSlice
         renderer.showGrid = showGrid

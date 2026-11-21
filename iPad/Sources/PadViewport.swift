@@ -188,6 +188,12 @@ struct PadViewport: UIViewRepresentable {
         func setSpinning(_ on: Bool) {
             if !on { spin?.cancel(); spin = nil; return }
             guard spin == nil else { return }
+            // The camera circles its target: put the target in the middle of the part so it turns on the spot.
+            if let renderer, let b = renderer.sceneBounds {
+                var goal = renderer.camera.pose
+                goal.target = (b.min + b.max) / 2
+                animateCamera(to: goal, duration: 0.4)
+            }
             spin = Task { @MainActor [weak self] in
                 var last = Date()
                 while !Task.isCancelled {
