@@ -73,6 +73,8 @@ struct SnapshotOptions: Sendable {
     var grid = false
     /// A perspective camera instead of the orthographic one (for the tests too).
     var perspective = false
+    /// The dark viewport palette (the recent parts list shows these in dark mode); the default is the light one.
+    var dark = false
 }
 
 @MainActor
@@ -146,7 +148,7 @@ enum ViewportSnapshot {
         var overlay = SketchOverlay()
         for (slot, r) in sketchResults.enumerated() { SketchOverlayBuilder.finished(r, slot: slot + 1, parameters: model.parameterValues, into: &overlay) }
         renderer.setOverlay(overlay)
-        renderer.palette = .make(dark: false, increaseContrast: false)
+        renderer.palette = .make(dark: options.dark, increaseContrast: false)
         let background = renderer.palette.background
         view.clearColor = MTLClearColor(red: Double(background.x), green: Double(background.y), blue: Double(background.z), alpha: 1)
         renderer.showGrid = options.grid

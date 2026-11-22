@@ -108,6 +108,13 @@ final class CADFile: ReferenceFileDocument, @unchecked Sendable {
             thumbnail.withLock { $0 = image?.png }  // nothing to show (an empty part) means no picture
             model.thumbnailPNG = image?.png
             if let fileURL { RecentPictures.store(image?.png, for: fileURL) }
+            // A second picture on the dark palette, for the recent parts list in dark mode (the one stored in the file stays light).
+            if let fileURL {
+                var dark = SnapshotOptions()
+                dark.dark = true
+                let darkImage = try? await ViewportSnapshot.render(model, direction: .iso, width: 512, height: 512, axes: false, options: dark)
+                RecentPictures.store(darkImage?.png, for: fileURL, dark: true)
+            }
             #endif
         }
     }

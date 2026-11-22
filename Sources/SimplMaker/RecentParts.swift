@@ -155,6 +155,7 @@ struct StartAction: View {
 /// blue when selected, as in a source list.
 struct RecentCard: View {
     @Environment(\.accent) private var accent
+    @Environment(\.colorScheme) private var colorScheme
     let url: URL
     let selected: Bool
     let opening: Bool
@@ -189,13 +190,19 @@ struct RecentCard: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .help(url.path)
-        .task(id: url) {
-            picture = await RecentPictures.image(for: url)
+        .task(id: PictureKey(url: url, dark: colorScheme == .dark)) {
+            picture = await RecentPictures.image(for: url, dark: colorScheme == .dark)
             loaded = true
+            // A part not opened since dark pictures began has only the light one: draw its dark one now, and swap it in.
+            if colorScheme == .dark, await RecentPictures.makeDarkIfNeeded(for: url) {
+                picture = await RecentPictures.image(for: url, dark: true)
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
+
+    private struct PictureKey: Equatable { let url: URL; let dark: Bool }
 
     /// "~/Desktop" rather than "/Users/name/Desktop".
     static func abbreviated(_ folder: URL) -> String {
@@ -210,32 +217,69 @@ struct RecentCard: View {
     private static let cache = NSCache<NSString, NSImage>()
 
     /// Keeps the new picture of the part at `url`; with none (an empty part) the old one is dropped.
-    static func store(_ png: Data?, for url: URL) {
-        guard let kept = keptFile(for: url) else { return }
+    static func store(_ png: Data?, for url: URL, dark: Bool = false) {
+        guard let kept = keptFile(for: url, dark: dark) else { return }
         if let png { try? png.write(to: kept, options: .atomic) } else { try? FileManager.default.removeItem(at: kept) }
     }
 
-    private static func keptFile(for url: URL) -> URL? {
+    private static func keptFile(for url: URL, dark: Bool = false) -> URL? {
         guard let caches = try? FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return nil }
         let folder = caches.appendingPathComponent("RecentPictures", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let name = SHA256.hash(data: Data(url.standardizedFileURL.path.utf8)).map { String(format: "%02x", $0) }.joined()
-        return folder.appendingPathComponent(name + ".png")
+        return folder.appendingPathComponent(name + (dark ? "-dark" : "") + ".png")
     }
 
     private static func modified(_ url: URL) -> Date? {
         (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
 
-    static func image(for url: URL) async -> NSImage? {
-        let kept = keptFile(for: url)
+    /// The part's picture. In dark mode the one drawn on the dark palette when there is one; a part not opened since dark pictures
+    /// began has only the light one, which is what shows until it is opened again.
+    static func image(for url: URL, dark: Bool = false) async -> NSImage? {
+        if dark, let picture = await load(url, dark: true) { return picture }
+        return await load(url, dark: false)
+    }
+
+    /// Parts already tried this session, so one that cannot be drawn (an empty part) is not tried at every visit of the Start page.
+    private static var attempted = Set<URL>()
+    /// One part at a time: each is built and drawn, which is not cheap.
+    private static var busy = false
+    private static var waiting: [CheckedContinuation<Void, Never>] = []
+
+    /// Draws the part's dark picture now when it has none (or the file is newer than it): a part not opened since dark pictures began.
+    /// Builds the part without a window, as the part's own window would. Returns true when a new picture was kept.
+    static func makeDarkIfNeeded(for url: URL) async -> Bool {
+        guard let kept = keptFile(for: url, dark: true) else { return false }
+        if let keptDate = modified(kept), keptDate >= (modified(url) ?? .distantPast) { return false }
+        guard attempted.insert(url).inserted else { return false }
+        // Unstructured, so leaving the Start page (which cancels the card's task) does not leave a half-made picture.
+        return await Task { @MainActor () -> Bool in
+            if busy { await withCheckedContinuation { waiting.append($0) } } else { busy = true }
+            defer { if waiting.isEmpty { busy = false } else { waiting.removeFirst().resume() } }
+            guard let data = try? await Task.detached(priority: .utility, operation: { try Data(contentsOf: url) }).value,
+                  let document = try? CADDocument.decode(data) else { return false }
+            let model = DocumentModel(document: document)
+            await model.rebuilt()
+            var options = SnapshotOptions()
+            options.dark = true
+            guard let image = try? await ViewportSnapshot.render(model, direction: .iso, width: 512, height: 512, axes: false, options: options) else { return false }
+            store(image.png, for: url, dark: true)
+            return true
+        }.value
+    }
+
+    private static func load(_ url: URL, dark: Bool) async -> NSImage? {
+        let kept = keptFile(for: url, dark: dark)
         let fileDate = modified(url)
         let keptDate = kept.flatMap(modified)
-        let key = "\(url.path)|\(fileDate?.timeIntervalSince1970 ?? 0)|\(keptDate?.timeIntervalSince1970 ?? 0)" as NSString
+        let key = "\(url.path)|\(dark)|\(fileDate?.timeIntervalSince1970 ?? 0)|\(keptDate?.timeIntervalSince1970 ?? 0)" as NSString
         if let hit = cache.object(forKey: key) { return hit }
         let png = await Task.detached(priority: .utility) { () -> Data? in
-            let own = (try? Data(contentsOf: url)).flatMap { CADDocument.thumbnail(in: $0) }
             let drawn = kept.flatMap { try? Data(contentsOf: $0) }
+            // The dark picture exists only as drawn at an open; the light one may also be the picture stored in the file.
+            if dark { return drawn }
+            let own = (try? Data(contentsOf: url)).flatMap { CADDocument.thumbnail(in: $0) }
             // The picture drawn at the last open wins, unless the file was saved after it with a picture of its own.
             if let drawn, own == nil || (keptDate ?? .distantPast) >= (fileDate ?? .distantPast) { return drawn }
             return own ?? drawn

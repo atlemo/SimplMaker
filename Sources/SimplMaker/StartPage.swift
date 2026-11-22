@@ -1,4 +1,4 @@
-// The Start workspace: a page as big as the window, like the iPad's start screen. The app's name and tagline and the New Part and
+// The Start workspace: a page as big as the window, like the iPad's start screen. The app's icon and name and the New Part and
 // Open buttons on top; under them a panel with the ways to begin this part on the left and the recent parts on the right. The
 // toolbar's workspace selector stays over it, so the page is one place among the others, not a dialog in front of them.
 // Copyright © 2026 Atle Mo
@@ -49,54 +49,46 @@ struct StartPage: View {
     @ViewBuilder private func header(wide: Bool, short: Bool) -> some View {
         if wide {
             HStack(alignment: .center, spacing: DS.Spacing.space10) {
-                brand(size: short ? 46 : 60)
+                brand(icon: short ? 76 : 96)
                 Spacer(minLength: 0)
-                actions.frame(width: 250)
+                actions(horizontal: true)
             }
         } else {
             VStack(spacing: DS.Spacing.space7) {
-                brand(size: 40)
-                actions.frame(maxWidth: 340)
+                brand(icon: 72)
+                actions(horizontal: false).frame(maxWidth: 360)
             }
         }
     }
 
-    /// The icon with the name and version, and the tagline.
-    private func brand(size: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: size * 0.4) {
-            HStack(spacing: DS.Spacing.space5) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: 56, height: 56)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("SimplMaker").font(.title3.weight(.semibold))
-                    Text(Self.versionText).font(.subheadline).foregroundStyle(.secondary)
-                }
+    /// The icon, big, with the name and the version beside it.
+    private func brand(icon: CGFloat) -> some View {
+        HStack(spacing: DS.Spacing.space6) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: icon, height: icon)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("SimplMaker")
+                    .font(.system(size: icon * 0.42, weight: .bold))
+                    .tracking(-0.4)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(Self.versionText).font(.title3).foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Draw it.")
-                Text("Dimension it.")
-                Text("Print it.").foregroundStyle(DS.brand)
-            }
-            .font(.system(size: size, weight: .heavy))
-            .tracking(-size * 0.03)
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
         }
     }
 
-    /// New Part and Open, with the way into the tutorial under them.
-    private var actions: some View {
-        VStack(spacing: DS.Spacing.space5) {
-            VStack(spacing: DS.Spacing.space5) {
-                Button { newPart() } label: { Label("New Part", systemImage: "plus").frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent)
-                Button { NSDocumentController.shared.openDocument(nil) } label: { Label("Open…", systemImage: "folder").frame(maxWidth: .infinity) }
-                    .buttonStyle(.bordered)
+    /// New Part and Open, big and side by side, with the way into the tutorial under them.
+    private func actions(horizontal: Bool) -> some View {
+        VStack(alignment: horizontal ? .trailing : .center, spacing: DS.Spacing.space5) {
+            let layout = horizontal ? AnyLayout(HStackLayout(spacing: DS.Spacing.space4)) : AnyLayout(VStackLayout(spacing: DS.Spacing.space4))
+            layout {
+                Button { newPart() } label: { Label("New Part", systemImage: "plus") }
+                    .buttonStyle(StartButtonStyle(prominent: true))
+                Button { NSDocumentController.shared.openDocument(nil) } label: { Label("Open…", systemImage: "folder") }
+                    .buttonStyle(StartButtonStyle(prominent: false))
             }
-            .controlSize(.large)
-            .buttonBorderShape(.capsule)
             // Only until the tutorial has been done once: after that the start page has nothing to say about it (it stays in the Help menu).
             if !tutorialCompleted {
                 Button { startTutorial() } label: {
@@ -190,6 +182,31 @@ struct StartPage: View {
         } else {
             PartWindows.open { newDocument { CADFile(tutorial: true) } }
         }
+    }
+}
+
+/// The big buttons of the start page: New Part filled with the brand colour, Open on a quiet fill that shows in both appearances.
+struct StartButtonStyle: ButtonStyle {
+    let prominent: Bool
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: DS.Radius.lg + 2, style: .continuous)
+        configuration.label
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(prominent ? Color.white : Color.primary)
+            .padding(.horizontal, DS.Spacing.space8)
+            .frame(minWidth: 170, minHeight: 52)
+            .background {
+                if prominent {
+                    shape.fill(DS.brand.opacity(configuration.isPressed ? 0.8 : hovering ? 0.92 : 1))
+                } else {
+                    shape.fill(Color.primary.opacity(configuration.isPressed ? 0.2 : hovering ? 0.15 : 0.1))
+                }
+            }
+            .overlay { if !prominent { shape.strokeBorder(Color.primary.opacity(0.18), lineWidth: 1) } }
+            .contentShape(shape)
+            .onHover { hovering = $0 }
     }
 }
 
