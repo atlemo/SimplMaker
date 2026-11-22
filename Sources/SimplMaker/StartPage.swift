@@ -133,7 +133,7 @@ struct StartPage: View {
     private var begin: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space3) {
             Text(isEmpty ? "Make something new" : "This part")
-                .font(.headline)
+                .modifier(PanelHeading())
                 .padding(.horizontal, DS.Spacing.space4)
                 .padding(.bottom, DS.Spacing.space2)
             if !isEmpty {
@@ -158,7 +158,7 @@ struct StartPage: View {
     private var recents: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Recent parts")
-                .font(.headline)
+                .modifier(PanelHeading())
                 .padding(.horizontal, DS.Spacing.space5 + DS.Spacing.space3)
                 .padding(.top, DS.Spacing.space5)
             RecentPartsList()
@@ -182,6 +182,17 @@ struct StartPage: View {
         } else {
             PartWindows.open { newDocument { CADFile(tutorial: true) } }
         }
+    }
+}
+
+/// The small caps headings over the panel's two halves: one size under a headline, in capitals, at 60 % opacity.
+private struct PanelHeading: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(.subheadline.weight(.semibold))
+            .textCase(.uppercase)
+            .tracking(0.8)
+            .foregroundStyle(Color.primary.opacity(0.6))
     }
 }
 
