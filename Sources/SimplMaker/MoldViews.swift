@@ -247,7 +247,7 @@ private struct MoldBodyList: View {
                         Text(body.name).lineLimit(1)
                         Spacer(minLength: 0)
                         Button("Make Mold") { model.makeMold(of: body.id) }
-                            .controlSize(.small)
+                            .rowTextButton()
                             .help("Make a mold around \(body.name)")
                     }
                 }

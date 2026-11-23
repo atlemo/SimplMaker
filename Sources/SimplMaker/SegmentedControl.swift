@@ -26,6 +26,9 @@ struct SegmentedRow: View {
 
     private func segment(_ item: Item) -> some View {
         Text(item.title)
+            // In a tool row the text is as big as the tools' (13 pt, the Mac's control size): the iPad's default text is larger, and the
+            // row is scaled up for a finger as well.
+            .font(compact ? .system(size: 13) : nil)
             .lineLimit(1)
             .foregroundStyle(item.selected ? Color.black : item.action == nil ? Color.secondary.opacity(0.6) : Color.primary.opacity(0.85))
             .padding(.horizontal, compact ? 10 : 0)

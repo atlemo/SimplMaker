@@ -24,6 +24,10 @@ struct RenderToolbar: View {
                            help: model.renderSpinning ? "Pause the turntable" : "Slowly turn the part around so every side comes into view") {
                     model.renderSpinning.toggle()
                 }
+                ToolButton(title: "Colours", icon: "palette", active: model.showInspector && model.showAppearance,
+                           help: "Colour and material of the bodies: pick a body, then choose how it looks") {
+                    model.toggleAppearanceInRender()
+                }
                 ToolButton(title: "Options", icon: "sliders-horizontal", active: model.showRenderOptions,
                            help: model.showRenderOptions ? "Hide the render options" : "Show the render options: floor, light, shadows and the rest") {
                     model.showRenderOptions.toggle()

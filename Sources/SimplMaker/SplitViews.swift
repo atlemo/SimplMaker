@@ -256,7 +256,7 @@ private struct SplitBodyList: View {
                         Text(body.name).lineLimit(1)
                         Spacer(minLength: 0)
                         Button("Split") { model.makeSplit(of: body.id) }
-                            .controlSize(.small)
+                            .rowTextButton()
                             .help("Cut \(body.name) into pieces that fit the printer")
                     }
                 }

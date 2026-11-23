@@ -152,7 +152,9 @@ struct PadDocumentView: View {
                     EmptyView()
                 } else if model.renderView {
                     PadRenderButtons(model: model)
-                        .padding(.trailing, Panel.inset + 2).padding(.top, Panel.inset + 4)
+                        // The Appearance panel (the Colours button) is in the inspector's column: these buttons float left of it.
+                        .padding(.trailing, Panel.inset + 2 + (model.showInspector ? Panel.inspectorWidth + Panel.margin : 0))
+                        .padding(.top, Panel.inset + 4)
                 } else {
                     PadPanelToggle(open: model.showInspector, systemImage: "sidebar.right", label: "Inspector") { model.showInspector.toggle() }
                         .padding(.trailing, Panel.inset + 2).padding(.top, Panel.inset + 4)

@@ -42,6 +42,7 @@ struct PadDuoBar: ViewModifier {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Parts", systemImage: "chevron.left", action: onClose)
+                            .tint(.primary)
                     }
                     .axisBehavior(.verticalPreferred)
                     if !viewer {
@@ -50,25 +51,28 @@ struct PadDuoBar: ViewModifier {
                         ToolbarItem(placement: .topBarLeading) {
                             Button("Undo", systemImage: "arrow.uturn.backward") { undoManager?.undo() }
                                 .disabled(undoManager?.canUndo != true)
+                                .tint(.primary)
                         }
                         .axisBehavior(.verticalPreferred)
                         ToolbarItem(placement: .topBarLeading) {
                             Button("Redo", systemImage: "arrow.uturn.forward") { undoManager?.redo() }
                                 .disabled(undoManager?.canRedo != true)
+                                .tint(.primary)
                         }
                         .axisBehavior(.verticalPreferred)
                     }
-                    ToolbarItem(placement: .topBarTrailing) { Menu("View", systemImage: "eye") { PadViewControls(model: model) } }
+                    ToolbarItem(placement: .topBarTrailing) { Menu("View", systemImage: "eye") { PadViewControls(model: model) }.tint(.primary) }
                         .axisBehavior(.verticalPreferred)
                     if !viewer {
-                        ToolbarItem(placement: .topBarTrailing) { PadHelpMenu(model: model, guide: guide) }
+                        ToolbarItem(placement: .topBarTrailing) { PadHelpMenu(model: model, guide: guide).tint(.primary) }
                             .axisBehavior(.verticalPreferred)
                         ToolbarItem(placement: .topBarTrailing) {
                             Button("Settings", systemImage: "gearshape") { model.showSettings = true }
+                                .tint(.primary)
                         }
                         .axisBehavior(.verticalPreferred)
                     }
-                    ToolbarItem(placement: .topBarTrailing) { PadExportMenu(model: model) }
+                    ToolbarItem(placement: .topBarTrailing) { PadExportMenu(model: model).tint(.primary) }
                         .axisBehavior(.verticalPreferred)
                 }
         }

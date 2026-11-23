@@ -1183,6 +1183,21 @@ final class DocumentModel {
         if showAppearance { showInspector = true }  // the panel is in the inspector's column
     }
 
+    /// The Render workspace's Colours button: shows the Appearance panel (in the inspector's column) for the picked bodies, or puts it away.
+    func toggleAppearanceInRender() {
+        if showInspector && showAppearance {
+            showInspector = false
+            if inspectorFoldedByColours { inspectorOpen = true; inspectorFoldedByColours = false }
+        } else {
+            // The Inspector has nothing to say in the Render view: it folds up to its header so the colours have the column.
+            if inspectorOpen { inspectorFoldedByColours = true; inspectorOpen = false }
+            showAppearance = true
+            showInspector = true
+        }
+    }
+    /// The Colours button folded the Inspector panel, and puts it back when it closes the column.
+    @ObservationIgnored var inspectorFoldedByColours = false
+
     /// "Appearance…" on a body: selects it whole and opens the panel for it.
     func openAppearance(for body: FeatureID) {
         if pendingTool != nil { cancelTool() }

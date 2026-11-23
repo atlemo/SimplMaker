@@ -99,3 +99,15 @@ extension View {
         #endif
     }
 }
+
+extension View {
+    /// A text button at the end of a list row (Make Mold, Split): on the iPad plain orange text that only the text taps (a bare button in a
+    /// list takes the whole row and draws in black); the Mac keeps its small bordered button.
+    @ViewBuilder func rowTextButton() -> some View {
+        #if os(macOS)
+        controlSize(.small)
+        #else
+        buttonStyle(.borderless).foregroundStyle(DS.brand)
+        #endif
+    }
+}

@@ -31,8 +31,11 @@ struct PadHome: View {
         GeometryReader { proxy in
             let wide = proxy.size.width >= 720
             let short = proxy.size.height < 800
-            VStack(spacing: wide ? (short ? 40 : 64) : 28) {
-                header(wide: wide, short: short)
+            // A short window (the iPhone Duo, open or folded) gets standard-sized buttons, side by side when there is no width to spare
+            // for the brand beside them, so the list of parts has the room.
+            let compact = proxy.size.height < 700
+            VStack(spacing: compact ? 18 : wide ? (short ? 40 : 64) : 28) {
+                header(wide: wide, short: short, compact: compact)
                 panel
             }
             .frame(maxWidth: 1100)
@@ -70,17 +73,17 @@ struct PadHome: View {
 
     // MARK: Header
 
-    @ViewBuilder private func header(wide: Bool, short: Bool) -> some View {
+    @ViewBuilder private func header(wide: Bool, short: Bool, compact: Bool) -> some View {
         if wide {
             HStack(alignment: .center, spacing: 40) {
-                brand(icon: short ? 72 : 88)
+                brand(icon: compact ? 64 : short ? 72 : 88)
                 Spacer(minLength: 0)
-                actions.frame(width: 250)
+                actions(compact: compact, sideBySide: false).frame(width: compact ? 220 : 250)
             }
         } else {
-            VStack(spacing: 20) {
-                brand(icon: 72)
-                actions.frame(maxWidth: 340)
+            VStack(spacing: compact ? 12 : 20) {
+                brand(icon: compact ? 56 : 72)
+                actions(compact: compact, sideBySide: compact).frame(maxWidth: compact ? 420 : 340)
             }
         }
     }
@@ -101,23 +104,24 @@ struct PadHome: View {
         }
     }
 
-    /// New Part and Open, with the way into the tutorial under them.
-    private var actions: some View {
-        VStack(spacing: 14) {
-            VStack(spacing: 12) {
+    /// New Part and Open, with the way into the tutorial under them: big and stacked, or standard-sized (and side by side) in a short window.
+    private func actions(compact: Bool, sideBySide: Bool) -> some View {
+        VStack(spacing: compact ? 8 : 14) {
+            let layout = sideBySide ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 12))
+            layout {
                 Button { create(tutorial: false) } label: { Label("New Part", systemImage: "plus").frame(maxWidth: .infinity) }
                     .buttonStyle(.borderedProminent)
                 Button { importing = true } label: { Label("Open…", systemImage: "folder").frame(maxWidth: .infinity) }
                     .buttonStyle(.bordered)
             }
-            .controlSize(.large)
+            .controlSize(compact ? .regular : .large)
             .buttonBorderShape(.capsule)
             Button { create(tutorial: true) } label: {
                 HStack(spacing: 5) {
                     Text("New here?").foregroundStyle(.secondary)
                     Text("Take the tutorial").foregroundStyle(DS.brand)
                 }
-                .font(.callout)
+                .font(compact ? .footnote : .callout)
             }
             .buttonStyle(.plain)
         }
