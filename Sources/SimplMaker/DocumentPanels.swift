@@ -73,6 +73,8 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
     /// Whether the tutorial's card is drawn here (the Mac) or by the caller, above everything else (the iPad).
     var cardHere = true
     func withoutTutorialCard() -> Self { var copy = self; copy.cardHere = false; return copy }
+    /// Whether an empty part shows the "Start your part" card (not in the iPad's viewer-only window).
+    func startCard(_ on: Bool) -> Self { var copy = self; copy.showsStartCard = on; return copy }
 
     /// The room the iPad's show/hide button for the inspector (or the Render view's own buttons) takes at the top right
     /// when the inspector is closed: what floats there goes left of it. None on the Mac.
@@ -91,7 +93,6 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
             VStack(spacing: Panel.inset) {
             HStack(alignment: .top, spacing: 0) {
                 if model.showSidebar {
-                    #if os(macOS)
                     if model.workspace == .split {
                         SplitSidebar(model: model)
                             .transition(.move(edge: .leading).combined(with: .opacity))
@@ -102,14 +103,9 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
                         Sidebar(model: model)
                             .transition(.move(edge: .leading).combined(with: .opacity))
                     }
-                    #else
-                    Sidebar(model: model)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                    #endif
                 }
                 Spacer(minLength: 0)  // empty: clicks go through to the viewport
                 if model.showInspector {
-                    #if os(macOS)
                     if model.workspace == .split {
                         SplitInspectorColumn(model: model)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -120,10 +116,6 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
                         InspectorColumn(model: model)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
-                    #else
-                    InspectorColumn(model: model)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                    #endif
                 }
             }
             // With both panels closed the row holds only a Spacer, which has no height: without this the
@@ -203,7 +195,7 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
         // The status bar floats at the bottom, between the panels. The Render view is for looking at the part, so it goes there, unless
         // a tool or a sketch is waiting for something and the bar is where it says what.
         .overlay(alignment: .bottom) {
-            if !model.renderView || model.pendingTool != nil || model.sketchSession != nil {
+            if !model.viewerOnly, !model.renderView || model.pendingTool != nil || model.sketchSession != nil {
                 StatusBar(model: model)
                     .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : Panel.inset)
                     .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset)

@@ -36,7 +36,7 @@ struct RenderToolbar: View {
                 }
             }
         }
-        .frame(height: 44)
+        .workspaceRowHeight()
         .fixedSize()
     }
 }

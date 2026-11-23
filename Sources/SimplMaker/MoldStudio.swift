@@ -226,7 +226,8 @@ extension DocumentModel {
         if activeMoldID == nil || !setups.contains(where: { $0.id == activeMoldID }) { activeMoldID = setups.first?.id }
         sceneRevision += 1
         overlayRevision += 1
-        if fit { fitRevision += 1 }
+        if fit || fitAfterWorkspaceBuild { fitRevision += 1 }
+        fitAfterWorkspaceBuild = false
     }
 
     // MARK: changing molds
@@ -247,7 +248,8 @@ extension DocumentModel {
         mutate("Make Mold") { $0.molds.append(setup) }
         activeMoldID = setup.id
         if workspace == .mold {
-            sceneRevision += 1; fitRevision += 1; overlayRevision += 1
+            sceneRevision += 1; overlayRevision += 1
+            fitAfterWorkspaceBuild = true  // fitted once the mold is there
         } else {
             setWorkspace(.mold)
         }

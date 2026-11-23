@@ -2,8 +2,9 @@
 // comes to on the right, and the export of the pieces. The model is SplitStudio.swift; the geometry is PrintSplitBuilder.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
-#if os(macOS)
+#if canImport(AppKit)
 import AppKit
+#endif
 import CADCore
 import CADKernel
 import SwiftUI
@@ -48,8 +49,7 @@ private struct PrinterMenu: View {
             .frame(maxWidth: 190, minHeight: ToolListMetrics.toolMinHeight)
             .padding(.horizontal, DS.Spacing.space3)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .ribbonMenuStyle()
         .fixedSize()
         .toolTip("The printer the pieces have to fit: its build volume less the margin")
     }
@@ -85,8 +85,7 @@ private struct CountMenu: View {
             .foregroundStyle(ink)
             .frame(minWidth: ToolListMetrics.toolMinWidth, minHeight: ToolListMetrics.toolMinHeight)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .ribbonMenuStyle()
         .fixedSize()
         .disabled(byHand)
         .toolTip(byHand ? "The cuts are placed by hand (see the panel on the right)" : "How many pieces across \(axis.rawValue.uppercased()): Automatic uses the fewest that fit the printer")
@@ -145,12 +144,12 @@ struct SplitToolbar: View {
                     .disabled(!built)
                 }
             } else {
-                Text(model.bodies.isEmpty ? "Model a body in Design first, then split it here." : "Click a body in the 3D view, or choose one on the left, to split.")
+                Text(Hint.text(model.bodies.isEmpty ? "Model a body in Design first, then split it here." : "Click a body in the 3D view, or choose one on the left, to split."))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(height: 44)
+        .workspaceRowHeight()
         .fixedSize()
     }
 }
@@ -160,17 +159,21 @@ struct SplitToolbar: View {
 /// The splits of the part, and the bodies a split can be made of.
 struct SplitSidebar: View {
     @Bindable var model: DocumentModel
+    @State private var listOpen = true
+    @State private var bodiesOpen = true
 
     var body: some View {
         VStack(spacing: Panel.inset) {
-            SidebarPanel(title: "Splits", open: .constant(true), accessory: { EmptyView() }) {
+            SidebarPanel(title: "Splits", open: $listOpen, headerLeading: max(0, PanelTouch.panelToggleRoom - 8), accessory: { EmptyView() }) {
                 SplitList(model: model)
             }
-            SidebarPanel(title: "Bodies", open: .constant(true), accessory: {
+            .frame(maxHeight: listOpen ? .infinity : PanelTouch.headerHeight)
+            SidebarPanel(title: "Bodies", open: $bodiesOpen, accessory: {
                 HeaderIconButton(systemImage: "cursorarrow.click", help: "Pick the body in the 3D view") { model.startChoosingWorkspaceBody() }
             }) {
                 SplitBodyList(model: model)
             }
+            .frame(maxHeight: bodiesOpen ? .infinity : PanelTouch.headerHeight)
         }
         .frame(width: Panel.sidebarWidth)
         .frame(maxHeight: .infinity)
@@ -267,13 +270,14 @@ private struct SplitBodyList: View {
 
 struct SplitInspectorColumn: View {
     @Bindable var model: DocumentModel
+    @State private var open = true
 
     var body: some View {
-        SidebarPanel(title: "Split", open: .constant(true), headerTrailing: PanelTouch.panelToggleRoom, accessory: { EmptyView() }) {
+        SidebarPanel(title: "Split", open: $open, headerTrailing: PanelTouch.panelToggleRoom, accessory: { EmptyView() }) {
             PrintSplitInspector(model: model)
         }
         .frame(width: Panel.inspectorWidth)
-        .frame(maxHeight: .infinity)
+        .frame(maxHeight: open ? .infinity : PanelTouch.headerHeight, alignment: .top)
     }
 }
 
@@ -494,6 +498,7 @@ private struct SplitResultRows: View {
 
 // MARK: - Export
 
+#if os(macOS)
 extension DocumentModel {
     /// Writes the pieces of the active split (and the loose dowels), laid out for printing (see `PrintSplitBuilder.printLayout`): as one
     /// file or one each.

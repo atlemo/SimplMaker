@@ -37,8 +37,11 @@ struct PadEditor: View {
     var body: some View {
         Group {
             if let file {
-                PadDocumentView(file: file, fileURL: url, title: name, onClose: { saver.flush(file, to: url); close() },
-                                onRename: canRename ? { newName = name; renaming = true } : nil)
+                // The navigation container is only here to hold the toolbar: our own top bar is the navigation bar (see `PadDuoBar`).
+                NavigationStack {
+                    PadDocumentView(file: file, fileURL: url, title: name, onClose: { saver.flush(file, to: url); close() },
+                                    onRename: canRename ? { newName = name; renaming = true } : nil)
+                }
                     .background(PadAutosave(file: file, url: url, saver: saver))
                     .onChange(of: scenePhase) { if scenePhase != .active { saver.flush(file, to: url) } }
                     .onDisappear { saver.flush(file, to: url) }

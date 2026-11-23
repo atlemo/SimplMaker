@@ -58,6 +58,12 @@ final class DocumentModel {
     private(set) var importProgress: ImportProgress?
     /// A file the iPad has just written for the user to keep or send (an export): the app's share sheet takes it from here.
     var exportedFile: URL?
+    #if !os(macOS)
+    /// Several files written at once (the pieces of a mold or a split, one file each): the share sheet takes them together.
+    var exportedFiles: [URL] = []
+    /// The pieces of a mold or a split that wait for a format and for one file or one each (see `PiecesExportSheet` in the iPad app).
+    var piecesExport: PiecesExportRequest?
+    #endif
     /// What the iPad has to ask the person for (a file to import, a picture) in place of the Mac's open panel; see `FileRequest`.
     var fileRequest: FileRequest?
     /// The iPad's Export chooser (the formats to pick from) is showing, or the picture export's.
@@ -65,6 +71,9 @@ final class DocumentModel {
     var showImageExport = false
     /// The Settings sheet (iPad; the Mac has a Settings window).
     var showSettings = false
+    /// The window is too small to design in (the folded iPhone Duo, a phone held sideways): the part is only looked at, with no tools,
+    /// panels, timeline or editing gestures. The iPad app sets it from the window's size classes (see `PadViewerMode`).
+    var viewerOnly = false
     /// The About and licences sheet (iPad).
     var showAbout = false
     /// What to do with an STL that has a lot of triangles: asks the user by default. Tests put their own answer here.
@@ -119,6 +128,8 @@ final class DocumentModel {
     var activeMoldID: String?
     /// A mold is being worked out (a heavy body takes a few seconds).
     var moldBuilding = false
+    /// A mold or split was just made while its workspace was already open: the view is fitted to it once it is built (not to the body it came from).
+    var fitAfterWorkspaceBuild = false
     /// How far the halves are drawn apart, 0 (closed) to 1.
     var moldOpenAmount = 0.0
     /// The viewport is waiting for a click on the body: the spot a vent or the gate goes in at.

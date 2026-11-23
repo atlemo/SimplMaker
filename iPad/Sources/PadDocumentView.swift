@@ -18,11 +18,40 @@ struct PadDocumentView: View {
     @AppStorage(Preferences.showAxes) private var showAxes = true
 
     private var model: DocumentModel { file.model }
-    @MainActor private static var narrow: Bool { currentScreenBounds.width < 1200 }
+    /// The size of the window the part is in (the whole screen on an iPad, the folded or open screens of an iPhone Duo, a Split View column).
+    @State private var windowSize = CGSize(width: 1024, height: 768)
+    /// A narrow window has room for the viewport or the panels, not both.
+    private var narrow: Bool { windowSize.width < 1200 }
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    /// Too small to design in (a phone, the folded iPhone Duo, a window squeezed beside another app): the part is only looked at there.
+    /// Unfolded or made bigger, the full tools come back.
+    private var viewer: Bool { horizontalSizeClass == .compact || verticalSizeClass == .compact }
+    /// The panels as they were before the viewer mode closed them, to put them back.
+    @State private var beforeViewer: (sidebar: Bool, inspector: Bool, timeline: Bool)?
+    /// The iPhone Duo's vertical bar is there (see `PadDuoBar`): the way back, the workspace switcher, help, settings and share are in it.
+    @State private var duoBar = false
+    /// The system's vertical bar is there, as the environment says (see `PadDuoBar`).
+    @State private var systemBar = false
+    /// The safe area's inset at each side: a vertical bar shows as a big inset on one side only (a phone's notch gives both sides the same).
+    @State private var insetLeading: CGFloat = 0
+    /// Whether the inset pattern is a bar's. Where the environment does not report the bar, this still finds it.
+    private var barByInsets: Bool { (barInset >= 40 && insetLeading < 1) || (insetLeading >= 40 && barInset < 1) }
+    /// The width of the Duo's vertical bar on the right (the safe area's trailing inset: the picture and its overlays reach under it).
+    @State private var barInset: CGFloat = 0
+    /// What the panels and the picture leave free at the right: the inspector when it is open, and the Duo's bar.
+    private var rightInset: CGFloat { (model.showInspector ? Panel.inspectorWidth + Panel.margin : 0) + barInset }
+    /// What the panels and the picture leave free at the left: the browser when it is open.
+    private var leftInset: CGFloat { (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0) + (insetLeading >= 40 && barInset < 1 ? insetLeading : 0) }
+    /// What the top bar takes: just its title beside the Duo's vertical bar.
+    private var topBarHeight: CGFloat { duoBar ? PadTopBar.compactHeight : PadTopBar.height }
+    /// What the tool bar takes at the top: nothing in the viewer.
+    private var barHeight: CGFloat { viewer ? 0 : toolBarHeight }
     /// The picture stored in the file: the part as the viewport shows it, shrunk.
     private func storeThumbnail() async {
         try? await Task.sleep(for: .seconds(1.5))
-        guard !Task.isCancelled, model.sketchSession == nil else { return }
+        // The picture is the part as Design shows it: not a mold's halves or a split's tinted pieces.
+        guard !Task.isCancelled, model.sketchSession == nil, model.workspace == .design else { return }
         await model.rebuilt()
         guard !Task.isCancelled else { return }
         let png: Data? = model.visibleMeshes.isEmpty ? nil : await withCheckedContinuation { continuation in
@@ -55,18 +84,23 @@ struct PadDocumentView: View {
             // The bar is drawn here, under the side panels, so its shadow never falls on them (all the glass is at one level);
             // the empty inset below keeps the room it needs. Offset up by that room: this layer sits under the inset.
             ZStack {
-                PadToolBar(model: model, height: $toolBarHeight, keepsOpen: guide.isActive)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .offset(y: -toolBarHeight)
+                if !viewer {
+                    PadToolBar(model: model, height: $toolBarHeight, keepsOpen: guide.isActive)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .offset(y: -toolBarHeight)
+                }
                 PadTopGlass(frame: navButtonsFrame)
             })
             .withoutTutorialCard()
+            .startCard(!viewer)
+            .onGeometryChange(for: [CGFloat].self) { [$0.safeAreaInsets.leading, $0.safeAreaInsets.trailing] } action: { insetLeading = $0[0]; barInset = $0[1] }
+            .onChange(of: systemBar || barByInsets, initial: true) { duoBar = systemBar || barByInsets }
             // The keyboard covers the bottom of the screen instead of squeezing the view above it: the fields that are typed in move up by themselves.
             .ignoresSafeArea(.keyboard)
             // The size fields and the OK / Cancel bar of a feature float above the panels, never under them.
             .overlay {
-                PadHandleFields(model: model, state: viewState, insets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
-                                                                         model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
+                PadHandleFields(model: model, state: viewState, insets: (leftInset,
+                                                                         rightInset,
                                                                          Panel.bottomInset(timeline: model.showTimeline)))
                     .ignoresSafeArea()
             }
@@ -77,8 +111,8 @@ struct PadDocumentView: View {
                     PadToolActions(model: model)
                     PadSketchBar(model: model)
                 }
-                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
+                    .padding(.leading, leftInset)
+                    .padding(.trailing, rightInset)
                     .padding(.bottom, Panel.bottomInset(timeline: model.showTimeline) + 8)
                     .ignoresSafeArea()
             }
@@ -86,8 +120,8 @@ struct PadDocumentView: View {
             // size the feature needs is in view.
             .overlay(alignment: .bottom) {
                 PadNumpadPanel(model: model)
-                    .padding(.leading, model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0)
-                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : 0)
+                    .padding(.leading, leftInset)
+                    .padding(.trailing, rightInset)
                     .padding(.bottom, Panel.bottomInset(timeline: model.showTimeline) + 8)
                     .ignoresSafeArea()
             }
@@ -108,13 +142,15 @@ struct PadDocumentView: View {
             // (then it floats on its own), as in Apple Notes.
             // The Render view has no browser or inspector: its two buttons give way to the ones that belong to it.
             .overlay(alignment: .topLeading) {
-                if !model.renderView {
+                if !model.renderView, !viewer {
                     PadPanelToggle(open: model.showSidebar, systemImage: "sidebar.left", label: "Browser") { model.showSidebar.toggle() }
                         .padding(.leading, Panel.inset + 2).padding(.top, Panel.inset + 4)
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if model.renderView {
+                if viewer {
+                    EmptyView()
+                } else if model.renderView {
                     PadRenderButtons(model: model)
                         .padding(.trailing, Panel.inset + 2).padding(.top, Panel.inset + 4)
                 } else {
@@ -122,18 +158,32 @@ struct PadDocumentView: View {
                         .padding(.trailing, Panel.inset + 2).padding(.top, Panel.inset + 4)
                 }
             }
-            .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: toolBarHeight).allowsHitTesting(false) }
+            .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: barHeight).allowsHitTesting(false) }
             // Undo, Render, View, Help, Settings and Export live in the navigation bar as a view of our own, not as items of the
             // system bar: those kept disappearing (after another app, or a dialog) and took the way out of the Render view with them.
             .scrollEdgeEffectHidden(true, for: .top)
             .toolbarBackgroundVisibility(.hidden, for: .navigationBar)  // the bar's own backdrop would wash out the glass under it
             // The bar's room at the top, as the system's navigation bar took it before: the panels start below it.
-            .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: PadTopBar.height).allowsHitTesting(false) }
+            .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: topBarHeight).allowsHitTesting(false) }
             .overlay(alignment: .top) {
-                PadTopBar(model: model, guide: guide, undoManager: undoManager, title: title, onClose: onClose, onRename: onRename, frame: $navButtonsFrame)
+                PadTopBar(model: model, guide: guide, undoManager: undoManager, title: title, viewer: viewer, duoBar: duoBar, onClose: onClose, onRename: onRename, frame: $navButtonsFrame)
             }
             // The tutorial's card is above everything else: the bars, the panel buttons, the number pad and the size fields.
             .overlay { TutorialCardLayer(model: model, guide: guide).ignoresSafeArea(.keyboard) }
+            .overlay(alignment: .bottom) {
+                // An empty part has nothing to look at: say where the tools are.
+                if viewer, model.document.features.isEmpty, !model.isImporting {
+                    Text("Nothing to look at yet. Open the Duo, or make the window wider, to start designing.")
+                        .font(.callout).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                        .padding(16).frame(maxWidth: 360)
+                        .panelMaterial(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .padding(.bottom, 40)
+                }
+            }
+            .modifier(PadDuoBar(model: model, guide: guide, undoManager: undoManager, viewer: viewer, onClose: onClose, active: $systemBar))
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { windowSize = $0 }
+            .environment(\.windowHeight, windowSize.height)
+            .onChange(of: viewer, initial: true) { applyViewer() }
             .modifier(PadDialogs(model: model))
             .modifier(AccentScope(sketching: model.sketchSession != nil))
             .environment(\.completionModel, model)
@@ -145,7 +195,7 @@ struct PadDocumentView: View {
                 model.undoManager = undoManager
                 model.fileURL = fileURL
                 // A narrow screen has room for the viewport or the panels, not both: start with the viewport.
-                if currentScreenBounds.width < 1200 { model.showSidebar = false; model.showInspector = false }
+                if narrow { model.showSidebar = false; model.showInspector = false }
             }
             .onChange(of: model.showImageExport) {
                 guard model.showImageExport else { return }
@@ -162,19 +212,40 @@ struct PadDocumentView: View {
             }
             .task(id: model.documentRevision) { await storeThumbnail() }
             // A narrow screen has room for one side panel beside the part: opening one closes the other.
-            .onChange(of: model.showSidebar) { if model.showSidebar, Self.narrow { model.showInspector = false } }
-            .onChange(of: model.showInspector) { if model.showInspector, Self.narrow { model.showSidebar = false } }
+            .onChange(of: model.showSidebar) { if model.showSidebar, narrow { model.showInspector = false } }
+            .onChange(of: model.showInspector) { if model.showInspector, narrow { model.showSidebar = false } }
             // Opening the tool bar, or starting a tool, gives the part its room back.
-            .onChange(of: model.pendingTool != nil) { if model.pendingTool != nil, Self.narrow { model.showSidebar = false } }
+            .onChange(of: model.pendingTool != nil) { if model.pendingTool != nil, narrow { model.showSidebar = false } }
             .onChange(of: undoManager) { model.undoManager = undoManager }
             .onChange(of: fileURL) { model.fileURL = fileURL }
+    }
+
+    /// Into or out of the viewer: what is being worked on is finished first (a sketch, a tool waiting for picks, a feature being sized),
+    /// the workspace goes back to Design, and the panels are put away and brought back as they were.
+    private func applyViewer() {
+        model.viewerOnly = viewer
+        if viewer {
+            if beforeViewer == nil { beforeViewer = (model.showSidebar, model.showInspector, model.showTimeline) }
+            if model.sketchSession != nil { model.finishSketch() }
+            if model.isPickingSketchPlane { model.cancelSketchPlanePick() }
+            if model.pendingTool != nil { model.cancelTool() }
+            if model.newFeature != nil { model.finishFeatureEdit() }
+            if model.workspace != .design { model.setWorkspace(.design) }
+            model.clearSelection()
+            model.showSidebar = false; model.showInspector = false; model.showTimeline = false
+        } else if let saved = beforeViewer {
+            beforeViewer = nil
+            model.showTimeline = saved.timeline
+            model.showSidebar = saved.sidebar && !narrow
+            model.showInspector = saved.inspector && !narrow
+        }
     }
 
     private func viewport(_ model: DocumentModel) -> some View {
         ZStack {
             padViewport(model)
-            PadOverlays(model: model, state: viewState, insets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
-                                                               model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
+            PadOverlays(model: model, state: viewState, insets: (leftInset,
+                                                               rightInset,
                                                                Panel.bottomInset(timeline: model.showTimeline)))
         }
     }
@@ -184,11 +255,11 @@ struct PadDocumentView: View {
                     fitRevision: model.fitRevision, cameraRevision: model.cameraCommand?.revision ?? 0,
                     highlighted: model.highlighted, orthographic: model.orthographic, visualStyle: model.visualStyle,
                     explodeOffsets: model.explodeOffsets, sketching: model.sketchSession != nil,
-                    showGrid: showGrid, showAxes: showAxes && model.sketchSession == nil,
-                    panelInsets: (model.showSidebar ? Panel.sidebarWidth + Panel.margin : 0,
-                                  model.showInspector ? Panel.inspectorWidth + Panel.margin : 0,
+                    showGrid: model.hasOwnGridSetting ? model.workspaceShowsGrid : showGrid, showAxes: showAxes && model.sketchSession == nil,
+                    panelInsets: (leftInset,
+                                  rightInset,
                                   Panel.bottomInset(timeline: model.showTimeline)),
-                    toolbarHeight: toolBarHeight, state: viewState,
+                    toolbarHeight: barHeight, topBarHeight: topBarHeight, state: viewState,
                     printPreview: model.printPreview, printLayer: model.printLayer, printNozzle: model.printNozzle,
                     renderSettings: model.renderView ? model.renderSettings : nil,
                     spinning: model.renderView && model.renderSpinning && model.sketchSession == nil,
@@ -216,7 +287,7 @@ private struct PadRenderButtons: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(Color.primary)
-        .background { Color.clear.panelGlass(in: Capsule()) }
+        .background { Color.clear.panelMaterial(in: Capsule()) }
     }
 }
 
@@ -235,7 +306,7 @@ private struct PadPanelToggle: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(open ? Color.secondary : Color.primary)
-        .background { if !open { Color.clear.panelGlass(in: Circle()) } }
+        .background { if !open { Color.clear.panelMaterial(in: Circle()) } }
         .accessibilityLabel(open ? "Hide \(label.lowercased())" : "Show \(label.lowercased())")
         .animation(.easeOut(duration: 0.15), value: open)
     }
@@ -261,10 +332,17 @@ struct PadToolBar: View {
 
     private func row(_ layout: ToolbarLayout) -> some View {
         Group {
-            if let session = model.sketchSession {
-                SketchToolbar(model: model, session: session, layout: layout)
-            } else {
-                DesignToolbar(model: model, layout: layout)
+            // Each workspace has its own row, as on the Mac; only Design's has layouts that narrow (the others scroll sideways).
+            switch model.workspace {
+            case .split: SplitToolbar(model: model)
+            case .mold: MoldToolbar(model: model)
+            case .render: RenderToolbar(model: model)
+            case .design, .start:
+                if let session = model.sketchSession {
+                    SketchToolbar(model: model, session: session, layout: layout)
+                } else {
+                    DesignToolbar(model: model, layout: layout)
+                }
             }
         }
         .environment(\.toolTitles, true)
@@ -277,7 +355,7 @@ struct PadToolBar: View {
                     "sketch.create",
                     "sketch.modify", "sketch.transform", "sketch.constraints"]
             .map { UserDefaults.standard.string(forKey: Preferences.toolbarPins($0)) ?? "-" }
-        return "\(model.sketchSession != nil) \(model.isPickingSketchPlane) \(pins.joined(separator: "|"))"
+        return "\(model.workspace.rawValue) \(model.sketchSession != nil) \(model.isPickingSketchPlane) \(pins.joined(separator: "|"))"
     }
 
     /// Every layout from the widest (each group's pinned tools) down to one menu of everything.
@@ -300,6 +378,10 @@ struct PadToolBar: View {
     /// Buttons are drawn at full size when they fit; otherwise they shrink (down to the Mac's size) before tools are moved into menus,
     /// so a narrow iPad still shows its tool row instead of only a "Tools" menu.
     private func layout(fitting room: CGFloat) -> (layout: ToolbarLayout, scale: CGFloat) {
+        // The other workspaces' rows have no narrower layouts: the buttons shrink to fit (down to 80 %), then the row scrolls.
+        if model.workspace != .design, let w = widths[.trimmed(0)] ?? widths[.single], w > 0 {
+            return (.trimmed(0), min(Self.scale, max(0.8, room / w)))
+        }
         for scale in [Self.scale, 1.15, 1.0] {
             var trim = 0
             while let w = widths[.trimmed(trim)] {
@@ -341,6 +423,7 @@ struct PadToolBar: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         .task(id: signature) { measure() }
         .onChange(of: busy) { manualCollapse = nil }
+        .onChange(of: model.workspace) { manualCollapse = nil }
         .onChange(of: model.sketchSession == nil) { manualCollapse = nil }
     }
 
@@ -359,7 +442,7 @@ struct PadToolBar: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .panelGlass(in: Capsule())
+            .panelMaterial(in: Capsule())
             .accessibilityHint("Shows the tool bar")
             // A new feature being sized (a hole, an extrude…) is finished or given up here too, whatever else is on screen:
             // its own OK sits by its arrow, which may be out of reach, and until it is done the bar stays folded.
@@ -370,7 +453,7 @@ struct PadToolBar: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .panelGlass(in: Circle())
+                .panelMaterial(in: Circle())
                 .accessibilityLabel("Cancel \(foldedTitle)")
                 Button { model.finishFeatureEdit() } label: {
                     Label("Done", systemImage: "checkmark").font(.headline)
@@ -379,7 +462,7 @@ struct PadToolBar: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .panelGlass(in: Capsule())
+                .panelMaterial(in: Capsule())
                 .accessibilityLabel("Finish \(foldedTitle)")
                 .id(id)
             }
@@ -391,7 +474,7 @@ struct PadToolBar: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .panelGlass(in: Circle())
+                .panelMaterial(in: Circle())
                 .accessibilityLabel("Cancel \(foldedTitle)")
             }
         }
@@ -434,7 +517,7 @@ private struct BarBackground: ViewModifier {
         if let tint {
             content.background(tint, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         } else {
-            content.panelGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            content.panelMaterial(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
     }
 }
@@ -446,8 +529,9 @@ private struct PadTopGlass: View {
         GeometryReader { proxy in
             let origin = proxy.frame(in: .global).origin
             if frame.width > 0 {
-                Color.clear.panelGlass(in: Capsule())
-                    .frame(width: frame.width, height: frame.height)
+                Color.clear.panelMaterial(in: Capsule())
+                    // As tall as the glass buttons at the left (the system draws those 7 pt taller than their 44 pt label, each side).
+                    .frame(width: frame.width, height: frame.height + 14)
                     .position(x: frame.midX - origin.x, y: frame.midY - origin.y)
             }
         }
@@ -455,13 +539,36 @@ private struct PadTopGlass: View {
     }
 }
 
+/// The viewer's buttons: the View menu and Export, in a glass capsule at the top right (the rest is for designing).
+struct PadViewerButtons: View {
+    let model: DocumentModel
+    @Environment(\.accent) private var accent
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Menu("View", systemImage: "eye") { PadViewControls(model: model) }
+            Menu("Export", systemImage: "square.and.arrow.up") {
+                Button("STL") { model.export(format: .stl) }
+                Button("3MF") { model.export(format: .threeMF) }
+                Button("STEP") { model.export(format: .step) }
+            }
+        }
+        .labelStyle(.iconOnly)
+        .font(.title3)
+        .foregroundStyle(accent)
+        .buttonStyle(PadTopButtonStyle())
+        .padding(.horizontal, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Part actions")
+    }
+}
+
 /// Undo, redo, render, view, help, settings and export, in a glass capsule at the top right.
-struct PadTopButtons: View {
+/// The Help menu: the tutorial, the example parts, the docs and the licences.
+struct PadHelpMenu: View {
     let model: DocumentModel
     let guide: TutorialGuide
     @Environment(\.openURL) private var openURL
-    let undoManager: UndoManager?
-    @Environment(\.accent) private var accent
 
     /// An example part replaces what is in the part (one Undo brings it back): iPadOS has no way to open a second part from inside the app.
     private func loadExample(_ title: String, _ document: CADDocument) {
@@ -470,41 +577,59 @@ struct PadTopButtons: View {
     }
 
     var body: some View {
+        Menu("Help", systemImage: "questionmark.circle") {
+            Button(guide.canResume ? "Resume Tutorial: \(guide.kind.title)" : "Tutorial: Make a \(guide.kind.title)") {
+                if guide.isActive { return }
+                if guide.canResume || (model.document.features.isEmpty && model.document.parameters.isEmpty) { guide.start() }
+                else { model.alert = AlertInfo(title: "The tutorial starts in an empty part", message: "Close this part, go back to the start screen, make a new one there, and choose Help › Tutorial there.") }
+            }
+            Menu("Load Example Part") {
+                Button("Plate with Holes, Fillets and a Chamfer") { loadExample("Plate with Holes, Fillets and a Chamfer", CADDocument.demo()) }
+                Button("Bracket Profile (try the sketch solver)") { loadExample("Bracket Profile", CADDocument.bracketProfileDemo()) }
+                Button("Bracket with Ribs") { loadExample("Bracket with Ribs", CADDocument.ribDemo()) }
+                Button("Flanged Pipe on a Manifold (advanced)") { loadExample("Flanged Pipe on a Manifold", CADDocument.manifoldDemo()) }
+            }
+            Divider()
+            Button("SimplMaker Docs") { openURL(URL(string: "https://simplmaker.com/docs/")!) }
+            Button("About SimplMaker and Licences") { model.showAbout = true }
+        }
+    }
+}
+
+/// The Export menu: the file formats, and the imports.
+struct PadExportMenu: View {
+    let model: DocumentModel
+
+    var body: some View {
+        Menu("Export", systemImage: "square.and.arrow.up") {
+            Button("STL") { model.export(format: .stl) }
+            Button("3MF") { model.export(format: .threeMF) }
+            Button("STEP") { model.export(format: .step) }
+            Divider()
+            Button("Import STEP…") { model.importSTEP() }
+            Button("Import STL…") { model.importSTL() }
+            Button("Import SVG as sketch…") { model.importSVG() }
+            Button("Import DXF as sketch…") { model.importDXF() }
+        }
+    }
+}
+
+struct PadTopButtons: View {
+    let model: DocumentModel
+    let guide: TutorialGuide
+    let undoManager: UndoManager?
+    @Environment(\.accent) private var accent
+
+    var body: some View {
         HStack(spacing: 0) {
             Button("Undo", systemImage: "arrow.uturn.backward") { undoManager?.undo() }
                 .disabled(undoManager?.canUndo != true)
             Button("Redo", systemImage: "arrow.uturn.forward") { undoManager?.redo() }
                 .disabled(undoManager?.canRedo != true)
-            Button("Render", systemImage: model.renderView ? "camera.fill" : "camera") { model.setRenderView(!model.renderView) }
-                .disabled(model.sketchSession != nil)
             Menu("View", systemImage: "eye") { PadViewControls(model: model) }
-            Menu("Help", systemImage: "questionmark.circle") {
-                Button(guide.canResume ? "Resume Tutorial: \(guide.kind.title)" : "Tutorial: Make a \(guide.kind.title)") {
-                    if guide.isActive { return }
-                    if guide.canResume || (model.document.features.isEmpty && model.document.parameters.isEmpty) { guide.start() }
-                    else { model.alert = AlertInfo(title: "The tutorial starts in an empty part", message: "Close this part, go back to the start screen, make a new one there, and choose Help › Tutorial there.") }
-                }
-                Menu("Load Example Part") {
-                    Button("Plate with Holes, Fillets and a Chamfer") { loadExample("Plate with Holes, Fillets and a Chamfer", CADDocument.demo()) }
-                    Button("Bracket Profile (try the sketch solver)") { loadExample("Bracket Profile", CADDocument.bracketProfileDemo()) }
-                    Button("Bracket with Ribs") { loadExample("Bracket with Ribs", CADDocument.ribDemo()) }
-                    Button("Flanged Pipe on a Manifold (advanced)") { loadExample("Flanged Pipe on a Manifold", CADDocument.manifoldDemo()) }
-                }
-                Divider()
-                Button("SimplMaker Docs") { openURL(URL(string: "https://simplmaker.com/docs/")!) }
-                Button("About SimplMaker and Licences") { model.showAbout = true }
-            }
+            PadHelpMenu(model: model, guide: guide)
             Button("Settings", systemImage: "gearshape") { model.showSettings = true }
-            Menu("Export", systemImage: "square.and.arrow.up") {
-                Button("STL") { model.export(format: .stl) }
-                Button("3MF") { model.export(format: .threeMF) }
-                Button("STEP") { model.export(format: .step) }
-                Divider()
-                Button("Import STEP…") { model.importSTEP() }
-                Button("Import STL…") { model.importSTL() }
-                Button("Import SVG as sketch…") { model.importSVG() }
-                Button("Import DXF as sketch…") { model.importDXF() }
-            }
+            PadExportMenu(model: model)
         }
         .labelStyle(.iconOnly)
         .font(.title3)
@@ -568,8 +693,14 @@ struct PadDialogs: ViewModifier {
                 }
                 .presentationDetents([.large])
             }
-            .sheet(isPresented: Binding(get: { model.exportedFile != nil }, set: { if !$0 { model.exportedFile = nil } })) {
-                if let url = model.exportedFile { ShareSheet(url: url).presentationDetents([.medium, .large]) }
+            .sheet(isPresented: Binding(get: { model.exportedFile != nil || !model.exportedFiles.isEmpty },
+                                        set: { if !$0 { model.exportedFile = nil; model.exportedFiles = [] } })) {
+                let urls = (model.exportedFile.map { [$0] } ?? []) + model.exportedFiles
+                if !urls.isEmpty { ShareSheet(urls: urls).presentationDetents([.medium, .large]) }
+            }
+            // The pieces of a mold or a split: which format, and one file or one for each piece.
+            .sheet(item: $model.piecesExport) { request in
+                PiecesExportSheet(model: model, request: request).presentationDetents([.height(360)])
             }
     }
 
@@ -585,7 +716,47 @@ struct PadDialogs: ViewModifier {
 
 /// The system share sheet for a file (Save to Files, AirDrop, Messages, …).
 struct ShareSheet: UIViewControllerRepresentable {
-    let url: URL
-    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: [url], applicationActivities: nil) }
+    let urls: [URL]
+    init(url: URL) { urls = [url] }
+    init(urls: [URL]) { self.urls = urls }
+    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: urls, applicationActivities: nil) }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+/// What to write of a mold's or a split's pieces (the Mac asks the same in an alert): the format, and one file or one for each piece.
+struct PiecesExportSheet: View {
+    let model: DocumentModel
+    let request: PiecesExportRequest
+    @State private var format = ExportFormat.stl
+    @State private var individually = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Format", selection: $format) {
+                        Text("STL · for slicers").tag(ExportFormat.stl)
+                        Text("3MF · with units and colours").tag(ExportFormat.threeMF)
+                        Text("STEP · for other CAD programs").tag(ExportFormat.step)
+                    }
+                    if request.bodies.count > 1 {
+                        Picker("Files", selection: $individually) {
+                            Text("All \(request.noun) in one file").tag(false)
+                            Text("One file for each of the \(request.bodies.count)").tag(true)
+                        }
+                    }
+                } footer: {
+                    Text("The \(request.noun) are laid out for printing. Next you choose where they go: Files, AirDrop, a slicer…")
+                }
+            }
+            .navigationTitle("Export \(request.name)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.piecesExport = nil } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Export") { model.exportPieces(request, format: format, individually: individually) }
+                }
+            }
+        }
+    }
 }

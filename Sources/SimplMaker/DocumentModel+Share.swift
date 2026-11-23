@@ -86,4 +86,98 @@ extension DocumentModel {
         export(bodies: bodies(inFolder: id).map(\.id), name: folder.name, format: format)
     }
 }
+
+/// The pieces of a mold or a split, waiting for the person to say which format and whether one file or one each.
+struct PiecesExportRequest: Identifiable {
+    let id = UUID()
+    /// The mold's or split's name: the file's name, or the folder's.
+    let name: String
+    /// "halves", "pieces": what the bodies are called in the sheet.
+    let noun: String
+    let bodies: [BodyResult]
+}
+
+extension DocumentModel {
+    /// Writes the pieces the person chose to export: one file, or one for each piece, and offers them in the share sheet.
+    func exportPieces(_ request: PiecesExportRequest, format: ExportFormat, individually: Bool) {
+        piecesExport = nil
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("export-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var one: URL?
+        var many: [URL] = []
+        if individually && request.bodies.count > 1 {
+            let written = writeIndividually(request.bodies, format: format, into: folder)
+            if written.count == request.bodies.count { many = written }
+        } else {
+            let url = folder.appendingPathComponent("\(Self.safeFileName(request.name)).\(format.fileExtension)")
+            if write(request.bodies, format: format, to: url) { one = url }
+        }
+        // The question's sheet is still going away: the share sheet comes up once it has.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            exportedFile = one
+            exportedFiles = many
+        }
+    }
+
+    /// Mold ▸ Export: asks what to write (see `PiecesExportSheet`).
+    func exportMoldHalves() {
+        guard let mold = activeMold, let built = moldResults[mold.id], built.isBuilt else {
+            alert = AlertInfo(title: "There is nothing to export", message: "The mold has not been built. Fix what the Mold panel says first.")
+            return
+        }
+        let placed = MoldBuilder.printLayout(built)
+        guard placed.count == built.pieces.count else { return }
+        piecesExport = PiecesExportRequest(name: mold.name, noun: mold.pieces == 4 ? "pieces" : "halves", bodies: placed)
+    }
+
+    /// Split ▸ Export: asks what to write (see `PiecesExportSheet`).
+    func exportSplitPieces() {
+        guard let split = activeSplit, let built = splitResults[split.id], built.isBuilt else {
+            alert = AlertInfo(title: "There is nothing to export", message: "The split has not been built. Fix what the Split panel says first.")
+            return
+        }
+        let placed = PrintSplitBuilder.printLayout(built).bodies
+        guard !placed.isEmpty else { return }
+        piecesExport = PiecesExportRequest(name: split.name, noun: "pieces", bodies: placed)
+    }
+
+    /// A file name that is safe to write: letters, digits, spaces and a few marks, no folders, never empty (as the Mac's `CADService.safeFileName`).
+    static func safeFileName(_ text: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " -_.()"))
+        let last = (text as NSString).lastPathComponent
+        let cleaned = String(last.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" })
+            .replacingOccurrences(of: "..", with: "_")
+            .trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+        return cleaned.isEmpty ? "Part" : String(cleaned.prefix(80))
+    }
+
+    /// File names for these names in a folder: safe to write, different from each other and from what the folder already holds.
+    static func exportFileURLs(for names: [String], extension ext: String, in folder: URL) -> [URL] {
+        var taken = Set<String>()
+        return names.map { name in
+            let base = Self.safeFileName(name)
+            var candidate = base
+            var n = 2
+            while taken.contains(candidate.lowercased()) || FileManager.default.fileExists(atPath: folder.appendingPathComponent("\(candidate).\(ext)").path) {
+                candidate = "\(base) \(n)"
+                n += 1
+            }
+            taken.insert(candidate.lowercased())
+            return folder.appendingPathComponent("\(candidate).\(ext)")
+        }
+    }
+
+    /// Writes each body to a file of its own in the folder, named after the body. Returns the files written; stops and alerts at the first failure.
+    @discardableResult
+    func writeIndividually(_ bodies: [BodyResult], format: ExportFormat, into folder: URL) -> [URL] {
+        let urls = Self.exportFileURLs(for: bodies.map(\.name), extension: format.fileExtension, in: folder)
+        var written: [URL] = []
+        for (body, url) in zip(bodies, urls) {
+            guard write([body], format: format, to: url) else { break }
+            written.append(url)
+        }
+        return written
+    }
+}
 #endif

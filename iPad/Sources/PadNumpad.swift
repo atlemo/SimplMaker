@@ -216,7 +216,7 @@ struct PadNumpadPanel: View {
             keys
                 .padding(12)
                 .frame(width: PadNumpad.width)
-                .panelGlass(in: RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))
+                .panelMaterial(in: RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))
                 .offset(offset)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Number pad")
@@ -352,7 +352,7 @@ struct PadNumpadOverlay: View {
                     Text("123").font(.headline).padding(.horizontal, 18).frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
-                .panelGlass(in: Capsule())
+                .panelMaterial(in: Capsule())
                 .reportsFrame(if: true)
                 .accessibilityLabel("Show the number pad")
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

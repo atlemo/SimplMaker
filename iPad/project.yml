@@ -80,7 +80,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.simplmaker.SimplMaker.pad
-        TARGETED_DEVICE_FAMILY: "2"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
         INFOPLIST_KEY_CFBundleDisplayName: SimplMaker
@@ -112,7 +112,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.simplmaker.SimplMaker.pad.Thumbnail
-        TARGETED_DEVICE_FAMILY: "2"
+        TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
         INFOPLIST_KEY_CFBundleDisplayName: SimplMaker

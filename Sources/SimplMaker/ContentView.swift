@@ -502,9 +502,9 @@ struct StatusBar: View {
 
     @ViewBuilder private var message: some View {
         if model.workspace == .split {
-            Text(model.splitStatusText).foregroundStyle(.secondary)
+            Text(Hint.text(model.splitStatusText)).foregroundStyle(.secondary)
         } else if model.workspace == .mold {
-            Text(model.moldStatusText).foregroundStyle(.secondary)
+            Text(Hint.text(model.moldStatusText)).foregroundStyle(.secondary)
         } else if let session = model.sketchSession {
             hintText(session.statusText)
                 .foregroundStyle(session.message != nil || session.solve?.status == .failed ? Color.red : Color.secondary)

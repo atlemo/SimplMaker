@@ -20,8 +20,14 @@ enum Workspace: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    /// The workspaces the mode selector offers.
-    static var available: [Workspace] { allCases }
+    /// The workspaces the mode selector offers. The iPad has its own start screen, so no Start there.
+    static var available: [Workspace] {
+        #if os(macOS)
+        allCases
+        #else
+        allCases.filter { $0 != .start }
+        #endif
+    }
 
     /// Whether the workspace has a row of tool islands under the toolbar. Start is a page of its own.
     var hasTools: Bool { self != .start }
@@ -40,7 +46,11 @@ enum Workspace: String, CaseIterable, Identifiable, Sendable {
 extension DocumentModel {
     /// The workspace a part opens in: the start page while it is empty, otherwise Design.
     static func openingWorkspace(for document: CADDocument) -> Workspace {
+        #if os(macOS)
         document.features.isEmpty ? .start : .design
+        #else
+        .design  // the iPad's start screen is outside the part
+        #endif
     }
 
     /// Moves the window to a workspace. A sketch being edited is finished and a tool waiting for picks is dropped first,
@@ -65,10 +75,7 @@ extension DocumentModel {
     }
 
     /// A design tool is about to run (from a key, a menu or a button of the start page): the window goes to Design first.
-    /// (The iPad has no workspaces: its Render view and tools work side by side as they did.)
     func ensureDesignWorkspace() {
-        #if os(macOS)
         if workspace != .design { setWorkspace(.design) }
-        #endif
     }
 }

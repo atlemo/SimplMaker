@@ -8,54 +8,6 @@
 import AppKit
 import SwiftUI
 
-// MARK: Workspaces, as the switcher shows them
-
-extension Workspace {
-    /// The glyph that stands for the workspace.
-    var symbol: String {
-        switch self {
-        case .start: "house"
-        case .design: "pen-tool"
-        case .split: "puzzle"
-        case .mold: "split-body"
-        case .render: "camera"
-        }
-    }
-
-    /// What it is for, in a line.
-    var summary: String {
-        switch self {
-        case .start: "New and recent parts, and the ways to begin"
-        case .design: "Sketch, model and change the part, step by step"
-        case .split: "Cut a big part into pieces that fit your printer, with connectors"
-        case .mold: "Make a printable mold of a body, to cast copies of it"
-        case .render: "Show the part on a floor with a light you set"
-        }
-    }
-
-    /// What is in it.
-    var contents: String {
-        switch self {
-        case .start: "New Part · Open · Tutorial · Recent parts"
-        case .design: "Sketch · Create · Shapes · Modify · Construct · Inspect"
-        case .split: "Printer · Cuts · Connectors · Fit · Export"
-        case .mold: "Parting · Gate and vents · Keys · Export"
-        case .render: "Floor · Light · Materials · Export image"
-        }
-    }
-
-    /// The colour of its tile.
-    var tint: Color {
-        switch self {
-        case .start: DS.brand
-        case .design: Color(red: 0.22, green: 0.47, blue: 0.93)
-        case .split: Color(red: 0.88, green: 0.52, blue: 0.10)
-        case .mold: Color(red: 0.09, green: 0.60, blue: 0.55)
-        case .render: Color(red: 0.80, green: 0.27, blue: 0.55)
-        }
-    }
-}
-
 /// The big button at the left of the ribbon: the current workspace's glyph and name, and a small "Workspace" under it. It opens the
 /// list of workspaces.
 struct WorkspaceButton: View {
@@ -178,18 +130,6 @@ private struct Badge: View {
 }
 
 // MARK: The ribbon
-
-/// A thin line between the workspace button and the tools, and between tool groups.
-struct RibbonDivider: View {
-    @Environment(\.toolsOnTint) private var onTint
-    @Environment(\.toolsInk) private var ink
-
-    var body: some View {
-        Rectangle()
-            .fill((onTint ? ink : Color.primary).opacity(onTint ? 0.35 : 0.14))
-            .frame(width: 1, height: 44)
-    }
-}
 
 /// Drags the window from the empty parts of the ribbon, and zooms it on a double click, as a titlebar does (the ribbon is drawn in the
 /// titlebar's place).

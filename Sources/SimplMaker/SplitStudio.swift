@@ -159,7 +159,8 @@ extension DocumentModel {
         if activeSplitID == nil || !setups.contains(where: { $0.id == activeSplitID }) { activeSplitID = setups.first?.id }
         sceneRevision += 1
         overlayRevision += 1
-        if fit { fitRevision += 1 }
+        if fit || fitAfterWorkspaceBuild { fitRevision += 1 }
+        fitAfterWorkspaceBuild = false
     }
 
     // MARK: changing splits
@@ -176,7 +177,8 @@ extension DocumentModel {
         mutate("Make Split") { $0.printSplits.append(setup) }
         activeSplitID = setup.id
         if workspace == .split {
-            sceneRevision += 1; fitRevision += 1; overlayRevision += 1
+            sceneRevision += 1; overlayRevision += 1
+            fitAfterWorkspaceBuild = true  // fitted once the pieces are there
         } else {
             setWorkspace(.split)
         }

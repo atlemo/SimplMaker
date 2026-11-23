@@ -3,14 +3,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 
-#if os(iOS)
-/// The bounds of the screen the app's window is on (UIScreen.main is deprecated: a device can have several screens).
-@MainActor var currentScreenBounds: CGRect {
-    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-    let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
-    return scene?.screen.bounds ?? CGRect(x: 0, y: 0, width: 1024, height: 768)
+extension EnvironmentValues {
+    /// The height of the window the part is in, set by the iPad editor so that popovers can keep clear of the screen's edges.
+    @Entry var windowHeight: CGFloat = 800
 }
-#endif
 
 enum Hint {
     /// The hint as it should read on this device: unchanged on the Mac.
@@ -24,7 +20,7 @@ enum Hint {
         }
         var out = parts.isEmpty ? s : parts.joined(separator: " · ")
         for (from, to) in [("Press E to extrude", "Tap Extrude to extrude"), ("and press Return", "and tap Done"),
-                           ("Esc ends the chain", "Done ends the chain"), ("Esc ends the spline", "Done ends the spline"),
+                           ("Esc ends the chain", "Done ends the chain"), ("Esc ends the spline", "Done ends the spline"), ("Esc when done", "tap the tool again when done"),
                            ("Esc ends", "pick another tool to end"), ("Return keeps", "OK keeps"), ("⌫ deletes", "Delete removes the selection"),
                            ("double-click", "double-tap"), ("Double-click", "Double-tap"),
                            ("click", "tap"), ("Click", "Tap"),
@@ -107,6 +103,7 @@ enum PanelTouch {
     static let rowButtonHeight: CGFloat? = 44
     static let buttonSpacing: CGFloat = DS.Spacing.space1
     static let rowTrailingBleed: CGFloat = 0
+    static let panelTrailing: CGFloat = DS.Spacing.space4
     static let contentLeading: CGFloat = 10
     /// The room a panel keeps at its top corner for its show/hide button (iPad).
     static let panelToggleRoom: CGFloat = 44

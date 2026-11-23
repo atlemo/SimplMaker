@@ -22,10 +22,22 @@ struct PadViewControls: View {
     @AppStorage(Preferences.showAxes) private var showAxes = true
 
     var body: some View {
+        // Too small to design in (the folded iPhone Duo): only what is for looking at the part is offered.
+        let viewer = model?.viewerOnly == true
+        if !viewer {
         Button("Command Palette…", systemImage: "magnifyingglass") { model?.showPalette.toggle() }
             .padShortcut(.palette)
             .disabled(model == nil)
+        Menu("Workspace", systemImage: model?.workspace.systemImage ?? "pencil.and.ruler") {
+            ForEach(Workspace.available) { workspace in
+                Button { model?.setWorkspace(workspace) } label: {
+                    Label(workspace.rawValue, systemImage: model?.workspace == workspace ? "checkmark" : workspace.systemImage)
+                }
+            }
+        }
+        .disabled(model == nil)
         Divider()
+        }
         Button("Fit All", systemImage: "arrow.up.left.and.down.right.magnifyingglass") { model?.fitView() }.padShortcut(.fitAll)
         Menu("Standard Views", systemImage: "cube") {
             ForEach(StandardView.allCases) { v in
@@ -41,18 +53,24 @@ struct PadViewControls: View {
         Divider()
         Toggle("FDM 3D Print Preview", isOn: Binding(get: { model?.printPreview ?? false }, set: { model?.setPrintPreview($0) }))
             .disabled(model == nil || !(model?.visualStyle.isShaded ?? true))
+        if !viewer {
         Toggle("Render", isOn: Binding(get: { model?.renderView ?? false }, set: { model?.setRenderView($0) })).disabled(model == nil)
         Toggle("Render Options", isOn: Binding(get: { model?.showRenderOptions ?? false }, set: { model?.showRenderOptions = $0 }))
             .disabled(model == nil || !(model?.renderView ?? false))
         Toggle("Turntable", isOn: Binding(get: { model?.renderSpinning ?? false }, set: { model?.renderSpinning = $0 }))
             .disabled(model == nil || !(model?.renderView ?? false))
+        }
         Toggle("Section Analysis", isOn: Binding(get: { model?.sectionActive ?? false }, set: { model?.setSectionAnalysis($0) })).disabled(model == nil)
         Toggle("Exploded View", isOn: Binding(get: { model?.explodeOn ?? false }, set: { model?.setExplodedView($0) })).disabled(model == nil)
         Divider()
-        Toggle("Show Grid", isOn: $showGrid).padShortcut(.showGrid)
+        // The Split and Mold workspaces keep their own setting for the grid (it starts hidden there).
+        Toggle("Show Grid", isOn: Binding(get: { model?.hasOwnGridSetting == true ? (model?.workspaceShowsGrid ?? false) : showGrid },
+                                           set: { if let model, model.hasOwnGridSetting { model.workspaceShowsGrid = $0 } else { showGrid = $0 } }))
+            .padShortcut(.showGrid)
         Toggle("Show Axes", isOn: $showAxes).padShortcut(.showAxes)
         Toggle("Show Constraints", isOn: $showConstraints)
         Toggle("Snap to Grid", isOn: $snapToGrid).padShortcut(.snapToGrid)
+        if !viewer {
         Divider()
         Button((model?.showSidebar ?? true) ? "Hide Browser" : "Show Browser") { model?.showSidebar.toggle() }.padShortcut(.browser)
         Button((model?.showTimeline ?? true) ? "Hide Timeline" : "Show Timeline") { model?.showTimeline.toggle() }.padShortcut(.timeline)
@@ -61,6 +79,7 @@ struct PadViewControls: View {
         Button((model?.showAppearance ?? false) ? "Hide Appearance" : "Show Appearance") { model?.toggleAppearance() }
             .padShortcut(.appearance)
             .disabled(model == nil || model?.sketchSession != nil)
+        }
     }
 }
 

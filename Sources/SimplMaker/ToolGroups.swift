@@ -405,6 +405,7 @@ private struct ToolGroupList: View {
 private struct ScrollingList<Content: View>: View {
     @ViewBuilder let content: Content
     @State private var height: CGFloat = 400
+    @Environment(\.windowHeight) private var windowHeight
 
     var body: some View {
 #if os(macOS)
@@ -415,7 +416,7 @@ private struct ScrollingList<Content: View>: View {
         }
         // Never taller than the room the popover has below the toolbar: a taller one is cropped at the top and the bottom alike, and the
         // first tool cannot be reached. The rest scrolls.
-        .frame(height: min(height, max(min(560, currentScreenBounds.height - 270), 240)))
+        .frame(height: min(height, max(min(560, windowHeight - 270), 240)))
         .scrollBounceBehavior(.basedOnSize)
 #endif
     }

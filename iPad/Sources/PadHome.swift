@@ -1,5 +1,5 @@
 // The start screen: the icon and the headline on the left, the New Part and Open buttons on the right, and under them a panel with
-// the parts, switched between Recents and On My iPad by the system's segmented control. All controls are the system's own, in the
+// the parts, switched between Recents and On This Device by the system's segmented control. All controls are the system's own, in the
 // brand orange. (The system's launch screen could not be laid out like this: it fixes its button in the middle and lets nothing
 // of ours be touched, so the parts are listed here.)
 // Copyright © 2026 Atle Mo
@@ -12,7 +12,7 @@ struct PadHome: View {
     let open: (URL, _ tutorial: Bool) -> Void
 
     private enum Tab: String, CaseIterable, Identifiable {
-        case recents = "Recents", device = "On My iPad"
+        case recents = "Recents", device = "On This Device"
         var id: Self { self }
     }
 
@@ -73,38 +73,31 @@ struct PadHome: View {
     @ViewBuilder private func header(wide: Bool, short: Bool) -> some View {
         if wide {
             HStack(alignment: .center, spacing: 40) {
-                brand(size: short ? 46 : 60)
+                brand(icon: short ? 72 : 88)
                 Spacer(minLength: 0)
                 actions.frame(width: 250)
             }
         } else {
             VStack(spacing: 20) {
-                brand(size: 40)
+                brand(icon: 72)
                 actions.frame(maxWidth: 340)
             }
         }
     }
 
-    /// The icon with the name and version, and the headline.
-    private func brand(size: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: size * 0.4) {
-            HStack(spacing: 14) {
-                PadWelcomeIcon(size: 56)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("SimplMaker").font(.title3.weight(.semibold))
-                    Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
+    /// The icon, big, with the name and the version beside it (as on the Mac's start page).
+    private func brand(icon: CGFloat) -> some View {
+        HStack(spacing: 18) {
+            PadWelcomeIcon(size: icon)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("SimplMaker")
+                    .font(.system(size: icon * 0.42, weight: .bold))
+                    .tracking(-0.4)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
+                    .font(.title3).foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Draw it.")
-                Text("Dimension it.")
-                Text("Print it.").foregroundStyle(DS.brand)
-            }
-            .font(.system(size: size, weight: .heavy))
-            .tracking(-size * 0.03)
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
         }
     }
 

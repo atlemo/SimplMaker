@@ -78,6 +78,8 @@ struct PadViewport: UIViewRepresentable {
     /// How much of the view the floating panels and the tool bar cover (left, right, bottom; the bar below the navigation bar).
     let panelInsets: (left: CGFloat, right: CGFloat, bottom: CGFloat)
     let toolbarHeight: CGFloat
+    /// What the top bar takes (it is shorter beside the Duo's vertical bar).
+    var topBarHeight = PadTopBar.height
     let state: PadViewState
     var printPreview = false
     var printLayer = 0.2
@@ -103,6 +105,7 @@ struct PadViewport: UIViewRepresentable {
         var sketching = false
         var insets: (left: CGFloat, right: CGFloat, bottom: CGFloat) = (0, 0, 0)
         var toolbarHeight: CGFloat = 0
+        var topBarHeight = PadTopBar.height
         var dark: Bool?
         let navigation = Preferences.navigationConfig
         weak var view: MTKView?
@@ -132,7 +135,7 @@ struct PadViewport: UIViewRepresentable {
                 state?.renderer = renderer
                 state?.cameraMayHaveMoved(size: view.bounds.size)
                 // The top bar's room is not in the view's own safe area (SwiftUI's inset does not reach it), so it is added here.
-                let top = view.safeAreaInsets.top + PadTopBar.height + toolbarHeight
+                let top = view.safeAreaInsets.top + topBarHeight + toolbarHeight
                 if let state, state.topInset != top { state.topInset = top }
                 renderer?.draw(in: view)
             }
@@ -215,7 +218,7 @@ struct PadViewport: UIViewRepresentable {
         func updateCameraInsets(_ view: MTKView, _ panels: (left: CGFloat, right: CGFloat, bottom: CGFloat), toolbar: CGFloat) {
             guard let renderer, view.bounds.width > 1, view.bounds.height > 1 else { return }
             let w = view.bounds.width, h = view.bounds.height
-            let top = min(view.safeAreaInsets.top + PadTopBar.height + toolbar, h * 0.3)
+            let top = min(view.safeAreaInsets.top + topBarHeight + toolbar, h * 0.3)
             let left = min(panels.left, w * 0.45), right = min(panels.right, w * 0.45), bottom = min(panels.bottom, h * 0.3)
             renderer.camera.centerShift = SIMD2(Float((left - right) / w), Float((bottom - top) / h))
             renderer.camera.visibleFraction = SIMD2(Float((w - left - right) / w), Float((h - top - bottom) / h))
@@ -589,12 +592,21 @@ struct PadViewport: UIViewRepresentable {
         /// A pick came back: it is the answer to a tap, or only what is under a finger.
         func picked(_ raw: UInt32) {
             guard let view, let renderer, let model else { return }
+            // The Mold and Split scenes are not the part's: nothing in them is picked, except while a body is being chosen, when its
+            // faces light up whole (the model's own hover is left alone).
+            let inWorkspace = model.workspace == .mold || model.workspace == .split
+            var raw = raw
+            if inWorkspace, !(model.choosingWorkspaceBody && [.face, .edge].contains(PickID(raw: raw).kind)) { raw = 0 }
             renderer.hovered = raw
-            if let p = pendingMenu { pendingMenu = nil; showMenu(at: p, pick: raw, in: view); return }
+            if let p = pendingMenu {
+                pendingMenu = nil
+                if !inWorkspace { showMenu(at: p, pick: raw, in: view) }
+                return
+            }
             if hoverPickPending {
                 hoverPickPending = false
                 if model.sketchSession == nil, pendingTap == nil {
-                    let pick = raw == 0 ? nil : PickID(raw: raw)
+                    let pick = raw == 0 || inWorkspace ? nil : PickID(raw: raw)
                     model.hover(pick)
                     renderer.selected = model.highlighted
                     view.setNeedsDisplay()
@@ -606,6 +618,24 @@ struct PadViewport: UIViewRepresentable {
             let p = tap.point
             let now = ProcessInfo.processInfo.systemUptime
             let r = renderer.camera.ray(at: p, viewSize: view.bounds.size)
+            if inWorkspace {
+                // The body to work on is tapped in the scene; a vent or the gate waits for its spot on the body; otherwise a tap does
+                // nothing here (the pieces are looked at, not picked).
+                let origin = world(r.origin), direction = world(r.direction)
+                if model.choosingWorkspaceBody {
+                    model.chooseWorkspaceBody(origin: origin, direction: direction)
+                } else if model.workspace == .mold, model.moldPicking != nil, let hit = model.focusPoint(origin: origin, direction: direction) {
+                    model.placeMoldPoint(hit)
+                }
+                renderer.setOverlay(model.sketchOverlay()); view.setNeedsDisplay()
+                return
+            }
+            if model.viewerOnly {  // looking only: a tap lights up what is under it, and nothing opens for editing
+                model.hover(raw == 0 ? nil : PickID(raw: raw))
+                renderer.selected = model.highlighted
+                view.setNeedsDisplay()
+                return
+            }
             if let last = lastTap, now - last.time < 0.35, hypot(p.x - last.point.x, p.y - last.point.y) < 24 {
                 lastTap = nil  // the second tap of a double tap: edit what is under it, in place of a click
                 let f = renderer.camera.forward
@@ -641,7 +671,7 @@ struct PadViewport: UIViewRepresentable {
         }
 
         private func pencilAction() {
-            guard let model, let view else { return }
+            guard let model, let view, !model.viewerOnly else { return }
             if let session = model.sketchSession {
                 if session.tool == .select { session.setTool(lastDrawingTool) }
                 else { lastDrawingTool = session.tool; session.setTool(.select) }
@@ -707,7 +737,7 @@ struct PadViewport: UIViewRepresentable {
         }
 
         @objc func hold(_ g: UILongPressGestureRecognizer) {
-            guard g.state == .began, let view, let renderer else { return }
+            guard g.state == .began, let view, let renderer, model?.viewerOnly != true else { return }  // the menu offers edits
             let p = g.location(in: view)
             pendingMenu = p
             let scale = CGFloat(view.pixelScale)
@@ -899,6 +929,7 @@ struct PadViewport: UIViewRepresentable {
         let aspect = Float(max(view.bounds.width, 1) / max(view.bounds.height, 1))
         c.insets = panelInsets
         c.toolbarHeight = toolbarHeight
+        c.topBarHeight = topBarHeight
         c.updateCameraInsets(view, panelInsets, toolbar: toolbarHeight)
         if c.fitRevision != fitRevision {
             c.fitRevision = fitRevision

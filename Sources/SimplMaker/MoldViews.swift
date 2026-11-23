@@ -2,8 +2,9 @@
 // it comes to on the right, and the export of the halves. The model is MoldStudio.swift; the plan is docs/MOLD-PLAN.md.
 // Copyright © 2026 Atle Mo
 // SPDX-License-Identifier: GPL-3.0-or-later
-#if os(macOS)
+#if canImport(AppKit)
 import AppKit
+#endif
 import CADCore
 import CADKernel
 import SwiftUI
@@ -135,12 +136,12 @@ struct MoldToolbar: View {
                     .disabled(!built)
                 }
             } else {
-                Text(model.bodies.isEmpty ? "Model a body in Design first, then make its mold here." : "Click a body in the 3D view, or choose one on the left, to make a mold of.")
+                Text(Hint.text(model.bodies.isEmpty ? "Model a body in Design first, then make its mold here." : "Click a body in the 3D view, or choose one on the left, to make a mold of."))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(height: 44)
+        .workspaceRowHeight()
         .fixedSize()
     }
 }
@@ -150,17 +151,21 @@ struct MoldToolbar: View {
 /// The molds of the part, and the bodies a mold can be made of.
 struct MoldSidebar: View {
     @Bindable var model: DocumentModel
+    @State private var listOpen = true
+    @State private var bodiesOpen = true
 
     var body: some View {
         VStack(spacing: Panel.inset) {
-            SidebarPanel(title: "Molds", open: .constant(true), accessory: { EmptyView() }) {
+            SidebarPanel(title: "Molds", open: $listOpen, headerLeading: max(0, PanelTouch.panelToggleRoom - 8), accessory: { EmptyView() }) {
                 MoldList(model: model)
             }
-            SidebarPanel(title: "Bodies", open: .constant(true), accessory: {
+            .frame(maxHeight: listOpen ? .infinity : PanelTouch.headerHeight)
+            SidebarPanel(title: "Bodies", open: $bodiesOpen, accessory: {
                 HeaderIconButton(systemImage: "cursorarrow.click", help: "Pick the body in the 3D view") { model.startChoosingWorkspaceBody() }
             }) {
                 MoldBodyList(model: model)
             }
+            .frame(maxHeight: bodiesOpen ? .infinity : PanelTouch.headerHeight)
         }
         .frame(width: Panel.sidebarWidth)
         .frame(maxHeight: .infinity)
@@ -256,13 +261,14 @@ private struct MoldBodyList: View {
 
 struct MoldInspectorColumn: View {
     @Bindable var model: DocumentModel
+    @State private var open = true
 
     var body: some View {
-        SidebarPanel(title: "Mold", open: .constant(true), headerTrailing: PanelTouch.panelToggleRoom, accessory: { EmptyView() }) {
+        SidebarPanel(title: "Mold", open: $open, headerTrailing: PanelTouch.panelToggleRoom, accessory: { EmptyView() }) {
             MoldInspector(model: model)
         }
         .frame(width: Panel.inspectorWidth)
-        .frame(maxHeight: .infinity)
+        .frame(maxHeight: open ? .infinity : PanelTouch.headerHeight, alignment: .top)
     }
 }
 
@@ -460,6 +466,7 @@ private struct MoldResultRows: View {
 
 // MARK: - Export
 
+#if os(macOS)
 extension DocumentModel {
     /// Writes the pieces of the active mold, laid out for printing (see `MoldBuilder.printLayout`): as one file or one each.
     func exportMoldHalves() {
