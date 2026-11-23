@@ -83,6 +83,17 @@ extension Notification.Name {
         controller.isHidden = true  // until the window has a second part
         window.addTitlebarAccessoryViewController(controller)
         accessory = controller
+        installSupportButton(in: window)
+    }
+
+    /// "Support this project", at the right end of the title bar's own row (the traffic lights' row), on every part window.
+    private func installSupportButton(in window: NSWindow) {
+        let host = NSHostingView(rootView: SupportButton())
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        let controller = NSTitlebarAccessoryViewController()
+        controller.view = host
+        controller.layoutAttribute = .trailing
+        window.addTitlebarAccessoryViewController(controller)
     }
 
     /// Reads the group again and watches it: its windows, which is selected, and each window's title (a part gets its name when it
@@ -273,6 +284,32 @@ struct WindowChromeAttach: NSViewRepresentable {
         }
     }
 }
+/// The button at the right of the title bar that opens the project's GitHub Sponsors page in the browser.
+struct SupportButton: View {
+    static let url = URL(string: "https://github.com/sponsors/atlemo")!
+    @State private var hovering = false
+
+    var body: some View {
+        Button { NSWorkspace.shared.open(Self.url) } label: {
+            HStack(spacing: DS.Spacing.space2) {
+                Image(systemName: "heart.fill").font(.system(size: 11)).foregroundStyle(.pink)
+                Text("Support this project").font(.system(size: 12))
+            }
+            .padding(.horizontal, DS.Spacing.space4)
+            .padding(.vertical, DS.Spacing.space2)
+            .background(Color.primary.opacity(hovering ? 0.12 : 0.06), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .padding(.horizontal, DS.Spacing.space4)
+        .fixedSize()  // the accessory is as wide as the label, never squeezed
+        .help("Sponsor SimplMaker on GitHub")
+        .accessibilityLabel("Support this project")
+        .accessibilityHint("Opens GitHub Sponsors in your browser")
+    }
+}
+
 /// The tab strip that hangs from the title bar: a flat row, the tabs and a new-tab button, drawn straight on the title bar's own colour
 /// rather than on glass. (The hairline under it is the window's own title bar separator; drawing a second one here showed as two lines.) It is in the title bar only while the window has two parts or more.
 struct WindowTabStrip: View {
