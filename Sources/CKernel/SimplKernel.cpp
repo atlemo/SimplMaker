@@ -3283,20 +3283,58 @@ SKHandle sk_shell(SKHandle body, const char *const *faceNames, int count, double
     }
     removed.Append(b->faces(it->second + 1));
   }
-  BRepOffsetAPI_MakeThickSolid mk;
-  mk.MakeThickSolidByJoin(b->shape, removed, inside ? -thickness : thickness, 1e-3);
-  mk.Build();
-  if (!mk.IsDone()) {
-    setError("shell failed (is the wall thicker than the body allows?)");
-    return 0;
-  }
   const std::string feat = featureOrDefault(featureId, "shell");
-  std::vector<Named> names;
-  carry(mk, namedFaces(*b), names);
-  Body out = makeBody(mk.Shape(), names, feat + ".shell");
-  if (!BRepCheck_Analyzer(out.shape).IsValid()) {
-    setError("shell failed (is the wall thicker than the body allows?)");
-    return 0;
+  const double offset = inside ? -thickness : thickness;
+  // One try at the offset. The builder is on the heap so that one that faulted (see runGuarded) is left alone, not
+  // destroyed. False when it fails, throws, or gives a body that is not a valid solid.
+  std::string reason;  // what the plain attempt was told when it threw
+  auto attempt = [&](bool intersection, Body &out) -> bool {
+    std::unique_ptr<BRepOffsetAPI_MakeThickSolid> mk(new BRepOffsetAPI_MakeThickSolid);
+    bool threw = false;
+    const bool ran = runGuarded([&] {
+      try {
+        mk->MakeThickSolidByJoin(b->shape, removed, offset, 1e-3, BRepOffset_Skin, intersection);
+        mk->Build();
+      } catch (Standard_Failure &e) {
+        threw = true;
+        if (reason.empty() && e.what()) reason = e.what();
+      }
+    });
+    if (!ran) {
+      mk.release();  // leaked: it is in no state to be taken apart
+      return false;
+    }
+    if (threw || !mk->IsDone()) return false;
+    std::vector<Named> names;
+    carry(*mk, namedFaces(*b), names);
+    out = makeBody(mk->Shape(), names, feat + ".shell");
+    return BRepCheck_Analyzer(out.shape).IsValid();
+  };
+  Body out;
+  if (!attempt(false, out)) {
+    // The plain offset gives up on a body with a round that dies away to a point where it meets a tangent face (a
+    // fillet along a crease of a loft that runs out smooth at the circle): every face offsets on its own, but the
+    // builder cannot join them. Working out the joins by intersecting the offset faces (its Intersection mode) can,
+    // but it is not trusted as the first choice. Anything it returns has to be about as much material as walls of this
+    // thickness on the kept faces hold, because a builder that gets it wrong still passes the validity check.
+    const bool built = attempt(true, out);
+    double kept = 0;
+    for (int k = 1; k <= b->faces.Extent(); ++k) {
+      bool open = false;
+      for (const TopoDS_Shape &r : removed) open = open || r.IsSame(b->faces(k));
+      if (open) continue;
+      GProp_GProps props;
+      BRepGProp::SurfaceProperties(b->faces(k), props);
+      kept += props.Mass();
+    }
+    GProp_GProps made;
+    if (built) BRepGProp::VolumeProperties(out.shape, made);
+    const double expected = thickness * kept;
+    if (!built || made.Mass() < 0.4 * expected || made.Mass() > 1.5 * expected) {
+      setError(reason.empty() ? std::string("shell failed (is the wall thicker than the body allows?)")
+                              : "shell: " + reason);
+      return 0;
+    }
   }
   return store(std::move(out));
   SK_CATCH(0)
