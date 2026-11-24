@@ -29,9 +29,13 @@ struct PadTopBar: View {
     /// Where the action buttons are, in window coordinates: the glass behind them is drawn with the rest of the glass.
     @Binding var frame: CGRect
 
+    /// A phone: too narrow to centre the title between the buttons.
+    private var phone: Bool { viewer && !duoBar }
+
     var body: some View {
         ZStack {
-            titleView
+            // The title is centred; on a phone, where the buttons take most of the width, it sits in the room between them instead.
+            if !phone { titleView }
             HStack(spacing: 0) {
                 if !duoBar {
                     Button(action: onClose) {
@@ -42,7 +46,7 @@ struct PadTopBar: View {
                     .accessibilityLabel("Parts")
                     if !viewer { workspaceMenu.padding(.leading, 8) }
                 }
-                Spacer(minLength: 0)
+                if phone { titleView.padding(.horizontal, 8).frame(maxWidth: .infinity) } else { Spacer(minLength: 0) }
                 // With the Duo's vertical bar every button is in it (see `PadDuoBar`), and only the title is left here.
                 if !duoBar {
                     Group {
@@ -87,7 +91,7 @@ struct PadTopBar: View {
     }
 
     @ViewBuilder private var titleView: some View {
-        let label = Text(title).font(.headline).lineLimit(1)
+        let label = Text(title).font(.headline).lineLimit(1).minimumScaleFactor(0.7)
         if let onRename {
             Menu {
                 Button("Rename…", systemImage: "pencil", action: onRename)

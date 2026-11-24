@@ -252,7 +252,7 @@ extension DocumentModel {
         guard pendingTool == nil else { return }
         switch pick.kind {
         case .face:
-            if let ref = faceRef(pick), let owner = featureMaking(face: ref.face) { editFeature(owner) }
+            if let ref = faceRef(pick), let owner = featureMaking(face: ref.face) { editFeature(owner) } else { zoomToFace(pick) }
         case .region:
             if let p = profile(of: pick) { editSketch(p.sketch) }
         case .sketchCurve:
@@ -260,6 +260,39 @@ extension DocumentModel {
         default:
             break
         }
+    }
+
+    /// Looks straight at a face and frames it: the camera comes to stand on the face's outward side, so the face fills the view.
+    /// A face that curves (a cylinder) has no one direction, so it is looked at from outside the body, through the face's middle.
+    func zoomToFace(_ pick: PickID) {
+        guard pick.isFace, let m = meshes[safe: pick.body], pick.element < m.mesh.faceNames.count else { return }
+        let mesh = m.mesh
+        var lo = SIMD3<Float>(repeating: .infinity), hi = SIMD3<Float>(repeating: -.infinity)
+        var normal = SIMD3<Float>.zero
+        var bodyLo = lo, bodyHi = hi
+        for i in stride(from: 0, to: mesh.positions.count - 2, by: 3) {
+            let v = SIMD3(mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2])
+            bodyLo = simd_min(bodyLo, v); bodyHi = simd_max(bodyHi, v)
+        }
+        for (t, face) in mesh.triangleFace.enumerated() where Int(face) == pick.element {
+            for k in 0..<3 {
+                let v = Int(mesh.indices[t * 3 + k]) * 3
+                lo = simd_min(lo, SIMD3(mesh.positions[v], mesh.positions[v + 1], mesh.positions[v + 2]))
+                hi = simd_max(hi, SIMD3(mesh.positions[v], mesh.positions[v + 1], mesh.positions[v + 2]))
+                normal += SIMD3(mesh.normals[v], mesh.normals[v + 1], mesh.normals[v + 2])
+            }
+        }
+        guard lo.x.isFinite else { return }
+        let length = simd_length(normal)
+        if length < 0.5 * Float(mesh.triangleFace.filter { Int($0) == pick.element }.count) * 3 || length == 0 {
+            // Curved: from the body's middle out through the face's.
+            let out = (lo + hi) / 2 - (bodyLo + bodyHi) / 2
+            normal = simd_length(out) > 1e-4 ? out : SIMD3(0, 0, 1)
+        }
+        // A small face is framed as if it were a few millimetres across, so it isn't zoomed to a speck.
+        let mid = (lo + hi) / 2
+        if simd_length(hi - lo) < 10 { lo = mid - SIMD3(repeating: 5); hi = mid + SIMD3(repeating: 5) }
+        self.send(.lookFit(min: lo, max: hi, normal: simd_normalize(normal)))
     }
 
     /// Selects every edge in the loop through a picked edge, around the face that faces the viewer most.

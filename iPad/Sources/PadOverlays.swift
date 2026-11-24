@@ -79,10 +79,13 @@ final class KeyboardWatcher {
     var overlap: CGFloat { max(keyboard, PadNumpad.shared.reserve) }
     private init() {
         NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main) { [weak self] note in
-            guard let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
-            // The keyboard's frame is in the coordinates of the screen that posted the notification.
-            let screenHeight = (note.object as? UIScreen)?.bounds.height ?? frame.maxY
-            MainActor.assumeIsolated { self?.keyboard = max(0, screenHeight - frame.minY) }
+            nonisolated(unsafe) let note = note
+            MainActor.assumeIsolated {
+                guard let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
+                // The keyboard's frame is in the coordinates of the screen that posted the notification.
+                let screenHeight = (note.object as? UIScreen)?.bounds.height ?? frame.maxY
+                self?.keyboard = max(0, screenHeight - frame.minY)
+            }
         }
         // A size field starts with its text selected (as on the Mac), so what is typed replaces it.
         NotificationCenter.default.addObserver(forName: UITextField.textDidBeginEditingNotification, object: nil, queue: .main) { note in

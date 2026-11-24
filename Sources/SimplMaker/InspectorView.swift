@@ -1187,7 +1187,7 @@ struct MoveInspector: View {
 /// What a moved or scaled sketch takes with it: everything made from it, or only what is made after the change.
 struct CarryPicker: View {
     let carry: Bool
-    let set: (Bool) -> Void
+    let set: @MainActor (Bool) -> Void
 
     var body: some View {
         LabeledContent("Follows it") {

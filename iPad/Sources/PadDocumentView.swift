@@ -35,6 +35,8 @@ struct PadDocumentView: View {
     @State private var systemBar = false
     /// The safe area's inset at each side: a vertical bar shows as a big inset on one side only (a phone's notch gives both sides the same).
     @State private var insetLeading: CGFloat = 0
+    /// The bottom safe area (the swipe bar's room): the timeline and the status bar sit above it.
+    @State private var bottomSafe: CGFloat = 0
     /// Whether the inset pattern is a bar's. Where the environment does not report the bar, this still finds it.
     private var barByInsets: Bool { (barInset >= 40 && insetLeading < 1) || (insetLeading >= 40 && barInset < 1) }
     /// The width of the Duo's vertical bar on the right (the safe area's trailing inset: the picture and its overlays reach under it).
@@ -78,6 +80,7 @@ struct PadDocumentView: View {
 
     var body: some View {
         let model = model
+        _ = bottomSafe  // read, so a change to the swipe bar's room (Panel.bottomSafe) draws the part again
         let guide = file.guide
         // (The tutorial's card is drawn at the very end of this chain, so that nothing floats above it.)
         return DocumentPanels(model: model, guide: guide, viewport: viewport(model), chrome:
@@ -93,7 +96,12 @@ struct PadDocumentView: View {
             })
             .withoutTutorialCard()
             .startCard(!viewer)
-            .onGeometryChange(for: [CGFloat].self) { [$0.safeAreaInsets.leading, $0.safeAreaInsets.trailing] } action: { insetLeading = $0[0]; barInset = $0[1] }
+            .onGeometryChange(for: [CGFloat].self) { [$0.safeAreaInsets.leading, $0.safeAreaInsets.trailing, $0.safeAreaInsets.bottom] } action: {
+                insetLeading = $0[0]; barInset = $0[1]
+                // (The keyboard can show up as bottom inset: only a swipe bar's room is taken.)
+                let room = min($0[2], 40)
+                if room != bottomSafe { bottomSafe = room; Panel.bottomSafe = room }
+            }
             .onChange(of: systemBar || barByInsets, initial: true) { duoBar = systemBar || barByInsets }
             // The keyboard covers the bottom of the screen instead of squeezing the view above it: the fields that are typed in move up by themselves.
             .ignoresSafeArea(.keyboard)
@@ -186,6 +194,15 @@ struct PadDocumentView: View {
             .onGeometryChange(for: CGSize.self) { $0.size } action: { windowSize = $0 }
             .environment(\.windowHeight, windowSize.height)
             .onChange(of: viewer, initial: true) { applyViewer() }
+            // The Render view in the viewer (a phone, the folded Duo): quality, turntable and the options in a sheet, in a bar at the bottom.
+            .overlay(alignment: .bottom) {
+                if viewer, model.renderView { PadPhoneRenderBar(model: model).padding(.bottom, Panel.bottomSafe + 12) }
+            }
+            .sheet(isPresented: Binding(get: { viewer && model.renderView && model.showRenderOptions }, set: { model.showRenderOptions = $0 })) {
+                RenderPanel(model: model, inSheet: true)
+                    .presentationDetents([.medium, .large])
+            }
+            .onChange(of: model.renderView) { if viewer, model.renderView { model.showRenderOptions = false } }
             .modifier(PadDialogs(model: model))
             .modifier(AccentScope(sketching: model.sketchSession != nil))
             .environment(\.completionModel, model)
@@ -232,7 +249,7 @@ struct PadDocumentView: View {
             if model.isPickingSketchPlane { model.cancelSketchPlanePick() }
             if model.pendingTool != nil { model.cancelTool() }
             if model.newFeature != nil { model.finishFeatureEdit() }
-            if model.workspace != .design { model.setWorkspace(.design) }
+            if model.workspace != .design && model.workspace != .render { model.setWorkspace(.design) }  // (Render is for looking)
             model.clearSelection()
             model.showSidebar = false; model.showInspector = false; model.showTimeline = false
         } else if let saved = beforeViewer {
@@ -549,11 +566,8 @@ struct PadViewerButtons: View {
     var body: some View {
         HStack(spacing: 0) {
             Menu("View", systemImage: "eye") { PadViewControls(model: model) }
-            Menu("Export", systemImage: "square.and.arrow.up") {
-                Button("STL") { model.export(format: .stl) }
-                Button("3MF") { model.export(format: .threeMF) }
-                Button("STEP") { model.export(format: .step) }
-            }
+            Button("Render", systemImage: model.renderView ? "camera.fill" : "camera") { model.setRenderView(!model.renderView) }
+            PadExportMenu(model: model, imports: false)
         }
         .labelStyle(.iconOnly)
         .font(.title3)
@@ -601,17 +615,22 @@ struct PadHelpMenu: View {
 /// The Export menu: the file formats, and the imports.
 struct PadExportMenu: View {
     let model: DocumentModel
+    /// The imports change the part: not in the viewer.
+    var imports = true
 
     var body: some View {
         Menu("Export", systemImage: "square.and.arrow.up") {
             Button("STL") { model.export(format: .stl) }
             Button("3MF") { model.export(format: .threeMF) }
             Button("STEP") { model.export(format: .step) }
-            Divider()
-            Button("Import STEP…") { model.importSTEP() }
-            Button("Import STL…") { model.importSTL() }
-            Button("Import SVG as sketch…") { model.importSVG() }
-            Button("Import DXF as sketch…") { model.importDXF() }
+            Button("Picture (PNG)") { model.exportImageWithDialog() }
+            if imports {
+                Divider()
+                Button("Import STEP…") { model.importSTEP() }
+                Button("Import STL…") { model.importSTL() }
+                Button("Import SVG as sketch…") { model.importSVG() }
+                Button("Import DXF as sketch…") { model.importDXF() }
+            }
         }
     }
 }
@@ -760,5 +779,32 @@ struct PiecesExportSheet: View {
                 }
             }
         }
+    }
+}
+
+/// The Render view's controls on a small screen: the quality segments, the turntable and a button for the options (which open in a sheet).
+struct PadPhoneRenderBar: View {
+    @Bindable var model: DocumentModel
+
+    var body: some View {
+        HStack(spacing: 6) {
+            SegmentedRow(items: RenderSettings.Quality.allCases.map { q in
+                SegmentedRow.Item(title: q.title, selected: model.renderSettings.matchingQuality == q) { model.renderSettings.apply(q) }
+            }, compact: true)
+            Button { model.renderSpinning.toggle() } label: {
+                Image(systemName: model.renderSpinning ? "pause.fill" : "play.fill").frame(width: 40, height: 40).contentShape(Circle())
+            }
+            .accessibilityLabel(model.renderSpinning ? "Pause the turntable" : "Turntable")
+            Button { model.showRenderOptions = true } label: {
+                Image(systemName: "slider.horizontal.3").frame(width: 40, height: 40).contentShape(Circle())
+            }
+            .accessibilityLabel("Render options")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.primary)
+        .padding(.vertical, 6)
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .background { Color.clear.panelMaterial(in: Capsule()) }
     }
 }

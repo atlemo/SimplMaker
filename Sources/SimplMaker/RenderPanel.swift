@@ -19,7 +19,11 @@ struct RenderPanel: View {
     private let defaults = RenderSettings()
     @State private var tab: Tab
 
-    init(model: DocumentModel, tab: Tab = .simple) {
+    /// Inside a sheet (a phone): as wide as the sheet, with no card of its own.
+    var inSheet = false
+
+    init(model: DocumentModel, tab: Tab = .simple, inSheet: Bool = false) {
+        self.inSheet = inSheet
         _model = Bindable(model)
         _tab = State(initialValue: tab)
     }
@@ -57,9 +61,8 @@ struct RenderPanel: View {
                 ScrollView { tabContent }.scrollBounceBehavior(.basedOnSize)
             }
         }
-        .frame(width: Self.width)
-        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))  // what scrolls ends at the panel's edge
-        .panelMaterial(in: .rect(cornerRadius: DS.Radius.window))
+        .frame(width: inSheet ? nil : Self.width)
+        .modifier(RenderPanelCard(inSheet: inSheet))
     }
 
     @ViewBuilder private var tabContent: some View {
@@ -358,5 +361,20 @@ private struct DirectionDial: View {
         .simultaneousGesture(TapGesture(count: 2).onEnded { bearing = reset })
         .accessibilityLabel("Light direction")
         .accessibilityValue("\(Int(bearing.rounded())) degrees")
+    }
+}
+
+/// The panel's card: rounded glass over the view, or nothing in a sheet (the sheet is the card).
+private struct RenderPanelCard: ViewModifier {
+    let inSheet: Bool
+
+    func body(content: Content) -> some View {
+        if inSheet {
+            content
+        } else {
+            content
+                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.window, style: .continuous))  // what scrolls ends at the panel's edge
+                .panelMaterial(in: .rect(cornerRadius: DS.Radius.window))
+        }
     }
 }

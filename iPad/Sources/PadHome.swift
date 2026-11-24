@@ -24,6 +24,10 @@ struct PadHome: View {
     @State private var deleting: PadPart?
     @State private var failure: String?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    /// A phone (or the folded Duo) only looks at parts: nothing here makes a new one or starts the tutorial, which is a part to draw in.
+    private var viewerOnly: Bool { horizontalSizeClass == .compact || verticalSizeClass == .compact }
 
     private var tab: Tab { Tab(rawValue: tabName) ?? .recents }
 
@@ -109,21 +113,30 @@ struct PadHome: View {
         VStack(spacing: compact ? 8 : 14) {
             let layout = sideBySide ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 12))
             layout {
-                Button { create(tutorial: false) } label: { Label("New Part", systemImage: "plus").frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent)
-                Button { importing = true } label: { Label("Open…", systemImage: "folder").frame(maxWidth: .infinity) }
-                    .buttonStyle(.bordered)
+                if !viewerOnly {
+                    Button { create(tutorial: false) } label: { Label("New Part", systemImage: "plus").frame(maxWidth: .infinity) }
+                        .buttonStyle(.borderedProminent)
+                }
+                if viewerOnly {
+                    Button { importing = true } label: { Label("Open…", systemImage: "folder").frame(maxWidth: .infinity) }
+                        .buttonStyle(.borderedProminent)  // the one way in, so the main button
+                } else {
+                    Button { importing = true } label: { Label("Open…", systemImage: "folder").frame(maxWidth: .infinity) }
+                        .buttonStyle(.bordered)
+                }
             }
             .controlSize(compact ? .regular : .large)
             .buttonBorderShape(.capsule)
-            Button { create(tutorial: true) } label: {
-                HStack(spacing: 5) {
-                    Text("New here?").foregroundStyle(.secondary)
-                    Text("Take the tutorial").foregroundStyle(DS.brand)
+            if !viewerOnly {
+                Button { create(tutorial: true) } label: {
+                    HStack(spacing: 5) {
+                        Text("New here?").foregroundStyle(.secondary)
+                        Text("Take the tutorial").foregroundStyle(DS.brand)
+                    }
+                    .font(compact ? .footnote : .callout)
                 }
-                .font(compact ? .footnote : .callout)
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -151,7 +164,7 @@ struct PadHome: View {
                     .frame(maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 240), spacing: 18)], spacing: 22) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 240), spacing: 18)], spacing: 22) {
                         ForEach(list) { part in card(part) }
                     }
                     .padding(.horizontal, 20)

@@ -239,7 +239,7 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
                     PrintPreviewPanel(model: model)
                         .transition(.opacity)
                 }
-                if model.renderView, model.showRenderOptions, model.sketchSession == nil {
+                if model.renderView, model.showRenderOptions, model.sketchSession == nil, !model.viewerOnly {  // (the viewer shows them in a sheet)
                     RenderPanel(model: model)
                         .transition(.opacity)
                 }
@@ -279,9 +279,6 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
         .overlay {
             if cardHere { TutorialCardLayer(model: model, guide: guide) }
         }
-#if os(iOS)
-        // The timeline and status bar sit as low as the Mac's: the panels' gap to the screen's bottom edge, not the safe area under it.
-        .ignoresSafeArea(.container, edges: .bottom)
-#endif
+        // (On the iPad the panels stay above the bottom safe area, where the system's swipe bar is: the editor adds that room to `Panel.bottomInset`.)
     }
 }

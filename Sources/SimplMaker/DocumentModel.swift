@@ -2111,7 +2111,7 @@ final class DocumentModel {
 
     func show(_ view: StandardView) { send(.standard(view)) }
 
-    private func send(_ command: CameraCommand) {
+    func send(_ command: CameraCommand) {
         cameraCommand = (command, (cameraCommand?.revision ?? 0) + 1)
     }
 

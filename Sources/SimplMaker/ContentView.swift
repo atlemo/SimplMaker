@@ -435,9 +435,13 @@ enum Panel {
     /// A panel's width plus its gaps: how much of the viewport it covers.
     static let margin: CGFloat = 2 * DS.Spacing.space4
 
+    /// The room the system keeps at the bottom edge for its swipe bar (the iPad's home indicator): the timeline and the status bar sit above
+    /// it. Set by the iPad's editor from the safe area; 0 on the Mac.
+    nonisolated(unsafe) static var bottomSafe: CGFloat = 0
+
     /// How much the timeline and status bar cover at the bottom of the viewport.
     static func bottomInset(timeline: Bool) -> CGFloat {
-        (timeline ? TimelineBar.height + inset : 0) + DS.ControlHeight.large + 2 * inset
+        (timeline ? TimelineBar.height + inset : 0) + DS.ControlHeight.large + 2 * inset + bottomSafe
     }
 }
 

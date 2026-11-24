@@ -72,7 +72,14 @@ struct PadDuoBar: ViewModifier {
                         }
                         .axisBehavior(.verticalPreferred)
                     }
-                    ToolbarItem(placement: .topBarTrailing) { PadExportMenu(model: model).tint(.primary) }
+                    if viewer {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Render", systemImage: model.renderView ? "camera.fill" : "camera") { model.setRenderView(!model.renderView) }
+                                .tint(.primary)
+                        }
+                        .axisBehavior(.verticalPreferred)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) { PadExportMenu(model: model, imports: !viewer).tint(.primary) }
                         .axisBehavior(.verticalPreferred)
                 }
         }

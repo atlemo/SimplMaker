@@ -545,6 +545,25 @@ struct PadViewport: UIViewRepresentable {
             view.setNeedsDisplay()
         }
 
+        /// A mouse wheel or a trackpad's two-finger scroll (a pointer attached to the iPad): the same bindings as on the Mac, by default
+        /// the wheel zooms about the pointer. (Fingers on the screen never come here.)
+        @objc func wheel(_ g: UIPanGestureRecognizer) { scrolled(g, wheel: true) }
+        @objc func trackpadScroll(_ g: UIPanGestureRecognizer) { scrolled(g, wheel: false) }
+
+        private func scrolled(_ g: UIPanGestureRecognizer, wheel: Bool) {
+            guard let view, let renderer, g.state == .began || g.state == .changed else { return }
+            let t = g.translation(in: view)
+            g.setTranslation(.zero, in: view)
+            let flags = g.modifierFlags
+            let modifier: NavModifier = flags.contains(.shift) ? .shift : flags.contains(.control) ? .control : flags.contains(.alternate) ? .option : .plain
+            var action = (wheel ? navigation.wheel : navigation.trackpad)[modifier]
+            if action == .roll && model?.sketchSession == nil { action = .none }
+            // Both are read in points (the wheel's notches arrive as a few points each), so the trackpad's scale serves for both.
+            navigation.navigate(&renderer.camera, action, input: .trackpad, dx: Float(t.x), dy: Float(t.y), viewHeight: Float(view.bounds.height),
+                                cursor: ZoomAnchor(point: g.location(in: view), viewSize: view.bounds.size))
+            view.setNeedsDisplay()
+        }
+
         @objc func rotate(_ g: UIRotationGestureRecognizer) {
             guard let view, let renderer else { return }
             // UIKit's rotation is clockwise; the Mac's (and `NavigationConfig.rotate`) is counter-clockwise.
@@ -631,6 +650,13 @@ struct PadViewport: UIViewRepresentable {
                 return
             }
             if model.viewerOnly {  // looking only: a tap lights up what is under it, and nothing opens for editing
+                if raw != 0, let last = lastTap, now - last.time < 0.35, hypot(p.x - last.point.x, p.y - last.point.y) < 24,
+                   PickID(raw: raw).isFace {  // a double tap on a face brings the camera in to it
+                    lastTap = nil
+                    model.zoomToFace(PickID(raw: raw))
+                    return
+                }
+                lastTap = (now, p)
                 model.hover(raw == 0 ? nil : PickID(raw: raw))
                 renderer.selected = model.highlighted
                 view.setNeedsDisplay()
@@ -862,7 +888,14 @@ struct PadViewport: UIViewRepresentable {
         let menu = UIEditMenuInteraction(delegate: c)
         view.addInteraction(menu)
         c.menuInteraction = menu
-        for g in [orbit, pan, pinch, rotate, tap, hold, hover] as [UIGestureRecognizer] {
+        // A pointer's scroll: no touches, only the wheel (discrete) or the trackpad's two fingers (continuous).
+        let wheel = UIPanGestureRecognizer(target: c, action: #selector(Coordinator.wheel))
+        wheel.allowedScrollTypesMask = .discrete
+        wheel.allowedTouchTypes = []
+        let scroll = UIPanGestureRecognizer(target: c, action: #selector(Coordinator.trackpadScroll))
+        scroll.allowedScrollTypesMask = .continuous
+        scroll.allowedTouchTypes = []
+        for g in [orbit, pan, pinch, rotate, tap, hold, hover, wheel, scroll] as [UIGestureRecognizer] {
             g.delegate = c
             view.addGestureRecognizer(g)
         }
