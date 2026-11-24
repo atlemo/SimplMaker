@@ -61,6 +61,57 @@ import Testing
         #expect(bad?.code == .invalidArguments)
     }
 
+    @Test func aPlaneSquareToAPathSitsWhereAskedAndFollowsItsPosition() async throws {
+        let t = await open()
+        let steps: [any AIOperation] = [
+            CreateSketchOperation(plane: "xz", name: nil, id: "route"),
+            EditSketchOperation(sketchID: "route", add: [.line(id: "rail", from: SketchPoint2(x: "0 mm", y: "0 mm"), to: SketchPoint2(x: "0 mm", y: "30 mm"))]),
+            try op("create_plane", ["path_sketch": "route", "path": ["rail"], "position": 0.5, "id": "mid"]),
+        ]
+        _ = try await t.service.batch(documentID: t.id, expectedRevision: nil, label: "Path plane", steps)
+        let frame = try #require(t.model.result?.planes["mid"])
+        #expect(abs(frame.origin.z - 15) < 1e-6 && abs(abs(frame.normal.z) - 1) < 1e-9, "\(frame)")
+        // Its position is a setting that can be changed afterwards (and shows up in get_feature).
+        let moved = try await t.service.modifyFeature(documentID: t.id, featureID: "mid", settings: ["position": 1], unlink: false)
+        #expect(moved.changes.first?.field == "position")
+        #expect(abs((try #require(t.model.result?.planes["mid"])).origin.z - 30) < 1e-6)
+        _ = try await run(t, "create_sketch", ["plane": "plane:mid", "id": "section"])
+        // Mixing the two ways, or a position with no path, is refused; so is a curve that is not there.
+        let both = await refusal { _ = try await run(t, "create_plane", ["base": "xy", "path_sketch": "route", "path": ["rail"]]) }
+        #expect(both?.code == .invalidArguments)
+        let lone = await refusal { _ = try await run(t, "create_plane", ["position": 0.5]) }
+        #expect(lone?.code == .invalidArguments)
+        let ghost = await refusal { _ = try await run(t, "create_plane", ["path_sketch": "route", "path": ["nope"]]) }
+        #expect(ghost?.code == .featureNotFound)
+    }
+
+    @Test func aPlaneCanBeTurnedAboutAnAxisOrAnEdge() async throws {
+        let t = await open()
+        try await box(t)
+        // About the X axis, 30°: the floor leans.
+        _ = try await run(t, "create_plane", ["base": "xy", "about": "x", "angle": 30, "offset": 0, "id": "lean"])
+        let lean = try #require(t.model.result?.planes["lean"])
+        #expect(abs(abs(lean.normal.z) - 3.0.squareRoot() / 2) < 1e-9 && abs(lean.normal.x) < 1e-9, "\(lean.normal)")
+        // About a straight edge of the box (found by its line), direction only, from the top face's plane.
+        let body = try #require(t.model.result?.body("base"))
+        let edge = try #require(body.edgeNames.first { name in (try? body.edgeLine(name)).map { abs(abs($0.direction.x) - 1) < 1e-9 } ?? false })
+        let r = try await run(t, "create_plane", ["base": "xy", "about": .string("edge:base/\(edge)"), "angle": 45, "direction_only": true, "id": "slope"])
+        #expect(r.message.contains("direction only"))
+        let feature = try await t.service.getFeature(documentID: t.id, featureID: "slope")
+        #expect(feature.feature.parameters["direction_only"] != nil && feature.feature.parameters["about"] != nil)
+        let moved = try await t.service.modifyFeature(documentID: t.id, featureID: "slope", settings: ["angle": 60], unlink: false)
+        #expect(moved.changes.first?.field == "angle")
+        // Refusals: not an axis, a ghost edge, direction_only alone, about with a path.
+        let bad = await refusal { _ = try await run(t, "create_plane", ["about": "w", "angle": 10]) }
+        #expect(bad?.code == .invalidArguments)
+        let ghost = await refusal { _ = try await run(t, "create_plane", ["about": "edge:base/nope", "angle": 10]) }
+        #expect(ghost?.code == .invalidArguments)
+        let lone = await refusal { _ = try await run(t, "create_plane", ["direction_only": true]) }
+        #expect(lone?.code == .invalidArguments)
+        let both = await refusal { _ = try await run(t, "create_plane", ["about": "x", "path_sketch": "route", "path": ["rail"]]) }
+        #expect(both?.code == .invalidArguments)
+    }
+
     @Test func aMoveShiftsABodyAndItsValuesCanBeChanged() async throws {
         let t = await open()
         try await box(t)

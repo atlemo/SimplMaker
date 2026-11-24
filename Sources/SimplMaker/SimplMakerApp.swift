@@ -269,6 +269,8 @@ struct SimplMakerCommands: Commands {
             ForEach(DesignTool.primitives) { tool in toolItem(tool) }
             Divider()
             toolItem(.plane, title: "Construction Plane")
+            toolItem(.planeAtAngle, title: "Construction Plane at Angle")
+            toolItem(.planeAlongPath, title: "Construction Plane Along Path")
             toolItem(.canvas, title: "Canvas (Reference Image)…")
             Divider()
             Button("Rebuild") { LetterShortcut.perform(model) { model?.regenerate() } }

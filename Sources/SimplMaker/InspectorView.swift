@@ -103,7 +103,7 @@ struct InspectorView: View {
                 }
             }
             .formStyle(.grouped)
-        } else if let tool = model.pendingTool, tool != .measure, tool != .sectionAnalysis {
+        } else if let tool = model.pendingTool, tool != .measure, tool != .sectionAnalysis, tool != .planeAlongPath, tool != .planeAtAngle {
             // A tool waiting for picks has no feature yet, so there is nothing to edit: say what it waits for, and how to finish.
             Form {
                 Section(tool.rawValue) {
@@ -1381,11 +1381,29 @@ struct PlaneInspector: View {
 
     var body: some View {
         Section("Plane") {
-            LabeledContent("From", value: model.planeName(plane.base))
+            if let along = plane.along {
+                LabeledContent("Square to", value: "\(model.featureName(along.path.sketch)) path")
+                edit.row("Position", along.position, "Edit Position") { $0.along?.position = $1 }
+                Text("0 is the start of the path, 1 its end.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                LabeledContent("From", value: model.planeName(plane.base))
+            }
             edit.row("Offset", plane.offset, "Edit Offset") { $0.offset = $1 }
             edit.row("Angle", plane.angle, "Edit Angle") { $0.angle = $1 }
-            Picker("Turned about", selection: Binding(get: { plane.axis }, set: { a in edit.update("Change Axis") { $0.axis = a } })) {
-                ForEach(PlaneAxis.allCases, id: \.self) { Text("\($0.rawValue) axis").tag($0) }
+            if let turn = plane.turn {
+                LabeledContent("Turned about", value: model.axisName(turn.axis))
+                Toggle("Use axis direction only", isOn: Binding(get: { turn.directionOnly }, set: { on in
+                    edit.update("Change Axis Direction") { $0.turn?.directionOnly = on }
+                }))
+                .help("Project the axis onto the base and turn about a point on the base, instead of about the axis itself")
+                if turn.directionOnly {
+                    edit.row("Pivot across", turn.pivotU ?? "0 mm", "Edit Pivot") { $0.turn?.pivotU = $1 }
+                    edit.row("Pivot along", turn.pivotV ?? "0 mm", "Edit Pivot") { $0.turn?.pivotV = $1 }
+                }
+            } else {
+                Picker("Turned about", selection: Binding(get: { plane.axis }, set: { a in edit.update("Change Axis") { $0.axis = a } })) {
+                    ForEach(PlaneAxis.allCases, id: \.self) { Text("\($0.rawValue) axis").tag($0) }
+                }
             }
             if plane.extent != nil { Button("Reset Size") { edit.update("Reset Plane Size") { $0.extent = nil } } }
             Button("New Sketch on This Plane") { model.beginSketch(on: .plane(id)) }

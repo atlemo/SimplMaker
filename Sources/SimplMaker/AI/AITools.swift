@@ -808,7 +808,7 @@ enum AITools {
                 description: """
                 Pulls a closed sketch profile along a path, like the Sweep tool. Use it for pipes, rails, handles, wires, rims and trim: \
                 a circle swept along a curved path is a bent tube; a rectangle swept along a line is a bar. The PROFILE and the PATH are \
-                drawn in two different sketches: the profile on a plane square to the start of the path, the path on the plane it runs in \
+                drawn in two different sketches: the profile on a plane square to the start of the path (create_plane with path and position 0 makes exactly that), the path on the plane it runs in \
                 (a line, a polyline or arcs; the curves must connect).
 
                 Arguments: document_id; sketch_id (required: the sketch with the profile); profiles (required, as for create_extrude: \
@@ -1045,6 +1045,20 @@ enum AITools {
                 along the base's normal, default 0); angle (optional, degrees to tilt, default 0); axis (optional: "horizontal" (default) tilts \
                 about the base's x axis, "vertical" about its y axis); name, id (give it an id: later steps use "plane:<id>"), expected_revision.
 
+                Turned about an axis: pass about ("x", "y", "z", "edge:<body>/<name>" for a straight or circular edge, or "face:<body>/<name>" \
+                for a round face) to turn the base by angle (degrees, right-hand rule about the axis's direction; negative turns the other way) \
+                about that line, then offset moves it along its new normal. direction_only (true/false) projects the axis onto the base and \
+                pivots about the base's origin, so a sloped plane for an angled bracket keeps its place on the base. A flat face as the base \
+                and one of its own edges as about is the usual setup.
+
+                Along a path: pass path (curve ids of ONE sketch, "curve:<sketch>/<curve>", or plain curve ids with path_sketch) instead of \
+                base to get a plane square to that path: its normal is the path's direction there. position (optional, 0 to 1 of the path's \
+                length, 0 = start, 1 = end, default 0.5 = the middle; a parameter name works; outside 0 to 1 it is held at the nearest end) sets where. \
+                Sketch a profile on it and sweep that profile along the same path, or loft through several such planes. The plane's x axis \
+                lies sideways in the path sketch's plane and its y axis is the sketch's normal. offset (along the path there) and angle \
+                still apply. A path of several curves must join end to end; it starts at its loose end (the first one met going through \
+                the curves in the order you give them).
+
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}; use \
                 "plane:<id of the feature>" as plane in create_sketch, create_mirror and create_plane. offset and angle can be changed later with \
                 modify_feature. Fails with FEATURE_NOT_FOUND, INVALID_ARGUMENTS, INVALID_VALUE, USER_BUSY or STALE_REVISION.
@@ -1055,6 +1069,11 @@ enum AITools {
                     "offset": quantity("Distance along the base's normal (default 0)."),
                     "angle": ["type": ["number", "string"], "description": "Tilt in degrees (default 0)."],
                     "axis": ["type": "string", "enum": ["horizontal", "vertical"], "description": "Tilt about the base's x (horizontal) or y (vertical) axis."],
+                    "about": ["type": "string", "description": "Turn the base about this axis instead of its own x or y axis: x, y, z, an edge id or a round face id."],
+                    "direction_only": ["type": "boolean", "description": "With about: use only the axis's direction, projected onto the base, and pivot about the base's origin."],
+                    "path_sketch": ["type": "string", "description": "The sketch holding the path, when path gives plain curve ids."],
+                    "path": ["type": "array", "items": ["type": "string"], "description": "Curve ids of one sketch, joined end to end: the plane stands square to this path. Leave base out."],
+                    "position": ["type": ["number", "string"], "description": "With path: how far along it, 0 (start) to 1 (end); default 0.5."],
                     "name": ["type": "string", "description": "A name for the feature (default Plane1…)."],
                     "id": ["type": "string", "description": "Your own id for the feature: 1–40 letters, digits, _ or -."],
                     "expected_revision": expectedRevision,

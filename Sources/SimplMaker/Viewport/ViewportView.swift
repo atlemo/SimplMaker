@@ -52,6 +52,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
     /// A hole's move dot is being dragged.
     private var holeMoveDrag = false
     private var sectionDrag = false
+    private var pathPlaneDrag = false
     private var planeResizeDrag = false
     /// The Move/Rotate manipulator: what it draws, the part under the pointer, and the drag in progress.
     private var manipulatorView: ManipulatorView?
@@ -687,7 +688,7 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             return .pointingHand
         }
         if planeResizeDrag { return .closedHand }
-        if model.hovered?.kind == .handle || model.hovered?.kind == .planeEdge { return handleDrag || holeMoveDrag || sectionDrag ? .closedHand : .openHand }
+        if model.hovered?.kind == .handle || model.hovered?.kind == .planeEdge { return handleDrag || holeMoveDrag || sectionDrag || pathPlaneDrag ? .closedHand : .openHand }
         return .arrow
     }
 
@@ -927,6 +928,10 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             planeResizeDrag = true
             model?.beginPlaneResize(PickID(raw: renderer.hovered))
             updateCursor()
+        } else if let renderer, renderer.hovered == PickID.pathHandle.raw {
+            pathPlaneDrag = true
+            model?.beginPathPlaneDrag()
+            updateCursor()
         } else if let renderer, renderer.hovered == PickID.sectionHandle.raw {
             let ray = renderer.camera.ray(at: p, viewSize: bounds.size)
             sectionDrag = true
@@ -969,6 +974,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
             model.moveHole(rayOrigin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
                            direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)),
                            pointsPerMM: pointsPerMM)
+            refreshOverlay()
+            return
+        }
+        if pathPlaneDrag, let renderer, let model {
+            let ray = renderer.camera.ray(at: location(event), viewSize: bounds.size)
+            model.dragPathPlane(rayOrigin: SIMD3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z)),
+                                direction: SIMD3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z)),
+                                snapping: !event.modifierFlags.contains(.option))  // ⌥ turns the snapping off
             refreshOverlay()
             return
         }
@@ -1058,9 +1071,14 @@ final class ViewportMTKView: MTKView, NSPopoverDelegate, NSTextFieldDelegate {
 
     override func mouseUp(with event: NSEvent) {
         if windowDrag { windowDrag = false; return }
-        defer { lastDrag = nil; rollDragRaw = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; sectionDrag = false; planeResizeDrag = false; manipulatorDrag = nil; updateCursor() }
+        defer { lastDrag = nil; rollDragRaw = nil; sketchDrag = false; handleDrag = false; holeMoveDrag = false; sectionDrag = false; pathPlaneDrag = false; planeResizeDrag = false; manipulatorDrag = nil; updateCursor() }
         if manipulatorDrag != nil {
             model?.endManipulatorDrag()
+            refreshOverlay()
+            return
+        }
+        if pathPlaneDrag {
+            model?.endPathPlaneDrag()
             refreshOverlay()
             return
         }

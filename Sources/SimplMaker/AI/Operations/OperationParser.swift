@@ -293,11 +293,24 @@ enum AIOperationParser {
                                         name: try a.string("name"), id: try a.string("id"))
 
         case "create_plane":
-            try a.rejectUnknown(["document_id", "base", "offset", "angle", "axis", "name", "id", "expected_revision"], in: tool)
+            try a.rejectUnknown(["document_id", "base", "offset", "angle", "axis", "about", "direction_only", "path_sketch", "path", "position", "name", "id", "expected_revision"], in: tool)
             let axisText = try a.string("axis") ?? "horizontal"
             guard axisText == "horizontal" || axisText == "vertical" else { throw AIError(.invalidArguments, "axis must be \"horizontal\" or \"vertical\".") }
+            let pathSketch = try a.string("path_sketch")
+            let path = arguments["path"] == nil ? [] : try ids(a, "path").map { $0.contains(":") || pathSketch == nil ? $0 : AIEntityRef.curve(sketch: pathSketch!, id: $0).string }
+            if path.isEmpty, arguments["position"] != nil || pathSketch != nil {
+                throw AIError(.invalidArguments, "position and path_sketch go with path.", reason: "Pass path (curve ids) to make a plane square to a path, or leave position out.")
+            }
+            let about = try a.string("about")
+            if about != nil, !path.isEmpty { throw AIError(.invalidArguments, "about and path do not go together.", reason: "A plane along a path stands square to the path; about turns a base plane about an axis.") }
+            if about == nil, arguments["direction_only"] != nil { throw AIError(.invalidArguments, "direction_only goes with about.", reason: "Pass about (\"x\", \"y\", \"z\" or an edge id) to turn about an axis.") }
+            if !path.isEmpty, arguments["base"] != nil {
+                throw AIError(.invalidArguments, "A plane along a path has no base.", reason: "Leave base out, or leave path out. offset and angle still work on a path plane.")
+            }
             return CreatePlaneOperation(base: try a.string("base") ?? "xy", offset: try a.quantity("offset", kind: .length) ?? "0 mm",
                                         angle: try a.quantity("angle", kind: .angle) ?? "0 deg", vertical: axisText == "vertical",
+                                        path: path, position: try a.quantity("position", kind: .none) ?? "0.5",
+                                        about: about, directionOnly: try a.bool("direction_only") ?? false,
                                         name: try a.string("name"), id: try a.string("id"))
 
         case "create_move":

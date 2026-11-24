@@ -184,6 +184,8 @@ final class DocumentModel {
             if pendingTool == nil { reselecting = nil; splitBodies = nil }  // cancelling the tool ends a re-pick too
             if pendingTool != .pattern { resetPatternPicks() }
             if pendingTool != oldValue { toolMissed = false }
+            if pendingTool != .planeAlongPath { pathPlane = nil; pathPlaneTrack = [] }
+            if pendingTool != .planeAtAngle { anglePlane = nil }
         }
     }
     /// The Split tool has its bodies and waits for the face, plane or profile to split them with.
@@ -307,6 +309,13 @@ final class DocumentModel {
     @ObservationIgnored var bodyBoxesCache: (revision: Int, hidden: Set<FeatureID>, value: [(min: SIMD3<Float>, max: SIMD3<Float>)])?
     /// The cutting plane's arrow being dragged: the offset it started from, and where along the arrow the grab was.
     @ObservationIgnored var sectionDrag: (offset: Double, base: SIMD3<Double>, direction: SIMD3<Double>, grab: Double)?
+    /// The Plane Along Path tool's choices while it runs (see PlaneAlongPath.swift); nil when it isn't.
+    var pathPlane: PathPlaneDraft?
+    /// The Plane at Angle tool's choices while it runs (see PlaneAtAngle.swift); nil when it isn't.
+    var anglePlane: AnglePlaneDraft?
+    /// The picked path as world points, evenly spaced along it, and whether its dot is being dragged.
+    @ObservationIgnored var pathPlaneTrack: [SIMD3<Double>] = []
+    @ObservationIgnored var pathPlaneDragging = false
 
     /// Turns the print preview on or off; on, it opens its options (and the render view, which restyles the bodies too, goes off).
     func setPrintPreview(_ on: Bool) {
@@ -561,6 +570,7 @@ final class DocumentModel {
             switch f.kind {
             case .sketch: return "Sketch"
             case .image: return "Canvas"
+            case .plane: return "Plane"
             default: return "Body"
             }
         } ?? "") : "Items"
@@ -2099,9 +2109,22 @@ final class DocumentModel {
         }
         sketchClosedKeepingView = keepingView
         dismissedSketchBar = sketchSession?.featureID
+        let spentPlane = sketchSession.flatMap(constructionPlaneDrawnOn)
         sketchSession = nil
         overlayRevision += 1
+        if let spentPlane { setHidden([spentPlane], true) }
         regenerate()
+    }
+
+    /// The construction plane a sketch was drawn on, when it has something drawn and the plane is still showing: once the user
+    /// leaves the sketch the plane has done its job, so it is hidden (its eye in the browser brings it back).
+    private func constructionPlaneDrawnOn(_ session: SketchSession) -> FeatureID? {
+        guard case .plane(let id)? = document.features.first(where: { $0.id == session.featureID }).flatMap({ f -> PlaneRef? in
+            if case .sketch(let sf) = f.kind { return sf.plane } else { return nil }
+        }), !document.hidden.contains(id), planeFeatures.contains(where: { $0.id == id }) else { return nil }
+        let drawn = session.sketch
+        guard !drawn.curves.isEmpty || !drawn.texts.isEmpty else { return nil }
+        return id
     }
 
     private func lookAt(_ frame: Frame) {
@@ -2295,6 +2318,8 @@ final class DocumentModel {
         }
         addMeasureOverlay(to: &o)
         addSectionOverlay(to: &o)
+        addPathPlaneOverlay(to: &o)
+        addAnglePlaneOverlay(to: &o)
         if manipulatedFeature == nil {
             // Each arrow is its shaft and then its head (the same segment again, drawn as a triangle).
             for h in dragHandles {
@@ -2332,6 +2357,7 @@ final class DocumentModel {
         if let session = sketchSession { return SketchOverlayBuilder.labels(session) }
         if showsOriginPlanes { return SketchOverlayBuilder.originPlaneLabels(size: sketchPlaneSize) }
         if pendingTool == .measure { return measureLabels() }
+        if pendingTool == .planeAlongPath { return pathPlaneLabels() }
         if sectionActive { return sectionLabels() }
         return []  // the drag handle's size is an editable field; see the viewport
     }

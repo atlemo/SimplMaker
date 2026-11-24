@@ -505,6 +505,7 @@ public struct PlaneExtent: Codable, Hashable, Sendable {
 /// A construction plane: another plane (an origin plane, a flat face or another construction
 /// plane) turned about one of its axes, then moved along its normal.
 public struct PlaneFeature: Codable, Hashable, Sendable {
+    /// The plane it starts from. Not used when `along` is set.
     public var base: PlaneRef
     public var offset: String
     public var angle: String
@@ -512,10 +513,49 @@ public struct PlaneFeature: Codable, Hashable, Sendable {
     /// The size it is drawn at, once an edge has been dragged; until then a square sized to the model.
     /// Changing it rebuilds nothing (see `CADDocument.ignoringPresentation`).
     public var extent: PlaneExtent?
+    /// Set: the plane starts square to a sketch path, at a point along it, instead of on `base`. `offset` (along
+    /// the path's direction there) and `angle` still apply on top, so a path plane can be nudged or tilted.
+    public var along: PlanePath?
+    /// Set: `base` is turned by `angle` about this axis or edge (instead of about its own x or y axis), then moved
+    /// `offset` along its new normal. `axis` is not used.
+    public var turn: PlaneTurn?
     public init(base: PlaneRef, offset: String = "10 mm", angle: String = "0 deg", axis: PlaneAxis = .horizontal,
-                extent: PlaneExtent? = nil) {
-        self.base = base; self.offset = offset; self.angle = angle; self.axis = axis; self.extent = extent
+                extent: PlaneExtent? = nil, along: PlanePath? = nil, turn: PlaneTurn? = nil) {
+        self.base = base; self.offset = offset; self.angle = angle; self.axis = axis; self.extent = extent; self.along = along
+        self.turn = turn
     }
+    /// A plane turned by `angle` from `base` about `axis` (an origin axis, a straight or circular edge, or a round face).
+    public init(base: PlaneRef, turnedBy angle: String, about turn: PlaneTurn, offset: String = "0 mm") {
+        self.init(base: base, offset: offset, angle: angle, turn: turn)
+    }
+    /// A plane square to `path`, `position` of the way along it (0 = start, 1 = end).
+    public init(along path: CurveRef, position: String = "0.5", offset: String = "0 mm", angle: String = "0 deg") {
+        self.init(base: .xy, offset: offset, angle: angle, along: PlanePath(path: path, position: position))
+    }
+}
+
+/// How a construction plane is turned from its base: about an axis (an origin axis, an edge of a body, or the axis of a round
+/// face). With `directionOnly`, only the axis's direction counts: it is projected onto the base plane and the plane pivots about
+/// a point on the base, (`pivotU`, `pivotV`) in the base's own frame, or the base's origin when there is none.
+public struct PlaneTurn: Codable, Hashable, Sendable {
+    public var axis: PatternAxis
+    public var directionOnly: Bool
+    public var pivotU: String?
+    public var pivotV: String?
+    public init(axis: PatternAxis, directionOnly: Bool = false, pivotU: String? = nil, pivotV: String? = nil) {
+        self.axis = axis; self.directionOnly = directionOnly; self.pivotU = pivotU; self.pivotV = pivotV
+    }
+}
+
+/// Where a construction plane stands on a path of sketch curves: square to the path, so the plane's normal is the
+/// path's direction there. Its x axis lies in the path sketch's plane (sideways to the path) and its y axis is the
+/// sketch's normal.
+public struct PlanePath: Codable, Hashable, Sendable {
+    public var path: CurveRef
+    /// How far along the path, as a fraction of its length (an expression without a unit): 0 is the start, 1 the end.
+    /// Outside 0…1 it is held at the nearest end.
+    public var position: String
+    public init(path: CurveRef, position: String = "0.5") { self.path = path; self.position = position }
 }
 
 /// Mirrors bodies across a plane, or along a line: an origin axis or a straight edge. Along a line, the

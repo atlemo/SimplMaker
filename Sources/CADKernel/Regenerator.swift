@@ -404,13 +404,51 @@ public enum Regenerator {
     }
 
     public static func plane(_ f: PlaneFeature, _ r: RegenResult) throws -> Frame {
-        let base = try resolvePlane(f.base, r)
+        let base = try f.along.map { try pathFrame($0, r) } ?? resolvePlane(f.base, r)
         let angle = try r.parameters.value(of: f.angle, kind: .angle)
         let offset = try r.parameters.value(of: f.offset, kind: .length)
+        if let turn = f.turn { return try turned(base, by: angle, about: turn, offset: offset, r) }
         let k = simd_normalize(f.axis == .horizontal ? base.xAxis : base.yAxis)
         let normal = simd_normalize(turned(base.normal, about: k, by: angle))
         let x = simd_normalize(turned(base.xAxis, about: k, by: angle))
         return Frame(origin: base.origin + offset * normal, normal: normal, xAxis: x)
+    }
+
+    /// `base` turned by `angle` (radians) about an axis, then moved `offset` along its new normal. With `directionOnly` the axis is
+    /// projected onto the base and the pivot is a point of the base: (pivotU, pivotV) in its frame, or its origin.
+    static func turned(_ base: Frame, by angle: Double, about turn: PlaneTurn, offset: Double, _ r: RegenResult) throws -> Frame {
+        let axis = try line(turn.axis, r)
+        let n = simd_normalize(base.normal)
+        var pivot = axis.origin, k = simd_normalize(axis.direction)
+        if turn.directionOnly {
+            k -= simd_dot(k, n) * n
+            guard simd_length(k) > 1e-6 else {
+                throw KernelError(message: "the axis stands square to the base plane, so it has no direction along it · pick an axis that runs along the plane")
+            }
+            k = simd_normalize(k)
+            let u = try turn.pivotU.map { try r.parameters.value(of: $0, kind: .length) } ?? 0
+            let v = try turn.pivotV.map { try r.parameters.value(of: $0, kind: .length) } ?? 0
+            pivot = base.point(u, v)
+        }
+        let normal = simd_normalize(turned(n, about: k, by: angle))
+        let x = simd_normalize(turned(base.xAxis, about: k, by: angle))
+        let origin = pivot + turned(base.origin - pivot, about: k, by: angle)
+        return Frame(origin: origin + offset * normal, normal: normal, xAxis: x)
+    }
+
+    /// The plane square to a sketch path, at a point along it: the origin on the path, the normal along the path
+    /// there, the x axis sideways in the path sketch's plane and the y axis the sketch's normal.
+    public static func pathFrame(_ along: PlanePath, _ r: RegenResult) throws -> Frame {
+        let sk: SketchResult
+        do { sk = try sketchResult(along.path.sketch, r) }
+        catch { throw KernelError(message: "the sketch with the path is missing or failed") }
+        let fraction = try r.parameters.value(of: along.position, kind: .none)
+        let place: SketchPathLocator.Location
+        do { place = try SketchPathLocator(curves: along.path.curves, in: sk.solved).location(at: fraction) }
+        catch let e as SketchPathError { throw KernelError(message: e.description) }
+        let tangent = simd_normalize(place.tangent.x * sk.frame.xAxis + place.tangent.y * sk.frame.yAxis)
+        let side = simd_normalize(simd_cross(sk.frame.normal, tangent))
+        return Frame(origin: sk.frame.point(place.point.x, place.point.y), normal: tangent, xAxis: side)
     }
 
     /// A pattern's direction or axis: a point on it and its unit direction.

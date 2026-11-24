@@ -215,6 +215,26 @@ struct DocumentPanels<Viewport: View, Chrome: View>: View {
             }
         }
         .animation(.easeOut(duration: DS.Duration.fast), value: model.pendingTool == .measure)
+        // The Plane Along Path tool's options float at the top right too, so the path on the left stays in view.
+        .overlay(alignment: .topTrailing) {
+            if model.pathPlane != nil, model.pendingTool == .planeAlongPath, model.sketchSession == nil {
+                PathPlanePanel(model: model)
+                    .padding(.top, Panel.inset + topChrome)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset + toggleRoom)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.pendingTool == .planeAlongPath)
+        // So do the Plane at Angle tool's.
+        .overlay(alignment: .topTrailing) {
+            if model.anglePlane != nil, model.pendingTool == .planeAtAngle, model.sketchSession == nil {
+                AnglePlanePanel(model: model)
+                    .padding(.top, Panel.inset + topChrome)
+                    .padding(.trailing, model.showInspector ? Panel.inspectorWidth + Panel.margin : Panel.inset + toggleRoom)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: DS.Duration.fast), value: model.pendingTool == .planeAtAngle)
         // A feature with no drag handle gets its OK and Cancel here, above the status bar.
         .overlay(alignment: .bottom) {
             FeatureDoneBar(model: model)

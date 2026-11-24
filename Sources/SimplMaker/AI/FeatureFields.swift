@@ -164,13 +164,19 @@ enum FeatureFields {
             return [FieldSpec(name: "angle", unit: .angle, positive: false,
                               read: { if case .draft(let x) = $0 { return x.angle } else { return nil } },
                               write: { kind, text in if case .draft(var x) = kind { x.angle = text; kind = .draft(x) } })]
-        case .plane:
+        case .plane(let planeFeature):
             func plane(_ name: String, _ unit: UnitKind, _ path: WritableKeyPath<PlaneFeature, String>) -> FieldSpec {
                 FieldSpec(name: name, unit: unit, positive: false,
                           read: { if case .plane(let x) = $0 { return x[keyPath: path] } else { return nil } },
                           write: { kind, text in if case .plane(var x) = kind { x[keyPath: path] = text; kind = .plane(x) } })
             }
-            return [plane("offset", .length, \.offset), plane("angle", .angle, \.angle)]
+            var out = [plane("offset", .length, \.offset), plane("angle", .angle, \.angle)]
+            if planeFeature.along != nil {  // only a plane on a path has a position along it
+                out.append(FieldSpec(name: "position", unit: .none, positive: false,
+                                     read: { if case .plane(let x) = $0 { return x.along?.position } else { return nil } },
+                                     write: { kind, text in if case .plane(var x) = kind, x.along != nil { x.along?.position = text; kind = .plane(x) } }))
+            }
+            return out
         case .move:
             func move(_ name: String, _ unit: UnitKind, _ path: WritableKeyPath<MoveFeature, String>) -> FieldSpec {
                 FieldSpec(name: name, unit: unit, positive: false,

@@ -152,8 +152,24 @@ struct FeatureDescriber {
             out["face"] = faces([f.face])
             if !f.alongside.isEmpty { out["alongside"] = .list(f.alongside) }
         case .plane(let f):
-            out["base"] = plane(f.base); out["offset"] = length(f.offset); out["angle"] = angle(f.angle)
-            out["axis"] = .text(f.axis.rawValue.lowercased())
+            if let along = f.along {
+                out["path"] = path(along.path); out["position"] = number(along.position)
+            } else {
+                out["base"] = plane(f.base)
+            }
+            out["offset"] = length(f.offset); out["angle"] = angle(f.angle)
+            if let turn = f.turn {
+                switch turn.axis {
+                case .x: out["about"] = .text("x")
+                case .y: out["about"] = .text("y")
+                case .z: out["about"] = .text("z")
+                case .edge(let e): out["about"] = .text(AIEntityRef.edge(e).string)
+                case .cylinder(let face): out["about"] = .text(AIEntityRef.face(face).string)
+                }
+                out["direction_only"] = .flag(turn.directionOnly)
+            } else {
+                out["axis"] = .text(f.axis.rawValue.lowercased())
+            }
         case .mirror(let f):
             out["bodies"] = .list(f.bodies); operation(f.operation)
             switch f.line {

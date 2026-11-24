@@ -81,7 +81,7 @@ extension DocumentModel {
             }
             add("Finish Sketch", "Sketch", keywords: "done exit close") { self.finishSketch() }
         } else {
-            let groups: [(String, [DesignTool])] = [("Create", DesignTool.shapes + DesignTool.primitives + [.plane, .canvas]),
+            let groups: [(String, [DesignTool])] = [("Create", DesignTool.shapes + DesignTool.primitives + [.plane, .planeAtAngle, .planeAlongPath, .canvas]),
                                                     ("Modify", DesignTool.modifiers + [.mirror, .pattern]),
                                                     ("Inspect", DesignTool.inspect)]
             for (group, tools) in groups {

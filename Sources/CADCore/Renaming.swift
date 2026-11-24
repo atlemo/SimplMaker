@@ -86,7 +86,11 @@ extension Feature.Kind {
             self = .move(f)
         case .rotate(var f): f.angle = change(f.angle); self = .rotate(f)
         case .scale(var f): f.factor = change(f.factor); self = .scale(f)
-        case .plane(var f): f.offset = change(f.offset); f.angle = change(f.angle); self = .plane(f)
+        case .plane(var f):
+            f.offset = change(f.offset); f.angle = change(f.angle)
+            if var a = f.along { a.position = change(a.position); f.along = a }
+            if var t = f.turn { t.pivotU = t.pivotU.map(change); t.pivotV = t.pivotV.map(change); f.turn = t }
+            self = .plane(f)
         case .mirror: break
         case .pattern(var f): f.count = change(f.count); f.spacing = change(f.spacing); self = .pattern(f)
         case .shell(var f): f.thickness = change(f.thickness); self = .shell(f)
@@ -182,7 +186,13 @@ extension Feature {
             case .parts: break
             }
         case .layOnFloor(let f): add(f.face.body); f.alongside.forEach { add($0) }
-        case .plane(let f): add(f.base.feature)
+        case .plane(let f):
+            if let a = f.along { add(a.path.sketch) } else { add(f.base.feature) }
+            switch f.turn?.axis {
+            case .edge(let e)?: add(e.body)
+            case .cylinder(let face)?: add(face.body)
+            default: break
+            }
         case .mirror(let f):
             f.bodies.forEach { add($0) }
             if case .edge(let e)? = f.line { add(e.body) } else if f.line == nil { add(f.plane.feature) }

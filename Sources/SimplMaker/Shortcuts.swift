@@ -219,7 +219,7 @@ enum ShortcutCommand: Hashable, Identifiable, Sendable {
     }
 
     static let sections: [Section] = [
-        Section(title: "Create", commands: (DesignTool.shapes + DesignTool.primitives + [.plane, .canvas]).map { .tool($0) }),
+        Section(title: "Create", commands: (DesignTool.shapes + DesignTool.primitives + [.plane, .planeAtAngle, .planeAlongPath, .canvas]).map { .tool($0) }),
         Section(title: "Modify", commands: (DesignTool.modifiers + [.mirror, .pattern]).map { .tool($0) }),
         Section(title: "Inspect", commands: DesignTool.inspect.map { .tool($0) }),
         Section(title: "View", commands: StandardView.allCases.map { .view($0) } + [

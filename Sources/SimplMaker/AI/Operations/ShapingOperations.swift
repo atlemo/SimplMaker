@@ -276,6 +276,12 @@ struct CreatePlaneOperation: AIOperation {
     let offset: String
     let angle: String
     let vertical: Bool
+    /// Curve ids of one sketch: the plane then stands square to this path, `position` of the way along it.
+    var path: [String] = []
+    var position: String = "0.5"
+    /// Turn `base` about this axis ("x", "y", "z", an edge id or a round face id) instead of about its own x or y axis.
+    var about: String? = nil
+    var directionOnly = false
     let name: String?
     let id: String?
     var toolName: String { "create_plane" }
@@ -284,7 +290,9 @@ struct CreatePlaneOperation: AIOperation {
 
     func apply(to doc: inout CADDocument, context: OperationContext) throws -> OperationOutcome {
         try CADService.refuseRolledBack(doc)
+        if !path.isEmpty { return try applyAlongPath(to: &doc, context: context) }
         let baseRef = try AIValues.plane(base, in: doc)
+        let turn = try about.map { try Self.turn($0, directionOnly: directionOnly, context) }
         if case .face(let face) = baseRef {
             guard let body = context.built.body(face.body), (try? body.faceFrame(face.face)) != nil else {
                 throw AIError(.invalidArguments, "\"\(base)\" is not a flat face of a body that exists.")
@@ -295,9 +303,60 @@ struct CreatePlaneOperation: AIOperation {
         let featureID = try AIValues.newFeatureID(id, in: doc)
         let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("Plane")
         doc.addFeature(Feature(id: featureID, name: featureName,
-                               .plane(PlaneFeature(base: baseRef, offset: offset, angle: angle, axis: vertical ? .vertical : .horizontal))))
+                               .plane(PlaneFeature(base: baseRef, offset: offset, angle: angle, axis: vertical ? .vertical : .horizontal, turn: turn))))
         return OperationOutcome(featureID: featureID,
-                                message: "Created \(featureName): \(offset) from \(AIEntityRef.text(for: baseRef)), turned \(angle). Use it as plane \"plane:\(featureID)\" in create_sketch, create_mirror or create_plane.")
+                                message: "Created \(featureName): \(offset) from \(AIEntityRef.text(for: baseRef)), turned \(angle)\(about.map { " about \($0)\(directionOnly ? " (its direction only)" : "")" } ?? ""). Use it as plane \"plane:\(featureID)\" in create_sketch, create_mirror or create_plane.")
+    }
+}
+
+extension CreatePlaneOperation {
+    /// "x", "y", "z", a straight or circular edge, or a round face, as the axis a plane turns about.
+    fileprivate static func turn(_ text: String, directionOnly: Bool, _ context: OperationContext) throws -> PlaneTurn {
+        let axis: PatternAxis
+        switch text.lowercased() {
+        case "x": axis = .x
+        case "y": axis = .y
+        case "z": axis = .z
+        default:
+            switch AIEntityRef(text) {
+            case .edge(let ref)?:
+                let body = try AIChecks.body(ref.body, field: "about", context)
+                guard body.hasEdge(ref.edge), (try? body.edgeLine(ref.edge)) != nil || (try? body.edgeCircle(ref.edge)) != nil else {
+                    throw AIError(.invalidArguments, "\"\(text)\" is not a straight or circular edge of \(ref.body).", reason: "Take a line-shaped edge from get_body, or use \"x\", \"y\" or \"z\".")
+                }
+                axis = .edge(ref)
+            case .face(let ref)?:
+                let body = try AIChecks.body(ref.body, field: "about", context)
+                guard body.hasFace(ref.face), (try? body.measure(.face(ref.face)))?.geometry == .cylinder else {
+                    throw AIError(.invalidArguments, "\"\(text)\" is not a round (cylindrical) face of \(ref.body).", reason: "Take a cylinder's side face from get_body, an edge id, or use \"x\", \"y\" or \"z\".")
+                }
+                axis = .cylinder(ref)
+            default:
+                throw AIError(.invalidArguments, "about \"\(text)\" is not \"x\", \"y\", \"z\", an edge id or a round face id.", reason: "An edge id looks like \"edge:<body>/<name>\".")
+            }
+        }
+        return PlaneTurn(axis: axis, directionOnly: directionOnly)
+    }
+
+    /// A plane square to a sketch path. offset (along the path's direction there) and angle still apply on top.
+    fileprivate func applyAlongPath(to doc: inout CADDocument, context: OperationContext) throws -> OperationOutcome {
+        let (pathSketch, curves) = try AIChecks.curves(path, field: "path", context)
+        _ = try AIValues.evaluate(offset, kind: .length, field: "offset", positive: false, values: context.values)
+        _ = try AIValues.evaluate(angle, kind: .angle, field: "angle", positive: false, values: context.values)
+        _ = try AIValues.evaluate(position, kind: .none, field: "position", positive: false, values: context.values)
+        let along = CurveRef(sketch: pathSketch, curves: curves)
+        // A path that does not join up, or has no length, is refused here rather than as a failed plane later.
+        if let built = context.built.sketches[pathSketch] {
+            do { _ = try SketchPathLocator(curves: curves, in: built.solved) }
+            catch let e as SketchPathError { throw AIError(.invalidArguments, "The path cannot be followed: \(e.description).", reason: "Pick curves of one sketch that join end to end, or one curve.") }
+        }
+        let featureID = try AIValues.newFeatureID(id, in: doc)
+        let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("Plane")
+        var feature = PlaneFeature(along: along, position: position, offset: offset, angle: angle)
+        feature.axis = vertical ? .vertical : .horizontal
+        doc.addFeature(Feature(id: featureID, name: featureName, .plane(feature)))
+        return OperationOutcome(featureID: featureID,
+                                message: "Created \(featureName): square to the path in \(pathSketch), \(position) of the way along it (0 = start, 1 = end). Use it as plane \"plane:\(featureID)\" in create_sketch, create_mirror or create_plane.")
     }
 }
 

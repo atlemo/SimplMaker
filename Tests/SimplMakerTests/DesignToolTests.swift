@@ -279,6 +279,188 @@ import Testing
         #expect(model.dragHandle?.label == "Diameter")
     }
 
+    private func pathModel() async throws -> DocumentModel {
+        var s = Sketch()
+        let a = s.addPoint(0, 0), b = s.addPoint(0, 30), c = s.addPoint(20, 30)
+        for (p, x, y) in [(a, 0.0, 0.0), (b, 0, 30), (c, 20, 30)] { s.constrain(.fix(p, x: x, y: y)) }
+        s.addLine(a, b, id: "P1")
+        s.addLine(b, c, id: "P2")
+        var doc = CADDocument()
+        doc.features = [Feature(id: "path", name: "Path", .sketch(SketchFeature(plane: .xy, sketch: s)))]
+        return try await loaded(doc)
+    }
+
+    @Test func planeAlongPathWaitsForACurveThenPreviewsAndMakesThePlane() async throws {
+        let model = try await pathModel()
+        let p1 = try #require(model.result?.sketches["path"]?.solved.curves.firstIndex { $0.id == "P1" })
+        model.run(.planeAlongPath)
+        #expect(model.pendingTool == .planeAlongPath && model.pathPlane?.path == nil)
+        #expect(model.pathPlaneFrame == nil, "nothing to show before a path is picked")
+        model.click(PickID(sketchCurve: p1, slot: try slot(model, "path")), additive: false)
+        let draft = try #require(model.pathPlane)
+        #expect(Set(try #require(draft.path).curves) == ["P1", "P2"], "the whole chain joined to the curve is the path")
+        #expect(draft.position == "0.5" && model.pendingTool == .planeAlongPath)
+        // Nothing is in the timeline yet, but the plane is on show: 25 mm of the 50 along (the corner is at 30).
+        #expect(model.document.features.count == 1)
+        let preview = try #require(model.pathPlaneFrame)
+        #expect(abs(preview.origin.x - 0) < 1e-6 && abs(preview.origin.y - 25) < 1e-6, "\(preview.origin)")
+        #expect(model.sketchOverlay().moveHandle.first?.id == PickID.pathHandle.raw, "the dot sits on the path")
+        #expect(model.dimensionLabels().first?.text == "0.5")
+
+        // Dragging the dot: a ray straight down at y = 15 is 15 of the 50 mm.
+        model.beginPathPlaneDrag()
+        model.dragPathPlane(rayOrigin: SIMD3(0, 15, 100), direction: SIMD3(0, 0, -1))
+        model.endPathPlaneDrag()
+        #expect(model.pathPlane?.position == "0.3", "\(model.pathPlane?.position ?? "")")
+        #expect(abs((try #require(model.pathPlaneFrame)).origin.y - 15) < 1e-6)
+        // ... and typing a position or an offset works the same way.
+        model.setPathPlane(position: "1", offset: "2 mm")
+        let end = try #require(model.pathPlaneFrame)
+        #expect(abs(end.origin.x - 22) < 1e-6 && abs(end.origin.y - 30) < 1e-6, "\(end.origin)")
+
+        model.setPathPlane(position: "0.3", offset: "0 mm")
+        #expect(model.commitPathPlane())
+        guard case .plane(let plane) = try lastFeature(model).kind else { Issue.record("expected a plane"); return }
+        #expect(plane.along?.position == "0.3" && plane.offset == "0 mm")
+        #expect(model.pendingTool == nil && model.pathPlane == nil)
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+        let frame = try #require(model.result?.planes[try lastFeature(model).id])
+        #expect(abs(frame.origin.y - 15) < 1e-9 && abs(abs(frame.normal.y) - 1) < 1e-9, "\(frame)")
+    }
+
+    @Test func planeAlongPathCancelsLeavingNothingBehind() async throws {
+        let model = try await pathModel()
+        let p2 = try #require(model.result?.sketches["path"]?.solved.curves.firstIndex { $0.id == "P2" })
+        model.run(.planeAlongPath)
+        #expect(!model.commitPathPlane(), "no path yet: OK does nothing")
+        model.click(PickID(sketchCurve: p2, slot: try slot(model, "path")), additive: false)
+        #expect(model.pathPlane?.path != nil)
+        model.clearPlanePath()
+        #expect(model.pathPlane?.path == nil && model.pendingTool == .planeAlongPath, "the cross in the panel goes back to picking")
+        model.click(PickID(sketchCurve: p2, slot: try slot(model, "path")), additive: false)
+        model.cancelTool()
+        #expect(model.pathPlane == nil && model.pathPlaneFrame == nil)
+        #expect(model.document.features.count == 1)
+        #expect(model.sketchOverlay().moveHandle.isEmpty)
+    }
+
+    @Test func planeAlongPathStartsFromACurveThatIsAlreadySelected() async throws {
+        let model = try await pathModel()
+        let p1 = try #require(model.result?.sketches["path"]?.solved.curves.firstIndex { $0.id == "P1" })
+        model.selection = [PickID(sketchCurve: p1, slot: try slot(model, "path"))]
+        model.run(.planeAlongPath)
+        #expect(model.pathPlane?.path != nil && model.pathPlaneFrame != nil)
+    }
+
+    /// A 40 x 20 x 10 box "b" on the floor.
+    private func boxModel() async throws -> DocumentModel {
+        var doc = CADDocument()
+        doc.features = [Feature(id: "b", name: "Box", .primitive(PrimitiveFeature(kind: .box, plane: .xy, u: "0 mm", v: "0 mm", width: "40 mm", length: "20 mm", height: "10 mm")))]
+        let model = try await loaded(doc)
+        try await settle(model)
+        return model
+    }
+
+    /// The pick of the box's straight edge along X at the top front (y = -10, z = 10).
+    private func topFrontEdge(_ model: DocumentModel) throws -> PickID {
+        let box = try #require(model.meshes.firstIndex { $0.id == "b" })
+        let body = try #require(model.result?.body("b"))
+        let names = model.meshes[box].mesh.edgeNames
+        let index = try #require(names.indices.first { i in
+            guard let l = try? body.edgeLine(names[i]) else { return false }
+            return abs(abs(l.direction.x) - 1) < 1e-9 && abs(l.origin.z - 10) < 1e-6 && abs(l.origin.y + 10) < 1e-6
+        })
+        return PickID(body: box, edge: index)
+    }
+
+    @Test func planeAtAngleTakesABaseAndAnAxisAndPreviewsTheTurnedPlane() async throws {
+        let model = try await boxModel()
+        let box = try #require(model.meshes.firstIndex { $0.id == "b" })
+        let top = try #require(model.meshes[box].mesh.faceNames.firstIndex(of: "b.top"))
+        model.run(.planeAtAngle)
+        #expect(model.pendingTool == .planeAtAngle && model.anglePlane?.base == nil)
+        #expect(model.anglePlaneOutcome.frame == nil, "nothing to show yet")
+        model.click(PickID(body: box, face: top), additive: false)
+        guard case .face(let face)? = model.anglePlane?.base else { Issue.record("expected the top face as the base"); return }
+        #expect(face.face == "b.top" && model.anglePlane?.axis == nil)
+        model.click(try topFrontEdge(model), additive: false)
+        guard case .edge(let edge)? = model.anglePlane?.axis else { Issue.record("expected the edge as the axis"); return }
+        #expect(edge.body == "b")
+        #expect(model.highlighted.count == 2, "the base and the axis stay lit")
+        model.setAnglePlane { $0.angle = "30 deg" }
+        let frame = try #require(model.anglePlaneOutcome.frame)
+        // The top face (z = 10, normal up) leans 30° about its front edge: the normal tips by 30° off vertical.
+        #expect(abs(abs(frame.normal.z) - (3.0.squareRoot() / 2)) < 1e-6, "\(frame.normal)")
+        #expect(model.document.features.count == 1, "nothing is in the timeline until OK")
+        #expect(model.commitAnglePlane())
+        guard case .plane(let plane) = try lastFeature(model).kind else { Issue.record("expected a plane"); return }
+        #expect(plane.turn != nil && plane.angle == "30 deg" && plane.turn?.directionOnly == false)
+        #expect(model.pendingTool == nil && model.anglePlane == nil)
+        try await settle(model)
+        #expect(model.result?.errors.isEmpty == true, "\(model.result?.errors ?? [:])")
+    }
+
+    @Test func planeAtAngleAxisFromTheMenuDirectionOnlyAndPivotPick() async throws {
+        let model = try await pathModel()
+        model.run(.planeAtAngle)
+        model.setAnglePlane { $0.base = .xy }
+        #expect(model.anglePlaneOutcome.frame == nil, "no axis yet")
+        model.chooseAngleAxis(.x)
+        model.setAnglePlane { $0.angle = "90 deg" }
+        #expect(model.anglePlaneOutcome.frame != nil)
+        // Only the direction counts: the Z axis is square to the floor, so there is nothing to turn about, and the panel says why.
+        model.chooseAngleAxis(.z)
+        model.setAnglePlane { $0.directionOnly = true }
+        #expect(model.anglePlaneOutcome.frame == nil && model.anglePlaneOutcome.problem?.contains("square to the base") == true)
+        #expect(!model.commitAnglePlane(), "OK does nothing while the plane can't be made")
+        model.chooseAngleAxis(.x)
+        // The pivot is taken where the next click on the base lands.
+        model.setAnglePlane { $0.choosingPivot = true }
+        model.clickRay = (SIMD3(0, 12.345, 50), SIMD3(0, 0, -1))
+        model.click(PickID(plane: 0), additive: false)
+        #expect(model.anglePlane?.pivotU == "0 mm" && model.anglePlane?.pivotV == "12.35 mm" && model.anglePlane?.choosingPivot == false,
+                "\(model.anglePlane?.pivotU ?? "") \(model.anglePlane?.pivotV ?? "")")
+        let frame = try #require(model.anglePlaneOutcome.frame)
+        #expect(abs(frame.origin.y - 12.35) < 1e-9 && abs(abs(frame.origin.z) - 12.35) < 1e-9, "turned 90° about the point: \(frame.origin)")
+        model.cancelTool()
+        #expect(model.anglePlane == nil && model.document.features.count == 1)
+    }
+
+    @Test func aConstructionPlaneHidesOnceASketchDrawnOnItIsLeft() async throws {
+        var s = Sketch()
+        let a = s.addPoint(0, 0), b = s.addPoint(10, 0)
+        s.constrain(.fix(a, x: 0, y: 0)); s.constrain(.fix(b, x: 10, y: 0))
+        s.addLine(a, b, id: "L")
+        var doc = CADDocument()
+        doc.features = [Feature(id: "up", name: "Up", .plane(PlaneFeature(base: .xy, offset: "20 mm"))),
+                        Feature(id: "sk", name: "Sketch1", .sketch(SketchFeature(plane: .plane("up"), sketch: s))),
+                        Feature(id: "fl", name: "Floor sketch", .sketch(SketchFeature(plane: .xy, sketch: s)))]
+        let model = try await loaded(doc)
+        // Entering the sketch leaves the plane showing; leaving it, with a line drawn, hides it.
+        model.editSketch("sk")
+        #expect(model.sketchSession != nil && !model.isHidden("up"))
+        model.finishSketch()
+        #expect(model.isHidden("up"), "the plane has done its job")
+        // Bring it back by hand; a sketch on an origin plane touches no plane, and an empty sketch on the plane leaves it be.
+        model.setHidden(["up"], false)
+        model.editSketch("fl")
+        model.finishSketch()
+        #expect(!model.isHidden("up"))
+        model.beginSketch(on: .plane("up"))
+        model.finishSketch()
+        #expect(!model.isHidden("up"), "nothing was drawn")
+    }
+
+    @Test func nearestPointOnAPathAndFractionText() {
+        let hit = DocumentModel.nearest(ray: (SIMD3(5, 2, 10), SIMD3(0, 0, -1)), segment: (SIMD3(0, 0, 0), SIMD3(10, 0, 0)))
+        #expect(abs(hit.t - 0.5) < 1e-9 && abs(hit.distance - 2) < 1e-9)
+        let past = DocumentModel.nearest(ray: (SIMD3(50, 0, 10), SIMD3(0, 0, -1)), segment: (SIMD3(0, 0, 0), SIMD3(10, 0, 0)))
+        #expect(past.t == 1, "held at the end of the segment")
+        #expect(DocumentModel.fractionText(0.30000000001) == "0.3" && DocumentModel.fractionText(1.2) == "1" && DocumentModel.fractionText(-1) == "0")
+        #expect(DocumentModel.fractionText(0.12345) == "0.123")
+    }
+
     @Test func hidingChangesTheViewNotTheModel() async throws {
         let model = try await loaded(.demo())
         let revision = model.sceneRevision

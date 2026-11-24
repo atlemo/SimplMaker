@@ -9,6 +9,17 @@ extension DocumentModel {
     func featureName(_ id: FeatureID) -> String { document.features.first { $0.id == id }?.name ?? "missing" }
 
     /// "XY plane", "Plane1" (a construction plane) or "Face e.end".
+    /// An axis a plane turns about, as the Inspector and the tool's panel say it.
+    func axisName(_ axis: PatternAxis) -> String {
+        switch axis {
+        case .x: return "X axis"
+        case .y: return "Y axis"
+        case .z: return "Z axis"
+        case .edge(let e): return "Edge \(e.edge)"
+        case .cylinder(let f): return "Axis of \(f.face)"
+        }
+    }
+
     func planeName(_ plane: PlaneRef) -> String {
         switch plane {
         case .xy: return "XY plane"

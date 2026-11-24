@@ -14,7 +14,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     case extrude = "Extrude", revolve = "Revolve", sweep = "Sweep", twistSweep = "Twist Sweep", loft = "Loft", rib = "Rib", hole = "Hole"
     case box = "Box", cylinder = "Cylinder", sphere = "Sphere", torus = "Torus", coil = "Coil", pipe = "Pipe"
     case fillet = "Fillet", chamfer = "Chamfer", thread = "Thread", move = "Move", scale = "Scale", combine = "Combine", split = "Split Body", layOnFloor = "Lay on Floor"
-    case plane = "Plane", mirror = "Mirror", pattern = "Pattern", shell = "Shell", draft = "Draft", canvas = "Canvas"
+    case plane = "Plane", planeAlongPath = "Plane Along Path", planeAtAngle = "Plane at Angle", mirror = "Mirror", pattern = "Pattern", shell = "Shell", draft = "Draft", canvas = "Canvas"
     case project = "Project"
     case measure = "Measure", sectionAnalysis = "Section Analysis"
 
@@ -26,7 +26,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     static let primitives: [DesignTool] = [.box, .cylinder, .sphere, .torus, .coil]
     static let modifiers: [DesignTool] = [.fillet, .chamfer, .hole, .thread, .shell, .draft, .project, .move, .scale, .layOnFloor, .combine, .split]
     /// Construction planes, copies of bodies, and reference images.
-    static let construct: [DesignTool] = [.plane, .mirror, .pattern, .canvas]
+    static let construct: [DesignTool] = [.plane, .planeAtAngle, .planeAlongPath, .mirror, .pattern, .canvas]
     /// Tools that read the model without changing it.
     static let inspect: [DesignTool] = [.measure, .sectionAnalysis]
 
@@ -55,6 +55,8 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .split: return "split-body"
         case .layOnFloor: return "lay-on-floor"
         case .plane: return "plane"
+        case .planeAlongPath: return "plane-along-path"
+        case .planeAtAngle: return "plane-at-angle"
         case .mirror: return "flip-horizontal-2"
         case .pattern: return "pattern"
         case .shell: return "shell"
@@ -95,6 +97,8 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .split: return "s"  // with ⇧ (see defaultModifiers): every plain letter is taken
         case .layOnFloor: return "l"  // with ⇧ too (L for lay)
         case .plane: return "n"
+        case .planeAtAngle: return "r"  // with ⇧ (see defaultModifiers): every plain letter is taken
+        case .planeAlongPath: return "n"  // with ⇧ (see defaultModifiers): every plain letter is taken
         case .mirror: return "q"
         case .pattern: return "t"
         case .canvas: return "v"
@@ -105,7 +109,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Held with the letter by default. Every plain letter has a tool (or Appearance), so a tool added since has ⇧ with one.
-    var defaultModifiers: KeyChord.Modifiers { self == .draft || self == .split || self == .layOnFloor || self == .sectionAnalysis || self == .twistSweep ? .shift : [] }
+    var defaultModifiers: KeyChord.Modifiers { self == .draft || self == .split || self == .layOnFloor || self == .sectionAnalysis || self == .twistSweep || self == .planeAlongPath || self == .planeAtAngle ? .shift : [] }
 
     /// The tooltip: the name, its current shortcut, and what the tool does.
     var help: String {
@@ -137,6 +141,8 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .split: return "divide bodies into new bodies along a plane, a face or a sketch profile"
         case .layOnFloor: return "click a flat face and the body turns and drops to the floor, that face down and flush"
         case .plane: return "a construction plane, offset or tilted from a plane or flat face, to sketch on or mirror across"
+        case .planeAtAngle: return "a construction plane turned by an angle from a plane or flat face, about an axis or an edge, for sloped sketches like an angled bracket"
+        case .planeAlongPath: return "a construction plane square to a sketch curve, which you slide along it to a spot on the path (for a profile to sweep, or sections to loft)"
         case .mirror: return "copy bodies across a plane, or along an axis or a straight edge"
         case .pattern: return "copy bodies in a row or around an axis"
         case .shell: return "hollow a body, leaving the picked faces open"
@@ -166,7 +172,7 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
     var acceptsWholeBody: Bool { picksBodies || self == .measure }
 
     /// Shows the origin planes while it waits, to pick one (mirror across a plane).
-    var showsPlanes: Bool { needsPlane || self == .mirror || self == .split || self == .sectionAnalysis }
+    var showsPlanes: Bool { needsPlane || self == .planeAtAngle || self == .mirror || self == .split || self == .sectionAnalysis }
 
     /// Works on whole bodies: a click on any face picks the body (and so does a body in the browser).
     var picksBodies: Bool {
@@ -196,6 +202,8 @@ enum DesignTool: String, CaseIterable, Identifiable, Sendable {
         case .layOnFloor: return kind == .face  // the face that goes down
         case .scale: return kind == .face || kind == .edge || kind == .region || kind == .sketchCurve  // bodies, or sketches
         case .plane, .canvas: return kind == .plane || kind == .face
+        case .planeAlongPath: return kind == .sketchCurve
+        case .planeAtAngle: return kind == .plane || kind == .face || kind == .edge
         case .mirror: return kind == .face || kind == .edge || kind == .plane  // bodies, then the plane
         case .pattern: return kind == .face || kind == .edge  // bodies (faces), and a straight edge for the direction
         case .shell: return kind == .face  // the faces to leave open
@@ -231,6 +239,8 @@ extension DocumentModel {
             return
         }
         pendingTool = nil
+        if tool == .planeAlongPath { beginPathPlane(); return }
+        if tool == .planeAtAngle { beginAnglePlane(); return }
         if !tool.acceptsWholeBody { selection.removeAll(where: \.isWholeBody) }  // a body from the browser isn't a face
         if perform(tool) { return }
         pendingTool = tool
@@ -317,6 +327,11 @@ extension DocumentModel {
             let sketch = profile(of: pick)?.sketch ?? curve(of: pick)?.sketch
             guard sketch == source.sketch else { return }
         }
+        if tool == .planeAtAngle { anglePlaneClick(pick); return }
+        if tool == .planeAlongPath {
+            if let curve = curve(of: pick) { choosePlanePath(curve) }
+            return
+        }
         if tool.needsPlane || tool == .hole {
             if place(tool, on: pick) { pendingTool = nil }
             return
@@ -378,6 +393,8 @@ extension DocumentModel {
         case .move: return "Click the bodies or sketches to move or rotate"
         case .scale: return "Click the bodies or sketches to scale"
         case .plane: return "Click an origin plane, a construction plane or a flat face to start the new plane from"
+        case .planeAtAngle: return anglePlanePrompt
+        case .planeAlongPath: return pathPlane?.path == nil ? "Click a sketch curve for the plane to follow" : "Drag the dot along the path, or type the position · Return to make the plane"
         case .canvas: return "Click a plane or flat face to place the image on, then choose the image"
         case .mirror:
             return pickedBodies.isEmpty ? "Click the bodies to mirror"
@@ -635,6 +652,10 @@ extension DocumentModel {
             return false
         case .measure:
             return false  // reads the picks without making a feature, and stays until Esc
+        case .planeAtAngle:
+            return commitAnglePlane()
+        case .planeAlongPath:
+            return commitPathPlane()  // Return: make the plane (nothing happens before a path is picked)
         case .sectionAnalysis:
             // Reads the model without making a feature: with a plane, face or sketch already picked it cuts there at once.
             guard startSectionFromSelection() else { return false }

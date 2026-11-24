@@ -46,6 +46,8 @@ struct PickID: Hashable, Sendable {
     static let dialHandle = PickID(raw: 0x7000_0003)
     /// The arrow that slides the section analysis's cutting plane in and out.
     static let sectionHandle = PickID(raw: 0x7000_0004)
+    /// The dot slid along the path by the Plane Along Path tool.
+    static let pathHandle = PickID(raw: 0x7000_0005)
     /// Which side of a construction plane a plane-edge pick is: 0 bottom, 1 right, 2 top, 3 left.
     var planeEdge: Int { Int(raw & 0xF) }
     /// Which of a feature's arrows this picks (0 for any other pick).
