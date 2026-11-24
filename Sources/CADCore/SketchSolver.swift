@@ -36,8 +36,11 @@ public enum SketchSolver {
     /// least-squares compromise (re-solve without them to satisfy the constraints exactly).
     public static func solve(_ sketch: inout Sketch, dimensionValues: [EntityID: Double],
                              soft: [SoftTarget] = [], softWeight: Double = 0.05) -> SolveResult {
-        // Pattern copies take no part: they are made again from the originals afterwards.
+        // Pattern copies take no part: they are made again from the originals afterwards. Unless a constraint or dimension
+        // names one: then the copies stay, each standing for its original moved by the pattern's own placement (see
+        // System.deriveCopies), so what holds a copy moves the original.
         if sketch.points.contains(where: { Sketch.isGenerated($0.id) }) {
+            if sketch.constrainsPatternCopies { return solveTogether(&sketch, dimensionValues: dimensionValues, soft: soft, softWeight: softWeight) }
             let generated = sketch.takeGenerated()
             defer { sketch.restoreGenerated(generated) }
             return solve(&sketch, dimensionValues: dimensionValues, soft: soft, softWeight: softWeight)
@@ -264,6 +267,11 @@ public enum SketchSolver {
         var beziers: [EntityID: [EntityID]] = [:]      // start, control 1, control 2, end
         var straightBeziers: [EntityID: (EntityID, EntityID)] = [:]  // fixed, straight projected ones: two points on their line
         var ellipses: [EntityID: (center: EntityID, major: EntityID, minor: EntityID)] = [:]
+        /// Pattern copies that follow their originals: the original's point, moved by the pattern's placement.
+        enum Placement { case shift(SIMD2<Double>), turn(Double, about: EntityID) }
+        var derivedPoints: [EntityID: (source: EntityID, placement: Placement)] = [:]
+        /// Copies of circles, by the circle they copy: the same radius.
+        var derivedRadius: [EntityID: EntityID] = [:]
         var terms: [([Double]) -> Double] = []
         /// The constraint or dimension each term belongs to (nil for the solver's own terms), for naming what conflicts.
         var owners: [EntityID?] = []
@@ -276,6 +284,7 @@ public enum SketchSolver {
                     pointSlot[p.id] = initial.count; initial += [p.x, p.y]
                 }
             }
+            if !s.patterns.isEmpty { deriveCopies(s) }
             // The sketch's own axes are fixed lines through the origin (y = 0 and x = 0), so a constraint can name them.
             for (axis, direction) in [(SketchMirrorDef.xAxis, SIMD2(1.0, 0)), (SketchMirrorDef.yAxis, SIMD2(0, 1.0))] {
                 fixedPoints[axis + "#0"] = .zero
@@ -286,7 +295,9 @@ public enum SketchSolver {
                 switch c.geometry {
                 case .line(let a, let b): lines[c.id] = (a, b)
                 case .circle(let center, let r):
-                    if holdRadii { heldRadius[c.id] = r } else { radiusSlot[c.id] = initial.count; initial.append(r) }
+                    if derivedRadius[c.id] != nil {
+                        // a copy: its radius is its original's
+                    } else if holdRadii { heldRadius[c.id] = r } else { radiusSlot[c.id] = initial.count; initial.append(r) }
                     circleCenters[c.id] = center
                 case .arc(let center, let start, let end):
                     arcs[c.id] = (center, start); arcEnds[c.id] = end; circleCenters[c.id] = center
@@ -301,9 +312,53 @@ public enum SketchSolver {
 
         func p(_ id: EntityID, _ x: [Double]) -> SIMD2<Double> {
             if let i = pointSlot[id] { return SIMD2(x[i], x[i + 1]) }
+            if let d = derivedPoints[id] {
+                let q = p(d.source, x)
+                switch d.placement {
+                case .shift(let s): return q + s
+                case .turn(let angle, let about):
+                    let c = p(about, x), v = q - c, sn = sin(angle), cs = cos(angle)
+                    return c + SIMD2(cs * v.x - sn * v.y, sn * v.x + cs * v.y)
+                }
+            }
             return fixedPoints[id] ?? .zero
         }
+
+        /// Makes the pattern copies follow their originals. A copy's placement is read off the copies as they stand (they were
+        /// made from the originals by exactly that move or turn), so a constraint on a copy is a constraint on its original.
+        mutating func deriveCopies(_ s: Sketch) {
+            let definitions = Dictionary(uniqueKeysWithValues: s.patterns.map { ($0.id, $0) })
+            let positions = Dictionary(s.points.map { ($0.id, $0.position) }, uniquingKeysWith: { first, _ in first })
+            func split(_ id: EntityID) -> (key: String, definition: SketchPatternDef, original: EntityID)? {
+                let parts = id.split(separator: "~", maxSplits: 2, omittingEmptySubsequences: false)
+                guard parts.count == 3, let definition = definitions[String(parts[0])], !Sketch.isGenerated(String(parts[2])) else { return nil }
+                return (parts[0] + "~" + parts[1], definition, String(parts[2]))
+            }
+            var placements: [String: Placement] = [:]
+            for p in s.points where Sketch.isGenerated(p.id) {
+                guard let (key, definition, original) = split(p.id), placements[key] == nil, let from = positions[original] else { continue }
+                switch definition.kind {
+                case .rectangular: placements[key] = .shift(p.position - from)
+                case .circular:
+                    guard let c = positions[definition.center] else { continue }
+                    let d0 = from - c, d1 = p.position - c
+                    guard vlen(d0) > 1e-9 else { continue }  // on the centre: another point of the copy shows the turn
+                    placements[key] = .turn(atan2(vcross(d0, d1), vdot(d0, d1)), about: definition.center)
+                }
+            }
+            for p in s.points where Sketch.isGenerated(p.id) {
+                guard let (key, _, original) = split(p.id), let placement = placements[key], positions[original] != nil else { continue }
+                derivedPoints[p.id] = (original, placement)
+                fixedPoints[p.id] = nil
+            }
+            for c in s.curves where Sketch.isGenerated(c.id) {
+                guard case .circle(let center, _) = c.geometry, derivedPoints[center] != nil, let (_, _, original) = split(c.id),
+                      case .circle? = s.curve(original)?.geometry else { continue }
+                derivedRadius[c.id] = original
+            }
+        }
         func radius(_ id: EntityID, _ x: [Double]) -> Double {
+            if let source = derivedRadius[id] { return radius(source, x) }
             if let i = radiusSlot[id] { return x[i] }
             if let r = heldRadius[id] { return r }
             if let a = arcs[id] { return vlen(p(a.start, x) - p(a.center, x)) }
@@ -533,10 +588,15 @@ public enum SketchSolver {
         func write(_ x: [Double], into s: inout Sketch) {
             for i in s.points.indices {
                 if let k = pointSlot[s.points[i].id] { s.points[i].x = x[k]; s.points[i].y = x[k + 1] }
+                else if derivedPoints[s.points[i].id] != nil {  // a copy goes where its original now puts it
+                    let q = p(s.points[i].id, x)
+                    s.points[i].x = q.x; s.points[i].y = q.y
+                }
             }
             for i in s.curves.indices {
-                if case .circle(let c, _) = s.curves[i].geometry, let k = radiusSlot[s.curves[i].id] {
-                    s.curves[i].geometry = .circle(center: c, radius: x[k])
+                if case .circle(let c, _) = s.curves[i].geometry {
+                    if let k = radiusSlot[s.curves[i].id] { s.curves[i].geometry = .circle(center: c, radius: x[k]) }
+                    else if derivedRadius[s.curves[i].id] != nil { s.curves[i].geometry = .circle(center: c, radius: radius(s.curves[i].id, x)) }
                 }
             }
         }
@@ -647,7 +707,7 @@ extension SketchSolver {
     }
 
     private static func solveLocallyInOneGo(_ sketch: inout Sketch, dimensionValues: [EntityID: Double]) -> SolveResult {
-        if sketch.points.contains(where: { Sketch.isGenerated($0.id) }) {
+        if sketch.points.contains(where: { Sketch.isGenerated($0.id) }), !sketch.constrainsPatternCopies {
             let generated = sketch.takeGenerated()
             defer { sketch.restoreGenerated(generated) }
             return solveLocallyInOneGo(&sketch, dimensionValues: dimensionValues)

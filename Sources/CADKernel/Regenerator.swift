@@ -823,6 +823,7 @@ public enum Regenerator {
         }
         var solved = f.sketch
         try followProjections(&solved, frame: frame, r)
+        if solved.constrainsPatternCopies { solved.refreshGenerated(r.parameters) }  // a copy that is held to something must stand where its pattern puts it
         let solve = SketchSolver.solveLocally(&solved, dimensionValues: values)  // a changed parameter moves only what it drives
         guard solve.status == .solved else {
             let diagnosis = SketchSolver.diagnose(f.sketch, dimensionValues: values)

@@ -107,6 +107,16 @@ extension Sketch {
         id.contains("~") ? String(id.split(separator: "~", maxSplits: 1, omittingEmptySubsequences: false)[0]) : nil
     }
 
+    /// Whether a constraint or dimension names a copy a pattern made. The solver then keeps the copies and works them out from their
+    /// originals, so what holds a copy moves the original (a circle tangent to the next circle of its ring, say).
+    public var constrainsPatternCopies: Bool {
+        guard !patterns.isEmpty else { return false }
+        let made = Set(patterns.map(\.id))
+        func copy(_ id: EntityID) -> Bool { Sketch.pattern(ofGenerated: id).map(made.contains) ?? false }
+        return constraints.contains { Sketch.references($0.kind).contains(where: copy) }
+            || dimensions.contains { Sketch.references($0.kind).contains(where: copy) }
+    }
+
     /// What a pattern of `selection` copies: its curves (every curve but the projected model edges when
     /// nothing is selected), their points, the loose points selected, and the texts anchored on them.
     /// Copies made by other patterns are never included.
