@@ -1360,7 +1360,8 @@ public enum Regenerator {
     static func sweep(_ f: SweepFeature, _ feature: Feature, _ r: inout RegenResult) throws {
         let sk = try sketchResult(f.sketch, r)
         let profiles = try profiles(f.profiles, in: sk)
-        let tool = try KBody.sweep(profiles, along: try path(f.path, r).path, featureID: feature.id)
+        let twist = try f.twist.map { try r.parameters.value(of: $0, kind: .angle) } ?? 0
+        let tool = try KBody.sweep(profiles, along: try path(f.path, r).path, twist: twist, featureID: feature.id)
         if let targets = f.targets {
             try combine(tool, f.operation, targets: targets, feature, &r)
         } else {

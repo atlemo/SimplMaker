@@ -61,7 +61,8 @@ extension Feature.Kind {
             if !f.second.isEmpty { f.second = change(f.second) }
             self = .chamfer(f)
         case .revolve(var f): f.angle = change(f.angle); self = .revolve(f)
-        case .sweep, .loft, .combine, .split, .layOnFloor: break
+        case .sweep(var f): f.twist = f.twist.map(change); self = .sweep(f)
+        case .loft, .combine, .split, .layOnFloor: break
         case .twistSweep(var f):
             f.distance = change(f.distance); f.startAngle = change(f.startAngle); f.endAngle = change(f.endAngle)
             f.curve = change(f.curve); f.shiftU = change(f.shiftU); f.shiftV = change(f.shiftV)

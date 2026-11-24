@@ -1041,25 +1041,122 @@ bool profilesOf(const SKHandle *handles, int count, std::vector<std::shared_ptr<
   return true;
 }
 
-/// Fuses the solids of one feature into a single shape, carrying names.
+double shapeVolume(const TopoDS_Shape &s) {
+  GProp_GProps props;
+  BRepGProp::VolumeProperties(s, props);
+  return std::abs(props.Mass());
+}
+
+/// Fuses the solids of one feature into a single shape, carrying names. Solids that touch (tubes swept from circles that are
+/// tangent to within the solver's last billionth of a millimetre) can fuse into something invalid, or into a solid with volume
+/// that isn't there. When the fuse is not a valid solid but every solid is a good one on its own, they are kept side by side, as
+/// the parts of a body that has several: that is what such profiles are, and it does not matter that they touch or cross.
+/// A fuse with a little tolerance is the last try, when one of the solids is itself not valid.
 bool fuseAll(const std::vector<TopoDS_Shape> &solids, std::vector<Named> &names, TopoDS_Shape &result) {
   result = solids[0];
   if (solids.size() == 1) return true;
-  BRepAlgoAPI_Fuse fuse;
-  ShapeList args, tools;
-  args.Append(solids[0]);
-  for (size_t k = 1; k < solids.size(); ++k) tools.Append(solids[k]);
-  fuse.SetArguments(args);
-  fuse.SetTools(tools);
-  fuse.Build();
-  if (!fuse.IsDone() || fuse.HasErrors()) {
-    setError("could not merge the profiles' solids");
-    return false;
+  double parts = 0;
+  for (const TopoDS_Shape &solid : solids) parts += shapeVolume(solid);
+  auto tryFuse = [&](double fuzzy) {
+    BRepAlgoAPI_Fuse fuse;
+    ShapeList args, tools;
+    args.Append(solids[0]);
+    for (size_t k = 1; k < solids.size(); ++k) tools.Append(solids[k]);
+    fuse.SetArguments(args);
+    fuse.SetTools(tools);
+    if (fuzzy > 0) fuse.SetFuzzyValue(fuzzy);
+    fuse.SetRunParallel(true);
+    fuse.Build();
+    if (!fuse.IsDone() || fuse.HasErrors()) return false;
+    std::vector<Named> carried;
+    carry(fuse, names, carried);
+    TopoDS_Shape fused = unify(fuse.Shape(), carried);
+    if (!BRepCheck_Analyzer(fused, true, true).IsValid()) return false;
+    if (shapeVolume(fused) > parts * (1 + 1e-6)) return false;  // a union can't hold more than its parts: tangent faces fused wrongly
+    names = std::move(carried);
+    result = fused;
+    return true;
+  };
+  if (tryFuse(0)) return true;
+  bool eachValid = true;
+  for (const TopoDS_Shape &solid : solids) eachValid = eachValid && BRepCheck_Analyzer(solid, true, true).IsValid();
+  if (eachValid) {
+    TopoDS_Compound all;
+    BRep_Builder bb;
+    bb.MakeCompound(all);
+    for (const TopoDS_Shape &solid : solids) bb.Add(all, solid);
+    result = all;
+    return true;
   }
-  std::vector<Named> carried;
-  carry(fuse, names, carried);
-  names = std::move(carried);
-  result = unify(fuse.Shape(), names);
+  for (double fuzzy : {1e-6, 1e-5}) if (tryFuse(fuzzy)) return true;
+  setError("could not merge the profiles' solids");
+  return false;
+}
+
+/// Whether two profiles of one sketch share a stretch of their boundary (not just a point, which circles tangent to each other do).
+bool profilesShareEdge(const Profile &a, const Profile &b) {
+  Bnd_Box boxA, boxB;
+  BRepBndLib::Add(a.face, boxA);
+  BRepBndLib::Add(b.face, boxB);
+  boxA.Enlarge(1e-6);
+  if (boxA.IsOut(boxB)) return false;
+  BRepAlgoAPI_Section section(a.face, b.face, false);
+  section.Build();
+  if (!section.IsDone() || section.HasErrors()) return true;  // can't tell: merge them, as it was
+  for (TopExp_Explorer ex(section.Shape(), TopAbs_EDGE); ex.More(); ex.Next()) {
+    GProp_GProps props;
+    BRepGProp::LinearProperties(ex.Current(), props);
+    if (props.Mass() > 1e-6) return true;
+  }
+  return false;
+}
+
+/// Merges what was swept from the profiles of one sketch. Profiles are separate regions that all move the same way, so their solids
+/// can only meet where the profiles do: those that share an edge are fused into one solid, and the rest stay as they are, as parts of
+/// the body (circles that touch at a single point need no merging, and merging them is slow and unreliable).
+bool fuseSwept(const std::vector<Profile *> &profiles, const std::vector<TopoDS_Shape> &solids, std::vector<Named> &names,
+               TopoDS_Shape &result) {
+  const size_t n = solids.size();
+  result = solids[0];
+  if (n == 1) return true;
+  std::vector<size_t> group(n);
+  for (size_t k = 0; k < n; ++k) group[k] = k;
+  auto root = [&](size_t k) {
+    while (group[k] != k) k = group[k] = group[group[k]];
+    return k;
+  };
+  for (size_t i = 0; i < n; ++i)
+    for (size_t j = i + 1; j < n; ++j)
+      if (root(i) != root(j) && profilesShareEdge(*profiles[i], *profiles[j])) group[root(j)] = root(i);
+  std::vector<std::vector<size_t>> clusters;
+  {
+    std::vector<int> slot(n, -1);
+    for (size_t k = 0; k < n; ++k) {
+      const size_t r = root(k);
+      if (slot[r] < 0) {
+        slot[r] = (int)clusters.size();
+        clusters.emplace_back();
+      }
+      clusters[slot[r]].push_back(k);
+    }
+  }
+  std::vector<TopoDS_Shape> parts;
+  for (const std::vector<size_t> &c : clusters) {
+    std::vector<TopoDS_Shape> cluster;
+    for (size_t k : c) cluster.push_back(solids[k]);
+    TopoDS_Shape merged;
+    if (!fuseAll(cluster, names, merged)) return false;
+    parts.push_back(merged);
+  }
+  if (parts.size() == 1) {
+    result = parts[0];
+    return true;
+  }
+  TopoDS_Compound all;
+  BRep_Builder bb;
+  bb.MakeCompound(all);
+  for (const TopoDS_Shape &part : parts) bb.Add(all, part);
+  result = all;
   return true;
 }
 
@@ -2413,7 +2510,7 @@ SKHandle sk_sweep(const SKHandle *profiles, int count, SKHandle path, const char
     solids.push_back(pipe.Shape());
   }
   TopoDS_Shape result;
-  if (!fuseAll(solids, names, result)) return 0;
+  if (!fuseSwept(ps, solids, names, result)) return 0;
   return storeChecked(result, names, feat, "sweep produced an invalid solid (the profile may intersect itself along the path)");
   SK_CATCH(0)
 }
@@ -2824,6 +2921,95 @@ SKHandle sk_loft_along(const SKHandle *profiles, int count, SKHandle path, const
   auto keepPath = lookup(path, pa);
   if (!pa) return 0;
   return loftProfiles(profiles, count, false, pa, featureId);
+  SK_CATCH(0)
+}
+
+SKHandle sk_sweep_twisted(const SKHandle *profiles, int count, SKHandle path, double twist, int sections, const char *featureId) {
+  SK_TRY
+  const std::string feat = featureOrDefault(featureId, "sweep");
+  std::vector<std::shared_ptr<Object>> keep;
+  std::vector<Profile *> ps;
+  if (!profilesOf(profiles, count, keep, ps, "sweep")) return 0;
+  Path *pa;
+  auto keepPath = lookup(path, pa);
+  if (!pa) return 0;
+  BRepAdaptor_CompCurve curve(pa->wire);
+  const double length = GCPnts_AbscissaPoint::Length(curve);
+  if (length <= Precision::Confusion()) {
+    setError("the path has no length");
+    return 0;
+  }
+  auto at = [&](double s, gp_Pnt &p, gp_Dir &d) {
+    double u = s >= length ? curve.LastParameter() : curve.FirstParameter();
+    if (s > 0 && s < length) {
+      GCPnts_AbscissaPoint a(curve, s, curve.FirstParameter());
+      u = a.IsDone() ? a.Parameter() : curve.FirstParameter() + (curve.LastParameter() - curve.FirstParameter()) * s / length;
+    }
+    gp_Vec v;
+    curve.D1(u, p, v);
+    if (v.Magnitude() <= Precision::Confusion()) return false;
+    d = gp_Dir(v);
+    return true;
+  };
+  // As many sections as the twist and the bends of the path need: one every few degrees of either.
+  int n = sections;
+  if (n <= 0) {
+    double bend = 0;
+    gp_Pnt p;
+    gp_Dir previous, here;
+    for (int i = 0; i <= 128; ++i) {
+      if (!at(length * i / 128, p, here)) continue;
+      if (i > 0) bend += previous.Angle(here);
+      previous = here;
+    }
+    n = std::max({16, (int)std::ceil(std::fabs(twist) / (5 * M_PI / 180)), (int)std::ceil(bend / (6 * M_PI / 180))});
+  }
+  n = std::min(std::max(n, 2), 200);
+  std::vector<gp_Pnt> points(n + 1);
+  std::vector<gp_Dir> tangents(n + 1, gp_Dir(0, 0, 1));
+  for (int i = 0; i <= n; ++i)
+    if (!at(length * i / n, points[i], tangents[i])) {
+      setError("the path stops dead at a point, so there is no direction to twist about");
+      return 0;
+    }
+  // Where each section stands: the profile carried along the path without turning about it (each step takes the previous direction
+  // to the next by the shortest turn), then turned about the path by its share of the twist.
+  std::vector<gp_Trsf> carry(n + 1);
+  gp_Trsf rotation;  // from the start direction to this one, about the origin
+  for (int i = 0; i <= n; ++i) {
+    if (i > 0) {
+      const gp_Vec a(tangents[i - 1]), b(tangents[i]);
+      const gp_Vec axis = a.Crossed(b);
+      const double sine = axis.Magnitude(), cosine = a.Dot(b);
+      if (sine > 1e-12) {
+        gp_Trsf step;
+        step.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(axis)), std::atan2(sine, cosine));
+        rotation = step.Multiplied(rotation);
+      } else if (cosine < 0) {
+        setError("the path turns right round on itself, so a twist along it has no direction to follow");
+        return 0;
+      }
+    }
+    gp_Trsf toOrigin, toPoint, about;
+    toOrigin.SetTranslation(gp_Vec(points[0], gp_Pnt(0, 0, 0)));
+    toPoint.SetTranslation(gp_Vec(gp_Pnt(0, 0, 0), points[i]));
+    about.SetRotation(gp_Ax1(points[i], tangents[i]), twist * (double(i) / n));
+    carry[i] = about.Multiplied(toPoint.Multiplied(rotation.Multiplied(toOrigin)));
+  }
+  std::vector<TopoDS_Shape> solids;
+  std::vector<Named> names;
+  for (Profile *p : ps) {
+    std::vector<TopoDS_Face> faces;
+    for (int i = 0; i <= n; ++i) faces.push_back(TopoDS::Face(p->face.Moved(TopLoc_Location(carry[i]))));
+    TopoDS_Shape solid;
+    std::vector<Named> own;
+    if (!loftFaces(faces, *p, TopLoc_Location(), false, feat, solid, own, true)) return 0;
+    solids.push_back(solid);
+    names.insert(names.end(), own.begin(), own.end());
+  }
+  TopoDS_Shape result;
+  if (!fuseSwept(ps, solids, names, result)) return 0;
+  return storeChecked(result, names, feat, "the twisted sweep produced an invalid solid (does the profile turn through itself, or the path bend too tightly?)");
   SK_CATCH(0)
 }
 

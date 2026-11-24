@@ -291,8 +291,10 @@ public final class KBody: @unchecked Sendable {
         return try wrap(sk_revolve(hs, Int32(hs.count), o.x, o.y, o.z, d.x, d.y, d.z, angle, featureID), "revolve")
     }
 
-    public static func sweep(_ profiles: [KProfile], along path: KPath, featureID: String) throws -> KBody {
+    /// `twist` (radians) turns the profile about the path, evenly along it; zero is the plain sweep.
+    public static func sweep(_ profiles: [KProfile], along path: KPath, twist: Double = 0, featureID: String) throws -> KBody {
         let hs = profiles.map(\.handle)
+        if abs(twist) > 1e-9 { return try wrap(sk_sweep_twisted(hs, Int32(hs.count), path.handle, twist, 0, featureID), "sweep") }
         return try wrap(sk_sweep(hs, Int32(hs.count), path.handle, featureID), "sweep")
     }
 

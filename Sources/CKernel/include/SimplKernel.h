@@ -85,6 +85,10 @@ SKHandle sk_revolve(const SKHandle *profiles, int count, double ox, double oy, d
 SKHandle sk_sketch_path(SKHandle sketch, const char *const *tags, int count);
 /// Sweeps profiles along a path. Faces: "<featureId>.start|end|side.<tag>".
 SKHandle sk_sweep(const SKHandle *profiles, int count, SKHandle path, const char *featureId);
+/// A sweep whose profile also turns about the path, `twist` radians over its whole length (even by distance along it). It is a
+/// smooth loft through `sections` copies of the profile spaced along the path (0: as many as the twist and the path's bends need).
+/// Faces are named as for sk_sweep.
+SKHandle sk_sweep_twisted(const SKHandle *profiles, int count, SKHandle path, double twist, int sections, const char *featureId);
 /// Round pipe along a path; wall > 0 makes it hollow. Faces: "<featureId>.start|end|outer|inner".
 SKHandle sk_pipe(SKHandle path, double diameter, double wall, const char *featureId);
 /// Loft through the outer boundaries of profiles, in order. Faces: "<featureId>.start|end|side.<tag>".

@@ -160,6 +160,10 @@ enum FeatureFields {
                                      write: { kind, text in if case .thread(var x) = kind { x.tolerance = text; x.toleranceMaterial = nil; kind = .thread(x) } }))
             }
             return out
+        case .sweep:
+            return [FieldSpec(name: "twist", unit: .angle, positive: false,
+                              read: { if case .sweep(let x) = $0 { return x.twist ?? "0 deg" } else { return nil } },
+                              write: { kind, text in if case .sweep(var x) = kind { x.twist = text; kind = .sweep(x) } })]
         case .draft:
             return [FieldSpec(name: "angle", unit: .angle, positive: false,
                               read: { if case .draft(let x) = $0 { return x.angle } else { return nil } },

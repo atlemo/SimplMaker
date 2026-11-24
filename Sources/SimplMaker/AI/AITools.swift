@@ -814,7 +814,10 @@ enum AITools {
                 Arguments: document_id; sketch_id (required: the sketch with the profile); profiles (required, as for create_extrude: \
                 "solid", ids, or {"at": [u, v]}); path_sketch (required: the sketch with the path); path (required: the curve ids of the path \
                 in order, as edit_sketch returned them under "curves", for example ["rail.1", "rail.2"]; "curve:<sketch>/<id>" also works); \
-                operation ("new_body" (default), "join", "cut", "intersect") and target as for create_extrude; name, id, expected_revision.
+                operation ("new_body" (default), "join", "cut", "intersect") and target as for create_extrude; twist (optional, degrees: how \
+                far the profile also turns about the path from its start to its end, evenly along it, for a twisted bar, a rope, a spiral rib \
+                or a helical set of tubes; it works on curved paths too, which create_twist_sweep (a straight line only) does not; default 0, \
+                the plain sweep); name, id, expected_revision.
 
                 Changes the document (one undo step). Returns {success, document_id, revision, message, feature, changes, bodies}. Fails with \
                 FEATURE_NOT_FOUND, INVALID_ARGUMENTS (profile and path in the same sketch), REBUILD_FAILED (the path turns too sharply for the \
@@ -826,6 +829,7 @@ enum AITools {
                     "profiles": ["description": "\"solid\", or a list of profile ids and {\"at\": [u, v]} points."],
                     "path_sketch": ["type": "string", "description": "The sketch with the path."],
                     "path": ["type": "array", "items": ["type": "string"], "description": "Curve ids of the path, in order."],
+                    "twist": ["type": ["number", "string"], "description": "Degrees the profile turns about the path over its whole length (default 0)."],
                     "operation": ["type": "string", "enum": ["new_body", "join", "cut", "intersect"], "description": "Default new_body."],
                     "target": ["type": "string", "description": "The body to combine with (default the newest)."],
                     "name": ["type": "string", "description": "A name for the feature (default Sweep1…)."],

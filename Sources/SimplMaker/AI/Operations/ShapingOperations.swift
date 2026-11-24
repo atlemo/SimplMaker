@@ -15,6 +15,8 @@ struct CreateSweepOperation: AIOperation {
     let path: [String]
     let operation: BodyOperation
     let target: FeatureID?
+    /// How far the profile turns about the path over its length (an angle expression); nil is the plain sweep.
+    var twist: String? = nil
     let name: String?
     let id: String?
     var toolName: String { "create_sweep" }
@@ -37,12 +39,13 @@ struct CreateSweepOperation: AIOperation {
                           reason: "Draw the profile in one sketch and the path in another: the profile on a plane square to the start of the path, the path on the plane it runs in.")
         }
         try AIChecks.requireBody(for: operation, target: target, in: doc)
+        if let twist { _ = try AIValues.evaluate(twist, kind: .angle, field: "twist", positive: false, values: context.values) }
         let featureID = try AIValues.newFeatureID(id, in: doc)
         let featureName = name?.trimmingCharacters(in: .whitespaces).nonEmpty ?? doc.nextName("Sweep")
         doc.addFeature(Feature(id: featureID, name: featureName,
-                               .sweep(SweepFeature(sketch: sketchID, profiles: refs, path: CurveRef(sketch: pathSketch, curves: curves), operation: operation, target: target))))
+                               .sweep(SweepFeature(sketch: sketchID, profiles: refs, path: CurveRef(sketch: pathSketch, curves: curves), operation: operation, target: target, twist: twist))))
         return OperationOutcome(featureID: featureID,
-                                message: "Created \(featureName): swept \(refs.count) profile\(refs.count == 1 ? "" : "s") of \(sketchFeature.name) along \(curves.count) curve\(curves.count == 1 ? "" : "s") of \(pathSketch) (\(AIOperationNames.name(operation))).")
+                                message: "Created \(featureName): swept \(refs.count) profile\(refs.count == 1 ? "" : "s") of \(sketchFeature.name) along \(curves.count) curve\(curves.count == 1 ? "" : "s") of \(pathSketch) (\(AIOperationNames.name(operation)))\(twist.map { ", turning \($0) about the path" } ?? "").")
     }
 }
 

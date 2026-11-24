@@ -197,12 +197,13 @@ enum AIOperationParser {
                                           target: try a.string("target"), name: try a.string("name"), id: try a.string("id"))
 
         case "create_sweep":
-            try a.rejectUnknown(["document_id", "sketch_id", "profiles", "path_sketch", "path", "operation", "target", "name", "id", "expected_revision"], in: tool)
+            try a.rejectUnknown(["document_id", "sketch_id", "profiles", "path_sketch", "path", "twist", "operation", "target", "name", "id", "expected_revision"], in: tool)
             let pathSketch = try a.string("path_sketch")
             let path = try ids(a, "path").map { $0.contains(":") || pathSketch == nil ? $0 : AIEntityRef.curve(sketch: pathSketch!, id: $0).string }
             return CreateSweepOperation(sketchID: try a.requiredString("sketch_id", hint: "The sketch holding the profile to sweep."),
                                         profiles: try profileSelectors(a, arguments), path: path,
                                         operation: try bodyOperation(a, allowed: BodyOperation.allCases, default: .newBody), target: try a.string("target"),
+                                        twist: try a.quantity("twist", kind: .angle),
                                         name: try a.string("name"), id: try a.string("id"))
 
         case "create_twist_sweep":

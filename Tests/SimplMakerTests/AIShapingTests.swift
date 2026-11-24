@@ -204,6 +204,28 @@ import Testing
         #expect(ghost?.code == .featureNotFound)
     }
 
+    @Test func aSweepCanTwistItsProfileAboutThePath() async throws {
+        let t = await open()
+        let steps: [any AIOperation] = [
+            CreateSketchOperation(plane: "xy", name: nil, id: "prof"),
+            EditSketchOperation(sketchID: "prof", add: [.rectangle(id: "r", center: SketchPoint2(x: "0 mm", y: "0 mm"), corner: nil, width: "6", height: "3", cornerRadius: nil)]),
+            CreateSketchOperation(plane: "xz", name: nil, id: "route"),
+            EditSketchOperation(sketchID: "route", add: [.line(id: "rail", from: SketchPoint2(x: "0 mm", y: "0 mm"), to: SketchPoint2(x: "0 mm", y: "30 mm"))]),
+            try op("create_sweep", ["sketch_id": "prof", "profiles": "solid", "path_sketch": "route", "path": ["rail"], "twist": 90, "id": "bar"]),
+        ]
+        _ = try await t.service.batch(documentID: t.id, expectedRevision: nil, label: "Twisted bar", steps)
+        #expect(abs(volume(t, "bar") - 6 * 3 * 30) < 2, "\(volume(t, "bar"))")
+        let end = try #require(try t.model.result?.body("bar")?.measure(.face("bar.end")))
+        #expect(abs((end.bounds.max.x - end.bounds.min.x) - 3) < 1e-6, "a quarter turn: the 6 mm side now runs along Y: \(end.bounds)")
+        let feature = try await t.service.getFeature(documentID: t.id, featureID: "bar")
+        #expect(feature.feature.parameters["twist"] != nil && feature.editable.contains("twist"))
+        _ = try await t.service.modifyFeature(documentID: t.id, featureID: "bar", settings: ["twist": 180], unlink: false)
+        let half = try #require(try t.model.result?.body("bar")?.measure(.face("bar.end")))
+        #expect(abs((half.bounds.max.x - half.bounds.min.x) - 6) < 1e-6, "half a turn: \(half.bounds)")
+        let bad = await refusal { _ = try await run(t, "create_sweep", ["sketch_id": "prof", "profiles": "solid", "path_sketch": "route", "path": ["rail"], "twist": "banana"]) }
+        #expect(bad != nil)
+    }
+
     @Test func aLoftBlendsASquareIntoACircle() async throws {
         let t = await open()
         let steps: [any AIOperation] = [

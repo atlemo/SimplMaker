@@ -719,6 +719,8 @@ struct SweepInspector: View {
                 }
             }
             PathSection(model: model, path: sweep.path) { p in edit.update("Change Path") { $0.path = p } }
+            edit.row("Twist", sweep.twist ?? "0 deg", "Edit Twist") { $0.twist = $1 }
+                .help("How far the profile turns about the path from its start to its end (it turns evenly along the way); 0 keeps it as it is")
             edit.operation(sweep.operation) { $0.operation = $1 }
             if sweep.operation != .newBody {
                 AffectedBodiesList(model: model, id: id, operation: sweep.operation, targets: sweep.targets) { targets in

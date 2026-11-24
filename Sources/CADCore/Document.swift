@@ -260,9 +260,13 @@ public struct SweepFeature: Codable, Hashable, Sendable {
     /// as for an extrude: a cut goes through every body it reaches, a join or intersect works on `target` or else the
     /// newest body. A join with several bodies merges them into the first one.
     public var targets: [FeatureID]?
+    /// How far the profile turns about the path from its start to its end, an angle expression, spread evenly along the path.
+    /// Nil (or zero) is the plain sweep, which keeps the profile as it was set against the path.
+    public var twist: String?
     public init(sketch: FeatureID, profiles: [ProfileRef], path: CurveRef, operation: BodyOperation = .newBody,
-                target: FeatureID? = nil) {
+                target: FeatureID? = nil, twist: String? = nil) {
         self.sketch = sketch; self.profiles = profiles; self.path = path; self.operation = operation; self.target = target
+        self.twist = twist
     }
 }
 
