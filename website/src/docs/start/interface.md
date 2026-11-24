@@ -49,7 +49,7 @@ You start in design mode. The tools sit in groups, with the group's name underne
 | **Create** | [Extrude](doc:create/extrude), [Revolve](doc:create/revolve), [Sweep](doc:create/sweep), [Twist Sweep](doc:create/twist-sweep), [Loft](doc:create/loft), [Rib](doc:create/rib), [Pipe](doc:create/pipe) |
 | **Shapes** | [Box, Cylinder, Sphere, Torus, Coil](doc:create/primitives) |
 | **Modify** | [Fillet and Chamfer](doc:modify/fillet-chamfer), [Hole](doc:modify/hole), [Thread](doc:modify/thread), [Shell](doc:modify/shell), [Draft](doc:modify/draft), [Project](doc:modify/project), [Move and Scale](doc:modify/move-scale), [Lay on Floor](doc:modify/lay-on-floor), [Combine](doc:modify/combine), [Split Body](doc:modify/split) |
-| **Construct** | [Plane](doc:create/plane), [Mirror and Pattern](doc:modify/mirror-pattern), [Canvas](doc:create/canvas) |
+| **Construct** | [Plane, Plane at Angle and Plane Along Path](doc:create/plane), [Mirror and Pattern](doc:modify/mirror-pattern), [Canvas](doc:create/canvas) |
 | **Inspect** | [Measure](doc:modify/measure), [Section Analysis](doc:modify/section-analysis) |
 
 **Choose what's on the toolbar.** Click a group's name to see all its tools. Pin the ones you use to the toolbar, or unpin the ones you don't. Right-click a button for the same choices.

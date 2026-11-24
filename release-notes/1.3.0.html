@@ -1,0 +1,12 @@
+<h2>SimplMaker 1.3.0</h2>
+<p>Planes that know where they are going, and sweeps that finally know how to twist.</p>
+<ul>
+  <li><strong>Plane Along Path</strong> (<kbd>⇧N</kbd>): click a sketch curve and a plane stands square to it. Drag the dot along the path, or type a position from 0 to 1, and watch the plane follow before you press OK. It is the quickest way to get a profile plane for a sweep or a section plane for a loft.</li>
+  <li><strong>Plane at Angle</strong> (<kbd>⇧R</kbd>): turn a plane or a flat face by an angle about an axis or an edge. Click the base, click the edge to turn about (or choose X, Y or Z), type the angle. <em>Use axis direction only</em> projects the axis onto the base and pivots about its origin, or a point you click, which is what an angled bracket wants.</li>
+  <li><strong>Twist on Sweep</strong>: the profile can turn about the path as it travels along it, on straight and curved paths alike. A rope, a twisted bar, a ring of strands that spiral. Type the total twist in the Sweep's Inspector (a parameter works too), and your AI assistant can set it with <code>create_sweep</code>.</li>
+  <li><strong>Sweeps of profiles that touch</strong>: a ring of circles that just kiss each other used to end in <em>Sweep produced an invalid solid</em>. They now sweep as the separate strands they are.</li>
+  <li><strong>Constraints on pattern copies</strong>: Tangent (and the other constraints) on a copy made by a Pattern now holds, by moving the original. Make a ring of circles tangent in one click instead of arguing with the numbers.</li>
+  <li><strong>Planes tidy up after themselves</strong>: leave a sketch you drew on a construction plane and the plane hides. The eye in the browser brings it back.</li>
+  <li><strong>Shell</strong> tries again in Intersection mode when the plain offset fails, which rescues shells on rounded lofts.</li>
+  <li><strong>Start page</strong> polish, and a <em>Support this project</em> button in the title bar.</li>
+</ul>

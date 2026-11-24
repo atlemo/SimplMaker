@@ -29,6 +29,8 @@ Tools use a single letter, like most CAD apps. They work when the viewport has f
 | [[S]] | Shell |
 | [[⇧D]] | Draft (every plain letter was taken) |
 | [[⇧W]] | Twist Sweep (every plain letter was taken) |
+| [[⇧N]] | Plane Along Path (every plain letter was taken) |
+| [[⇧R]] | Plane at Angle (every plain letter was taken) |
 | [[⇧S]] | Split Body (every plain letter was taken) |
 | [[⇧L]] | Lay on Floor (every plain letter was taken) |
 | [[O]] | Project |

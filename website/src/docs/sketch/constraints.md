@@ -21,7 +21,7 @@ Only the constraints that fit the selection are enabled.
 | **Vertical** | Makes lines upright | One or more lines |
 | **Parallel** | Makes two lines parallel | Two lines |
 | **Perpendicular** | Makes two lines meet at a right angle | Two lines |
-| **Tangent** | Makes shapes touch smoothly | A line and a circle or arc, two circles or arcs, or a line and a spline |
+| **Tangent** | Makes shapes touch smoothly | A line and a circle or arc, two circles or arcs, or a line and a spline. On the copies a Pattern made, it holds by moving the original. |
 | **Equal** | Gives two lines the same length, or two circles or arcs the same size | Two lines, or two circles or arcs |
 | **Midpoint** | Puts a point at the middle of a line | A point and a line |
 | **Concentric** | Gives two circles or arcs the same centre | Two circles or arcs |
