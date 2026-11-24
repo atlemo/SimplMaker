@@ -509,5 +509,15 @@ private extension View {
         listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .panelRowInsets()
+            .appearanceRowPadding()
+    }
+
+    /// On iPad the rows start where the panel's title does, as the Inspector's and the Bodies list's do: the list's own inset is too small here.
+    @ViewBuilder func appearanceRowPadding() -> some View {
+#if os(iOS)
+        padding(.horizontal, 8)
+#else
+        self
+#endif
     }
 }
