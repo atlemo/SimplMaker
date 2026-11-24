@@ -2972,35 +2972,59 @@ SKHandle sk_sweep_twisted(const SKHandle *profiles, int count, SKHandle path, do
       setError("the path stops dead at a point, so there is no direction to twist about");
       return 0;
     }
-  // Where each section stands: the profile carried along the path without turning about it (each step takes the previous direction
-  // to the next by the shortest turn), then turned about the path by its share of the twist.
-  std::vector<gp_Trsf> carry(n + 1);
-  gp_Trsf rotation;  // from the start direction to this one, about the origin
-  for (int i = 0; i <= n; ++i) {
-    if (i > 0) {
-      const gp_Vec a(tangents[i - 1]), b(tangents[i]);
-      const gp_Vec axis = a.Crossed(b);
-      const double sine = axis.Magnitude(), cosine = a.Dot(b);
-      if (sine > 1e-12) {
-        gp_Trsf step;
-        step.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(axis)), std::atan2(sine, cosine));
-        rotation = step.Multiplied(rotation);
-      } else if (cosine < 0) {
-        setError("the path turns right round on itself, so a twist along it has no direction to follow");
-        return 0;
-      }
+  // The profile carried along the path without turning about it: each step takes the previous direction to the next by the shortest
+  // turn. `rotation[i]` takes the direction at the start of the path to the direction at section i.
+  std::vector<gp_Trsf> rotation(n + 1);
+  for (int i = 1; i <= n; ++i) {
+    const gp_Vec a(tangents[i - 1]), b(tangents[i]);
+    const gp_Vec axis = a.Crossed(b);
+    const double sine = axis.Magnitude(), cosine = a.Dot(b);
+    rotation[i] = rotation[i - 1];
+    if (sine > 1e-12) {
+      gp_Trsf step;
+      step.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(axis)), std::atan2(sine, cosine));
+      rotation[i] = step.Multiplied(rotation[i - 1]);
+    } else if (cosine < 0) {
+      setError("the path turns right round on itself, so a twist along it has no direction to follow");
+      return 0;
     }
-    gp_Trsf toOrigin, toPoint, about;
-    toOrigin.SetTranslation(gp_Vec(points[0], gp_Pnt(0, 0, 0)));
-    toPoint.SetTranslation(gp_Vec(gp_Pnt(0, 0, 0), points[i]));
-    about.SetRotation(gp_Ax1(points[i], tangents[i]), twist * (double(i) / n));
-    carry[i] = about.Multiplied(toPoint.Multiplied(rotation.Multiplied(toOrigin)));
   }
   std::vector<TopoDS_Shape> solids;
   std::vector<Named> names;
   for (Profile *p : ps) {
+    // Where the profile sits on the path (it is not always at the wire's start: the wire may run the other way): the section nearest
+    // to it that stands about square to the path. Each section is the profile carried from there, and turned about the path by its
+    // share of the twist, counted from there and away from it.
+    GProp_GProps middle;
+    BRepGProp::SurfaceProperties(p->face, middle);
+    const gp_Pnt centre = middle.CentreOfMass();
+    gp_Dir facing(0, 0, 1);
+    {
+      BRepAdaptor_Surface surface(p->face);
+      if (surface.GetType() == GeomAbs_Plane) facing = surface.Plane().Axis().Direction();
+    }
+    int home = 0;
+    double best = -1;
+    for (int i = 0; i <= n; ++i) {
+      if (std::fabs(tangents[i].Dot(facing)) < 0.5) continue;
+      const double d = points[i].Distance(centre);
+      if (best < 0 || d < best) best = d, home = i;
+    }
+    if (best < 0) {
+      for (int i = 0; i <= n; ++i) {
+        const double d = points[i].Distance(centre);
+        if (best < 0 || d < best) best = d, home = i;
+      }
+    }
     std::vector<TopoDS_Face> faces;
-    for (int i = 0; i <= n; ++i) faces.push_back(TopoDS::Face(p->face.Moved(TopLoc_Location(carry[i]))));
+    for (int i = 0; i <= n; ++i) {
+      gp_Trsf toOrigin, toPoint, about;
+      toOrigin.SetTranslation(gp_Vec(points[home], gp_Pnt(0, 0, 0)));
+      toPoint.SetTranslation(gp_Vec(gp_Pnt(0, 0, 0), points[i]));
+      about.SetRotation(gp_Ax1(points[i], tangents[i]), twist * (double(i) - double(home)) / n);
+      const gp_Trsf carry = about.Multiplied(toPoint.Multiplied(rotation[i].Multiplied(rotation[home].Inverted().Multiplied(toOrigin))));
+      faces.push_back(TopoDS::Face(p->face.Moved(TopLoc_Location(carry))));
+    }
     TopoDS_Shape solid;
     std::vector<Named> own;
     if (!loftFaces(faces, *p, TopLoc_Location(), false, feat, solid, own, true)) return 0;

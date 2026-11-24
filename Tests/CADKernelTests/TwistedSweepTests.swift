@@ -99,4 +99,45 @@ import Testing
             #expect(try body.splitIntoParts(featureID: "x").count == 1, "\(String(describing: twist)): joined into one solid")
         }
     }
+
+    /// The profile sits at the END of the path (the ring's plane at position 1, as when the path was drawn the other way round): the
+    /// sweep must still follow the path and twist away from the profile.
+    @Test func aProfileAtTheFarEndOfThePathTwistsAwayFromIt() throws {
+        let atEnd = Feature(id: "pe", name: "pe", .plane(PlaneFeature(along: CurveRef(sketch: "path", curves: ["B"]), position: "1")))
+        // One circle of Ø5 whose centre is 8 mm off the path: untwisted it keeps to one side of the path; twisted it spirals round it.
+        let off = T.sketch("prof", on: .plane("pe")) { s in
+            let c = s.addPoint(8, 0); s.constrain(.fix(c, x: 8, y: 0)); s.addCircle(center: c, radius: 2.5, id: "K")
+        }
+        func sweep(_ twist: String?) -> Feature {
+            Feature(id: "sw", name: "sw", .sweep(SweepFeature(sketch: "prof", profiles: [ProfileRef(curves: ["K"])], path: CurveRef(sketch: "path", curves: ["B"]), twist: twist)))
+        }
+        let plain = try #require(try T.regen([Self.curve, atEnd, off, sweep(nil)]).body("sw"))
+        let barely = try #require(try T.regen([Self.curve, atEnd, off, sweep("0.01 deg")]).body("sw"))
+        let spun = try #require(try T.regen([Self.curve, atEnd, off, sweep("360 deg")]).body("sw"))
+        #expect(plain.isValid && barely.isValid && spun.isValid)
+        // With next to no twist the circle keeps to where it was drawn, 8 mm to the -Y side of the path (Ø5: y from -10.5 to -5.5),
+        // and follows the path the whole way; the plain sweep tilts it a little at the far end, which it should not copy.
+        let a = try #require(plain.bounds), b = try #require(barely.bounds), c = try #require(spun.bounds)
+        #expect(abs(b.min.y + 10.5) < 0.1 && b.max.y < -4, "y \(b.min.y)..\(b.max.y)")
+        #expect(abs(b.max.z - 64) < 2 && abs(b.min.z + 4) < 2, "it runs the length of the path (z 0..60, plus the circle): \(b.min.z)..\(b.max.z)")
+        #expect(T.close(barely.volume, plain.volume, 0.1), "\(barely.volume) against \(plain.volume)")
+        // Spiralling round the path, it reaches the other side of it: the path runs in the XZ plane, so the circle (8 mm off, in X
+        // for the plain sweep) now also goes out to the other side in Y.
+        #expect(c.max.y - c.min.y > (a.max.y - a.min.y) + 10, "y \(a.min.y)..\(a.max.y) became \(c.min.y)..\(c.max.y)")
+    }
+
+    @Test func aRingOfCirclesTwistsKeepsItsVolumeWhateverTheTwist() throws {
+        let atEnd = Feature(id: "pe", name: "pe", .plane(PlaneFeature(along: CurveRef(sketch: "path", curves: ["B"]), position: "1")))
+        let (ring, profiles) = TouchingProfilesTests.ring(on: .plane("pe"))
+        func sweep(_ twist: String?) -> Feature {
+            Feature(id: "sw", name: "sw", .sweep(SweepFeature(sketch: "ring", profiles: profiles, path: CurveRef(sketch: "path", curves: ["B"]), twist: twist)))
+        }
+        let plain = try #require(try T.regen([Self.curve, atEnd, ring, sweep(nil)]).body("sw"))
+        for twist in ["90 deg", "360 deg", "-360 deg", "1080 deg"] {
+            let body = try #require(try T.regen([Self.curve, atEnd, ring, sweep(twist)]).body("sw"))
+            #expect(body.isValid && T.close(body.volume, plain.volume, 0.01), "\(twist): \(body.volume) against \(plain.volume)")
+            let a = try #require(plain.bounds), b = try #require(body.bounds)
+            #expect(simd_length(a.min - b.min) < 3 && simd_length(a.max - b.max) < 3, "\(twist) stays on the path: \(a) against \(b)")
+        }
+    }
 }
