@@ -951,6 +951,8 @@ struct PadViewport: UIViewRepresentable {
         renderer.faceLooks = model.faceLooks(for: model.visibleMeshes)
         renderer.focusPoint = model.renderFocusPoint.map { SIMD3(Float($0.x), Float($0.y), Float($0.z)) }
         renderer.bodyRoughness = model.visibleMeshes.map { m in model.displayRoughness(of: m.id).map { Float($0) } ?? -1 }
+        // See-through bodies: the Mold workspace draws the body as a ghost inside its pieces, and Appearance can set any body's opacity.
+        renderer.bodyOpacity = model.visibleMeshes.map { m in Float(model.displayOpacity(of: m.id)) }
         renderer.printPreview = printPreview
         renderer.printLayer = Float(printLayer)
         renderer.printNozzle = Float(printNozzle)
